@@ -2,7 +2,8 @@
 //!
 //! Upstream reference: org.hl7.fhir.core/org.hl7.fhir.convertors
 //!
-//! Capability spec: `openspec/specs/convert/spec.md`
+//! Capability register: `docs/capabilities/convert.md`
+//! Requirements (once archived): `openspec/specs/convert/spec.md`
 //!
 //! This crate is a Phase 0 placeholder: it carries no behaviour yet. Every
 //! requirement arrives through an OpenSpec change on a `change/<id>` branch.

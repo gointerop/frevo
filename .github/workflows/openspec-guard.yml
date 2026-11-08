@@ -1,0 +1,233 @@
+name: OpenSpec Guard
+
+# The CI backstop for the spec-first methodology. The local hooks under
+# .claude/hooks/ enforce these rules while an agent works; this job enforces the
+# same rules for anything that reaches a pull request, so disabling a hook
+# locally buys nothing.
+#
+# Where this job and a committed gate report disagree, this job wins.
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: openspec-guard-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  guard:
+    name: Guard
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0   # need the merge base to see what changed
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+
+      - name: Install the OpenSpec CLI
+        run: npm i -g @fission-ai/openspec@latest
+
+      - name: Identify the branch kind and the changed paths
+        id: ctx
+        run: |
+          set -euo pipefail
+          BRANCH="${{ github.event.pull_request.head.ref }}"
+          BASE="${{ github.event.pull_request.base.sha }}"
+          HEAD="${{ github.event.pull_request.head.sha }}"
+          echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
+          echo "head=$HEAD"     >> "$GITHUB_OUTPUT"
+
+          git diff --name-only "$BASE" "$HEAD" > /tmp/changed.txt
+          echo "changed paths:"; sed 's/^/  /' /tmp/changed.txt
+
+          case "$BRANCH" in
+            change/*)            kind=change;     id="${BRANCH#change/}" ;;
+            chore/governance-*)  kind=governance; id="" ;;
+            chore/oracles-*)     kind=oracles;    id="" ;;
+            chore/*)             kind=chore;      id="" ;;
+            *)                   kind=invalid;    id="" ;;
+          esac
+          echo "kind=$kind" >> "$GITHUB_OUTPUT"
+          echo "id=$id"     >> "$GITHUB_OUTPUT"
+          echo "branch '$BRANCH' -> kind=$kind id=$id"
+
+      - name: Branch naming
+        run: |
+          set -euo pipefail
+          if [ "${{ steps.ctx.outputs.kind }}" = "invalid" ]; then
+            echo "::error::branch '${{ steps.ctx.outputs.branch }}' is not a recognised kind."
+            echo "Use change/<id> for product work, or chore/<slug> for CI, harness, docs and tooling."
+            exit 1
+          fi
+
+      - name: A change/ branch must carry its OpenSpec change
+        if: steps.ctx.outputs.kind == 'change'
+        run: |
+          set -euo pipefail
+          id="${{ steps.ctx.outputs.id }}"
+          if ! grep -qE "^openspec/changes/($id/|archive/.*$id)" /tmp/changed.txt; then
+            echo "::error::branch change/$id does not touch openspec/changes/$id/ or its archive."
+            echo "Product work is specified before it is built. Propose the change first."
+            exit 1
+          fi
+          if [ ! -d "openspec/changes/$id" ] && ! ls -d openspec/changes/archive/*"$id"* >/dev/null 2>&1; then
+            echo "::error::no proposal directory for '$id'."
+            exit 1
+          fi
+
+      - name: A chore/ branch must not change behaviour under crates/**/src
+        if: steps.ctx.outputs.kind != 'change'
+        run: |
+          set -euo pipefail
+          # Mechanical changes are allowed: dependency bumps and formatting do
+          # not alter behaviour and should not need a spec.
+          offenders="$(grep -E '^crates/.*/src/.*\.rs$' /tmp/changed.txt || true)"
+          if [ -n "$offenders" ]; then
+            echo "::error::a ${{ steps.ctx.outputs.kind }} branch changed product source:"
+            printf '  %s\n' $offenders
+            echo "Move behavioural changes to a change/<id> branch with a reviewed spec."
+            exit 1
+          fi
+
+      - name: Settled specs change only in an archive commit
+        run: |
+          set -euo pipefail
+          spec_changes="$(grep -E '^openspec/specs/' /tmp/changed.txt || true)"
+          if [ -n "$spec_changes" ]; then
+            # Legitimate only when this pull request also archives a change.
+            if ! grep -qE '^openspec/changes/archive/' /tmp/changed.txt; then
+              echo "::error::openspec/specs/ was modified without archiving a change:"
+              printf '  %s\n' $spec_changes
+              echo "Settled requirements move only through 'openspec archive <id>'."
+              exit 1
+            fi
+          fi
+
+      - name: Enforcement machinery is governance-only
+        if: steps.ctx.outputs.kind != 'governance'
+        run: |
+          set -euo pipefail
+          offenders="$(grep -E '^(\.claude/|gates/|\.github/workflows/openspec-guard\.yml)' /tmp/changed.txt || true)"
+          # gatekeeper legitimately writes gates/<id>/report.json on a change branch.
+          if [ "${{ steps.ctx.outputs.kind }}" = "change" ]; then
+            offenders="$(printf '%s\n' $offenders | grep -v "^gates/${{ steps.ctx.outputs.id }}/report.json$" || true)"
+          fi
+          if [ -n "$offenders" ]; then
+            echo "::error::the enforcement machinery was modified outside a chore/governance-* branch:"
+            printf '  %s\n' $offenders
+            echo "An agent that can edit its own constraints while doing product work has none."
+            exit 1
+          fi
+
+      - name: Oracles are oracles-branch-only
+        if: steps.ctx.outputs.kind != 'oracles'
+        run: |
+          set -euo pipefail
+          offenders="$(grep -E '^oracles/' /tmp/changed.txt || true)"
+          if [ -n "$offenders" ]; then
+            echo "::error::oracles/ was modified outside a chore/oracles-* branch:"
+            printf '  %s\n' $offenders
+            echo "Oracles define correctness; re-pinning one changes every gate."
+            exit 1
+          fi
+
+      - name: openspec validate --all --strict
+        run: openspec validate --all --strict --no-interactive
+
+      - name: Hook self-tests
+        # The hooks are only worth anything if they actually block. These are the
+        # same cases the local self-test runs, executed on Linux.
+        run: bash harness/hook-tests/run.sh
+
+      - name: Scenario coverage
+        id: coverage
+        run: |
+          set -uo pipefail
+          id="${{ steps.ctx.outputs.id }}"
+          args=""
+          [ -n "$id" ] && args="--change $id"
+          bash harness/scripts/scenario-coverage.sh $args --markdown > /tmp/coverage.md
+          rc=$?
+          cat /tmp/coverage.md
+          cat /tmp/coverage.md >> "$GITHUB_STEP_SUMMARY"
+          echo "rc=$rc" >> "$GITHUB_OUTPUT"
+          exit $rc
+
+      - name: Post the coverage report to the pull request
+        if: always() && github.event_name == 'pull_request'
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: scenario-coverage
+          path: /tmp/coverage.md
+
+      - name: The specification must be approved
+        if: steps.ctx.outputs.kind == 'change'
+        run: |
+          set -euo pipefail
+          id="${{ steps.ctx.outputs.id }}"
+          review="openspec/changes/$id/review.md"
+          if [ ! -f "$review" ]; then
+            # An archived change has already been through this.
+            if ls -d openspec/changes/archive/*"$id"* >/dev/null 2>&1; then
+              echo "change is archived; review happened before archiving."
+              exit 0
+            fi
+            echo "::error::$review is missing. The spec must be independently reviewed before implementation."
+            exit 1
+          fi
+          verdict="$(head -1 "$review" | tr -d '\r[:space:]')"
+          if [ "$verdict" != "APPROVED" ]; then
+            echo "::error::$review says '$verdict', not APPROVED."
+            sed -n '2,30p' "$review"
+            exit 1
+          fi
+          echo "review: APPROVED"
+
+      - name: The gate report must refer to this pull request's head
+        if: steps.ctx.outputs.kind == 'change'
+        run: |
+          set -euo pipefail
+          id="${{ steps.ctx.outputs.id }}"
+          report="gates/$id/report.json"
+          head="${{ steps.ctx.outputs.head }}"
+          if [ ! -f "$report" ]; then
+            echo "::notice::no gate report at $report."
+            echo "CI runs the gates itself and its result is authoritative, so this is"
+            echo "not fatal here -- but the change cannot be archived without one."
+            exit 0
+          fi
+          rsha="$(jq -r '.head_sha // ""' "$report")"
+          green="$(jq -r '.green // false' "$report")"
+          echo "report head_sha: $rsha"
+          echo "pull request head: $head"
+          if [ "$rsha" != "$head" ]; then
+            echo "::warning::the gate report is for a different commit. CI results decide; re-run gatekeeper before archiving."
+          fi
+          if [ "$green" != "true" ]; then
+            echo "::error::$report is not green."
+            jq . "$report"
+            exit 1
+          fi
+
+      - name: Nothing committed that must never be committed
+        run: |
+          set -euo pipefail
+          rc=0
+          if grep -qE '^reference/(?!PINS\.md|clone\.sh|README\.md)' /tmp/changed.txt 2>/dev/null \
+             || grep -E '^reference/' /tmp/changed.txt | grep -vE '^reference/(PINS\.md|clone\.sh|README\.md)$' ; then
+            echo "::error::upstream reference sources must never be committed."
+            rc=1
+          fi
+          if grep -qiE '(sct2_|loinc\.csv|icd10cm_|umls)' /tmp/changed.txt; then
+            echo "::error::a file resembling a licensed terminology distribution is being committed."
+            rc=1
+          fi
+          exit $rc

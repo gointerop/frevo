@@ -1,0 +1,94 @@
+# cargo-deny configuration.
+#
+# Frevo is Apache-2.0 and is distributed as a single static binary, so every
+# dependency's licence has to be compatible with Apache-2.0 redistribution in
+# binary form, and every dependency's notice obligations have to be
+# dischargeable from NOTICE.
+
+[graph]
+targets = [
+    "x86_64-unknown-linux-gnu",
+    "x86_64-unknown-linux-musl",
+    "aarch64-unknown-linux-musl",
+    "x86_64-pc-windows-msvc",
+    "aarch64-apple-darwin",
+]
+all-features = false
+
+[advisories]
+version = 2
+yanked = "deny"
+unmaintained = "workspace"
+# No blanket ignores. An advisory that genuinely cannot be fixed gets an entry
+# here with the ID, the reason and a date to revisit, reviewed like any other
+# exception.
+ignore = []
+
+[licenses]
+version = 2
+# Permissive licences compatible with Apache-2.0 binary redistribution.
+allow = [
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "MIT",
+    "MIT-0",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "Unicode-3.0",
+    "CC0-1.0",
+    "Unlicense",
+    "BSL-1.0",
+]
+# A dependency whose licence is not on the list fails the gate. Copyleft
+# licences (GPL, AGPL, LGPL) are refused outright: they are incompatible with
+# shipping this as a static binary under Apache-2.0. MPL-2.0 and similar
+# file-level copyleft licences are not pre-approved either; if one becomes
+# necessary, it needs an ADR explaining how the obligation is met.
+confidence-threshold = 0.93
+exceptions = []
+
+[[licenses.clarify]]
+# ring vendors BoringSSL-derived code whose licence expression cargo-deny
+# cannot infer. Kept as a clarification rather than an exception so the
+# reasoning is recorded if ring ever enters the graph.
+crate = "ring"
+expression = "MIT AND ISC AND OpenSSL"
+license-files = [{ path = "LICENSE", hash = 0xbd0eed23 }]
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+highlight = "all-duplicates"
+
+# Runtime dependency policy, from the constitution: PostgreSQL is the only
+# runtime dependency. These are the things that would quietly violate that.
+deny = [
+    # Database drivers for anything other than PostgreSQL.
+    { crate = "mysql_async", reason = "PostgreSQL is the only supported database" },
+    { crate = "mysql_common", reason = "PostgreSQL is the only supported database" },
+    { crate = "rusqlite", reason = "PostgreSQL is the only supported database" },
+    { crate = "libsqlite3-sys", reason = "PostgreSQL is the only supported database" },
+    { crate = "mongodb", reason = "PostgreSQL is the only supported database" },
+    # External search engines: fulltext is served by embedded tantivy.
+    { crate = "elasticsearch", reason = "fulltext search is embedded via tantivy" },
+    # Message brokers: messaging is a PostgreSQL outbox plus LISTEN/NOTIFY.
+    { crate = "rdkafka", reason = "messaging is a PostgreSQL outbox, not a broker" },
+    { crate = "lapin", reason = "messaging is a PostgreSQL outbox, not a broker" },
+    { crate = "redis", reason = "no cache or broker service; PostgreSQL only" },
+    # OpenSSL: we link rustls so the static musl binary has no system TLS
+    # dependency.
+    { crate = "openssl-sys", reason = "use rustls; a static musl build must not link system OpenSSL" },
+]
+
+skip = []
+skip-tree = []
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+# No git dependencies. A git dependency is not a released artifact and cannot
+# be audited by version, so it would undermine the licence and advisory gates.
+allow-git = []

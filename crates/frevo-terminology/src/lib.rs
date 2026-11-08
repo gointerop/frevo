@@ -2,7 +2,8 @@
 //!
 //! Upstream reference: hapi-fhir/hapi-fhir-jpaserver-base/.../term
 //!
-//! Capability spec: `openspec/specs/terminology/spec.md`
+//! Capability register: `docs/capabilities/terminology.md`
+//! Requirements (once archived): `openspec/specs/terminology/spec.md`
 //!
 //! This crate is a Phase 0 placeholder: it carries no behaviour yet. Every
 //! requirement arrives through an OpenSpec change on a `change/<id>` branch.

@@ -1,0 +1,33 @@
+# Keep the build context small and the image reproducible. Anything not needed
+# to compile frevo-server is excluded, so an unrelated edit cannot invalidate
+# the dependency layer.
+
+.git
+.github
+.claude
+
+# Upstream reference sources: gigabytes, and never compiled into the product.
+reference
+
+# Oracle suites, harness data and benchmark output.
+oracles
+harness
+bench
+
+# Specs and documentation.
+openspec
+docs
+tasks
+gates
+*.md
+!README.md
+
+# Local build output: the image builds from source inside the container.
+target
+
+# Editors and tooling
+.vscode
+.idea
+node_modules
+.env
+.env.*

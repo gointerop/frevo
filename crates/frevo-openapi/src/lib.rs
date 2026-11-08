@@ -2,7 +2,8 @@
 //!
 //! Upstream reference: hapi-fhir/hapi-fhir-server-openapi
 //!
-//! Capability spec: `openspec/specs/openapi/spec.md`
+//! Capability register: `docs/capabilities/openapi.md`
+//! Requirements (once archived): `openspec/specs/openapi/spec.md`
 //!
 //! This crate is a Phase 0 placeholder: it carries no behaviour yet. Every
 //! requirement arrives through an OpenSpec change on a `change/<id>` branch.

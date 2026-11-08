@@ -2,7 +2,8 @@
 //!
 //! Upstream reference: hapi-fhir/hapi-fhir-base/.../narrative
 //!
-//! Capability spec: `openspec/specs/narrative/spec.md`
+//! Capability register: `docs/capabilities/narrative.md`
+//! Requirements (once archived): `openspec/specs/narrative/spec.md`
 //!
 //! This crate is a Phase 0 placeholder: it carries no behaviour yet. Every
 //! requirement arrives through an OpenSpec change on a `change/<id>` branch.

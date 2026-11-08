@@ -1,0 +1,95 @@
+{
+  "_comment": [
+    "Ready-to-use hook configuration for Frevo's enforcement machinery.",
+    "",
+    "This fragment is NOT active. Phase 0 bootstrap work runs before enforcement",
+    "exists, so the hooks are written and self-tested first and wired in only in",
+    "the final Phase 0 step. To activate, merge the 'hooks' object below into",
+    ".claude/settings.json:",
+    "",
+    "  bash harness/hook-tests/run.sh      # must pass first -- 74 cases",
+    "  bash .claude/hooks/enable.sh        # merges this into settings.json",
+    "",
+    "Once active, every rule in docs/adr/0002-openspec-enforcement.md is live.",
+    "Changing anything under .claude/ then requires a chore/governance-* branch."
+  ],
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/session-context.sh\"",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/protect-paths.sh\"",
+            "timeout": 20
+          },
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/require-active-change.sh\"",
+            "timeout": 90
+          },
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/test-integrity.sh\"",
+            "timeout": 30
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-bash.sh\"",
+            "timeout": 20
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/post-edit.sh\"",
+            "timeout": 300
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/stop-guard.sh\"",
+            "timeout": 60
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/subagent-guard.sh\"",
+            "timeout": 60
+          }
+        ]
+      }
+    ]
+  }
+}
