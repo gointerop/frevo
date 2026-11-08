@@ -84,6 +84,79 @@ compares case-insensitively. The self-tests exercise this on Windows paths
 specifically, because it is the single point where the whole mechanism can
 silently stop working.
 
+### 3a. It happened again, in a second dimension: linked worktrees
+
+`REPO_ROOT` was derived from the hook script's own location:
+
+```sh
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+```
+
+The hooks live in one place; a session works in a linked `git worktree`. So for
+every worktree session `REPO_ROOT` was the **primary** worktree:
+`current_branch()` reported `main`'s branch, `active_change()` came back empty,
+and every path rule compared the edited file against a tree nobody was editing.
+
+The symptom was the opposite of failing open. `test-integrity.sh` searched only
+`openspec/specs/` for scenario ids, so it blocked **every** test tagged
+`// covers: path.*` while those ids sat in the delta of the change being worked
+on. `oracle-builder` hit it writing the three oracle harnesses and recorded it
+in `tasks/blockers.md` rather than working around the rule.
+
+That was the loud half. Running the new self-tests against the pre-fix hooks
+shows the quiet half, which is worse: **`protect-paths.sh` did not fire at all
+in a worktree.** A write to `openspec/specs/store/spec.md` — a settled
+capability spec, which rule 8 says changes only in an archive commit — was
+allowed, exit 0, no message. Nine of the new cases fail against the pre-fix
+hooks; the one that matters most is the one where the guard said nothing.
+
+A blocking failure gets reported by whoever it blocks. A guard that silently
+stops applying is found only if something looks for it, which is the argument
+for the environmental self-tests below.
+
+**Why the self-tests could not see it.** They copy `.claude` into a throwaway
+repository and run the hooks from its root, so there the script location *is*
+the repository root and the two derivations coincide. The fixture could not
+express the layout that breaks. That is the same shape of failure as the Windows
+path bug above — both times the hooks passed their own tests while
+enforcing against the wrong thing, and both times the fixture was the reason.
+
+The root now comes from `git rev-parse --show-toplevel` in the working
+directory, falling back to the script location only when the working directory
+is not inside a work tree at all. The self-tests gained cases that add a real
+linked worktree with `git worktree add` and run the **primary** worktree's hook
+with the working directory inside the linked one — the actual layout
+— asserting both directions: a `covers:` id from the worktree's
+delta resolves, and an id that exists nowhere is still blocked.
+
+**Known limitation, asserted rather than fixed.** A path inside a *different*
+worktree of the same repository, while the working directory is in another,
+matches no rule. Claude Code hands the hook a path inside the session's own
+tree, so this does not arise in practice; a self-test asserts the current
+behaviour so that if it ever changes, it changes deliberately. Closing it
+properly means resolving each target path to the worktree containing it, which
+is more machinery than a hypothetical warrants.
+
+### 3b. The hooks no longer fail open on an unreachable root
+
+Every hook began with `cd "$REPO_ROOT" 2>/dev/null || exit 0`, and exit 0
+**allows** the action — the same fail-open that the jq resolution
+below was written to avoid. The four `PreToolUse` guards and the `Stop` guard
+now call `require_repo_root`, which exits 2 with an explanation. The
+informational hooks (`SessionStart`, `PostToolUse`, `SubagentStop`) keep the
+lenient behaviour deliberately: blocking a session start or a post-edit report
+buys nothing, and H8 is documented to fail open.
+
+### 3c. Generated code is `src/`, not the whole crate
+
+`protect-paths.sh` matched `crates/frevo-model/*` and refused
+`crates/frevo-model/tests/**` as generated code. Only `src/` is generated —
+and not all of it, since `design.md` puts the hand-written codec under
+`crates/frevo-model/src/codec/`. The rule is now
+`crates/frevo-model/src/*|crates/frevo-convert/src/*`, and the `@generated`
+marker check still catches the real outputs file by file, which is the check
+that does not depend on guessing where a generator writes.
+
 ### 4. jq resolution falls back, but never fails open
 
 jq is the documented dependency, but on the bootstrap machine winget installed
@@ -96,8 +169,15 @@ than allowing an unchecked action.
 
 `harness/hook-tests/run.sh` runs each hook against crafted stdin inside a
 throwaway git repository, with at least one positive and one negative case per
-rule — 74 cases. It runs in CI as part of `openspec-guard`. A hook change that
+rule — 87 cases. It runs in CI as part of `openspec-guard`. A hook change that
 stops blocking fails the build.
+
+The count went from 74 to 87 when the linked-worktree cases were added, and
+that increase is the lesson of section 3a: a self-test suite is only as good
+as the layouts its fixture can express. These hooks have now twice been green
+while enforcing against the wrong repository. Where a rule depends on
+something environmental — a path form, a working directory, a worktree —
+the test has to reproduce the environment rather than approximate it.
 
 ### 6. The CI backstop, `openspec-guard`
 
@@ -169,5 +249,8 @@ Bad, and accepted:
 
 - Claude Code exposes the subagent identity in hook payloads reliably, at which
   point H8 can enforce rather than infer.
+- A target path in a different worktree of the same repository becomes something
+  that happens in practice, at which point `rel_path` should resolve each path
+  to its own worktree instead of to the working directory's (section 3a).
 - The OpenSpec CLI changes `validate` or `archive` flags — the hooks call them
   directly and would need updating in the same commit.
