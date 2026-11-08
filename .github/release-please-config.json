@@ -15,7 +15,9 @@
           "path": "Cargo.toml",
           "jsonpath": "$.workspace.package.version"
         }
-      ]
+      ],
+      "initial-version": "0.1.0",
+      "prerelease": false
     }
   }
 }
