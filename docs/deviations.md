@@ -53,11 +53,11 @@ changing anything. None is a deviation *from HAPI*; each is a place where
 following HAPI means not following the specification, which is what rule 1 of
 the constitution says to record here.
 
-`DEV-0001` through `DEV-0009` were reviewed and accepted by the owner on
-2026-11-08: **match HAPI, no configuration flag.** `DEV-0010` was raised after
-that review, by the second revision of this change, and is still `pending`: it
-follows the same standing decision, but a new deviation is a phase-boundary
-checkpoint and needs its own sign-off.
+All ten were reviewed and accepted by the owner on 2026-11-08: **match HAPI,
+no configuration flag.** `DEV-0001` through `DEV-0009` were signed off together;
+`DEV-0010` was raised afterwards by the second revision of this change and
+signed off separately, because a new deviation is a phase-boundary checkpoint
+and does not inherit an earlier decision.
 
 Six of the ten leave something owed even where the behaviour is settled — a
 flag we may need, a bug report we owe upstream, or behaviour we have not
@@ -321,11 +321,9 @@ file, so its prose is not redistributable here (see `oracles/PINS.md`).
   would report a host constant shadowing a known element.
 - **Normalizer impact:** none — HAPI and Frevo are expected to agree, and the
   differential harness grades the agreement rather than excusing it.
-- **Reviewed:** pending — raised by `add-fhirpath-and-codegen-r4` after the
-  2026-11-08 review of DEV-0001..0009, so it has not been seen by the owner.
-  The chosen behaviour follows the standing decision of that review (match
-  HAPI, no configuration flag), but the entry itself is a new deviation and
-  needs its own sign-off.
+- **Reviewed:** 2026-11-08, owner — accepted. Match HAPI, no configuration
+  flag; the residual hazard is tracked as `DEBT-0010`. Raised after the review
+  of DEV-0001..0009 and signed off separately, as a new deviation requires.
 
 ## Considered and not recorded as deviations
 
