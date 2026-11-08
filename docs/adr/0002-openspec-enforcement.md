@@ -109,6 +109,32 @@ self-tests, scenario coverage in both directions (posted to the pull request),
 the review verdict, and the gate report. **CI results always win over a
 committed gate report**, which is only an agent's claim.
 
+### 6a. Branch protection, as actually configured
+
+Enabled on `main` at the end of Phase 0:
+
+| Setting | Value |
+|---|---|
+| Required status checks | `Guard`, `Format and lint`, `Tests`, `Build (release profile)`, `Repository consistency`, `Hook self-tests`, `Licences and advisories`, `Container image builds` |
+| Branch must be up to date before merging | yes |
+| Required linear history | yes |
+| Force pushes | blocked |
+| Branch deletion | blocked |
+| Conversation resolution required | yes |
+| `enforce_admins` | **no** |
+
+`enforce_admins` is deliberately off. This project's premise is that an agent
+opens a pull request, waits for CI, and merges it when green; requiring a
+second human reviewer would stall every change until the owner is available,
+which is the opposite of the intent. The protection that matters —
+**merging is impossible until all eight checks pass** — applies regardless.
+Turning `enforce_admins` on is the right move the moment a second maintainer
+exists.
+
+Note that this makes the required checks the real gate, which is why
+`openspec-guard` is in the list: it is the only check that enforces the
+methodology rather than the code.
+
 ### 7. Bootstrap order
 
 Phase 0 predates enforcement, so Phase 0 runs on `chore/bootstrap-*` branches.
