@@ -140,7 +140,7 @@ jobs:
       - uses: actions/checkout@v5
 
       - name: Trivy scan (fails on CRITICAL)
-        uses: aquasecurity/trivy-action@0.33.1
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.image.outputs.digest }}
           format: sarif
@@ -157,7 +157,7 @@ jobs:
       - name: Fail on CRITICAL findings
         # Reported separately from the SARIF upload so the findings are always
         # recorded even when the gate fails.
-        uses: aquasecurity/trivy-action@0.33.1
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.image.outputs.digest }}
           format: table
@@ -178,5 +178,12 @@ jobs:
     steps:
       - uses: googleapis/release-please-action@v4
         with:
-          release-type: rust
+          # NOT release-type: rust. That expects a package manifest, and this
+          # repository's root Cargo.toml is a pure [workspace] with no
+          # [package] section, so release-please fails with "is not a package
+          # manifest (might be a cargo workspace)". The config file below uses
+          # the simple strategy and updates the single shared version in
+          # [workspace.package] directly, which is what every crate inherits.
+          config-file: .github/release-please-config.json
+          manifest-file: .github/.release-please-manifest.json
           token: ${{ secrets.GITHUB_TOKEN }}
