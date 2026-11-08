@@ -117,15 +117,38 @@ Per `rules.proposal`, by name and case selector.
 
 | Scenario group | Oracle | Case selector |
 |---|---|---|
-| `path.*` (everything except `path.perf.*`) | `oracles/fhirpath` — `tests-fhir-r4.xml`, pinned `c95adbee099c875de97d25ed7616aae7d66dd85b` | all 1,193 `<test>` elements across 104 `<group>`s, addressed as `<group name>/<test name>`; the gate is **pass rate at or above HAPI 8.12.0's measured rate on the same cases** |
+| `path.*` (everything except `path.perf.*`) | `oracles/fhirpath` — `tests-fhir-r4.xml`, pinned `c95adbee099c875de97d25ed7616aae7d66dd85b` | all 1,191 `<test>` elements across 103 `<group>`s, addressed as `<group name>/<test name>`; the gate is **pass rate at or above HAPI 8.12.0's measured rate on the same cases** |
 | `path.check.*` | same suite | the 29 `<expression invalid="semantic">` cases plus the `isSemanticChecks` group |
 | `path.errors.*` | same suite | the 27 `<expression invalid="execution">` and 7 `<expression invalid="syntax">` cases |
 | `path.quantity.*`, `path.boundary.*` | same suite | groups `testQuantity`, `testQuantityUnitComparison`, `Comparable`, `LowBoundary`, `HighBoundary`, `Precision` |
-| `path.*` cross-check | `helios-fhirpath` 0.2.7 as a **differential reference**, per ADR 0004 decision 3 | same 1,193 cases; a disagreement is a lead, never the standard |
+| `path.*` cross-check | `helios-fhirpath` 0.2.7 as a **differential reference**, per ADR 0004 decision 3 | same 1,191 cases; a disagreement is a lead, never the standard |
 | `model.*`, `codegen.roundtrip.*` | `r4-example-roundtrip` — parse, canonically re-serialize, compare byte-for-byte | every example in `hl7.fhir.r4.examples#4.0.1`; the 103 examples already fetched at `oracles/fhir-test-cases/fetched/r4/examples/` are the interim selector until the full package is pinned (see Prerequisites) |
 | `model.primext.*` | `r4-example-roundtrip` plus the FHIRPath suite's own inputs | `patient-name-extensions.json`, `patient-container-example.json`, `parameters-example-decimals.xml` |
 | `codegen.*` (other than round-trip) | **self-checking**: regeneration determinism and completeness against the input bundle | differential-free; the generator's own output is the oracle |
 | `*.perf.*` | `bench/micro/` (new, in-process) | named in [`design.md`](design.md); the HTTP workloads in `bench/workloads.yaml` cannot run until `frevo-server` exists |
+
+### The suite's size, and how it is counted
+
+**1,191 `<test>` elements in 103 `<group>`s.** That is what an XML parse of the
+pinned file returns, and the harness asserts it that way (`path.oracle.001`).
+
+A text match over the same file gives 104 and 1,193, and the first draft of this
+proposal used those figures. They are wrong: the `testDollarResource` group at
+`tests-fhir-r4.xml:1576-1582` is wrapped in an XML comment, and its bodies are
+leftover Java rather than well-formed test elements, so grepping for `<test `
+matches inside the comment. `oracles/run.sh` counted the same way and has been
+corrected on `main`.
+
+Two consequences carried into the delta. `documentFunctions` is **115** cases,
+not 114. And two scenarios that named `testDollarResource` as their grading
+selector had to be re-pointed, because that group is not in the suite:
+`path.env.006` now grades `%resource` against the six live `isSemanticChecks`
+cases that reference `%resource.status`, and `path.navigation.021` grades
+`descendants()` against `testDistinct/testDistinct2`, `3`, `5` and `6`,
+`testRepeat/testRepeat3` and `testCombine()/testCombine1`.
+
+The `invalid` counts are unaffected, because all of them lie outside the
+comment: 7 `syntax`, 29 `semantic`, 27 `execution`.
 
 ### Where the oracle's input files actually live
 
@@ -144,9 +167,9 @@ must use the root copies, because that is what upstream loads.
 
 | `inputfile` | Cases |
 |---|---:|
-| `patient-example.xml` | 868 |
+| `patient-example.xml` | 867 |
 | `bundle-document-ips.json` | 114 |
-| `observation-example.xml` | 72 |
+| `observation-example.xml` | 70 |
 | `questionnaire-example.xml` | 9 |
 | `parameters-example-decimals.xml` | 9 |
 | `parameters-example-quantities.xml` | 8 |
@@ -159,7 +182,7 @@ must use the root copies, because that is what upstream loads.
 | `patient-container-example.json` | 1 |
 | `explanationofbenefit-example.json` | 1 |
 | `codesystem-example.xml` | 1 |
-| *(no `inputfile`)* | 91 |
+| *(no `inputfile`)* | 90 |
 
 The suite is XML, and six of the 15 inputs are JSON. The harness therefore
 needs a FHIR **XML** reader for its inputs even though the product's codec is
@@ -197,9 +220,9 @@ Each item names the later change that covers it, per `rules.proposal`.
 | FHIRPath Patch, JSON Patch, `$diff` | the three `frevo-path` rows in `docs/inventory.md` marked phase 2 | `add-store-patch`, `add-store-diff` |
 | `memberOf()` resolving against a real terminology server | the engine calls the host service; the host service needs `frevo-terminology`. In scope here: the call is made, and an absent host service produces an empty collection exactly as HAPI's does | `add-terminology-validate-code` |
 | `conformsTo()` resolving against a real profile | same shape. In scope here: the host-service call and HAPI's error when the profile is unknown | `add-validator-profiles` |
-| `resolve()` resolving against the database | the engine calls the host service; in scope here is resolution of **local** references — `#id` into `contained`, and `Bundle` entry `fullUrl` — which is what the oracle exercises | `add-store-crud` |
+| `resolve()` resolving anything that is not a `#id` reference | the R4 engine's `funcResolve` resolves a `#`-prefixed reference itself, against the **root** resource's `contained` list, and delegates every other form — including a `Bundle` entry `fullUrl` — to the host service. It has no Bundle-entry lookup. In scope here is the `#id` path and the delegation; the host service that answers the rest is `frevo-store`'s. **No live case in the pinned suite calls `resolve()`**, so every `resolve()` scenario is differential-only | `add-store-crud` |
 | `htmlChecks()`, `htmlChecks2()`, `hasTemplateIdOf()` | engine-local extensions used only by the validator and by CDA; no oracle case in `tests-fhir-r4.xml` exercises them | `add-validator-narrative` |
-| The `documentFunctions` group — `section()`, `entry()`, `entryIn()`, `resources()`, `resourcesIn()`, `sameSubject()`, `hasCoding()` | **the R4 engine does not implement them.** `ExpressionNode.Function.fromCode` in the R4 source has no case for any of the seven; the R5 source has only `section` and `entry`. The group is `mode="custom"` and its own description says engines "run them only if they choose to implement the functions". All 114 cases are therefore failures for HAPI 8.12.0 too, so implementing them would *exceed* the parity gate rather than meet it | `add-ips-document-functions` |
+| The `documentFunctions` group — `section()`, `entry()`, `entryIn()`, `resources()`, `resourcesIn()`, `sameSubject()`, `hasCoding()` | **the R4 engine does not implement them.** `ExpressionNode.Function.fromCode` in the R4 source has no case for any of the seven; the R5 source has only `section` and `entry`. The group is `mode="custom"` and its own description says engines "run them only if they choose to implement the functions". All 115 cases are therefore failures for HAPI 8.12.0 too, so implementing them would *exceed* the parity gate rather than meet it | `add-ips-document-functions` |
 | Narrative generation, validation invariants, CQL | consumers of this engine | `add-narrative`, `add-validator-core`, `add-cql-engine` |
 | PostgreSQL storage of the byte-preserved resource | this change produces the codec; the column type, the migration and the compression choice belong with the schema | `add-store-schema` |
 
@@ -219,15 +242,51 @@ names the oracles `fhirpath` and `r4-example-roundtrip`.
    change's `path.*` work disappears. Sequencing the measurement first is the
    only way that saving is still available.
 2. **HAPI's own pass rate is unknown and is the gate.** The `documentFunctions`
-   group alone is 114 of 1,193 cases (9.6%) that the R4 engine cannot pass, and
+   group alone is 115 of 1,191 cases (9.7%) that the R4 engine cannot pass, and
    the R4 harness ignores the `mode`, `context`, `contextType` and `version`
    attributes that the R5 harness honours. The measured HAPI number, not an
    assumption, is what task 2 records.
 3. **Generated-code volume.** 146 concrete resources with a full codec each
    could produce a crate that is slow to compile and unpleasant to review.
    `design.md` sets a compile-time budget for exactly this reason.
-4. **No deviations are asserted.** This change records no `DEV-nnnn` entry.
-   Where HAPI's engine differs from the FHIRPath specification — the non-strict
-   `as` handling in `FhirPathR4`, for instance — the scenarios specify **HAPI's**
-   behaviour, which is what the constitution requires, so there is nothing to
-   except.
+4. **Nine HAPI-versus-specification divergences are recorded, and none is a
+   deviation from HAPI.** `DEV-0001` to `DEV-0009` in
+   [`docs/deviations.md`](../../../docs/deviations.md) record places where the
+   pinned R4 engine does not do what the FHIRPath specification describes:
+   `single()` on an empty collection throws, a multi-item ordered comparison
+   returns empty, `<` rejects `unsignedInt` and `positiveInt` while its three
+   mirrors accept them, comparison and the transcendental math functions go
+   through binary doubles, incommensurable quantities compare by magnitude, a
+   string function over a non-string focus returns empty, `extension(url)` also
+   returns modifier extensions, `now()` is not stable within an evaluation, and
+   `toDate()` does not exist. Every one is resolved as HAPI's behaviour, so the
+   port stays faithful; the entries exist because rule 1 of the constitution
+   requires a HAPI-versus-specification disagreement to be recorded, and because
+   each of these is something an implementer reading the specification would
+   otherwise "fix" into a parity break. They are a phase-boundary checkpoint and
+   need owner review.
+
+   One difference is deliberate and is marked configurable rather than HAPI:
+   `today()` and `now()` read the evaluation time zone from engine
+   configuration instead of from the process default. HAPI reads the JVM
+   default, which is why its own test harness has to call `TimeZone.setDefault`
+   before every case. Reading it from configuration produces the same results
+   for the same zone and removes a source of flake from every gate. It is
+   recorded under `DEV-0008`.
+
+5. **Request parsing is lenient, which is a match with HAPI and not a
+   deviation.** The starter does not parse request bodies with
+   `org.hl7.fhir.r4.formats.JsonParser`; it uses `ca.uhn.fhir.parser.JsonParser`
+   with the handler `FhirContext` installs by default, which is
+   `LenientErrorHandler`. That handler logs and continues for an unknown
+   element, an unknown attribute, an incorrect JSON type, an unexpected
+   repeating element and a missing required element, and its own documentation
+   states that only `invalidValue` and
+   `extensionContainsValueAndNestedExtensions` abort a parse. So HAPI 8.12.0
+   answers `2xx` to a `Patient` carrying `"nmae": []`, to `"active": "true"`,
+   to a single object where a `0..*` array belongs, to an array where a `0..1`
+   value belongs, and to an `Observation` with no `status`. `frevo-model`
+   therefore decodes leniently by default and strictly on request, which is
+   exactly the choice HAPI itself offers through `StrictErrorHandler` and
+   `FhirContext.setParserErrorHandler`. The validator will want the strict
+   mode; the HTTP surface wants the lenient one.

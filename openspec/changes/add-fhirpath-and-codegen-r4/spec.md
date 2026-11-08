@@ -7,10 +7,10 @@ capability, because that is the layout `openspec validate` parses and
 
 | Capability | Delta file | Scenarios |
 |---|---|---:|
-| `codegen` | [`specs/codegen/spec.md`](specs/codegen/spec.md) | 48 |
-| `model` | [`specs/model/spec.md`](specs/model/spec.md) | 77 |
-| `path` | [`specs/path/spec.md`](specs/path/spec.md) | 329 |
-| **Total** | | **454** |
+| `codegen` | [`specs/codegen/spec.md`](specs/codegen/spec.md) | 49 |
+| `model` | [`specs/model/spec.md`](specs/model/spec.md) | 80 |
+| `path` | [`specs/path/spec.md`](specs/path/spec.md) | 357 |
+| **Total** | | **486** |
 
 This file carries no normative text of its own. It carries the ID registry,
 which is the thing a later change must not collide with.
@@ -26,65 +26,97 @@ No `codegen.*`, `model.*` or `path.*` ID was allocated before this change:
 `server.metadata.002`, and `openspec/changes/archive/` is empty. Every area
 below therefore starts at `001` and is contiguous.
 
-| Area | IDs allocated | Range | Contiguous |
-|---|---:|---|---|
-| `codegen.inputs.*` | 6 | `001`-`006` | yes |
-| `codegen.types.*` | 9 | `001`-`009` | yes |
-| `codegen.choice.*` | 4 | `001`-`004` | yes |
-| `codegen.cardinality.*` | 4 | `001`-`004` | yes |
-| `codegen.binding.*` | 4 | `001`-`004` | yes |
-| `codegen.naming.*` | 5 | `001`-`005` | yes |
-| `codegen.searchparam.*` | 6 | `001`-`006` | yes |
-| `codegen.output.*` | 6 | `001`-`006` | yes |
-| `codegen.roundtrip.*` | 4 | `001`-`004` | yes |
-| `model.bytes.*` | 6 | `001`-`006` | yes |
-| `model.lazy.*` | 6 | `001`-`006` | yes |
-| `model.json.*` | 20 | `001`-`020` | yes |
-| `model.primext.*` | 9 | `001`-`009` | yes |
-| `model.canonical.*` | 6 | `001`-`006` | yes |
-| `model.mutate.*` | 7 | `001`-`007` | yes |
-| `model.nav.*` | 12 | `001`-`012` | yes |
-| `model.errors.*` | 5 | `001`-`005` | yes |
-| `model.perf.*` | 6 | `001`-`006` | yes |
-| `path.lexer.*` | 14 | `001`-`014` | yes |
-| `path.literal.*` | 15 | `001`-`015` | yes |
-| `path.parse.*` | 8 | `001`-`008` | yes |
-| `path.navigation.*` | 24 | `001`-`024` | yes |
-| `path.collection.*` | 15 | `001`-`015` | yes |
-| `path.filter.*` | 9 | `001`-`009` | yes |
-| `path.subset.*` | 12 | `001`-`012` | yes |
-| `path.combine.*` | 6 | `001`-`006` | yes |
-| `path.equality.*` | 12 | `001`-`012` | yes |
-| `path.compare.*` | 10 | `001`-`010` | yes |
-| `path.logic.*` | 10 | `001`-`010` | yes |
-| `path.math.*` | 14 | `001`-`014` | yes |
-| `path.mathfn.*` | 11 | `001`-`011` | yes |
-| `path.string.*` | 22 | `001`-`022` | yes |
-| `path.convert.*` | 11 | `001`-`011` | yes |
-| `path.datetime.*` | 6 | `001`-`006` | yes |
-| `path.quantity.*` | 17 | `001`-`017` | yes |
-| `path.boundary.*` | 10 | `001`-`010` | yes |
-| `path.types.*` | 13 | `001`-`013` | yes |
-| `path.env.*` | 14 | `001`-`014` | yes |
-| `path.utility.*` | 21 | `001`-`021` | yes |
-| `path.check.*` | 14 | `001`-`014` | yes |
-| `path.strictness.*` | 7 | `001`-`007` | yes |
-| `path.errors.*` | 5 | `001`-`005` | yes |
-| `path.api.*` | 8 | `001`-`008` | yes |
-| `path.oracle.*` | 15 | `001`-`015` | yes |
-| `path.perf.*` | 6 | `001`-`006` | yes |
+Revision after review: 32 IDs were **added** at the end of their areas to cover
+behaviour the first draft missed, and 41 existing scenarios were **rewritten**
+in place. None was removed. No ID was renumbered, reused or repurposed. The rewritten ones keep
+their numbers because tests reference them by ID even when the behaviour they
+describe is corrected; `path.subset.003`, `path.compare.007`,
+`path.quantity.015`, `path.string.020`, `path.datetime.003`,
+`path.utility.018`, `path.strictness.006`, `model.json.004`, `model.json.013`,
+`model.json.014`, `model.json.015`, `model.json.016`, `model.json.018` and
+`codegen.cardinality.002` all now state the opposite of what they first said,
+because the pinned source says the opposite.
+
+| Area | IDs allocated | Range |
+|---|---:|---|
+| `codegen.inputs.*` | 6 | `001`-`006` |
+| `codegen.types.*` | 9 | `001`-`009` |
+| `codegen.choice.*` | 4 | `001`-`004` |
+| `codegen.cardinality.*` | 5 | `001`-`005` |
+| `codegen.binding.*` | 4 | `001`-`004` |
+| `codegen.naming.*` | 5 | `001`-`005` |
+| `codegen.searchparam.*` | 6 | `001`-`006` |
+| `codegen.output.*` | 6 | `001`-`006` |
+| `codegen.roundtrip.*` | 4 | `001`-`004` |
+| `model.bytes.*` | 6 | `001`-`006` |
+| `model.lazy.*` | 6 | `001`-`006` |
+| `model.json.*` | 23 | `001`-`023` |
+| `model.primext.*` | 9 | `001`-`009` |
+| `model.canonical.*` | 6 | `001`-`006` |
+| `model.mutate.*` | 7 | `001`-`007` |
+| `model.nav.*` | 12 | `001`-`012` |
+| `model.errors.*` | 5 | `001`-`005` |
+| `model.perf.*` | 6 | `001`-`006` |
+| `path.lexer.*` | 16 | `001`-`016` |
+| `path.literal.*` | 15 | `001`-`015` |
+| `path.parse.*` | 8 | `001`-`008` |
+| `path.navigation.*` | 24 | `001`-`024` |
+| `path.collection.*` | 15 | `001`-`015` |
+| `path.filter.*` | 9 | `001`-`009` |
+| `path.subset.*` | 13 | `001`-`013` |
+| `path.combine.*` | 6 | `001`-`006` |
+| `path.equality.*` | 12 | `001`-`012` |
+| `path.compare.*` | 12 | `001`-`012` |
+| `path.logic.*` | 10 | `001`-`010` |
+| `path.math.*` | 14 | `001`-`014` |
+| `path.mathfn.*` | 11 | `001`-`011` |
+| `path.string.*` | 24 | `001`-`024` |
+| `path.convert.*` | 14 | `001`-`014` |
+| `path.datetime.*` | 7 | `001`-`007` |
+| `path.quantity.*` | 18 | `001`-`018` |
+| `path.boundary.*` | 10 | `001`-`010` |
+| `path.types.*` | 13 | `001`-`013` |
+| `path.env.*` | 15 | `001`-`015` |
+| `path.utility.*` | 27 | `001`-`027` |
+| `path.check.*` | 19 | `001`-`019` |
+| `path.strictness.*` | 10 | `001`-`010` |
+| `path.errors.*` | 5 | `001`-`005` |
+| `path.api.*` | 8 | `001`-`008` |
+| `path.oracle.*` | 16 | `001`-`016` |
+| `path.perf.*` | 6 | `001`-`006` |
 
 ## Oracles by scenario group
 
 | Scenario group | Oracle | Case selector |
 |---|---|---|
-| `path.*` except `path.perf.*` | `oracles/fhirpath` — `tests-fhir-r4.xml`, pinned `c95adbee099c875de97d25ed7616aae7d66dd85b` | 1,193 `<test>` elements in 104 `<group>`s, addressed `<group name>/<test name>`; the gate is pass rate at or above HAPI 8.12.0's measured rate on the same cases |
+| `path.*` except `path.perf.*` | `oracles/fhirpath` — `tests-fhir-r4.xml`, pinned `c95adbee099c875de97d25ed7616aae7d66dd85b` | 1,191 `<test>` elements in 103 `<group>`s, addressed `<group name>/<test name>`; the gate is pass rate at or above HAPI 8.12.0's measured rate on the same cases |
 | `path.check.*` | same suite | the 29 `invalid="semantic"` cases plus the `isSemanticChecks` group |
 | `path.errors.*` | same suite | the 27 `invalid="execution"` cases |
 | `path.lexer.*`, `path.parse.*` | same suite | the 7 `invalid="syntax"` cases, plus the `comments` group |
 | `model.*`, `codegen.roundtrip.*` | `r4-example-roundtrip` | every example in `hl7.fhir.r4.examples#4.0.1`, canonicalised both sides; interim selector is the 103 examples in `oracles/fhir-test-cases/fetched/r4/examples/` |
 | `codegen.*` other than `roundtrip` | the generator's own output | regeneration determinism and input-inventory assertions; no external suite |
 | `*.perf.*` | `bench/micro/` | the named workloads in [`design.md`](design.md) |
+
+**The pinned suite is 1,191 cases in 103 groups, counted by XML parse.** A text
+match gives 104 and 1,193 because the `testDollarResource` group at
+`tests-fhir-r4.xml:1576-1582` sits inside an XML comment whose bodies still
+contain `<test ...>` text — and are leftover Java, not well-formed test
+elements. `documentFunctions` is 115 cases, not 114. The `invalid` counts are
+unaffected: 7 syntax, 29 semantic, 27 execution.
+
+**Sixteen scenarios have no live case to grade them and say so in their own
+text**: `path.subset.003`, `path.subset.013`, `path.compare.007`,
+`path.compare.011`, `path.convert.012`, `path.datetime.003`,
+`path.quantity.015`, `path.quantity.018`, `path.env.015`, `path.utility.017`,
+`path.utility.022`, `path.utility.023`, `path.utility.024`, `path.utility.027`,
+`path.strictness.005` and `path.strictness.006`. The pinned suite exercises
+none of `resolve()`, `memberOf`, `defineVariable`, `%rootResource`, `%context`,
+`modifierExtension` or `toDate`, and no case sets `allowPolymorphicNames`,
+`allowDoubleQuotes`, `doImplicitStringConversion` or `emitSQLonFHIRWarning`, so
+those scenarios are graded by the differential harness against live HAPI
+8.12.0. A scenario that names no oracle at all would be ungradeable;
+"differential-only" is an oracle, and naming it is what stops a behaviour from
+quietly going unchecked.
 
 Input files the FHIRPath suite references all live in
 `oracles/fhir-test-cases/fetched/r4/` — the directory
@@ -132,9 +164,10 @@ Every allocated ID, grouped as it is grouped in the delta files.
 **Requirement: Cardinality**
 
 - `codegen.cardinality.001` — `0..1` is optional and single
-- `codegen.cardinality.002` — `1..1` is required and single
+- `codegen.cardinality.002` — `1..1` is required and single, and its absence is a diagnostic rather than a rejection
 - `codegen.cardinality.003` — `0..*` is an ordered list
-- `codegen.cardinality.004` — `1..*` is a non-empty ordered list
+- `codegen.cardinality.005` — a required element present but empty is treated as absent
+- `codegen.cardinality.004` — `1..*` is an ordered list whose minimum is recorded
 
 **Requirement: Value-set bindings**
 
@@ -201,7 +234,7 @@ Every allocated ID, grouped as it is grouped in the delta files.
 - `model.json.001` — the resource type comes from `resourceType`
 - `model.json.002` — a missing `resourceType` is an error
 - `model.json.003` — an unknown `resourceType` is an error naming the value
-- `model.json.004` — an unknown property is reported with its path
+- `model.json.004` — an unknown property is accepted in lenient mode and reported as a diagnostic
 - `model.json.005` — a choice element decodes from its typed property name
 - `model.json.006` — contained resources decode as resources
 - `model.json.007` — a Bundle's entry resources decode as their own types
@@ -210,13 +243,16 @@ Every allocated ID, grouped as it is grouped in the delta files.
 - `model.json.010` — a decimal is never converted through a binary float
 - `model.json.011` — `integer` bounds are enforced
 - `model.json.012` — `positiveInt` and `unsignedInt` bounds are enforced
-- `model.json.013` — a JSON type mismatch is reported with the path and both types
-- `model.json.014` — a repeating element given a scalar is reported
-- `model.json.015` — a single element given an array is reported
-- `model.json.016` — a duplicate JSON key is an error, not a last-wins
+- `model.json.013` — a JSON type mismatch is accepted in lenient mode and reported as a diagnostic
+- `model.json.014` — a repeating element given a single object is accepted in lenient mode
+- `model.json.015` — a single element given an array is accepted in lenient mode, keeping the first value
+- `model.json.016` — a duplicate JSON key takes the last occurrence in lenient mode
 - `model.json.017` — `base64Binary` is carried as its encoded text
-- `model.json.018` — `null` in a non-primitive array is an error
+- `model.json.018` — `null` in a non-primitive array yields a value-less element in lenient mode
 - `model.json.019` — decoding is encoding-strict
+- `model.json.021` — the parse mode is selectable and lenient is the default
+- `model.json.022` — an extension carrying both a value and nested extensions is fatal in both modes
+- `model.json.023` — an invalid primitive value is fatal in both modes
 - `model.json.020` — element `id` and `extension` decode on any element
 
 **Requirement: Primitive extensions — the `_field` form**
@@ -269,7 +305,7 @@ Every allocated ID, grouped as it is grouped in the delta files.
 
 - `model.errors.001` — every decode error carries an element path
 - `model.errors.002` — every decode error carries a byte offset
-- `model.errors.003` — decoding reports the first error and does not panic
+- `model.errors.003` — a strict decode reports the first error; a lenient decode reports every diagnostic
 - `model.errors.004` — truncated input is an error, not a panic
 - `model.errors.005` — adversarially nested input is bounded
 
@@ -297,6 +333,8 @@ Every allocated ID, grouped as it is grouped in the delta files.
 - `path.lexer.009` — an unterminated block comment is a syntax error
 - `path.lexer.010` — a backtick-delimited identifier is accepted
 - `path.lexer.011` — string escape sequences are decoded
+- `path.lexer.015` — a double-quoted string is a syntax error by default
+- `path.lexer.016` — double quotes are accepted when the engine is told to allow them
 - `path.lexer.012` — an unknown escape sequence is a syntax error
 - `path.lexer.013` — a unicode escape with fewer than four hex digits is a syntax error
 - `path.lexer.014` — an unterminated string literal is a syntax error
@@ -391,7 +429,7 @@ Every allocated ID, grouped as it is grouped in the delta files.
 
 - `path.subset.001` — `single` returns the only item
 - `path.subset.002` — `single` on a collection of more than one is an execution error
-- `path.subset.003` — `single` on an empty collection yields empty
+- `path.subset.003` — `single` on an empty collection is an execution error
 - `path.subset.004` — `first` and `last` select the ends
 - `path.subset.005` — `tail` drops the first item
 - `path.subset.006` — `skip` drops the first n items
@@ -400,6 +438,7 @@ Every allocated ID, grouped as it is grouped in the delta files.
 - `path.subset.009` — `take(0)` and `take(-1)` yield empty
 - `path.subset.010` — `intersect` keeps items present in both, without duplicates
 - `path.subset.011` — `exclude` removes items present in the argument
+- `path.subset.013` — an unordered focus is rejected for all six position-dependent functions
 - `path.subset.012` — `exclude` keeps duplicates that are not excluded
 
 **Requirement: Combining**
@@ -428,15 +467,17 @@ Every allocated ID, grouped as it is grouped in the delta files.
 
 **Requirement: Ordered comparison**
 
-- `path.compare.001` — the less-than operator compares integers, decimals, strings, dates and quantities
-- `path.compare.002` — the less-or-equal operator compares the same types
-- `path.compare.003` — the greater-than operator compares the same types
-- `path.compare.004` — the greater-or-equal operator compares the same types
+- `path.compare.001` — the less-than operator accepts a narrower numeric type set than the other three
+- `path.compare.002` — the less-or-equal operator accepts the extended numeric type set
+- `path.compare.003` — the greater-than operator accepts the extended numeric type set
+- `path.compare.004` — the greater-or-equal operator accepts the extended numeric type set
 - `path.compare.005` — comparing different types is an execution error
 - `path.compare.006` — comparison with an empty operand yields empty
-- `path.compare.007` — comparison of a collection of more than one is an execution error
+- `path.compare.007` — comparison of a collection of more than one yields empty
 - `path.compare.008` — strings compare by code point
 - `path.compare.009` — dates of insufficient precision compare to empty
+- `path.compare.011` — a `positiveInt` or `unsignedInt` operand compares under three operators and fails under `<`
+- `path.compare.012` — numeric comparison goes through binary floating point
 - `path.compare.010` — a Period invariant written with raw comparison and one written with boundaries differ
 
 **Requirement: Boolean logic**
@@ -447,7 +488,7 @@ Every allocated ID, grouped as it is grouped in the delta files.
 - `path.logic.004` — `implies` follows the engine's truth table including empty
 - `path.logic.005` — a singleton non-boolean operand of `and` is treated as true
 - `path.logic.006` — `and` short-circuits on a false left operand
-- `path.logic.007` — `or` short-circuits on a true left operand
+- `path.logic.007` — `or` and `implies` short-circuit, and `xor` does not
 - `path.logic.008` — `iif` selects a branch and does not evaluate the other
 - `path.logic.009` — `iif` with an empty condition yields the else branch
 - `path.logic.010` — `iif` with no else branch and a false condition yields empty
@@ -504,8 +545,10 @@ Every allocated ID, grouped as it is grouped in the delta files.
 - `path.string.017` — `decode` reverses `encode` for each supported form
 - `path.string.018` — `encode` and `decode` with an unsupported format yield empty or fail as the pinned engine does
 - `path.string.019` — `escape` and `unescape` support `html` and `json`
-- `path.string.020` — a string function on a non-string is an execution error
+- `path.string.020` — a string function on a non-string yields empty
 - `path.string.021` — a string function on an empty collection yields empty
+- `path.string.023` — the functions that do reject a bad focus reject it with an error
+- `path.string.024` — implicit string conversion changes the outcome of every string function
 - `path.string.022` — string functions operate on unicode scalar values, not bytes
 
 **Requirement: Type conversion**
@@ -520,15 +563,19 @@ Every allocated ID, grouped as it is grouped in the delta files.
 - `path.convert.008` — `convertsToQuantity` and `toQuantity` convert strings and numbers
 - `path.convert.009` — a failed conversion yields empty while its `convertsTo` yields false
 - `path.convert.010` — a conversion function on a collection of more than one is an execution error
+- `path.convert.012` — `toDate()` does not exist and is a parse failure
+- `path.convert.013` — `toTime` converts and yields empty on failure
+- `path.convert.014` — `toBoolean` converts the engine's accepted spellings and yields empty on failure
 - `path.convert.011` — `toDateTime` on a date widens precision without inventing components
 
 **Requirement: Date and time functions**
 
 - `path.datetime.001` — `today()` returns the current date
 - `path.datetime.002` — `now()` returns the current dateTime
-- `path.datetime.003` — `now()` is stable within a single evaluation
-- `path.datetime.004` — the evaluation time zone is a parameter of the harness, not of the machine
+- `path.datetime.003` — `now()` is read afresh on every call
+- `path.datetime.004` — `today()` and `now()` read a configured time zone, not the machine's
 - `path.datetime.005` — `precision()` reports the component count of a date, dateTime or time
+- `path.datetime.007` — `today()` has day precision
 - `path.datetime.006` — a dateTime with an offset and one in UTC compare correctly
 
 **Requirement: Quantities and UCUM**
@@ -547,8 +594,9 @@ Every allocated ID, grouped as it is grouped in the delta files.
 - `path.quantity.012` — a quantity with a unit compared to one without yields false for equivalence
 - `path.quantity.013` — unit text without a code is handled per the suite's dedicated input
 - `path.quantity.014` — `comparable()` reports whether two quantities are commensurable
-- `path.quantity.015` — comparing incommensurable units is an execution error
+- `path.quantity.015` — comparing incommensurable units returns a boolean, not an error
 - `path.quantity.016` — UCUM data comes from the pinned `ucum-essence.xml`
+- `path.quantity.018` — a quantity whose system is not UCUM is not canonicalised
 - `path.quantity.017` — a quantity with an unknown unit code does not crash
 
 **Requirement: Boundary functions**
@@ -594,6 +642,7 @@ Every allocated ID, grouped as it is grouped in the delta files.
 - `path.env.010` — `%context` is the node evaluation started from
 - `path.env.011` — an unknown environment variable with no host service is an execution error
 - `path.env.012` — a host service may supply an environment variable, including a collection
+- `path.env.015` — the host service is told which constant-evaluation mode is in force
 - `path.env.013` — `defineVariable` introduces a variable for the rest of the expression
 - `path.env.014` — a variable defined by `defineVariable` shadows nothing and does not leak
 
@@ -612,13 +661,19 @@ Every allocated ID, grouped as it is grouped in the delta files.
 - `path.utility.011` — `extension` reaches a primitive's extensions
 - `path.utility.012` — `conformsTo` asks the host service
 - `path.utility.013` — `conformsTo` with a profile the host service does not know is an execution error
-- `path.utility.014` — `conformsTo` with no host service returns false, as `FhirPathR4` does
+- `path.utility.014` — `conformsTo` through the server-facing host service returns false for every URL
 - `path.utility.015` — `memberOf` asks the host service for the value set
 - `path.utility.016` — `memberOf` with no resolvable value set yields empty
-- `path.utility.017` — `resolve()` resolves a local `#id` reference into `contained`
-- `path.utility.018` — `resolve()` resolves a Bundle-internal reference by `fullUrl`
+- `path.utility.017` — `resolve()` resolves a local `#id` reference against the root resource's `contained`
+- `path.utility.018` — `resolve()` has no Bundle `fullUrl` resolution of its own
 - `path.utility.019` — `resolve()` on an unresolvable reference yields empty
-- `path.utility.020` — `resolve()` delegates an external reference to the host service
+- `path.utility.020` — `resolve()` delegates an external reference to the host service and swallows its errors
+- `path.utility.022` — `conformsTo` with no host service at all is an execution error
+- `path.utility.023` — `extension(url)` also returns modifier extensions
+- `path.utility.024` — `memberOf` as a binary operator folds the whole left collection
+- `path.utility.025` — `memberOf` falls back to the worker context when no host service is set
+- `path.utility.026` — `memberOf` returns empty for a focus whose type it cannot validate
+- `path.utility.027` — a host service may supply a custom function
 - `path.utility.021` — the appointment and explanation-of-benefit cases hold
 
 **Requirement: The static type-check pass**
@@ -636,16 +691,24 @@ Every allocated ID, grouped as it is grouped in the delta files.
 - `path.check.011` — a guard that narrows to the empty type set makes the guarded operand unreachable, not an error
 - `path.check.012` — a context type naming several types checks against all of them
 - `path.check.013` — the check pass can be skipped
+- `path.check.015` — the check pass returns a warning list separate from its failure
+- `path.check.016` — comparing a collection with a singleton produces a warning, not a failure
+- `path.check.017` — navigating a choice element without `ofType()` produces a warning only when the SQL-on-FHIR check is enabled
+- `path.check.018` — an unknown extension URL and an impossible `ofType` produce warnings
+- `path.check.019` — the simple check surface discards warnings
 - `path.check.014` — the harness records which cases the check pass is exercised for
 
 **Requirement: Strictness configuration**
 
-- `path.strictness.001` — the default configuration matches `FhirPathR4`
-- `path.strictness.002` — the oracle harness uses the strict configuration
+- `path.strictness.001` — the default configuration is non-strict for every pre-R5 version
+- `path.strictness.002` — the oracle harness runs the check pass non-strict and the evaluation strict
 - `path.strictness.003` — the as-singleton rule rejects a multi-item focus when enforced
 - `path.strictness.004` — the as-singleton rule allows a multi-item focus when not enforced
-- `path.strictness.005` — case-sensitive `as` rejects a mis-cased type name when enforced
-- `path.strictness.006` — lenient polymorphic names are not supported in R4
+- `path.strictness.005` — a mis-cased type name resolves only when case is not enforced
+- `path.strictness.006` — lenient polymorphic names are supported by the engine and left unset by HAPI
+- `path.strictness.008` — the SQL-on-FHIR warning is off by default
+- `path.strictness.009` — implicit string conversion is off by default
+- `path.strictness.010` — liquid mode is out of scope and must be off
 - `path.strictness.007` — legacy mode is not enabled for R4
 
 **Requirement: Execution errors**
@@ -676,11 +739,12 @@ Every allocated ID, grouped as it is grouped in the delta files.
 - `path.oracle.005` — the harness evaluates in three stages and attributes the failure to the right one
 - `path.oracle.006` — the harness applies `predicate="true"` as a boolean conversion
 - `path.oracle.007` — the harness applies `ordered="false"` as an unordered comparison
-- `path.oracle.008` — the harness compares count, type and value
-- `path.oracle.009` — the harness compares a Quantity output by parsing it
+- `path.oracle.008` — the harness compares count, and compares type and value only when the expectation states them
+- `path.oracle.009` — the harness picks the Quantity comparison from the result item's type, not from the expectation
 - `path.oracle.010` — the harness reports per-case status with four distinct values
 - `path.oracle.011` — the harness records HAPI's result for the same case
 - `path.oracle.012` — the gate is pass rate at or above HAPI's on the same cases
+- `path.oracle.016` — a case HAPI structurally cannot pass is recorded as such, and Frevo is graded on its own run
 - `path.oracle.013` — the harness can run the same cases through `helios-fhirpath`
 - `path.oracle.014` — the `documentFunctions` group is reported as out of scope, not as passing
 - `path.oracle.015` — the harness does not modify the suite

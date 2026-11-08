@@ -156,6 +156,69 @@ bytes. Everything else is `copy_from_slice`. So:
 - a write inside `contained[0]` — splices at that resource's boundary
   (`model.mutate.006`).
 
+### Which upstream parser governs which part, and the two parse modes
+
+Two different Java parsers are in play, and conflating them was the single
+biggest error in the first draft of this design.
+
+| Concern | Upstream authority | Pinned at |
+|---|---|---|
+| The **shape** of the representation: the `_field` sibling form, choice property names, `resourceType` dispatch, contained resources | `org.hl7.fhir.r4.formats.JsonParser` | `73c432b5` |
+| The **canonical** form the round-trip oracle compares | `org.hl7.fhir.r4.formats.JsonCreatorCanonical` | `73c432b5` |
+| What the server **accepts** over HTTP | `ca.uhn.fhir.parser.JsonParser` plus the handler `FhirContext` installs | `7ab4c7c7` |
+
+The third row is the one that decides observable behaviour, and it is lenient.
+`FhirContext` declares
+`private volatile IParserErrorHandler myParserErrorHandler = new LenientErrorHandler();`,
+and `LenientErrorHandler`'s own class documentation states that it "logs issues
+but does not abort parsing, with only two exceptions". Those two are
+`invalidValue` and `extensionContainsValueAndNestedExtensions`. Everything else
+— `unknownElement`, `unknownAttribute`, `incorrectJsonType`,
+`unexpectedRepeatingElement`, `missingRequiredElement`,
+`containedResourceWithNoId`, `unknownReference`, `invalidInternalReference` —
+logs a warning and returns.
+
+So HAPI 8.12.0 answers `2xx` to all of these, and `frevo-model` must too:
+
+| Body | HAPI | Scenario |
+|---|---|---|
+| `Patient` with `"nmae": []` | accepted, warning logged | `model.json.004` |
+| `"active": "true"` where `boolean` belongs | accepted, warning logged | `model.json.013` |
+| `"name": {...}` where a `0..*` array belongs | accepted, warning logged | `model.json.014` |
+| `"birthDate": [...]` where a `0..1` value belongs | accepted, first repetition kept | `model.json.015` |
+| `Observation` with no `status` | accepted, warning logged | `codegen.cardinality.002` |
+| `"gender"` twice | accepted, last wins | `model.json.016` |
+| `"name": [null]` | accepted as a value-less element | `model.json.018` |
+| `Extension` with both a value and nested extensions | **rejected**, `DataFormatException` | `model.json.022` |
+| a primitive with a non-blank invalid value | **rejected**, `DataFormatException` | `model.json.023` |
+
+Two of those nine have no error-handler callback at all, so they are read from
+the parser rather than from the handler. HAPI reads JSON through a Jackson
+`ObjectMapper` built without `FAIL_ON_READING_DUP_TREE_KEY` and without
+`STRICT_DUPLICATE_DETECTION`, so a repeated field name silently overwrites —
+hence last-wins for a duplicate key. And `JsonParser.parseChildren` has an
+explicit `theJsonVal.isNull()` branch that enters the element, parses its
+`_name` sibling and ends it, so a `null` in an array is accepted rather than
+rejected.
+
+The same `ObjectMapper` enables `USE_BIG_DECIMAL_FOR_FLOATS` and uses a
+`JsonNodeFactory(true)`, which is independent corroboration that decimals must
+not go through a binary float — the point the next subsection makes.
+
+`frevo-model` therefore offers **both** modes, as HAPI does:
+
+- **lenient**, the default. Decoding succeeds and returns the resource plus a
+  list of diagnostics. This is what the HTTP surface uses, and it is why a body
+  HAPI accepts is accepted.
+- **strict**, on request. Every diagnostic becomes an error instead. This is
+  HAPI's `StrictErrorHandler`, selected the same way HAPI selects it
+  (`FhirContext.setParserErrorHandler`), and it is what the validator will want.
+
+`model.json.021` requires the two sets to be identical — same paths, same
+offsets — so they cannot drift apart. **This is a match with HAPI, not a
+deviation**, which is why `docs/deviations.md` records it under "Considered and
+not recorded as deviations" rather than as a `DEV-nnnn`.
+
 ### Two serialisation orders, deliberately
 
 | Form | Property order | Used for |
@@ -288,28 +351,77 @@ resource at all.
 ### 4.4 `HostServices` — what the engine cannot know
 
 ```rust
+pub enum ConstantMode { Explicit, NoValue, ImplicitBefore, ImplicitAfter }
+
 pub trait HostServices: Send + Sync {
+    // --- constants -------------------------------------------------------
     fn resolve_constant(&self, name: &str, mode: ConstantMode)
         -> Result<Vec<Value>, HostError>;
-    fn resolve_reference(&self, url: &str, context: Option<&Value>)
+    fn resolve_constant_type(&self, name: &str, mode: ConstantMode)
+        -> Result<Option<TypeSet>, HostError>;
+
+    // --- resolution ------------------------------------------------------
+    fn resolve_reference(&self, url: &str, identifier: Option<&Value>,
+                         context: Option<&Value>)
         -> Result<Option<Value>, HostError>;
     fn conforms_to_profile(&self, item: &Value, url: &str) -> Result<bool, HostError>;
     fn resolve_value_set(&self, url: &str) -> Result<Option<Value>, HostError>;
+
+    // --- host-supplied functions -----------------------------------------
+    fn resolve_function(&self, name: &str) -> Option<FunctionDetails>;
+    fn check_function(&self, name: &str, focus: &TypeSet, params: &[TypeSet])
+        -> Result<TypeSet, HostError>;
+    fn execute_function(&self, name: &str, focus: &[Value],
+                        params: &[Vec<Value>]) -> Result<Vec<Value>, HostError>;
+    fn param_is_type(&self, name: &str, index: usize) -> bool;
+
+    // --- diagnostics -----------------------------------------------------
     fn log(&self, name: &str, focus: &[Value]);
 }
+
+pub struct FunctionDetails { pub name: String, pub min_params: usize, pub max_params: usize }
 ```
 
-`resolve_constant` returning a `Vec` is not an accident: HAPI's
+Four things in that signature are not cosmetic.
+
+**`resolve_constant` returns a `Vec`.** HAPI's
 `FHIRPathTests.resolveConstantReturnsList` asserts that a host service may
 return two values for one `%name`, so a single-value signature would be wrong
 (`path.env.012`).
 
-Three implementations exist by the end of this change: none (unset — most oracle
-cases), the oracle harness's (which answers `conformsTo` true for the `Patient`
-profile, false for `Person`, and errors otherwise, exactly as
-`FHIRPathTestEvaluationServices` does), and the server-facing default that
-mirrors `FhirPathR4`'s anonymous implementation, whose `conformsToProfile`
-returns `false` unconditionally (`path.utility.014`).
+**`ConstantMode` has exactly four values.** They are the four
+`FHIRPathConstantEvaluationMode` carries, and `FhirPathR4.setEvaluationContext`
+maps them one-for-one onto `IFhirPathEvaluationContext.ConstantEvaluationMode`.
+A host service written against HAPI's wrapper therefore sees the same value
+Frevo passes. The explicit mode is in force for a `%name` the expression writes;
+the no-value mode is in force during the check pass, which wants a type and not
+a value (`path.env.015`).
+
+**The four function methods exist because `Function::Custom` does.** The parser
+takes a custom function's arity from the host service's `FunctionDetails`
+(`min_params`/`max_params`), the check pass asks `check_function` for the result
+type, evaluation calls `execute_function`, and `param_is_type` says which
+argument is a type name to be passed unevaluated rather than evaluated. Omitting
+them — as the first draft of this design did — would have left the whole
+`IHostApplicationServices` extension point unimplementable, and the validator
+and CQL both use it (`path.utility.027`).
+
+**`resolve_reference` takes an `identifier`.** `funcResolve` reads both
+`Reference.reference` and `Reference.identifier` and passes both on, so a host
+service that can resolve by business identifier is able to
+(`path.utility.017`).
+
+Three implementations exist by the end of this change:
+
+| Implementation | `conformsTo` | Used by |
+|---|---|---|
+| **none** (unset) | **raises** a no-host-services error (`path.utility.022`) | most oracle cases |
+| the oracle harness's | `true` for the `Patient` profile, `false` for `Person`, error otherwise — exactly `FHIRPathTestEvaluationServices` | the suite |
+| the server-facing one | `false` unconditionally — `FhirPathR4.setEvaluationContext`'s anonymous implementation (`path.utility.014`) | `frevo-server` later |
+
+The first row is the one the first draft of this design missed: "no host
+service" is not the same state as "a host service that says no", and the engine
+distinguishes them.
 
 ### 4.5 Enforcing the separation
 
@@ -335,7 +447,8 @@ node and require equal results.
    `children`, `descendants`, `extension` and `resolve`. It does **not** add
    `section`, `entry`, `entryIn`, `resources`, `resourcesIn`, `sameSubject` or
    `hasCoding` — the R5 engine adds only the first two — which is why the
-   `documentFunctions` group is out of scope (`path.oracle.014`).
+   `documentFunctions` group — 115 of the 1,191 cases — is out of scope
+   (`path.oracle.014`).
 2. *Is evaluation needed over the lazy model without full materialisation, and
    at what cost?* Yes, and the cost is the `Arc<dyn Node>` indirection plus a
    `Vec` allocation per `children()` call. `path.perf.003` and `path.perf.004`
@@ -455,7 +568,7 @@ crate it measures:
 | `path-compile` | `frevo-path` | parse and check a typical search-parameter expression | median ≤ 20 µs | `path.perf.001` |
 | `path-eval-compiled` | `frevo-path` | evaluate a pre-parsed simple path over a 4 KiB `Patient`, 1,000 times | median ≤ 5 µs per evaluation, no reparse | `path.perf.002` |
 | `path-extract-patient` | `frevo-path` | evaluate every enabled `Patient` search-parameter expression over one 4 KiB `Patient` | median total ≤ 300 µs | `path.perf.003` |
-| `path-suite-wallclock` | harness | the full 1,193-case oracle run | ≤ 10 s | `path.perf.005` |
+| `path-suite-wallclock` | harness | the full 1,191-case oracle run | ≤ 10 s | `path.perf.005` |
 
 The 4 KiB `Patient` is a fixed fixture, committed with the benchmark, so the
 numbers are comparable across commits. The reference environment is the one

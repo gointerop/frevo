@@ -66,6 +66,21 @@ rejects.
   `*` is evaluated with `convertsToString()`
 - **THEN** the result is `true` (`testLiterals/testLiteralStringEscapes`)
 
+#### Scenario: [path.lexer.015] a double-quoted string is a syntax error by default
+
+- **WHEN** `"foo" = 'foo'` is parsed on an engine with double quotes not
+  allowed, which is the default and what both HAPI wrappers use
+- **THEN** parsing fails as a syntax error
+
+#### Scenario: [path.lexer.016] double quotes are accepted when the engine is told to allow them
+
+- **WHEN** the same expression is parsed on an engine configured to allow double
+  quotes
+- **THEN** parsing succeeds and the result is `true`, because the lexer then
+  treats a double-quoted run as a string literal
+- **AND** the engine exposes this as a public setting
+  (`setAllowDoubleQuotes`), threaded into the lexer at construction
+
 #### Scenario: [path.lexer.012] an unknown escape sequence is a syntax error
 
 - **WHEN** a string literal contains `\q`
@@ -344,16 +359,24 @@ The engine SHALL navigate a resource through the node trait, addressing a polymo
 
 #### Scenario: [path.navigation.021] `descendants()` returns the transitive children
 
-- **WHEN** `contained.select(('#'+id in %resource.descendants().reference).not()).empty()`
-  is evaluated over `patient-example.xml`
-- **THEN** the result is `true` (`testDollarResource`, second case)
+- **WHEN** `Questionnaire.descendants().linkId.isDistinct()`,
+  `Questionnaire.descendants().linkId.distinct().count()`,
+  `Questionnaire.descendants().code.count() = 23` and
+  `concept.code.combine($this.descendants().concept.code).isDistinct()` are
+  evaluated over their stated inputs
+- **THEN** each yields its stated output (`testDistinct/testDistinct2`,
+  `testDistinct3`, `testDistinct5`, `testDistinct6`, `testRepeat/testRepeat3`,
+  `testCombine()/testCombine1`)
+- **AND** the grading selector is those six cases; the `testDollarResource`
+  group this scenario previously named is commented out of the pinned suite
 
 #### Scenario: [path.navigation.022] `children()` produces an unordered collection
 
-- **WHEN** `Patient.children().skip(1)` is checked in strict mode with ordered
-  function checking enabled
-- **THEN** the static check fails as a semantic error
-  (`testDollar/testDollarOrderNotAllowed`)
+- **WHEN** `Patient.children().skip(1)` is checked
+- **THEN** the static check fails as a semantic error, unconditionally — the
+  rule is not gated on any engine setting, and the `mode="strict"` and
+  `checkOrderedFunctions="true"` attributes the suite case carries are read by
+  no R4 harness (`testDollar/testDollarOrderNotAllowed`)
 
 #### Scenario: [path.navigation.023] navigation preserves document order across repeating elements
 
@@ -520,11 +543,18 @@ The engine SHALL implement the subsetting functions, and SHALL yield an empty co
   which has three names
 - **THEN** evaluation fails
 
-#### Scenario: [path.subset.003] `single` on an empty collection yields empty
+#### Scenario: [path.subset.003] `single` on an empty collection is an execution error
 
 - **WHEN** `Patient.name.prefix.single()` is evaluated over
-  `patient-example.xml`
-- **THEN** the result is an empty collection
+  `patient-example.xml`, whose `name.prefix` is absent
+- **THEN** evaluation fails, because `funcSingle` returns the focus only when
+  its size is exactly 1 and throws `FHIRPATH_NO_COLLECTION` otherwise — size 0
+  takes the throw
+- **AND** this differs from the FHIRPath specification, which returns empty for
+  an empty focus; the divergence is recorded as `DEV-0001` and resolved as
+  HAPI's behaviour
+- **AND** no live case grades it (`testSingle/testSingle2` covers only the
+  more-than-one case), so it is differential-only
 
 #### Scenario: [path.subset.004] `first` and `last` select the ends
 
@@ -566,6 +596,18 @@ The engine SHALL implement the subsetting functions, and SHALL yield an empty co
 
 - **WHEN** the `testExclude` group's cases are evaluated
 - **THEN** every case yields its stated output
+
+#### Scenario: [path.subset.013] an unordered focus is rejected for all six position-dependent functions
+
+- **WHEN** each of `item` (the indexer), `first`, `last`, `tail`, `skip` and
+  `take` is checked against a focus whose collection status is unordered — the
+  result of `children()`, say
+- **THEN** every one of the six fails the static check with an ordered-only
+  error naming the function
+- **AND** the rule is unconditional: no engine setting disables it
+- **AND** only `skip` is graded by a live case
+  (`testDollar/testDollarOrderNotAllowed`); the other five are
+  differential-only
 
 #### Scenario: [path.subset.012] `exclude` keeps duplicates that are not excluded
 
@@ -676,25 +718,36 @@ The engine SHALL implement equality, inequality, equivalence and non-equivalence
 
 The engine SHALL implement the four ordered comparison operators as `FHIRPathEngine` does, yielding an empty collection where the comparison is undecidable and failing where the operands are not comparable.
 
-#### Scenario: [path.compare.001] the less-than operator compares integers, decimals, strings, dates and quantities
+#### Scenario: [path.compare.001] the less-than operator accepts a narrower numeric type set than the other three
 
 - **WHEN** the `testLessThan` group's cases are evaluated
 - **THEN** every case yields its stated output
+- **AND** the operator compares the 12 string-like types
+  (`string`, `uri`, `code`, `oid`, `id`, `uuid`, `sid`, `markdown`,
+  `base64Binary`, `canonical`, `url`, `xhtml`), `integer` and `decimal` only,
+  `date`/`dateTime`/`instant`, `time`, and `Quantity` — and **not**
+  `unsignedInt` or `positiveInt`
 
-#### Scenario: [path.compare.002] the less-or-equal operator compares the same types
+#### Scenario: [path.compare.002] the less-or-equal operator accepts the extended numeric type set
 
 - **WHEN** the `testLessOrEqual` group's cases are evaluated
 - **THEN** every case yields its stated output
+- **AND** the operator's numeric branch accepts `integer`, `decimal`,
+  `unsignedInt` and `positiveInt`
 
-#### Scenario: [path.compare.003] the greater-than operator compares the same types
+#### Scenario: [path.compare.003] the greater-than operator accepts the extended numeric type set
 
 - **WHEN** the `testGreaterThan` group's cases are evaluated
 - **THEN** every case yields its stated output
+- **AND** the operator's numeric branch accepts `integer`, `decimal`,
+  `unsignedInt` and `positiveInt`
 
-#### Scenario: [path.compare.004] the greater-or-equal operator compares the same types
+#### Scenario: [path.compare.004] the greater-or-equal operator accepts the extended numeric type set
 
 - **WHEN** the `testGreatorOrEqual` group's cases are evaluated
 - **THEN** every case yields its stated output
+- **AND** the operator's numeric branch accepts `integer`, `decimal`,
+  `unsignedInt` and `positiveInt`
 
 #### Scenario: [path.compare.005] comparing different types is an execution error
 
@@ -706,10 +759,18 @@ The engine SHALL implement the four ordered comparison operators as `FHIRPathEng
 - **WHEN** `{} < 1` is evaluated
 - **THEN** the result is an empty collection
 
-#### Scenario: [path.compare.007] comparison of a collection of more than one is an execution error
+#### Scenario: [path.compare.007] comparison of a collection of more than one yields empty
 
-- **WHEN** `(1 | 2) < 3` is evaluated
-- **THEN** evaluation fails
+- **WHEN** `(1 | 2) < 3`, `(1 | 2) <= 3`, `(1 | 2) > 3` and `(1 | 2) >= 3` are
+  evaluated
+- **THEN** each yields an empty collection, because the operator handles only
+  the empty-operand case and the singleton-and-singleton cases and otherwise
+  returns an empty list
+- **AND** this differs from the FHIRPath specification, which makes it an
+  error; the divergence is recorded as `DEV-0002` and resolved as HAPI's
+  behaviour
+- **AND** no live case in the pinned suite grades it, so it is
+  differential-only
 
 #### Scenario: [path.compare.008] strings compare by code point
 
@@ -720,6 +781,33 @@ The engine SHALL implement the four ordered comparison operators as `FHIRPathEng
 
 - **WHEN** `@2014 < @2014-01-05` is evaluated
 - **THEN** the result is an empty collection
+
+#### Scenario: [path.compare.011] a `positiveInt` or `unsignedInt` operand compares under three operators and fails under `<`
+
+- **WHEN** two `positiveInt` values — for example `Timing.repeat.count` — are
+  compared with `<`, and then with `<=`, `>` and `>=`
+- **THEN** `<` fails with a cannot-compare error naming both FHIR types, while
+  the other three return a boolean
+- **AND** the same holds for `unsignedInt`, for example `Media.height`
+- **AND** this asymmetry is upstream's, not a specification requirement; it is
+  recorded as `DEV-0003` and resolved as HAPI's behaviour
+- **AND** no live case grades it, so it is differential-only
+
+#### Scenario: [path.compare.012] numeric comparison goes through binary floating point
+
+- **WHEN** two decimals that differ only beyond the precision an IEEE-754
+  double can represent are compared with `<`, `<=`, `>` or `>=`
+- **THEN** the result is what the comparison of their `double` values gives,
+  because all four operators compare
+  `Double.valueOf(left) OP Double.valueOf(right)`
+- **AND** the same applies to `sqrt`, `abs`, `ceiling`, `floor`, `exp`, `ln`,
+  `log` and `power`, which parse the focus as a `double`, and to `sort`'s
+  numeric comparator
+- **AND** it does **not** apply to `+`, `-`, `*`, `/`, `div`, `mod`, `round` or
+  `truncate`, which use exact decimal arithmetic
+- **AND** this differs from the FHIRPath specification, which requires decimal
+  semantics throughout; the divergence is recorded as `DEV-0004` and resolved as
+  HAPI's behaviour
 
 #### Scenario: [path.compare.010] a Period invariant written with raw comparison and one written with boundaries differ
 
@@ -764,14 +852,18 @@ Three-valued logic: an operand may be true, false or empty.
 
 #### Scenario: [path.logic.006] `and` short-circuits on a false left operand
 
-- **WHEN** `false and (1 'cm' < 1 's')` is evaluated, whose right operand alone
-  would fail
-- **THEN** the result is `false` and no error is raised
+- **WHEN** `false and (1 < 'a')` is evaluated, whose right operand alone fails
+  with a cannot-compare error
+- **THEN** the result is `false` and no error is raised, because the engine
+  decides `and` from a `false` left operand before evaluating the right one
 
-#### Scenario: [path.logic.007] `or` short-circuits on a true left operand
+#### Scenario: [path.logic.007] `or` and `implies` short-circuit, and `xor` does not
 
-- **WHEN** `true or (1 'cm' < 1 's')` is evaluated
-- **THEN** the result is `true` and no error is raised
+- **WHEN** `true or (1 < 'a')` and `false implies (1 < 'a')` are evaluated
+- **THEN** both return `true` and raise no error
+- **WHEN** `false xor (1 < 'a')` is evaluated
+- **THEN** evaluation fails, because the engine short-circuits only `and`, `or`
+  and `implies` and evaluates both operands of `xor`
 
 #### Scenario: [path.logic.008] `iif` selects a branch and does not evaluate the other
 
@@ -790,7 +882,7 @@ Three-valued logic: an operand may be true, false or empty.
 
 ### Requirement: Arithmetic
 
-The engine SHALL implement the arithmetic operators over integers, decimals, strings, quantities, dates and dateTimes as `FHIRPathEngine` does, using decimal arithmetic rather than binary floating point.
+The engine SHALL implement the arithmetic operators over integers, decimals, strings, quantities, dates and dateTimes as `FHIRPathEngine` does. The operators here use exact decimal arithmetic; the comparison operators and the transcendental math functions do not, and `path.compare.012` states where that boundary falls.
 
 #### Scenario: [path.math.001] addition works on integers, decimals, strings and quantities
 
@@ -868,7 +960,7 @@ The engine SHALL implement the arithmetic operators over integers, decimals, str
 
 ### Requirement: Math functions
 
-The engine SHALL implement the math functions `FHIRPathEngine` implements, each over a singleton numeric focus, yielding an empty collection for an empty focus.
+The engine SHALL implement the math functions `FHIRPathEngine` implements, each over a singleton numeric focus, yielding an empty collection for an empty focus. `round` and `truncate` are exact; the other eight go through a binary `double` (`path.compare.012`).
 
 #### Scenario: [path.mathfn.001] `abs` works on integers, decimals and quantities
 
@@ -1028,15 +1120,47 @@ The engine SHALL implement the string functions `FHIRPathEngine` implements, inc
   `unescape('json')` turning a unicode escape into its character
 - **THEN** every case yields its stated output
 
-#### Scenario: [path.string.020] a string function on a non-string is an execution error
+#### Scenario: [path.string.020] a string function on a non-string yields empty
 
 - **WHEN** `1.startsWith('1')` is evaluated
-- **THEN** evaluation fails
+- **THEN** the result is an empty collection, because the function appends a
+  result only when the focus has one of the 12 string-like FHIR types
+  (`string`, `uri`, `code`, `oid`, `id`, `uuid`, `sid`, `markdown`,
+  `base64Binary`, `canonical`, `url`, `xhtml`) or implicit string conversion is
+  switched on
+- **AND** the same guard governs `upper`, `lower`, `contains`, `endsWith`,
+  `substring`, `indexOf`, `matches`, `matchesFull`, `replace`,
+  `replaceMatches`, `length`, `toChars`, `trim`, `split` and `join`
+- **AND** this differs from the FHIRPath specification, which makes a
+  type-mismatched focus an error; the divergence is recorded as `DEV-0006` and
+  resolved as HAPI's behaviour
 
 #### Scenario: [path.string.021] a string function on an empty collection yields empty
 
 - **WHEN** `{}.upper()`, `{}.length()` and `{}.substring(0)` are evaluated
 - **THEN** each yields an empty collection
+
+#### Scenario: [path.string.023] the functions that do reject a bad focus reject it with an error
+
+- **WHEN** `(1 | 2).round(2)`, `(1 | 2).truncate()` and `(1 | 2).single()` are
+  evaluated
+- **THEN** each fails, because those functions raise on a focus whose size is
+  not 1 rather than returning empty — unlike the string functions in
+  `path.string.020`
+- **AND** `'abc'.round(2)` fails on the focus type, which is the other shape of
+  rejection the engine has
+
+#### Scenario: [path.string.024] implicit string conversion changes the outcome of every string function
+
+- **WHEN** `1.startsWith('1')` is evaluated with implicit string conversion
+  switched off, which is the default and what both HAPI wrappers use
+- **THEN** the result is an empty collection
+- **WHEN** the same expression is evaluated with implicit string conversion
+  switched on
+- **THEN** the result is `true`, because the focus is converted to its string
+  value before the test
+- **AND** the engine exposes this as a public setting
+  (`setDoImplicitStringConversion`), so both outcomes are reachable
 
 #### Scenario: [path.string.022] string functions operate on unicode scalar values, not bytes
 
@@ -1047,7 +1171,7 @@ The engine SHALL implement the string functions `FHIRPathEngine` implements, inc
 
 ### Requirement: Type conversion
 
-The engine SHALL implement each `toX` function and its matching `convertsToX` predicate, so that a failed conversion yields an empty collection while the predicate yields `false`.
+The engine SHALL implement the `toX` functions the R4 engine implements and each `convertsToX` predicate, so that a failed conversion yields an empty collection while the predicate yields `false`. The set is not symmetric: `convertsToDate` exists and `toDate` does not.
 
 #### Scenario: [path.convert.001] `toInteger` converts strings, booleans and integers
 
@@ -1105,6 +1229,33 @@ The engine SHALL implement each `toX` function and its matching `convertsToX` pr
 - **WHEN** `(1 | 2).toString()` is evaluated
 - **THEN** evaluation fails
 
+#### Scenario: [path.convert.012] `toDate()` does not exist and is a parse failure
+
+- **WHEN** `'2015'.toDate()` is parsed
+- **THEN** parsing fails, because the R4 function table has no `toDate` entry
+  even though it has `convertsToDate`
+- **AND** `'2015'.convertsToDate()` parses and evaluates to `true`, so the
+  asymmetry is observable from one expression pair
+- **AND** this differs from the FHIRPath specification, which defines
+  `toDate()`; the divergence is recorded as `DEV-0009` and resolved as HAPI's
+  behaviour
+- **AND** no live case grades it, so it is differential-only
+
+#### Scenario: [path.convert.013] `toTime` converts and yields empty on failure
+
+- **WHEN** `'14:34:28'.toTime()` and `'abc'.toTime()` are evaluated
+- **THEN** the first yields a single `time` and the second an empty collection
+- **AND** `'abc'.convertsToTime()` yields `false`
+
+#### Scenario: [path.convert.014] `toBoolean` converts the engine's accepted spellings and yields empty on failure
+
+- **WHEN** `'true'.toBoolean()`, `'yes'.toBoolean()`, `'0'.toBoolean()` and
+  `'abc'.toBoolean()` are evaluated
+- **THEN** each yields what the engine at the pinned SHA accepts for that
+  spelling, with an unaccepted spelling yielding an empty collection
+- **AND** the accepted set is the same one `convertsToBoolean` reports `true`
+  for (`path.convert.007`)
+
 #### Scenario: [path.convert.011] `toDateTime` on a date widens precision without inventing components
 
 - **WHEN** `@2014.toDateTime()` is evaluated
@@ -1124,22 +1275,40 @@ The engine SHALL implement `today`, `now` and `precision`, and SHALL take the ev
 - **WHEN** the `testNow` group's cases are evaluated
 - **THEN** every case yields its stated output
 
-#### Scenario: [path.datetime.003] `now()` is stable within a single evaluation
+#### Scenario: [path.datetime.003] `now()` is read afresh on every call
 
 - **WHEN** `now() = now()` is evaluated
-- **THEN** the result is `true`
+- **THEN** the result is whatever comparing two separately read instants gives;
+  the engine caches no evaluation instant, so two calls in one expression may
+  return different values
+- **AND** this differs from the FHIRPath specification, which requires `now()`
+  to be consistent within an evaluation; the divergence is recorded as
+  `DEV-0008` and resolved as HAPI's behaviour
+- **AND** no live case grades it — `testNow` only checks
+  `Patient.birthDate < now()` and `now().toString().length() > 10` — so it is
+  differential-only
 
-#### Scenario: [path.datetime.004] the evaluation time zone is a parameter of the harness, not of the machine
+#### Scenario: [path.datetime.004] `today()` and `now()` read a configured time zone, not the machine's
 
-- **WHEN** the oracle harness runs
-- **THEN** it fixes the time zone to `UTC+1100`, as
-  `FHIRPathTests.test` does with `TimeZone.setDefault`
-- **AND** the suite's result does not change with the machine's local time zone
+- **WHEN** `today()` and `now()` are evaluated on an engine configured with a
+  given time zone
+- **THEN** both are computed in that zone
+- **AND** changing the machine's local time zone changes neither result, which
+  is the property `FHIRPathTests.test` has to obtain by calling
+  `TimeZone.setDefault` because the engine reads the platform default
+- **AND** the oracle harness sets that configuration to `UTC+1100`, so the
+  suite's result does not depend on where it runs
 
 #### Scenario: [path.datetime.005] `precision()` reports the component count of a date, dateTime or time
 
 - **WHEN** the `Precision` group's cases are evaluated
 - **THEN** every case yields its stated output
+
+#### Scenario: [path.datetime.007] `today()` has day precision
+
+- **WHEN** `today().precision()` is evaluated
+- **THEN** the result is the integer `8`, because the engine builds the value at
+  day precision
 
 #### Scenario: [path.datetime.006] a dateTime with an offset and one in UTC compare correctly
 
@@ -1238,10 +1407,21 @@ The engine SHALL compare, add, subtract, multiply and divide quantities by conve
 - **THEN** the results are `true`, `false`, `false` (`Comparable/Comparable1`,
   `Comparable2`, `Comparable3`)
 
-#### Scenario: [path.quantity.015] comparing incommensurable units is an execution error
+#### Scenario: [path.quantity.015] comparing incommensurable units returns a boolean, not an error
 
-- **WHEN** `1 'cm' < 1 's'` is evaluated
-- **THEN** evaluation fails
+- **WHEN** `1 'cm' < 1 's'` is evaluated with the UCUM data loaded
+- **THEN** the result is a boolean, because the engine converts each operand to
+  its canonical magnitude and compares the two decimals with no dimension check
+  — `0.01 < 1` is `true`
+- **WHEN** the same expression is evaluated with no UCUM data available
+- **THEN** the result is `false`, which is what the engine returns outright for
+  two quantities whose unit codes differ when no UCUM service is configured
+- **AND** this differs from the FHIRPath specification, which requires
+  incommensurable quantities to be an error or empty; the divergence is
+  recorded as `DEV-0005` and resolved as HAPI's behaviour
+- **AND** no live case grades it — the only `cm`/`s` pairs in the suite are
+  `Comparable/Comparable2`, `Comparable3` and `testMinus/testMinus6` — so it is
+  differential-only
 
 #### Scenario: [path.quantity.016] UCUM data comes from the pinned `ucum-essence.xml`
 
@@ -1250,6 +1430,18 @@ The engine SHALL compare, add, subtract, multiply and divide quantities by conve
   file's version is reported with the suite result
 - **AND** an absent or unparseable UCUM file fails the run rather than silently
   treating units as incomparable
+
+#### Scenario: [path.quantity.018] a quantity whose system is not UCUM is not canonicalised
+
+- **WHEN** two quantities whose unit codes differ are compared and at least one
+  carries a `system` other than `http://unitsofmeasure.org`
+- **THEN** canonicalisation yields nothing for that operand, because the engine
+  returns no canonical decimal unless the system is exactly
+  `http://unitsofmeasure.org`
+- **AND** the engine's observed behaviour at the pinned SHA for that case is
+  recorded by the harness and matched, rather than assumed; it is not the same
+  as the no-UCUM-data case in `path.quantity.015`
+- **AND** no live case grades it, so it is differential-only
 
 #### Scenario: [path.quantity.017] a quantity with an unknown unit code does not crash
 
@@ -1455,9 +1647,16 @@ The engine SHALL resolve the environment variables `FHIRPathEngine` resolves int
 
 #### Scenario: [path.env.006] `%resource` is the resource the focus is inside
 
-- **WHEN** `reference.startsWith('#').not() or (reference.substring(1) in %resource.contained.id)`
-  is evaluated with a `Reference` inside `patient-example.xml` as the focus
-- **THEN** the result is `true` (`testDollarResource`, first case)
+- **WHEN** the six live `isSemanticChecks` cases that reference
+  `%resource.status` — `isGuardAndOtherImplies`, `isGuardOtherAndImplies`,
+  `isGuardOrOtherImpliesBad`, `isGuardOrOtherImpliesNoParensBad`,
+  `isGuardOrInnerImplies` and `isGuardOrInnerImpliesBad` — are evaluated with
+  `Observation.effective` as the context over `observation-example.xml`
+- **THEN** each yields its stated output, which requires `%resource` to resolve
+  to the enclosing `Observation` while the focus is an `Observation.effective`
+- **AND** the grading selector is those six cases; the `testDollarResource`
+  group this scenario previously named is commented out of the pinned suite and
+  is not one of the 1,191
 
 #### Scenario: [path.env.007] `%resource` with no focus resource is an execution error
 
@@ -1490,6 +1689,21 @@ The engine SHALL resolve the environment variables `FHIRPathEngine` resolves int
   configured and that constant is evaluated
 - **THEN** the result is both strings in order, which is
   `FHIRPathTests.resolveConstantReturnsList`'s assertion
+
+#### Scenario: [path.env.015] the host service is told which constant-evaluation mode is in force
+
+- **WHEN** a host service is asked to resolve an environment variable
+- **THEN** it is told which of four modes applies — the name was written
+  explicitly, the name is being resolved for its type with no value wanted, or
+  the name is being resolved implicitly before or after the expression it
+  appears in
+- **AND** the explicit mode is in force for a `%name` the expression itself
+  writes, and the no-value mode is in force during the check pass, where only
+  the type is wanted
+- **AND** the four modes map one-for-one onto the four the server-facing
+  wrapper passes through to its own evaluation context, so a host service
+  written against that wrapper sees the same value
+- **AND** no live case grades the mode argument, so it is differential-only
 
 #### Scenario: [path.env.013] `defineVariable` introduces a variable for the rest of the expression
 
@@ -1586,11 +1800,14 @@ The engine SHALL implement the utility and FHIR-specific functions `FHIRPathEngi
 - **WHEN** `conformsTo('http://trash')` is evaluated
 - **THEN** evaluation fails (`testConformsTo/testConformsTo3`)
 
-#### Scenario: [path.utility.014] `conformsTo` with no host service returns false, as `FhirPathR4` does
+#### Scenario: [path.utility.014] `conformsTo` through the server-facing host service returns false for every URL
 
-- **WHEN** `conformsTo(...)` is evaluated through the server-facing
-  configuration, whose `conformsToProfile` returns `false` unconditionally
+- **WHEN** `conformsTo(...)` is evaluated through the server-facing host
+  service, the one `FhirPathR4.setEvaluationContext` installs, whose
+  `conformsToProfile` returns `false` unconditionally
 - **THEN** the result is `false` for every URL
+- **AND** this is a configured host service, not the absence of one — see
+  `path.utility.022` for the unset case
 
 #### Scenario: [path.utility.015] `memberOf` asks the host service for the value set
 
@@ -1604,17 +1821,28 @@ The engine SHALL implement the utility and FHIR-specific functions `FHIRPathEngi
   value set
 - **THEN** the result is an empty collection, not an error
 
-#### Scenario: [path.utility.017] `resolve()` resolves a local `#id` reference into `contained`
+#### Scenario: [path.utility.017] `resolve()` resolves a local `#id` reference against the root resource's `contained`
 
-- **WHEN** `resolve()` is evaluated on a `Reference` whose value is `#id` and
-  whose enclosing resource contains that id
-- **THEN** the contained resource is returned
+- **WHEN** `resolve()` is evaluated on a `Reference` whose value is `#id`
+- **THEN** the id is looked up in the **root** resource's `contained` list, not
+  in the focus resource's, and the matching contained resource is returned
+- **AND** when the root resource has no `contained` child, or no contained
+  resource has that id, the item contributes nothing to the result
+- **AND** the function also accepts a primitive focus, treating its value as the
+  reference, and reads `Reference.identifier` when present
+- **AND** no live case in the pinned suite calls `resolve()` at all, so every
+  `resolve()` scenario is differential-only
 
-#### Scenario: [path.utility.018] `resolve()` resolves a Bundle-internal reference by `fullUrl`
+#### Scenario: [path.utility.018] `resolve()` has no Bundle `fullUrl` resolution of its own
 
 - **WHEN** `resolve()` is evaluated on a `Reference` inside a `Bundle` whose
-  entry `fullUrl` matches the reference
-- **THEN** that entry's resource is returned
+  entry `fullUrl` matches the reference, with no host service configured
+- **THEN** the result is an empty collection, because the function resolves only
+  a `#`-prefixed reference itself and delegates every other form to the host
+  service
+- **AND** with a host service configured, that service is asked for the URL and
+  may answer from the Bundle; Bundle-internal resolution is therefore the host
+  service's responsibility, not the engine's
 
 #### Scenario: [path.utility.019] `resolve()` on an unresolvable reference yields empty
 
@@ -1622,12 +1850,79 @@ The engine SHALL implement the utility and FHIR-specific functions `FHIRPathEngi
   service configured
 - **THEN** the result is an empty collection
 
-#### Scenario: [path.utility.020] `resolve()` delegates an external reference to the host service
+#### Scenario: [path.utility.020] `resolve()` delegates an external reference to the host service and swallows its errors
 
 - **WHEN** `resolve()` is evaluated on `Patient/123` with a host service
   configured
 - **THEN** the host service is asked for `Patient/123` and its answer is the
   result
+- **WHEN** the host service raises instead of answering
+- **THEN** the item contributes nothing and evaluation continues; the error is
+  not surfaced
+- **AND** this is the one place the engine deliberately converts an error into
+  an absent value, so it is specified rather than left to
+  `path.errors.005`
+
+#### Scenario: [path.utility.022] `conformsTo` with no host service at all is an execution error
+
+- **WHEN** `conformsTo(...)` is evaluated on an engine with no host service set,
+  which is the state most oracle cases run in
+- **THEN** evaluation fails with an error naming `conformsTo`, because the
+  function raises a no-host-services error before looking at its argument
+- **AND** a focus of other than one item returns `false` rather than failing,
+  once a host service is set
+- **AND** no live case grades the unset path, so it is differential-only
+
+#### Scenario: [path.utility.023] `extension(url)` also returns modifier extensions
+
+- **WHEN** `extension('http://example.org/x')` is evaluated on an element that
+  carries that URL in `modifierExtension` rather than in `extension`
+- **THEN** the modifier extension is returned, because the function collects
+  both `extension` and `modifierExtension` children before filtering by URL
+- **AND** no live case grades it — the `testExtension` group has no
+  modifier-extension case — so it is differential-only
+- **AND** this differs from the FHIRPath/FHIR definition of `extension()`,
+  which is `extension.where(url=...)`; the divergence is recorded as `DEV-0007`
+  and resolved as HAPI's behaviour
+
+#### Scenario: [path.utility.024] `memberOf` as a binary operator folds the whole left collection
+
+- **WHEN** `Patient.name.use memberOf 'http://hl7.org/fhir/ValueSet/name-use'`
+  is evaluated with a host service that resolves the value set
+- **THEN** the result is a single boolean that is `true` if **any** item of the
+  left collection validates, because the operator iterates the whole collection
+  and ORs the outcomes
+- **AND** this differs from the `memberOf()` function, which returns empty
+  unless both the focus and the argument are singletons
+- **AND** no live case grades either form, so both are differential-only
+
+#### Scenario: [path.utility.025] `memberOf` falls back to the worker context when no host service is set
+
+- **WHEN** either `memberOf` form is evaluated with no host service
+- **THEN** the value set is looked up in the engine's own worker context rather
+  than failing
+- **AND** when the value set cannot be resolved, the function form returns an
+  empty collection while the operator form returns `false`
+
+#### Scenario: [path.utility.026] `memberOf` returns empty for a focus whose type it cannot validate
+
+- **WHEN** `memberOf(...)` is evaluated on a focus whose FHIR type is not one of
+  `code`, `string`, `uri`, `Coding` or `CodeableConcept` — a `boolean`, say
+- **THEN** the result is an empty collection, not `false`
+- **AND** `code`, `string` and `uri` are validated with system guessing enabled,
+  while `Coding` and `CodeableConcept` are not
+
+#### Scenario: [path.utility.027] a host service may supply a custom function
+
+- **WHEN** an engine whose host service declares a function by name, with a
+  minimum and maximum parameter count, parses and evaluates an expression
+  calling it
+- **THEN** the parser takes the arity from the host service's declaration, the
+  check pass asks the host service for the result type, and evaluation calls the
+  host service with the focus and the evaluated parameters
+- **AND** an argument the host service declares to be a type name is passed
+  unevaluated, as its `paramIsType` answer directs
+- **AND** no live case grades it, so it is differential-only
 
 #### Scenario: [path.utility.021] the appointment and explanation-of-benefit cases hold
 
@@ -1655,6 +1950,9 @@ it.
 - **WHEN** each of the suite's 29 `invalid="semantic"` cases is checked
 - **THEN** each one fails the check
 - **AND** the check reports which element path or type caused the failure
+- **AND** each case is checked with the `context` and `contextType` the case
+  carries, so this is graded against Frevo's context-aware run and not against
+  HAPI's, which reads neither attribute (`path.oracle.016`)
 
 #### Scenario: [path.check.003] navigating a non-existent element is a semantic error
 
@@ -1718,6 +2016,60 @@ it.
 - **WHEN** an expression is evaluated with the check pass disabled
 - **THEN** evaluation proceeds, as `FhirPathR4` does, which never calls `check`
 
+#### Scenario: [path.check.015] the check pass returns a warning list separate from its failure
+
+- **WHEN** an expression is checked through the surface that accepts a warning
+  list
+- **THEN** the check returns the inferred type **and** a list of warnings, each
+  carrying a message and a stable message id
+- **AND** a warning does not make the check fail, so an expression that produces
+  warnings is still evaluated
+
+#### Scenario: [path.check.016] comparing a collection with a singleton produces a warning, not a failure
+
+- **WHEN** `Patient.name.given < 'Z'` is checked, whose left operand is a
+  collection where a singleton is expected
+- **THEN** the check succeeds and the warning list carries a
+  collection-status warning identifying the operand side
+- **AND** the same applies to a function parameter whose declared collection
+  status is singleton and to a focus whose status is not singleton, each with
+  its own message id
+- **AND** turning any of these into a failure would reject expressions the
+  engine accepts, so the distinction is specified rather than inferred
+
+#### Scenario: [path.check.017] navigating a choice element without `ofType()` produces a warning only when the SQL-on-FHIR check is enabled
+
+- **WHEN** `Observation.value` is checked with the SQL-on-FHIR warning switched
+  off, which is the default
+- **THEN** the warning list is empty
+- **WHEN** the same expression is checked with it switched on
+- **THEN** the warning list carries a choice-without-type-specifier warning
+- **AND** `Observation.value.ofType(Quantity)` checked with it switched on
+  produces no warning, while applying `ofType()` to a non-choice element
+  produces a spurious-type-specifier warning
+- **AND** this is the path search-parameter and ViewDefinition expressions take,
+  so the setting is part of the public surface
+
+#### Scenario: [path.check.018] an unknown extension URL and an impossible `ofType` produce warnings
+
+- **WHEN** `extension('http://example.org/unknown')` is checked against a model
+  that does not define that extension
+- **THEN** the check succeeds with an unknown-extension warning
+- **WHEN** `Patient.name.ofType(Quantity)` is checked, whose focus can never be
+  a `Quantity`
+- **THEN** the check succeeds with an of-type-impossible warning
+- **AND** a navigation into a non-collection where a collection is expected
+  produces its own warning, with its own message id
+
+#### Scenario: [path.check.019] the simple check surface discards warnings
+
+- **WHEN** an expression is checked through the surface that takes no warning
+  list — the one the oracle harness calls
+- **THEN** the check still succeeds or fails as `path.check.002` requires, and
+  the warnings are not returned to the caller
+- **AND** the warning list accumulated during a check is cleared before the next
+  check, so warnings never leak between expressions on a reused engine
+
 #### Scenario: [path.check.014] the harness records which cases the check pass is exercised for
 
 - **WHEN** the oracle harness runs
@@ -1732,17 +2084,29 @@ The engine SHALL expose the strictness switches `FHIRPathEngine` exposes, and SH
 HAPI configures the same engine two ways, and both are observable. Neither is a
 deviation from HAPI, so neither needs a `DEV-nnnn` entry: both are HAPI.
 
-#### Scenario: [path.strictness.001] the default configuration matches `FhirPathR4`
+#### Scenario: [path.strictness.001] the default configuration is non-strict for every pre-R5 version
 
-- **WHEN** an engine is created with no explicit configuration
-- **THEN** the as-singleton rule is not enforced and `as` is not case-sensitive,
-  which is what `FhirPathR4`'s constructor sets
+- **WHEN** an engine is created for R4 with no explicit configuration
+- **THEN** the as-singleton rule is not enforced and `as` is not case-sensitive
+- **AND** this comes from the engine's own initialisation, which sets both for
+  any worker context below R5; `FhirPathR4`'s constructor re-asserts the same
+  two values rather than changing them, so the server-facing default and the
+  engine default coincide
 
-#### Scenario: [path.strictness.002] the oracle harness uses the strict configuration
+#### Scenario: [path.strictness.002] the oracle harness runs the check pass non-strict and the evaluation strict
 
-- **WHEN** the oracle harness creates its engine
-- **THEN** the as-singleton rule is enforced and `as` is case-sensitive, which is
-  what `FHIRPathTests.test` sets before evaluating
+- **WHEN** the oracle harness runs a case
+- **THEN** the check pass runs with the as-singleton rule not enforced and `as`
+  not case-sensitive, and the evaluation runs with both enforced
+- **AND** that ordering is what `FHIRPathTests.test` produces: it calls
+  `check(...)` first and sets both flags to `false` only afterwards, before
+  `evaluate(...)`
+- **AND** the harness sets the flags per case rather than relying on a shared
+  engine, so the first case behaves like every other one — in the pinned Java
+  harness the engine is `static`, so only the very first case's check pass sees
+  the initial `true` values and every later one sees `false`
+- **AND** the harness reports which flag values were in force for each stage of
+  each case, so a disagreement with HAPI can be attributed
 
 #### Scenario: [path.strictness.003] the as-singleton rule rejects a multi-item focus when enforced
 
@@ -1755,19 +2119,57 @@ deviation from HAPI, so neither needs a `DEV-nnnn` entry: both are HAPI.
 - **WHEN** the same expression is evaluated with the rule not enforced
 - **THEN** evaluation succeeds and each item is tested
 
-#### Scenario: [path.strictness.005] case-sensitive `as` rejects a mis-cased type name when enforced
+#### Scenario: [path.strictness.005] a mis-cased type name resolves only when case is not enforced
 
-- **WHEN** `Patient.gender.as(Code)` is evaluated with case sensitivity enforced
-- **THEN** the result differs from the correctly cased form, and the harness
-  records what the pinned engine returns for each
+- **WHEN** `Patient.gender.as(Code)` is evaluated over `patient-example.xml`
+  with `as` case sensitivity **not** enforced, which is the server-facing
+  default
+- **THEN** the mis-cased name resolves to the FHIR type `code` and the result is
+  the `code` `male`
+- **WHEN** the same expression is evaluated with case sensitivity enforced,
+  which is the harness's evaluation configuration
+- **THEN** the result is an empty collection, because `Code` does not name a
+  FHIR type
+- **AND** no live case grades either state, so both are differential-only
 
-#### Scenario: [path.strictness.006] lenient polymorphic names are not supported in R4
+#### Scenario: [path.strictness.006] lenient polymorphic names are supported by the engine and left unset by HAPI
 
-- **WHEN** `Observation.valueQuantity.exists()` is checked with lenient
-  polymorphic names requested
-- **THEN** the behaviour is the strict one, because the suite's own note records
-  that lenient polymorphic mode is not supported in R4 and the R4 engine's
-  `allowPolymorphicNames` is left unset by both HAPI wrappers
+- **WHEN** `Observation.valueQuantity.exists()` is checked and evaluated over
+  `observation-example.xml` with polymorphic names **not** allowed, which is the
+  default and what both HAPI wrappers leave it at
+- **THEN** the static check fails as a semantic error
+  (`polymorphics/testPolymorphicsB`)
+- **WHEN** the same expression is checked and evaluated with polymorphic names
+  allowed
+- **THEN** the check passes and the result is `true`, because the flag is read
+  both when resolving children during evaluation and when resolving an element
+  definition during the check
+- **AND** the suite's comment that lenient polymorphic mode "is not supported in
+  R4" describes two `modeTest` elements that are themselves commented out and
+  are not among the 1,191; it does not describe the engine, which has the field,
+  a public getter and setter, and honours it
+- **AND** no live case grades the allowed state, so it is differential-only
+
+#### Scenario: [path.strictness.008] the SQL-on-FHIR warning is off by default
+
+- **WHEN** an engine is created by either HAPI configuration
+- **THEN** the SQL-on-FHIR warning is off, so checking a choice element without
+  `ofType()` produces no warning (`path.check.017`)
+
+#### Scenario: [path.strictness.009] implicit string conversion is off by default
+
+- **WHEN** an engine is created by either HAPI configuration
+- **THEN** implicit string conversion is off, so a string function over a
+  non-string focus yields empty (`path.string.020`, `path.string.024`)
+
+#### Scenario: [path.strictness.010] liquid mode is out of scope and must be off
+
+- **WHEN** an engine is created by any configuration this change ships
+- **THEN** liquid mode is off, so a `||` token terminates nothing and the parser
+  does not hand control back to a host template engine
+- **AND** liquid mode exists only to embed FHIRPath in Liquid templates, which is
+  `add-narrative`'s concern; setting it is out of scope here and that change
+  owns the scenario for the enabled state
 
 #### Scenario: [path.strictness.007] legacy mode is not enabled for R4
 
@@ -1875,9 +2277,14 @@ The oracle harness SHALL run every case in the vendored suite without modifying 
 #### Scenario: [path.oracle.001] the harness parses every case in the suite
 
 - **WHEN** the harness reads `oracles/fhirpath/tests-fhir-r4.xml`
-- **THEN** it reports 104 groups and 1,193 cases
+- **THEN** it reports 103 groups and 1,191 cases, counted by XML parse and not
+  by text match
 - **AND** a count that differs fails the run, because the suite has been
   re-pinned without the harness being updated
+- **AND** the harness counts `<group>` and `<test>` elements the XML parser
+  returns, so the commented-out `testDollarResource` block at
+  `tests-fhir-r4.xml:1576-1582` — whose bodies are leftover Java text, not
+  well-formed test elements — contributes nothing
 
 #### Scenario: [path.oracle.002] the harness reads every attribute the case carries
 
@@ -1922,18 +2329,29 @@ The oracle harness SHALL run every case in the vendored suite without modifying 
 - **THEN** each outcome item is matched against any expected output rather than
   against the one at its index
 
-#### Scenario: [path.oracle.008] the harness compares count, type and value
+#### Scenario: [path.oracle.008] the harness compares count, and compares type and value only when the expectation states them
 
 - **WHEN** a case's outputs are compared
-- **THEN** the number of outputs must match, each output's `type` attribute must
-  equal the result item's FHIR type name, and each output's text must equal the
-  result item's FHIRPath string value
+- **THEN** the number of outputs must match the number of result items
+- **AND** an output whose `type` attribute is absent or empty means "do not
+  check the type", and an output whose body is absent or empty means "do not
+  check the value" — 71 of the suite's outputs carry no `type` attribute, so a
+  harness that required one would fail cases HAPI passes
+- **AND** where the `type` attribute is present it must equal the result item's
+  FHIR type name, and where the body is present it must equal the result item's
+  FHIRPath string value
 
-#### Scenario: [path.oracle.009] the harness compares a Quantity output by parsing it
+#### Scenario: [path.oracle.009] the harness picks the Quantity comparison from the result item's type, not from the expectation
 
-- **WHEN** an expected output's type is `Quantity`
-- **THEN** the expected text is parsed as a quantity and compared deeply, as
-  `FHIRPathTests` does with `parseQuantityString` and `equalsDeep`
+- **WHEN** a result item is a `Quantity`
+- **THEN** the expected text is parsed as a quantity string and compared deeply,
+  as `FHIRPathTests` does with `parseQuantityString` and `equalsDeep`
+- **AND** the branch is chosen by the **result item's** runtime type, because
+  the suite has exactly one `<output type="Quantity">` while
+  `LowBoundary/LowBoundaryQuantity` and `HighBoundary/HighBoundaryQuantity`
+  expect `1.58650000 'cm'` and `1.58750000 'm'` from a bare `<output>`
+- **AND** every other result item is compared as a primitive, and a non-Quantity
+  result item that is not a primitive fails the case
 
 #### Scenario: [path.oracle.010] the harness reports per-case status with four distinct values
 
@@ -1946,6 +2364,9 @@ The oracle harness SHALL run every case in the vendored suite without modifying 
 - **WHEN** the harness report is written
 - **THEN** each case carries HAPI 8.12.0's measured status alongside Frevo's, so
   the gate can be evaluated per case rather than only in aggregate
+- **AND** HAPI's status is one of `passed`, `failed` or `hapi-cannot-pass`, the
+  last for a case the pinned R4 harness cannot express because it reads none of
+  `mode`, `context`, `contextType` or `version` (`path.oracle.016`)
 
 #### Scenario: [path.oracle.012] the gate is pass rate at or above HAPI's on the same cases
 
@@ -1953,6 +2374,26 @@ The oracle harness SHALL run every case in the vendored suite without modifying 
 - **THEN** it passes only if Frevo's `passed` count is at least HAPI's
 - **AND** a case HAPI passes that Frevo fails is listed individually in the gate
   report, regardless of the aggregate
+- **AND** a case Frevo passes that HAPI fails is listed too, under a status of
+  `ahead-of-hapi`, so the aggregate cannot be read as parity when it is in fact
+  a surplus
+
+#### Scenario: [path.oracle.016] a case HAPI structurally cannot pass is recorded as such, and Frevo is graded on its own run
+
+- **WHEN** the harness runs a pair of cases whose expressions are byte-identical
+  and which differ only by their `context` and `contextType` attributes —
+  `isSemanticChecks/isEffectOnLogic2Base` and `isEffectOnLogic3Base`,
+  `isGuardOr` and `isGuardOrBad`, `isGuardXorBad` and `isGuardXorBad2`,
+  `isGuardOrInnerImplies` and `isGuardOrInnerImpliesBad`
+- **THEN** each case's HAPI status is recorded as `hapi-cannot-pass`, a status
+  distinct from `failed`, because the pinned R4 harness reads none of `mode`,
+  `context`, `contextType` or `version` and always checks against the resource
+  root, so it necessarily fails one of each pair
+- **AND** Frevo's status for those cases comes from its own context-aware run,
+  which honours all four attributes (`path.oracle.002`)
+- **AND** `path.check.002` is graded against that context-aware run, not against
+  HAPI's status, so requiring all 29 semantic-invalid cases to fail the check is
+  consistent with the aggregate gate rather than stricter than it
 
 #### Scenario: [path.oracle.013] the harness can run the same cases through `helios-fhirpath`
 
@@ -1964,7 +2405,7 @@ The oracle harness SHALL run every case in the vendored suite without modifying 
 
 #### Scenario: [path.oracle.014] the `documentFunctions` group is reported as out of scope, not as passing
 
-- **WHEN** the harness runs the 114 cases in the `mode="custom"`
+- **WHEN** the harness runs the 115 cases in the `mode="custom"`
   `documentFunctions` group
 - **THEN** each is reported `failed` with the reason that the R4 engine
   implements none of `section`, `entry`, `entryIn`, `resources`, `resourcesIn`,
@@ -2013,7 +2454,7 @@ because this engine runs inside the write transaction.
 
 #### Scenario: [path.perf.005] the whole suite runs fast enough to be a per-pull-request gate
 
-- **WHEN** the oracle harness runs all 1,193 cases
+- **WHEN** the oracle harness runs all 1,191 cases
 - **THEN** the run completes in at most 10 s on the reference environment
   described in `bench/targets.md`
 

@@ -25,8 +25,10 @@ checkpoint because it changes what a gate measures.
 ## Phase A — the oracle harness and the measurement ADR 0004 is waiting for
 
 - [ ] **1. Build the FHIRPath oracle harness.** Parse
-  `oracles/fhirpath/tests-fhir-r4.xml` into cases: assert 104 groups and 1,193
-  `<test>` elements, and read every attribute a case carries — `name`,
+  `oracles/fhirpath/tests-fhir-r4.xml` into cases: assert 103 groups and 1,191
+  `<test>` elements **counted by XML parse, not by text match** — a grep says
+  104 and 1,193 because the `testDollarResource` group at lines 1576-1582 is
+  inside an XML comment whose bodies still contain `<test ...>` text — and read every attribute a case carries — `name`,
   `description`, `inputfile`, `expression` plus its `invalid` value,
   `predicate`, `ordered`, `mode`, `context`, `contextType`, `version`,
   `testing`, `checkOrderedFunctions` — failing on an attribute the harness does
@@ -49,7 +51,7 @@ checkpoint because it changes what a gate measures.
 - [ ] **2. Measure `helios-fhirpath` and `haste-fhirpath` through the harness and
   record the numbers in ADR 0004.** Create `harness/fhirpath-compare/`, listed
   in `[workspace] exclude` so `haste-fhirpath`'s wildcard dependencies never
-  enter the product graph or the `cargo deny` gate. Run all 1,193 cases through
+  enter the product graph or the `cargo deny` gate. Run all 1,191 cases through
   `helios-fhirpath` 0.2.7 and `haste-fhirpath` 0.129.3, record per-case pass or
   fail and the wall-clock of a full run, and establish whether
   `IntoEvaluationResult` can be implemented over a lazy, span-based node without
@@ -60,27 +62,36 @@ checkpoint because it changes what a gate measures.
   scope of every task below.
   Satisfies `path.oracle.013`.
 
-- [ ] **3. Measure HAPI 8.12.0's own pass rate on the same 1,193 cases and wire
+- [ ] **3. Measure HAPI 8.12.0's own pass rate on the same 1,191 cases and wire
   it into the gate.** Run `org.hl7.fhir.r4.test.FHIRPathTests` at pin
   `73c432b5` against the same suite file, record each case's status, and load
   that record into the harness so every case reports Frevo's status beside
   HAPI's. Implement the gate as "Frevo's `passed` count at least HAPI's", with
   every case HAPI passes and Frevo fails listed individually regardless of the
-  aggregate. Confirm and record that all 114 `documentFunctions` cases fail for
+  aggregate. Confirm and record that all 115 `documentFunctions` cases fail for
   HAPI too, with the reason that the R4 `ExpressionNode.Function` enum
-  implements none of the seven functions.
-  Satisfies `path.oracle.011`, `path.oracle.012`, `path.oracle.014`.
+  implements none of the seven functions. Record a status of `hapi-cannot-pass`,
+  distinct from `failed`, for the `isSemanticChecks` pairs whose expressions are
+  byte-identical and differ only by `context`/`contextType` —
+  `isEffectOnLogic2Base`/`isEffectOnLogic3Base`, `isGuardOr`/`isGuardOrBad`,
+  `isGuardXorBad`/`isGuardXorBad2`,
+  `isGuardOrInnerImplies`/`isGuardOrInnerImpliesBad` — because the pinned R4
+  harness reads neither attribute and so necessarily fails one of each pair.
+  Satisfies `path.oracle.011`, `path.oracle.012`, `path.oracle.014`,
+  `path.oracle.016`.
 
 - [ ] **4. Write the failing tests for every `path.*` scenario.** One test per
   scenario ID, each carrying a `// covers: path.<area>.<nnn>` comment, with the
   oracle-backed scenarios driven from the harness's case selectors and the rest
-  written directly. All 329 must fail, and none by `todo!()`, `#[ignore]` or a
-  bare `#[should_panic]`.
-  Covers all 329 `path.*` scenarios.
+  written directly. All 356 must fail, and none by `todo!()`, `#[ignore]` or a
+  bare `#[should_panic]`. Where a scenario says it is differential-only, the
+  test is written against a recorded HAPI response rather than against a suite
+  case, and says so.
+  Covers all 356 `path.*` scenarios.
 
 - [ ] **5. Write the failing tests for every `codegen.*` and `model.*`
   scenario.** Same discipline: one test per scenario ID with a `covers:`
-  comment, 48 plus 77 of them, including the `bench/micro/` workloads as
+  comment, 49 plus 80 of them, including the `bench/micro/` workloads as
   benchmarks with assertions on their budgets. Interim round-trip selector is
   the 103 examples in `oracles/fhir-test-cases/fetched/r4/examples/`, with the
   test reporting that it is the interim set.
@@ -185,10 +196,12 @@ checkpoint because it changes what a gate measures.
   Satisfies `model.lazy.001` through `model.lazy.006`.
 
 - [ ] **19. Implement JSON decoding: structure.** `resourceType` dispatch and its
-  three error paths, unknown properties with a path, choice decoding from the
-  typed property name, contained resources, Bundle entries of mixed types, and
-  element `id` and `extension` on any element.
-  Satisfies `model.json.001` through `model.json.007`, `model.json.020`.
+  three error paths, choice decoding from the typed property name, contained
+  resources, Bundle entries of mixed types, and element `id` and `extension` on
+  any element. The unknown-property path is task 21's, because its outcome
+  depends on the parse mode.
+  Satisfies `model.json.001`, `model.json.002`, `model.json.003`,
+  `model.json.005`, `model.json.006`, `model.json.007`, `model.json.020`.
 
 - [ ] **20. Implement JSON decoding: primitive values.** Opaque `xhtml`,
   lexical-form decimals with no binary-float path, `integer`, `positiveInt` and
@@ -196,11 +209,22 @@ checkpoint because it changes what a gate measures.
   Satisfies `model.json.008`, `model.json.009`, `model.json.010`,
   `model.json.011`, `model.json.012`, `model.json.017`.
 
-- [ ] **21. Implement JSON decoding: rejection paths.** Type mismatch with both
-  types named, array-for-scalar and scalar-for-array, duplicate keys as an error
-  rather than last-wins, `null` in a non-primitive array, non-UTF-8 input.
-  Satisfies `model.json.013`, `model.json.014`, `model.json.015`,
-  `model.json.016`, `model.json.018`, `model.json.019`.
+- [ ] **21. Implement the two parse modes and the diagnostic channel.** Lenient
+  by default, matching the handler `FhirContext` installs: an unknown property,
+  a JSON type mismatch, a single object where an array belongs, an array where a
+  single value belongs, a duplicate key (last wins), a `null` in a non-primitive
+  array and a missing required element all **succeed** and return a diagnostic
+  beside the resource. The two genuinely fatal conditions fail in both modes: an
+  extension carrying both a value and nested extensions, and a non-blank invalid
+  primitive value. Strict mode turns every diagnostic into an error and changes
+  nothing else, with identical paths and offsets. Non-UTF-8 input fails in both.
+  This task is the one the differential gate would otherwise catch on day one,
+  so it comes before any other decoding work lands.
+  Satisfies `model.json.004`, `model.json.013`, `model.json.014`,
+  `model.json.015`, `model.json.016`, `model.json.018`, `model.json.019`,
+  `model.json.021`, `model.json.022`, `model.json.023`, `model.errors.003`,
+  `codegen.cardinality.002`, `codegen.cardinality.004`,
+  `codegen.cardinality.005`.
 
 - [ ] **22. Implement the `_field` primitive-extension representation.** Two
   independent spans per node; singleton and index-aligned array forms; `null`
@@ -228,12 +252,15 @@ checkpoint because it changes what a gate measures.
   absent elements as an empty list; `all_children` with names; owned values that
   outlive their source; the resource flag; `primitive()` returning none for a
   value-less element; the type hierarchy and element-type answers.
-  Satisfies `model.nav.001` through `model.nav.011`.
+  Satisfies `model.nav.001` through `model.nav.011`, and `model.nav.012` by
+  running the same expression over a `frevo-model` node and over the harness's
+  XML-backed test node and requiring equal results.
 
 - [ ] **26. Implement decode error reporting.** Element path and byte offset on
-  every error; first error in document order; no panic on any truncation prefix;
-  a depth limit instead of a stack overflow.
-  Satisfies `model.errors.001` through `model.errors.005`.
+  every error and on every lenient-mode diagnostic; no panic on any truncation
+  prefix; a depth limit instead of a stack overflow.
+  Satisfies `model.errors.001`, `model.errors.002`, `model.errors.004`,
+  `model.errors.005`.
 
 - [ ] **27. Land the model benchmarks and record the baseline.** The five
   `bench/micro/` model workloads with their budgets and the first baseline for
@@ -276,10 +303,12 @@ checkpoint because it changes what a gate measures.
 
 - [ ] **33. Implement filtering, projection and subsetting.** `where`, `select`,
   `repeat` with cycle termination, `ofType` including the namespace-qualified
-  form; `single`, `first`, `last`, `tail`, `skip`, `take`, `intersect`,
-  `exclude`.
+  form; `single` — which raises for a focus of size 0 as well as for one larger
+  than 1 — `first`, `last`, `tail`, `skip`, `take`, `intersect`, `exclude`; and
+  the unconditional ordered-collection rejection that applies to the indexer,
+  `first`, `last`, `tail`, `skip` and `take` alike.
   Satisfies `path.filter.001` through `path.filter.009`, `path.subset.001`
-  through `path.subset.012`.
+  through `path.subset.013`.
 
 - [ ] **34. Implement combining and membership.** The union operator, `union`,
   `combine`, `in`, `contains`, and the empty-operand rule.
@@ -289,10 +318,14 @@ checkpoint because it changes what a gate measures.
   and inequality with their empty-collection result; equivalence and
   non-equivalence always returning a boolean; collection comparison in order;
   decimal comparison by value; deep comparison of complex elements; the
-  differing-precision date rules; `hasValue`; the four ordered operators with
-  their type, arity and precision failures; and the two `Period` invariant forms.
+  differing-precision date rules; `hasValue`; the four ordered operators,
+  including the three facts an implementer would otherwise get wrong — a
+  multi-item operand yields **empty** and not an error, `<` rejects
+  `unsignedInt` and `positiveInt` while its three mirrors accept them, and all
+  four compare numerics through a binary `double`; and the two `Period`
+  invariant forms.
   Satisfies `path.equality.001` through `path.equality.012`, `path.compare.001`
-  through `path.compare.010`.
+  through `path.compare.012`.
 
 - [ ] **36. Implement boolean logic.** The four operators' three-valued truth
   tables, the singleton-evaluation rule for a non-boolean operand, both
@@ -308,22 +341,29 @@ checkpoint because it changes what a gate measures.
 
 - [ ] **38. Implement date and dateTime arithmetic.** Calendar-duration addition
   and subtraction with the engine's month-end behaviour, precision preservation,
-  and the offset comparison case.
+  and the offset comparison case. `today()` and `now()` read the engine's
+  configured time zone rather than the process default, and `now()` is read
+  afresh on every call — no evaluation instant is cached, because the engine
+  caches none.
   Satisfies `path.math.012`, `path.math.013`, `path.math.014`,
-  `path.datetime.001`, `path.datetime.002`, `path.datetime.003`,
-  `path.datetime.005`, `path.datetime.006`.
+  `path.datetime.001` through `path.datetime.007`.
 
 - [ ] **39. Implement math functions.** `abs`, `ceiling`, `floor`, `round`,
   `sqrt`, `exp`, `ln`, `log`, `power`, `truncate`, with the empty-focus and
-  multi-item rules.
+  multi-item rules, and with the precision boundary the engine actually has:
+  `sqrt`, `abs`, `ceiling`, `floor`, `exp`, `ln`, `log` and `power` go through a
+  binary `double`, while `round` and `truncate` are exact.
   Satisfies `path.mathfn.001` through `path.mathfn.011`.
 
 - [ ] **40. Implement string functions: the base set.** `upper`, `lower`,
   `toChars`, `indexOf`, `substring` with its out-of-range rule, `startsWith`,
-  `endsWith`, `contains`, `length`, and the non-string and empty-focus rules,
-  counting unicode scalar values rather than bytes.
+  `endsWith`, `contains`, `length`, counting unicode scalar values rather than
+  bytes. A non-string focus yields **empty**, not an error, for all 15 guarded
+  functions; the functions that do reject a bad focus — `round`, `truncate`,
+  `single` — reject it with an error, and that difference is the point of the
+  two scenarios.
   Satisfies `path.string.001` through `path.string.007`, `path.string.012`,
-  `path.string.020`, `path.string.021`, `path.string.022`.
+  `path.string.020` through `path.string.024`.
 
 - [ ] **41. Implement string functions: regular expressions and the R3
   additions.** `matches`, `matchesFull`, `replaceMatches`, `replace`, `trim`,
@@ -332,26 +372,32 @@ checkpoint because it changes what a gate measures.
   Satisfies `path.string.008` through `path.string.011`, `path.string.013`
   through `path.string.019`.
 
-- [ ] **42. Implement type conversion.** Each `toX` and its `convertsToX`,
-  including every date, dateTime and time precision string, the boolean
-  spellings, quantities, the failed-conversion asymmetry, the multi-item error,
-  and precision-preserving widening.
-  Satisfies `path.convert.001` through `path.convert.011`.
+- [ ] **42. Implement type conversion.** Each `toX` the R4 engine has and each
+  `convertsToX`, including every date, dateTime and time precision string, the
+  boolean spellings, quantities, the failed-conversion asymmetry, the multi-item
+  error, and precision-preserving widening. `toDate` must **not** exist:
+  `'2015'.toDate()` is a parse failure while `'2015'.convertsToDate()` is
+  `true`, and shipping the symmetric pair would make Frevo accept an expression
+  HAPI rejects.
+  Satisfies `path.convert.001` through `path.convert.014`.
 
 - [ ] **43. Implement the UCUM unit algebra.** Canonical-form conversion from the
   pinned `ucum-essence.xml`, commensurability, multiplication and division of
   units, and the reported-version and missing-file failure paths.
   Satisfies `path.quantity.016`.
 
-- [ ] **44. Implement quantity semantics on top of it.** Equality after
+- [ ] **44. Implement quantity semantics on top of it.** Note before starting:
+  canonicalisation performs **no** dimension check, so incommensurable units
+  compare by magnitude and return a boolean, and with no UCUM data two
+  quantities with differing unit codes compare `false`. Neither is an error.
+ Equality after
   conversion, equivalence rounding to the lower precision, calendar-duration
   commensurability, magnitude comparison, unit arithmetic, the dimensionless
   unit, the unitless and unit-text cases from
   `parameters-example-quantities.xml` and `parameters-quantity-unit-text.xml`,
-  `comparable()`, the incommensurable-comparison error, and the unknown-unit
-  behaviour.
-  Satisfies `path.quantity.001` through `path.quantity.015`,
-  `path.quantity.017`.
+  `comparable()`, the incommensurable-comparison result, and the unknown-unit
+  and non-UCUM-system behaviours.
+  Satisfies `path.quantity.001` through `path.quantity.018`.
 
 - [ ] **45. Implement the boundary functions.** `lowBoundary`, `highBoundary` and
   `precision` over decimals with their carry and borrow cases, out-of-range
@@ -369,8 +415,9 @@ checkpoint because it changes what a gate measures.
 - [ ] **47. Implement environment variables.** The built-in system URLs, the
   three backtick shorthands, `%us-zip`, `%resource` and `%rootResource` with
   their no-focus errors, `%context`, the unknown-constant error, a host service
-  returning a collection, and `defineVariable` with its scoping.
-  Satisfies `path.env.001` through `path.env.014`.
+  returning a collection, the constant-evaluation mode passed to the host
+  service, and `defineVariable` with its scoping.
+  Satisfies `path.env.001` through `path.env.015`.
 
 - [ ] **48. Implement the utility functions.** `trace` with its retrievable log,
   `check`, `aggregate` with and without an initial value, `sort` with no
@@ -379,11 +426,19 @@ checkpoint because it changes what a gate measures.
   Satisfies `path.utility.001` through `path.utility.011`.
 
 - [ ] **49. Implement the host-service functions.** `conformsTo` against the
-  harness's service, its unknown-profile error and `FhirPathR4`'s
-  always-false default; `memberOf` with and without a resolvable value set;
-  `resolve()` for `#id` into `contained`, for a Bundle `fullUrl`, for an
-  unresolvable reference, and delegated to the host service.
-  Satisfies `path.utility.012` through `path.utility.021`.
+  harness's service, its unknown-profile error, `FhirPathR4`'s always-false
+  default, and the distinct no-host-service error; both `memberOf` forms — the
+  function returning empty unless focus and argument are singletons, the binary
+  operator folding the whole left collection to one boolean — with the
+  worker-context fallback when no host service is set and the differing answers
+  for an unresolvable value set; the `memberOf` focus-type gate; `resolve()` for
+  `#id` against the **root** resource's `contained`, for a primitive focus, for
+  `Reference.identifier`, for an unresolvable reference, delegated to the host
+  service, and with a host-service exception swallowed to empty;
+  `extension(url)` over both `extension` and `modifierExtension`; and
+  host-supplied custom functions through `resolve_function`, `check_function`,
+  `execute_function` and `param_is_type`.
+  Satisfies `path.utility.012` through `path.utility.027`.
 
 - [ ] **50. Implement the static type-check pass.** Separate from evaluation;
   all 29 `invalid="semantic"` cases failing it with the offending path named;
@@ -392,17 +447,33 @@ checkpoint because it changes what a gate measures.
   Satisfies `path.check.001`, `path.check.002`, `path.check.003`,
   `path.check.004`, `path.check.013`, `path.check.014`.
 
+- [ ] **50a. Implement the check pass's warning channel.** The surface that
+  returns a warning list beside the inferred type; a warning never failing the
+  check; collection-status warnings for an operand, a function parameter and a
+  focus; the SQL-on-FHIR choice warnings behind their setting;
+  unknown-extension, of-type-impossible and not-a-collection warnings; the
+  simple surface discarding warnings; and the list being cleared between checks
+  on a reused engine. Each warning carries a stable message id, because the
+  validator will key on it.
+  Satisfies `path.check.015` through `path.check.019`, `path.strictness.008`.
+
 - [ ] **51. Implement type-guard narrowing in the check pass.** The `is` operator
   and `is()` function narrowing the guarded operand under `implies`, `and`, `or`
   and `iif`; the unreachable-operand rule when the narrowed set is empty; and a
   multi-type `contextType`. This is the `isSemanticChecks` group.
   Satisfies `path.check.005` through `path.check.012`.
 
-- [ ] **52. Implement the strictness configuration.** The server-facing default
-  matching `FhirPathR4`; the strict configuration the harness selects; the
-  as-singleton rule enforced and not; case-sensitive `as`; lenient polymorphic
-  names behaving strictly in R4; legacy mode off.
-  Satisfies `path.strictness.001` through `path.strictness.007`.
+- [ ] **52. Implement the strictness configuration and the four remaining engine
+  settings.** The non-strict default, which comes from the engine's own
+  initialisation for any pre-R5 version and is what `FhirPathR4`'s constructor
+  re-asserts; the harness's per-case ordering, in which the check pass runs
+  non-strict and the evaluation runs strict; the as-singleton rule enforced and
+  not; `as` case sensitivity in both states; `allowPolymorphicNames` in both
+  states, since the R4 engine does honour it in evaluation and in the check
+  pass; legacy mode off; implicit string conversion off; the SQL-on-FHIR warning
+  off; and liquid mode off and out of scope.
+  Satisfies `path.strictness.001` through `path.strictness.010`,
+  `path.lexer.015`, `path.lexer.016`, `path.string.024`.
 
 - [ ] **53. Implement error reporting and the bounds.** All 27
   `invalid="execution"` cases failing at evaluation after a clean parse and
@@ -475,6 +546,15 @@ checkpoint because it changes what a gate measures.
   package with its digest; change `frevo-codegen` from `empty` to `independent`.
   Confirm every derived file carries the required provenance header and every
   generated file the `@generated` marker.
+
+- [ ] **61a. Confirm the nine deviation entries against the implementation.**
+  `DEV-0001` to `DEV-0009` in `docs/deviations.md` were written from the pinned
+  Java source before any Rust existed. Re-run each one's reproducing expression
+  through both engines, confirm the recorded HAPI behaviour is what HAPI
+  actually does, fill in the `Reviewed` line, and raise all nine at the
+  checkpoint. An entry whose recorded behaviour turns out to be wrong is
+  corrected or deleted, not left standing — an inaccurate deviation is worse
+  than none, because it licenses a difference nobody checked.
 
 - [ ] **62. Update `tasks/graph.yaml` and finalise ADR 0004.** Set this change's
   `status` to `done`, so `add-server-skeleton` and `add-store-schema` unblock.

@@ -182,11 +182,20 @@ repeating element preserves order.
 - **WHEN** `Patient.birthDate` (`0..1`) is generated
 - **THEN** it is absent or holds exactly one value
 
-#### Scenario: [codegen.cardinality.002] `1..1` is required and single
+#### Scenario: [codegen.cardinality.002] `1..1` is required and single, and its absence is a diagnostic rather than a rejection
 
 - **WHEN** `Observation.status` (`1..1`) is generated
-- **THEN** it holds exactly one value, and a document lacking it is reported as
-  a missing required element rather than silently defaulted
+- **THEN** the element holds at most one value and records that its minimum
+  cardinality is 1
+- **WHEN** an `Observation` document with no `status` is decoded in lenient mode,
+  the default
+- **THEN** decoding **succeeds** with the element absent and returns a
+  missing-required-element diagnostic naming `Observation.status`, because
+  `LenientErrorHandler.missingRequiredElement` logs a warning and returns — a
+  server asked to store that resource answers `2xx`
+- **WHEN** the same document is decoded in strict mode
+- **THEN** decoding fails, naming `Observation.status`
+- **AND** in neither mode is the element given a default value
 
 #### Scenario: [codegen.cardinality.003] `0..*` is an ordered list
 
@@ -195,12 +204,21 @@ repeating element preserves order.
 - **THEN** the three values are returned in document order
 - **AND** re-serialising preserves that order
 
-#### Scenario: [codegen.cardinality.004] `1..*` is a non-empty ordered list
+#### Scenario: [codegen.cardinality.005] a required element present but empty is treated as absent
 
-- **WHEN** `Bundle.entry.request` ... `Questionnaire.item.answerOption`-style
-  `1..*` elements are generated
-- **THEN** an empty list is reported as a cardinality violation on decode, not
-  accepted
+- **WHEN** a document carries `"status": ""` for a `1..1` required element
+- **THEN** the lenient decode returns an invalid-value diagnostic rather than
+  failing, because a blank value is the one invalid value
+  `LenientErrorHandler` logs instead of raising (`model.json.023`)
+- **AND** the strict decode fails, naming the element
+
+#### Scenario: [codegen.cardinality.004] `1..*` is an ordered list whose minimum is recorded
+
+- **WHEN** a `1..*` element is generated
+- **THEN** it records that its minimum cardinality is 1 and preserves order
+- **WHEN** a document gives it an empty array, decoded in lenient mode
+- **THEN** decoding succeeds with the element absent and returns a
+  missing-required-element diagnostic; the strict decode fails
 
 ### Requirement: Value-set bindings
 

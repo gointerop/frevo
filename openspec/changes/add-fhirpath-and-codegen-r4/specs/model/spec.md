@@ -93,8 +93,11 @@ Parsing SHALL materialise only the elements a caller actually asks for
 
 ### Requirement: FHIR JSON decoding
 
-`frevo-model` SHALL decode the R4 JSON representation as `org.hl7.fhir.r4`'s
-`JsonParser` does at SHA `73c432b5f43ddbce979978a760ec4aa81e929094`.
+`frevo-model` SHALL decode the R4 JSON representation as the parser the starter
+actually uses does — `ca.uhn.fhir.parser.JsonParser` with the error handler
+`FhirContext` installs by default — and SHALL offer the two parse modes HAPI
+offers: lenient by default, strict on request. Which upstream file governs which
+part is recorded in [`../../design.md`](../../design.md) section 3.
 
 #### Scenario: [model.json.001] the resource type comes from `resourceType`
 
@@ -112,10 +115,17 @@ Parsing SHALL materialise only the elements a caller actually asks for
 - **WHEN** `"resourceType": "Patinet"` is decoded
 - **THEN** decoding fails and the error contains `Patinet`
 
-#### Scenario: [model.json.004] an unknown property is reported with its path
+#### Scenario: [model.json.004] an unknown property is accepted in lenient mode and reported as a diagnostic
 
-- **WHEN** a `Patient` document carries `"nmae": []`
-- **THEN** decoding reports an unrecognised property at path `Patient.nmae`
+- **WHEN** a `Patient` document carrying `"nmae": []` is decoded in lenient
+  mode, which is the default
+- **THEN** decoding **succeeds**, the property is dropped from the resource, and
+  an unrecognised-property diagnostic naming path `Patient.nmae` is returned
+  alongside the resource
+- **AND** a server that stores this resource answers `2xx`, which is what HAPI
+  8.12.0 does: `LenientErrorHandler.unknownElement` logs a warning and returns
+- **WHEN** the same document is decoded in strict mode
+- **THEN** decoding fails with an error naming path `Patient.nmae`
 
 #### Scenario: [model.json.005] a choice element decodes from its typed property name
 
@@ -168,29 +178,51 @@ Parsing SHALL materialise only the elements a caller actually asks for
 - **THEN** decoding reports the value as out of range, naming the element path
   and the declared type
 
-#### Scenario: [model.json.013] a JSON type mismatch is reported with the path and both types
+#### Scenario: [model.json.013] a JSON type mismatch is accepted in lenient mode and reported as a diagnostic
 
 - **WHEN** `"active": "true"` is decoded for `Patient.active`, which is
-  `boolean`
-- **THEN** decoding fails with an error naming `Patient.active`, the expected
-  type `boolean` and the found JSON type `string`
+  `boolean`, in lenient mode
+- **THEN** decoding **succeeds** and returns a diagnostic naming
+  `Patient.active`, the expected type `boolean` and the found JSON type
+  `string`, because `LenientErrorHandler.incorrectJsonType` logs and returns
+- **AND** the element's value is the scalar's string form, which is what HAPI's
+  parser passes to `attributeValue` regardless of the JSON type
+- **WHEN** the same document is decoded in strict mode
+- **THEN** decoding fails with that same information as an error
 
-#### Scenario: [model.json.014] a repeating element given a scalar is reported
+#### Scenario: [model.json.014] a repeating element given a single object is accepted in lenient mode
 
 - **WHEN** `"name": {"family": "Chalmers"}` is decoded for `Patient.name`, which
-  is `0..*`
-- **THEN** decoding reports that an array was expected at `Patient.name`
+  is `0..*`, in lenient mode
+- **THEN** decoding **succeeds** with one `name` entry and returns an
+  incorrect-JSON-type diagnostic naming `Patient.name`
+- **WHEN** the same document is decoded in strict mode
+- **THEN** decoding fails, naming `Patient.name` and that an array was
+  expected
 
-#### Scenario: [model.json.015] a single element given an array is reported
+#### Scenario: [model.json.015] a single element given an array is accepted in lenient mode, keeping the first value
 
-- **WHEN** `"birthDate": ["1974-12-25"]` is decoded for `Patient.birthDate`,
-  which is `0..1`
-- **THEN** decoding reports that a single value was expected at
-  `Patient.birthDate`
+- **WHEN** `"birthDate": ["1974-12-25", "1980-01-01"]` is decoded for
+  `Patient.birthDate`, which is `0..1`, in lenient mode
+- **THEN** decoding **succeeds**, `Patient.birthDate` holds `1974-12-25`, and an
+  unexpected-repeating-element diagnostic naming `Patient.birthDate` is
+  returned, because `LenientErrorHandler.unexpectedRepeatingElement` logs and
+  returns and the parser keeps the first repetition
+- **WHEN** the same document is decoded in strict mode
+- **THEN** decoding fails, naming `Patient.birthDate`
 
-#### Scenario: [model.json.016] a duplicate JSON key is an error, not a last-wins
+#### Scenario: [model.json.016] a duplicate JSON key takes the last occurrence in lenient mode
 
-- **WHEN** a document carries `"gender"` twice
+- **WHEN** a document carries `"gender": "male"` and then `"gender": "female"`,
+  decoded in lenient mode
+- **THEN** decoding **succeeds** and `Patient.gender` is `female`, because HAPI
+  reads JSON through a Jackson `ObjectMapper` configured without
+  `FAIL_ON_READING_DUP_TREE_KEY` or `STRICT_DUPLICATE_DETECTION`, so a repeated
+  field name silently overwrites
+- **AND** a duplicate-property diagnostic naming the property is returned, which
+  is more than HAPI reports; HAPI has no error-handler callback for this case at
+  all, so there is nothing to match and reporting it costs nothing observable
+- **WHEN** the same document is decoded in strict mode
 - **THEN** decoding fails with an error naming the duplicated property
 
 #### Scenario: [model.json.017] `base64Binary` is carried as its encoded text
@@ -199,16 +231,56 @@ Parsing SHALL materialise only the elements a caller actually asks for
 - **THEN** the base64 text is byte-identical to the input, with the input's
   padding and without re-encoding
 
-#### Scenario: [model.json.018] `null` in a non-primitive array is an error
+#### Scenario: [model.json.018] `null` in a non-primitive array yields a value-less element in lenient mode
 
-- **WHEN** `"name": [null]` is decoded for `Patient.name`
-- **THEN** decoding fails, because `null` is only meaningful as a hole in a
-  primitive array paired with `_name`
+- **WHEN** `"name": [null]` is decoded for `Patient.name` in lenient mode
+- **THEN** decoding **succeeds** with one `name` entry that has no value and no
+  children, because HAPI's parser has an explicit null branch that enters the
+  element, parses any `_name` sibling at the same index, and ends it — it does
+  not reject
+- **AND** re-serialising the resource unchanged emits `"name": [null]` again
+- **WHEN** the same document is decoded in strict mode
+- **THEN** decoding fails, naming `Patient.name` and that `null` is meaningful
+  only as a hole in a primitive array paired with `_name`
 
 #### Scenario: [model.json.019] decoding is encoding-strict
 
 - **WHEN** input bytes are not valid UTF-8
 - **THEN** decoding fails with an error naming the byte offset
+
+#### Scenario: [model.json.021] the parse mode is selectable and lenient is the default
+
+- **WHEN** a decoder is created with no explicit mode
+- **THEN** it is lenient, matching `FhirContext`'s default error handler, so a
+  request body HAPI 8.12.0 accepts is accepted
+- **WHEN** a decoder is created in strict mode
+- **THEN** every diagnostic the lenient mode returns beside the resource becomes
+  an error instead, and nothing else about decoding changes
+- **AND** the diagnostics a lenient decode returns are the same set, with the
+  same paths and offsets, as the errors a strict decode raises, so the two modes
+  cannot drift apart
+
+#### Scenario: [model.json.022] an extension carrying both a value and nested extensions is fatal in both modes
+
+- **WHEN** an `Extension` that has both a `value[x]` and nested `extension`
+  children is decoded in lenient mode
+- **THEN** decoding **fails**, because this is one of only two conditions
+  `LenientErrorHandler` treats as fatal by default
+- **AND** a server asked to store that resource answers `400 Bad Request` with
+  an `OperationOutcome`, rather than storing a resource that cannot later be
+  read, updated or deleted
+- **AND** the error names the extension's element path and its URL
+
+#### Scenario: [model.json.023] an invalid primitive value is fatal in both modes
+
+- **WHEN** a primitive element carries a value that does not match its type's
+  value rule — `"birthDate": "not-a-date"`, say — and is decoded in lenient mode
+- **THEN** decoding **fails**, because an invalid value is the other condition
+  `LenientErrorHandler` treats as fatal by default, on the stated grounds that
+  ignoring it loses data silently
+- **AND** a blank value is **not** fatal: it is logged and parsing continues
+- **AND** a server asked to store a resource with an invalid primitive value
+  answers `400 Bad Request`
 
 #### Scenario: [model.json.020] element `id` and `extension` decode on any element
 
@@ -464,11 +536,15 @@ the codec.
 - **WHEN** any decode error is reported
 - **THEN** it names the byte offset in the input at which the problem was found
 
-#### Scenario: [model.errors.003] decoding reports the first error and does not panic
+#### Scenario: [model.errors.003] a strict decode reports the first error; a lenient decode reports every diagnostic
 
-- **WHEN** a document contains several independent problems
+- **WHEN** a document containing several independent problems is decoded in
+  strict mode
 - **THEN** decoding returns an error for the first one in document order and
   does not panic
+- **WHEN** the same document is decoded in lenient mode
+- **THEN** decoding succeeds and returns every diagnostic, in document order,
+  because HAPI logs each one and continues
 
 #### Scenario: [model.errors.004] truncated input is an error, not a panic
 
