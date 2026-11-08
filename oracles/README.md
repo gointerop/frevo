@@ -16,6 +16,7 @@ Pins, licences and dispositions: [`PINS.md`](PINS.md).
 | `fhirpath/` | official FHIRPath tests | vendored (231 KB, Apache-2.0) |
 | `cql-tests/` | `cqframework/cql-tests` | vendored (431 KB, Apache-2.0) |
 | `fhir-test-cases/` | HL7 validator and others | fetched — 286 MB |
+| `r4-example-roundtrip/` | R4 example resources, `hl7.fhir.r4.examples#4.0.1` | fetched — 19.6 MB, 5,311 resources, CC0-1.0, pinned by SHA-256 |
 | `inferno-us-core/` | Inferno US Core kit | fetched — needs Ruby and a running server |
 | `inferno-bulk-data/` | Inferno Bulk Data kit | fetched |
 | `inferno-smart/` | Inferno SMART App Launch kit | fetched |
