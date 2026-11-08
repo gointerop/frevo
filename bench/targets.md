@@ -1,7 +1,15 @@
-# Proposed performance targets
+# Performance targets
 
-**Status: proposed, awaiting owner approval.** These become gate conditions once
-approved, so they are deliberately stated as numbers rather than aspirations.
+**Status: accepted by the owner, 2026-11-08.** These are gate conditions: a
+change on a read, search or ingest path must meet the budget for its workload
+before it can be archived.
+
+They remain open to revision on evidence. The ratios were derived from a
+baseline on the small dataset, and the first real implementation
+(`add-fhirpath-and-codegen-r4`, then `add-store-crud`) is what will show
+whether they are too soft or too hard. Revising one is a normal decision with
+the measurement attached, not an admission of failure -- what is not
+acceptable is quietly missing one.
 
 Derived from [`baseline-hapi-8.12.md`](baseline-hapi-8.12.md), measured on the
 same machine, the same dataset and the same database tuning.
@@ -17,10 +25,18 @@ Everything below is relative to a baseline measured on:
 
 Two caveats that limit how far these numbers can be pushed:
 
-1. **The baseline is the small dataset.** The 10k-patient medium set is being
-   generated; index selectivity and buffer-cache hit rates change materially at
-   that size, so the ratios below will need re-checking. Targets are expressed
-   as ratios partly for that reason.
+1. **The baseline is the small dataset.** A 1,000-patient medium set is being
+   measured separately; index selectivity and buffer-cache hit rates change
+   materially once the working set stops fitting in cache, so the ratios below
+   will need re-checking against it. Targets are expressed as ratios partly for
+   that reason.
+
+   The medium set was originally specified as 10,000 patients. Generating that
+   produced 31 GB of bundles before any of it reached a database, and loading
+   it into HAPI's PostgreSQL needs several times that again -- more than the
+   measurement machine has. A baseline nobody can reproduce is not a baseline,
+   so **medium is 1,000 patients** (about 400k resources) and 10,000 is kept as
+   `large` for a machine or CI runner with the disk to host it.
 2. **`search-name` recorded 6 transport errors in 500 requests (1.2%)** and
    `search-chained` 2 in 200. Those are client-side connection failures under
    concurrency, not HTTP errors. Their latency figures are usable; their
@@ -123,15 +139,14 @@ design decision in the constitution:
   the database tuning changes — all three are pinned precisely so this stays a
   deliberate act.
 
-## Decisions I need from the owner
+## Open questions
 
-1. **Are these the right ratios?** The footprint targets I would defend
-   strongly. The throughput ratios are informed estimates, not measurements of
-   anything that exists yet, and the first real implementation
-   (`add-fhirpath-and-codegen-r4` and then `add-store-crud`) is what will show
-   whether they are too soft or too hard.
+1. **Are these the right ratios?** Accepted as written, with the footprint
+   targets the strongest and the throughput ratios still informed estimates
+   rather than measurements of anything that exists. Re-check them against the
+   medium baseline.
 2. **Should the gate use the small or the medium dataset?** The medium set is
-   more representative but makes every gate run far slower. My suggestion: the
+   more representative but makes every gate run far slower. Current plan: the
    small set per pull request, the medium set nightly and at phase boundaries.
 3. **Is 8 GiB of VM RAM the reference environment?** HAPI was given `-Xmx3g` on
    a 12-CPU, 8 GiB VM. A larger reference machine would favour HAPI
