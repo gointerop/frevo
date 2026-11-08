@@ -17,10 +17,19 @@ prose. The pins in [`reference/PINS.md`](reference/PINS.md) fix exactly which
 code that means.
 
 Where HAPI and the specification disagree, record the case in
-[`docs/deviations.md`](docs/deviations.md), choose a behaviour (default: HAPI's,
-behind a configuration flag when that is cheap), and raise it at the next
-checkpoint. **`docs/deviations.md` is the only exception mechanism.** An
-undocumented difference from HAPI is a bug.
+[`docs/deviations.md`](docs/deviations.md), choose HAPI's behaviour, and raise it
+at the next checkpoint. **`docs/deviations.md` is the only exception
+mechanism.** An undocumented difference from HAPI is a bug.
+
+**A configuration flag is not added speculatively** (owner decision,
+2026-11-08). Where matching HAPI is a latent hazard — it returns a wrong answer
+rather than an error, say — Frevo still matches HAPI, and the flag you did not
+build is recorded in [`docs/tech-debt.md`](docs/tech-debt.md) with the trigger
+that would make it due. A flag ships when a consumer needs the specification
+behaviour, not because the hazard is foreseeable: every flag is a second code
+path, a second set of differential expectations and a setting no HAPI
+configuration file sets. Accepting a deviation is not the same as deciding it is
+harmless, which is what the debt register is for.
 
 ## 2. A change is done only when its gates are green
 
@@ -117,6 +126,8 @@ not exist.
 | requirements, settled | `openspec/specs/<capability>/` (only via `openspec archive`) |
 | work queue and ordering | `tasks/graph.yaml` |
 | blocked work needing the owner | `tasks/blockers.md` |
+| work deferred, with its trigger | `docs/tech-debt.md` |
+| a case that cannot be made to pass | `docs/known-gaps.md` |
 | architectural decisions | `docs/adr/NNNN-*.md` |
 | parity checklist | `docs/inventory.md` |
 | gate results | `gates/<id>/report.json` |
@@ -192,6 +203,16 @@ One active change per branch and worktree.
 | `chore/<slug>` | CI, harness, docs, tooling | everything except behavioural `crates/**/src` edits |
 | `chore/governance-*` | the enforcement machinery | `.claude/**`, `gates/**`, `.github/workflows/openspec-guard.yml` |
 | `chore/oracles-*` | vendoring or re-pinning oracles | `oracles/**` |
+
+Four registers are a standing exception to the table and may be appended from
+any branch, in the commit that incurs the entry:
+[`docs/deviations.md`](docs/deviations.md),
+[`docs/tech-debt.md`](docs/tech-debt.md),
+[`docs/known-gaps.md`](docs/known-gaps.md) and
+[`tasks/blockers.md`](tasks/blockers.md). A finding recorded on the branch that
+found it survives; one left for a later branch does not.
+`harness/scripts/check-registries.sh` checks that the first two agree, and CI
+runs it.
 
 Paths that are never hand-edited on any branch: `openspec/specs/**` (changes only
 through `openspec archive`), `reference/**` (read-only upstream), and anything
