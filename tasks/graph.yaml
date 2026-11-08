@@ -52,7 +52,13 @@ nodes:
   # ------------------------------------------------------------------ phase 1
   - id: add-fhirpath-and-codegen-r4
     phase: 1
-    status: pending
+    # In flight on change/add-fhirpath-and-codegen-r4: proposal APPROVED on the
+    # third review, 493 scenarios, and the three oracle harnesses written and
+    # failing. Left as `pending` it was reported as READY by tasks/next.sh and
+    # by the SessionStart hook, which is the one output a reset context relies
+    # on -- so a fresh session would have been told to start work already half
+    # done.
+    status: in_progress
     summary: >
       frevo-codegen generates R4 models from StructureDefinitions with a lazy,
       byte-preserving JSON codec; frevo-path implements the FHIRPath engine.
