@@ -42,5 +42,22 @@ crates/frevo-convert/src/generated/** linguist-generated=true
 # toward language statistics.
 oracles/**      linguist-vendored=true
 
+# Oracle content must be stored BYTE-FOR-BYTE as upstream published it. The
+# `* text=auto eol=lf` rule above would otherwise rewrite CRLF to LF in the
+# vendored suites -- several of the CQL test files and the FHIRPath suite use
+# CRLF -- which would mean committing *modified* oracle cases while claiming
+# they are unmodified, and would make `oracles/fetch.sh --verify` fail forever
+# against the pinned upstream. `-text` disables all conversion.
+#
+# This applies to the suite content only; the scripts and documents we wrote
+# ourselves under oracles/ are normalised like the rest of the repository.
+oracles/**/tests/**        -text
+oracles/fhirpath/*.xml     -text
+oracles/**/*.xsd           -text
+oracles/*/runner.sh        text eol=lf
+oracles/*.sh               text eol=lf
+oracles/*.md               text eol=lf
+oracles/*/*.md             text eol=lf
+
 # Lock files: keep them, do not treat conflicts as mergeable text.
 Cargo.lock      merge=binary -diff
