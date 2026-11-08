@@ -85,3 +85,21 @@ same checkpoint tasks 59 and 60 already need.
 Until it is done, `bash oracles/run.sh fhirpath` reports exit 2 and a case
 count of 1,193 from a text match. Exit 2 is correct (the engine does not
 exist); the count is not, and it must not be read as the suite's size.
+
+**Correction, 2026-11-08, by the orchestrator.** The count half of this blocker
+is wrong. `oracles/run.sh` does not text-match; it has parsed the XML since
+commit `e3784c1`, and `bash oracles/run.sh fhirpath` reports
+`cases : 1191 in 103 groups`. The `grep -o '<test '` the entry quotes appears in
+that file only inside the comment that *explains* the over-count, which is
+presumably what was read. Verified by running it.
+
+The rest of the entry stands and is still a blocker: the `fhirpath)` branch is
+the Phase 0 stub, it exits 2, and wiring it to the new harness needs a
+`chore/oracles-*` branch and the owner's checkpoint, because it changes what a
+gate measures. Only the claim that the printed count is untrustworthy is
+withdrawn.
+
+Left in place rather than deleted, because this file is appended to and never
+rewritten, and because a blocker that was raised in good faith and turned out
+not to exist is worth exactly as much as one that did -- it records what the
+next agent need not re-investigate.
