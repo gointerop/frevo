@@ -1,0 +1,217 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+  RUSTFLAGS: "-D warnings"
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Format and lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: cargo fmt --check
+        run: cargo fmt --all --check
+      - name: cargo clippy -D warnings
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@nextest
+      - name: cargo nextest
+        run: cargo nextest run --workspace --locked --no-fail-fast
+      - name: Doc tests
+        # nextest does not run doc tests; the gate requires them too.
+        run: cargo test --workspace --locked --doc
+
+  build:
+    name: Build (release profile)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --profile dist --locked -p frevo-server
+      - name: Report binary size
+        # Footprint is a project goal, so it is measured on every run rather
+        # than discovered later.
+        run: |
+          size=$(stat -c %s target/dist/frevo)
+          echo "frevo binary: $size bytes ($((size / 1024)) KiB)"
+          echo "### Binary size: $((size / 1024)) KiB" >> "$GITHUB_STEP_SUMMARY"
+
+  consistency:
+    name: Repository consistency
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: CLAUDE.md and AGENTS.md must be identical
+        # The constitution is published under both names. If they drift, agents
+        # reading one get different rules from agents reading the other.
+        run: |
+          if ! diff -u CLAUDE.md AGENTS.md; then
+            echo "::error::CLAUDE.md and AGENTS.md differ. They are the same document; copy one over the other."
+            exit 1
+          fi
+
+      - name: Reference pins must be internally consistent
+        # PINS.md is the definition of "correct" for every differential gate.
+        # The table and the clone script must not be able to disagree.
+        run: |
+          rc=0
+          while read -r sha; do
+            if ! grep -q "$sha" reference/PINS.md; then
+              echo "::error file=reference/clone.sh::SHA $sha in clone.sh is absent from reference/PINS.md"
+              rc=1
+            fi
+          done < <(grep -oE '\b[0-9a-f]{40}\b' reference/clone.sh | sort -u)
+          while read -r sha; do
+            if ! grep -q "$sha" reference/clone.sh; then
+              echo "::error file=reference/PINS.md::SHA $sha in PINS.md is absent from reference/clone.sh"
+              rc=1
+            fi
+          done < <(grep -oE '\b[0-9a-f]{40}\b' reference/PINS.md | sort -u)
+          exit $rc
+
+      - name: Crate names must use the frevo- prefix
+        # Trademark constraint: no crate, binary or image name may contain
+        # "fhir", "hl7" or "hapi".
+        run: |
+          rc=0
+          for d in crates/*/; do
+            name=$(basename "$d")
+            case "$name" in
+              frevo-*) ;;
+              *) echo "::error::crate $name does not use the frevo- prefix"; rc=1 ;;
+            esac
+            case "$name" in
+              *fhir*|*hl7*|*hapi*)
+                echo "::error::crate $name must not contain fhir, hl7 or hapi"; rc=1 ;;
+            esac
+          done
+          exit $rc
+
+      - name: No secrets, PHI markers or licensed terminology committed
+        run: |
+          rc=0
+          # Licensed terminology distributions must never be committed.
+          if git ls-files | grep -iE '(sct2_|loinc\.csv|icd10cm_|umls|snomed.*(full|snapshot))' ; then
+            echo "::error::a file resembling a licensed terminology distribution is committed"
+            rc=1
+          fi
+          # Obvious credential shapes.
+          if git grep -nIE '(BEGIN (RSA|OPENSSH|EC) PRIVATE KEY|ghp_[A-Za-z0-9]{36}|AKIA[0-9A-Z]{16})' -- . ':!.github/workflows/*' ; then
+            echo "::error::a credential-shaped string is committed"
+            rc=1
+          fi
+          exit $rc
+
+  hooks:
+    name: Hook self-tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Hooks must actually block
+        # The enforcement hooks are only worth having if they refuse the things
+        # they are supposed to refuse. Every rule has a positive and a negative
+        # case; a hook that silently allows everything fails here.
+        run: bash harness/hook-tests/run.sh
+
+      - name: Hook scripts must be syntactically valid
+        run: |
+          rc=0
+          for f in .claude/hooks/*.sh harness/hook-tests/run.sh harness/scripts/*.sh; do
+            [ -f "$f" ] || continue
+            if ! bash -n "$f"; then echo "::error file=$f::syntax error"; rc=1; fi
+          done
+          exit $rc
+
+      - name: Hook scripts must have LF line endings
+        # A CRLF ending makes bash fail on Linux with an unreadable error, so
+        # this is checked rather than hoped for.
+        run: |
+          rc=0
+          for f in .claude/hooks/*.sh harness/**/*.sh; do
+            [ -f "$f" ] || continue
+            if grep -qU $'\r' "$f"; then echo "::error file=$f::contains CRLF line endings"; rc=1; fi
+          done
+          exit $rc
+
+  deny:
+    name: Licences and advisories
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check all
+
+  docker:
+    name: Container image builds
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: docker/setup-buildx-action@v3
+      - name: Build (amd64 only on pull requests; release builds multi-arch)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          load: true
+          tags: frevo:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: The image must serve a CapabilityStatement
+        run: |
+          docker run -d --name frevo-ci -p 8080:8080 frevo:ci
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:8080/healthz >/dev/null 2>&1; then break; fi
+            sleep 1
+          done
+          body=$(curl -fsS http://localhost:8080/fhir/metadata)
+          echo "$body" | jq -e '.resourceType == "CapabilityStatement"' >/dev/null
+          echo "$body" | jq -e '.fhirVersion == "4.0.1"' >/dev/null
+          echo "$body" | jq .
+      - name: The final image must contain no shell
+        # A distroless image with a shell in it is not distroless. This asserts
+        # the property rather than trusting the base image tag.
+        run: |
+          if docker run --rm --entrypoint /bin/sh frevo:ci -c 'echo reachable' 2>/dev/null; then
+            echo "::error::the final image contains a shell at /bin/sh"
+            exit 1
+          fi
+          echo "no /bin/sh in the image, as intended"
+      - name: The image must not run as root
+        run: |
+          user=$(docker inspect --format '{{.Config.User}}' frevo:ci)
+          echo "image user: $user"
+          case "$user" in
+            ""|"root"|"0"|"0:0") echo "::error::image runs as root"; exit 1 ;;
+          esac
+      - name: Stop
+        if: always()
+        run: docker rm -f frevo-ci 2>/dev/null || true

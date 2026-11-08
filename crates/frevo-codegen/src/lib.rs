@@ -2,7 +2,8 @@
 //!
 //! Upstream reference: hapi-fhir/hapi-tinder-plugin, org.hl7.fhir.core/org.hl7.fhir.r4/model
 //!
-//! Capability spec: `openspec/specs/codegen/spec.md`
+//! Capability register: `docs/capabilities/codegen.md`
+//! Requirements (once archived): `openspec/specs/codegen/spec.md`
 //!
 //! This crate is a Phase 0 placeholder: it carries no behaviour yet. Every
 //! requirement arrives through an OpenSpec change on a `change/<id>` branch.

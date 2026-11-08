@@ -1,0 +1,86 @@
+# Frevo plus PostgreSQL, for a single-command start:
+#
+#   docker compose up
+#
+# This is the deployment shape Frevo is designed for: one server process and one
+# database, with nothing else to operate. Fulltext search, the job engine and
+# message delivery are embedded rather than delegated to Elasticsearch, a broker
+# or a scheduler.
+#
+# This file is for evaluation and local development. It uses a default password
+# and exposes PostgreSQL on the host; do not deploy it as-is.
+
+name: frevo
+
+services:
+  db:
+    image: postgres:17.8-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: frevo
+      POSTGRES_USER: frevo
+      # Evaluation default. Override with POSTGRES_PASSWORD in a .env file.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-frevo}
+      # Frevo compares resource identifiers byte-wise, so collation must not
+      # vary between deployments.
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+    command:
+      # Settings that matter for a FHIR write path: a larger WAL and delayed
+      # flushing, because ingest is dominated by many small transactions.
+      - "postgres"
+      - "-c"
+      - "max_connections=200"
+      - "-c"
+      - "shared_buffers=512MB"
+      - "-c"
+      - "work_mem=16MB"
+      - "-c"
+      - "max_wal_size=4GB"
+      - "-c"
+      - "checkpoint_completion_target=0.9"
+      - "-c"
+      - "random_page_cost=1.1"
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U frevo -d frevo"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  frevo:
+    image: ghcr.io/gointerop/frevo:${FREVO_TAG:-edge}
+    # To run the working tree instead of the published image:
+    #   docker compose up --build
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      FREVO_PORT: 8080
+      RUST_LOG: ${RUST_LOG:-info}
+      # Read by frevo-config with the starter's hapi.fhir.* semantics.
+      SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/frevo
+      SPRING_DATASOURCE_USERNAME: frevo
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-frevo}
+    ports:
+      - "${FREVO_HTTP_PORT:-8080}:8080"
+    # No healthcheck here. The image is distroless: it has no shell and no curl,
+    # so there is nothing inside the container to probe with. Readiness is
+    # checked over HTTP from outside (`GET /healthz`), which is how the Helm
+    # chart configures its probes. Adding a shell to the image to satisfy
+    # compose would be the wrong trade.
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    cap_drop:
+      - ALL
+
+volumes:
+  db-data:

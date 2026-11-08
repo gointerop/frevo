@@ -1,0 +1,85 @@
+schema: spec-driven
+
+# Constraints an agent cannot infer by reading the code. Everything else lives
+# in CLAUDE.md (published as AGENTS.md), which is the project constitution.
+context: |
+  Frevo is a feature-for-feature port of HAPI FHIR JPA Server Starter 8.12.0 to
+  Rust on PostgreSQL. HAPI 8.12.0's observable behaviour -- not the FHIR
+  specification prose -- defines what is correct. The exact upstream commits
+  that definition refers to are pinned in reference/PINS.md, cloned read-only
+  into reference/.
+
+  Correctness is established by oracles, in this order of authority:
+    1. the official HL7 suites vendored under oracles/ (FHIRPath,
+       fhir-test-cases, cql-tests, Inferno kits);
+    2. differential testing against a live HAPI 8.12.0, with responses
+       normalised before diffing;
+    3. HAPI's own JUnit tests, mined for HTTP-level behaviour.
+
+  Where HAPI and the specification disagree, the resolution is recorded in
+  docs/deviations.md; that file is the only exception mechanism. Cases that
+  cannot be made to pass go to docs/known-gaps.md and need owner approval.
+  Never weaken a test or an oracle to make a gate pass.
+
+  PostgreSQL is the only permitted runtime dependency. Fulltext search is
+  embedded (tantivy), messaging is a PostgreSQL outbox with LISTEN/NOTIFY, and
+  the batch job engine uses PostgreSQL SKIP LOCKED. There is no ORM.
+
+  Configuration compatibility is a hard requirement: the server reads the
+  starter's application.yaml with the same hapi.fhir.* key names and semantics,
+  so an existing deployment can switch without changing configuration.
+
+  FHIR models and cross-version converters are generated from
+  StructureDefinitions by frevo-codegen and are never hand-written or
+  translated from upstream Java.
+
+rules:
+  proposal:
+    - State which upstream HAPI module and which reference/ path the behaviour
+      is being ported from, with the pinned SHA.
+    - State which oracle will judge the result, by name and by case selector.
+    - State what is explicitly out of scope, and which later change covers it.
+    - Name the target crate. One change should not span unrelated crates.
+  spec:
+    # Single-quoted: the embedded "Scenario:" would otherwise make this a
+    # mapping, and the file would not parse.
+    - 'Every scenario has an ID of the form <capability>.<area>.<nnn> and is written as "#### Scenario: [<id>] <description>".'
+    - Scenario IDs are allocated once and never renumbered or reused, because
+      tests reference them by ID.
+    - Describe observable behaviour -- requests, responses, status codes, stored
+      state -- not implementation.
+    - Where behaviour is configuration-dependent, name the hapi.fhir.* key and
+      give the scenario for each value that changes the outcome.
+    - Any deviation from HAPI 8.12.0 must cite a DEV-nnnn entry in
+      docs/deviations.md.
+  design:
+    - State the performance budget for anything on a read, search or ingest
+      path, with the benchmark that will measure it.
+    - Justify any new dependency against the PostgreSQL-only rule; a runtime
+      dependency needs an ADR.
+    - Say which parts are generated and which generator produces them.
+    - Record the PostgreSQL schema changes, including the migration and its
+      effect on existing rows.
+  tasks:
+    - Order tasks so each is independently verifiable, and keep each to roughly
+      a half day.
+    - The first task is always writing the failing tests for the scenarios.
+    - Every task that changes behaviour names the scenario IDs it satisfies.
+    - Include a task for updating docs/inventory.md rows and, when upstream
+      source was ported, docs/provenance.md.
+
+operations:
+  apply:
+    guidance:
+      - Tests come before implementation. A task is not started until its
+        scenarios have failing tests.
+      # Single-quoted: an unquoted ' #' starts a YAML comment, which would
+      # silently truncate this rule to "Never add".
+      - 'Never add #[ignore], a bare #[should_panic], or todo!() to make a gate pass. Record the case in docs/known-gaps.md instead and stop.'
+      - Do not hand-edit anything marked @generated; change the generator.
+  archive:
+    guidance:
+      - Archive only when every task box is checked and the gate report for the
+        current HEAD is green.
+      - Update docs/inventory.md so the rows this change covers point at the
+        passing tests, and update tasks/graph.yaml to unblock dependents.

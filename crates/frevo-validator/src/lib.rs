@@ -2,7 +2,8 @@
 //!
 //! Upstream reference: org.hl7.fhir.core/org.hl7.fhir.validation, hapi-fhir/hapi-fhir-validation
 //!
-//! Capability spec: `openspec/specs/validator/spec.md`
+//! Capability register: `docs/capabilities/validator.md`
+//! Requirements (once archived): `openspec/specs/validator/spec.md`
 //!
 //! This crate is a Phase 0 placeholder: it carries no behaviour yet. Every
 //! requirement arrives through an OpenSpec change on a `change/<id>` branch.
