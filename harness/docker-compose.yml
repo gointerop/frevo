@@ -1,0 +1,163 @@
+# Differential test harness: a live HAPI FHIR 8.12.0 to compare against.
+#
+#   docker compose -f harness/docker-compose.yml up -d
+#   bash harness/run.sh --baseline http://localhost:8090/fhir --candidate <url>
+#
+# HAPI is the oracle, so its version and configuration are pinned by digest.
+# Changing either silently redefines "correct" for every differential gate and
+# invalidates every recorded benchmark baseline, which is why Dependabot is
+# explicitly configured not to touch this file.
+#
+# Three services:
+#   hapi-db    PostgreSQL for HAPI
+#   hapi       HAPI FHIR JPA Server Starter 8.12.0, R4, on :8090
+#   frevo-db   a separate PostgreSQL for Frevo, so the two servers never share
+#              state and a diff can never be an artefact of one reading the
+#              other's rows
+#
+# Frevo itself is not started here: the runner takes any candidate base URL, so
+# it can target a container, a `cargo run`, or a deployed instance.
+
+name: frevo-harness
+
+x-pins: &pins
+  # Pinned by digest, matching reference/PINS.md:
+  #   hapi-fhir-jpaserver-starter  image/v8.12.0-2  commit 377e6eba
+  #   -> hapiproject/hapi:v8.12.0-2
+  #      sha256:0ff86aac4c7bd13a1ee226444a70263bb46ed1c28ef543c30a44f865b80ca04e
+  note: see reference/PINS.md
+
+services:
+  hapi-db:
+    image: postgres:17.8-alpine@sha256:3430fe182f5065a6ea505c3d432d2c7fff18fbab954df8f277c1dbf4c70124af
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: hapi
+      POSTGRES_USER: hapi
+      POSTGRES_PASSWORD: hapi
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+    command:
+      - postgres
+      - "-c"
+      - "max_connections=200"
+      - "-c"
+      - "shared_buffers=1GB"
+      - "-c"
+      - "work_mem=32MB"
+      - "-c"
+      - "max_wal_size=8GB"
+      - "-c"
+      - "checkpoint_completion_target=0.9"
+      - "-c"
+      - "random_page_cost=1.1"
+      # Benchmark fairness: both servers get the same database tuning, and
+      # neither gets fsync=off. A baseline measured with durability disabled
+      # would not be a baseline for anything.
+    volumes:
+      - hapi-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hapi -d hapi"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+
+  hapi:
+    image: hapiproject/hapi:v8.12.0-2@sha256:0ff86aac4c7bd13a1ee226444a70263bb46ed1c28ef543c30a44f865b80ca04e
+    restart: unless-stopped
+    depends_on:
+      hapi-db:
+        condition: service_healthy
+    ports:
+      - "${HAPI_PORT:-8090}:8080"
+    environment:
+      # Datasource
+      SPRING_DATASOURCE_URL: jdbc:postgresql://hapi-db:5432/hapi
+      SPRING_DATASOURCE_USERNAME: hapi
+      SPRING_DATASOURCE_PASSWORD: hapi
+      SPRING_DATASOURCE_DRIVERCLASSNAME: org.postgresql.Driver
+      SPRING_JPA_PROPERTIES_HIBERNATE_DIALECT: ca.uhn.fhir.jpa.model.dialect.HapiFhirPostgres94Dialect
+      SPRING_DATASOURCE_HIKARI_MAXIMUMPOOLSIZE: "30"
+
+      # The oracle configuration. Every one of these is a decision about what
+      # "correct" means, so they are explicit rather than left to defaults.
+      HAPI_FHIR_FHIR_VERSION: R4
+      HAPI_FHIR_SERVER_ADDRESS: http://localhost:${HAPI_PORT:-8090}/fhir
+      HAPI_FHIR_ALLOW_MULTIPLE_DELETE: "true"
+      HAPI_FHIR_ALLOW_CASCADING_DELETES: "true"
+      HAPI_FHIR_ALLOW_EXTERNAL_REFERENCES: "true"
+      HAPI_FHIR_ALLOW_PLACEHOLDER_REFERENCES: "true"
+      HAPI_FHIR_AUTO_CREATE_PLACEHOLDER_REFERENCE_TARGETS: "true"
+      HAPI_FHIR_EXPUNGE_ENABLED: "true"
+      HAPI_FHIR_DELETE_EXPUNGE_ENABLED: "true"
+      HAPI_FHIR_ENFORCE_REFERENTIAL_INTEGRITY_ON_DELETE: "true"
+      HAPI_FHIR_ENFORCE_REFERENTIAL_INTEGRITY_ON_WRITE: "true"
+      HAPI_FHIR_ETAG_SUPPORT_ENABLED: "true"
+      HAPI_FHIR_FILTER_SEARCH_ENABLED: "true"
+      HAPI_FHIR_GRAPHQL_ENABLED: "true"
+      HAPI_FHIR_BULK_EXPORT_ENABLED: "true"
+      HAPI_FHIR_BULK_IMPORT_ENABLED: "true"
+      HAPI_FHIR_ENABLE_INDEX_MISSING_FIELDS: "false"
+      HAPI_FHIR_NARRATIVE_ENABLED: "false"
+      # Narrative generation is disabled on both sides: HAPI templates with
+      # Thymeleaf and Frevo with minijinja, so byte-identical narrative is not
+      # achievable and comparing it would produce noise on every single case.
+      # Narrative parity is tracked separately (docs/capabilities/narrative.md).
+
+      # Keep the oracle deterministic.
+      HAPI_FHIR_DAO_SCHEDULING_ENABLED: "false"
+      HAPI_FHIR_SUBSCRIPTION_RESTHOOK_ENABLED: "false"
+      HAPI_FHIR_CR_ENABLED: "false"
+      HAPI_FHIR_MDM_ENABLED: "false"
+      # These are enabled per-suite by an override file, not globally: their
+      # background jobs make response timing and resource state vary between
+      # runs, which is fatal to a differential comparison.
+
+      JAVA_TOOL_OPTIONS: "-Xmx3g -XX:+UseG1GC"
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          wget -q -O- http://localhost:8080/fhir/metadata
+          | grep -q CapabilityStatement
+      interval: 10s
+      timeout: 10s
+      retries: 60
+      start_period: 90s
+
+  frevo-db:
+    image: postgres:17.8-alpine@sha256:3430fe182f5065a6ea505c3d432d2c7fff18fbab954df8f277c1dbf4c70124af
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: frevo
+      POSTGRES_USER: frevo
+      POSTGRES_PASSWORD: frevo
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+    command:
+      - postgres
+      - "-c"
+      - "max_connections=200"
+      - "-c"
+      - "shared_buffers=1GB"
+      - "-c"
+      - "work_mem=32MB"
+      - "-c"
+      - "max_wal_size=8GB"
+      - "-c"
+      - "checkpoint_completion_target=0.9"
+      - "-c"
+      - "random_page_cost=1.1"
+    volumes:
+      - frevo-db-data:/var/lib/postgresql/data
+    ports:
+      - "${FREVO_DB_PORT:-5433}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U frevo -d frevo"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+
+volumes:
+  hapi-db-data:
+  frevo-db-data:
