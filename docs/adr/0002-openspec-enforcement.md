@@ -103,6 +103,17 @@ The symptom was the opposite of failing open. `test-integrity.sh` searched only
 on. `oracle-builder` hit it writing the three oracle harnesses and recorded it
 in `tasks/blockers.md` rather than working around the rule.
 
+That was the loud half. Running the new self-tests against the pre-fix hooks
+shows the quiet half, which is worse: **`protect-paths.sh` did not fire at all
+in a worktree.** A write to `openspec/specs/store/spec.md` — a settled
+capability spec, which rule 8 says changes only in an archive commit — was
+allowed, exit 0, no message. Nine of the new cases fail against the pre-fix
+hooks; the one that matters most is the one where the guard said nothing.
+
+A blocking failure gets reported by whoever it blocks. A guard that silently
+stops applying is found only if something looks for it, which is the argument
+for the environmental self-tests below.
+
 **Why the self-tests could not see it.** They copy `.claude` into a throwaway
 repository and run the hooks from its root, so there the script location *is*
 the repository root and the two derivations coincide. The fixture could not
