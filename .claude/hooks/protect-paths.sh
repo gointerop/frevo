@@ -5,7 +5,7 @@
 # that makes the rest of the rules mean anything:
 #
 #   openspec/specs/**     settled requirements; change only via openspec archive
-#   crates/frevo-model/** generated; fix the generator instead
+#   crates/frevo-model/src/** generated; fix the generator instead (tests/ is not)
 #   any @generated file   same
 #   reference/**          read-only pinned upstream source
 #   oracles/**            vendored suites; only on chore/oracles-*
@@ -17,7 +17,7 @@
 . "$(dirname "${BASH_SOURCE[0]}")/_lib.sh"
 
 INPUT="$(cat)"
-cd "$REPO_ROOT" 2>/dev/null || exit 0
+require_repo_root
 
 change="$(active_change)"
 
@@ -37,15 +37,22 @@ That is what keeps the spec and the implementation from drifting apart.
 EOF
       ;;
 
-    crates/frevo-model/*)
+    crates/frevo-model/src/*|crates/frevo-convert/src/*)
       block <<EOF
 BLOCKED: $p is generated code.
 
-crates/frevo-model is produced by frevo-codegen from FHIR StructureDefinitions.
-FHIR models are regenerated from the specification artifacts, never translated
-or hand-corrected -- a hand edit is silently lost on the next regeneration.
+crates/frevo-model/src and crates/frevo-convert/src are produced by
+frevo-codegen from FHIR StructureDefinitions. FHIR models are regenerated from
+the specification artifacts, never translated or hand-corrected -- a hand edit
+is silently lost on the next regeneration.
 
 Fix the generator in crates/frevo-codegen, then regenerate.
+
+This rule covers src/ only. crates/frevo-model/tests/** is ordinary test code
+and oracle-builder writes it; the old rule matched the whole crate and refused
+those files as generated. The @generated marker check still catches the real
+outputs file by file, which is the check that does not depend on guessing which
+directories a generator writes to.
 EOF
       ;;
 

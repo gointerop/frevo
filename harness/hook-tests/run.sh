@@ -173,6 +173,68 @@ check() { # expected_rc, name, hook, json
 expect_block() { check 2 "$@"; }
 expect_allow() { check 0 "$@"; }
 
+# --------------------------------------------------------------------------
+# Linked worktrees
+# --------------------------------------------------------------------------
+# The cases above run the hooks from the sandbox root, which is also the repo
+# root, so a hook that derives its root from its own location looks correct.
+# That is precisely how the REPO_ROOT bug survived: in the real layout the hook
+# scripts sit in the PRIMARY worktree while the session edits a LINKED one, and
+# the two are different repositories as far as `git -C` is concerned.
+#
+# _run_at runs the primary worktree's hook with the working directory in the
+# linked one. Any hook rule that depends on the branch, the active change or a
+# relative path has to come out right there, or it is enforcing against a tree
+# nobody is editing.
+_run_at() { # dir, hook, json -> sets RC and OUT
+  local dir="$1" hook="$2" json="$3"
+  OUT="$(cd "$dir" && printf '%s' "$json" | bash "$SB/.claude/hooks/$hook" 2>&1)"
+  RC=$?
+}
+
+check_at() { # dir, expected_rc, name, hook, json
+  local dir="$1" want="$2" name="$3" hook="$4" json="$5"
+  _run_at "$dir" "$hook" "$json"
+  if [ "$RC" -eq "$want" ]; then
+    PASS=$((PASS+1))
+    [ "$VERBOSE" -eq 1 ] && printf '  ok   %s
+' "$name"
+  else
+    FAIL=$((FAIL+1)); FAILED_NAMES="$FAILED_NAMES
+    - $name (wanted exit $want, got $RC)"
+    printf '  FAIL %s -- wanted exit %s, got %s
+' "$name" "$want" "$RC"
+    printf '%s
+' "$OUT" | head -6 | sed 's/^/         | /'
+  fi
+}
+expect_block_at() { check_at "$1" 2 "${@:2}"; }
+expect_allow_at()  { check_at "$1" 0 "${@:2}"; }
+
+# Add a linked worktree on a change branch carrying its own approved change.
+# Echoes the worktree path. WT is also set, for readability at the call sites.
+# json_edit builds the file path against $SB. In a worktree case the file has to
+# be inside the worktree, or the hook is being asked about a path in a different
+# tree and correctly finds no rule that applies.
+json_edit_at() { # root, tool, relpath, content
+  "$PY" -I -c '
+import json,sys,os
+root,tool,rel,content = sys.argv[1:5]
+ti={"file_path": os.path.join(root, rel)}
+if content: ti["content"]=content
+print(json.dumps({"hook_event_name":"PreToolUse","tool_name":tool,"tool_input":ti,"cwd":root}))
+' "$1" "$2" "$3" "${4:-}"
+}
+
+add_worktree() { # id
+  local id="$1"
+  WT="$SB-wt-$id"
+  rm -rf "$WT"
+  git worktree add -q -b "change/$id" "$WT" >/dev/null 2>&1
+  ( cd "$WT" && make_change "$id" APPROVED open )
+  printf '%s' "$WT"
+}
+
 echo "Frevo hook self-tests"
 echo "sandbox: $SB"
 echo
@@ -440,6 +502,79 @@ printf '// covers: store.create.001\n// covers: store.create.002\n#[test]\nfn a(
   > crates/frevo-store/tests/t.rs
 expect_allow "H8 allows oracle-builder when every scenario is covered" subagent-guard.sh \
   "$(json_event SubagentStop agent_type oracle-builder)"
+
+
+# ==========================================================================
+# Linked worktrees -- the layout in which these hooks silently stopped working
+# ==========================================================================
+# Every case here runs the PRIMARY worktree's hook script with the working
+# directory inside a LINKED worktree. Before the root fix every one of them
+# failed: REPO_ROOT was the primary tree, so the branch read as main, no change
+# was active, and the path rules compared against the wrong tree.
+
+setup_sandbox; on_branch main; commit_all "base"
+add_worktree add-store >/dev/null
+
+# The branch and the active change must be read from the worktree being edited.
+expect_allow_at "$WT" "worktree: H2 allows a crates edit on an APPROVED change branch"   require-active-change.sh   "$(json_edit_at "$WT" Write crates/frevo-store/src/lib.rs 'fn x() {}')"
+
+# A covers: tag naming a scenario in the WORKTREE's delta must resolve. This is
+# the case that blocked every oracle test that task 1, 4a and 5a produced.
+expect_allow_at "$WT" "worktree: H4 resolves a covers: id from the worktree's delta"   test-integrity.sh   "$(json_edit_at "$WT" Write crates/frevo-store/tests/t.rs '// covers: store.create.001
+#[test]
+fn a() {}
+')"
+
+# ...and an id that exists nowhere must still be blocked, so the fix did not
+# simply stop checking.
+expect_block_at "$WT" "worktree: H4 still blocks a covers: id that does not exist"   test-integrity.sh   "$(json_edit_at "$WT" Write crates/frevo-store/tests/t.rs '// covers: store.create.999
+#[test]
+fn a() {}
+')"
+
+# Path rules must be judged against the worktree, not the primary tree.
+expect_block_at "$WT" "worktree: H3 still protects settled specs"   protect-paths.sh   "$(json_edit_at "$WT" Write openspec/specs/store/spec.md '# edited')"
+
+# A path inside the PRIMARY tree while the session works in the linked one is
+# outside every rule, and stays that way: see the limitation recorded in
+# ADR 0002. Asserted so that if it ever changes, it changes deliberately.
+expect_allow_at "$WT" "worktree: a path in another worktree matches no rule"   protect-paths.sh   "$(json_edit Write openspec/specs/store/spec.md '# edited')"
+
+expect_block_at "$WT" "worktree: H5 still blocks a push to main"   guard-bash.sh "$(json_bash 'git push origin main')"
+
+# ==========================================================================
+# Generated code is src/, not the whole crate
+# ==========================================================================
+setup_sandbox; on_branch change/add-store; make_change add-store APPROVED open
+
+expect_block "H3 blocks a generated model source file" protect-paths.sh   "$(json_edit Write crates/frevo-model/src/gen.rs '// hand edit')"
+
+expect_allow "H3 allows a test under the model crate" protect-paths.sh   "$(json_edit Write crates/frevo-model/tests/codec.rs '// covers: store.create.001')"
+
+# ==========================================================================
+# An unreachable repository root blocks; it does not wave the edit through
+# ==========================================================================
+# The five enforcement hooks used to run `cd "$REPO_ROOT" || exit 0`, and exit 0
+# ALLOWS the action. Point the root at a directory that does not exist and the
+# guard must refuse.
+setup_sandbox; on_branch change/add-store; make_change add-store APPROVED open
+for h in require-active-change protect-paths test-integrity guard-bash stop-guard; do
+  OUT="$(REPO_ROOT="$SB/definitely-not-here" bash -c '
+    . "$0"/_lib.sh 2>/dev/null
+    REPO_ROOT="$1" require_repo_root
+  ' "$SB/.claude/hooks" "$SB/definitely-not-here" 2>&1)"
+  RC=$?
+  if [ "$RC" -eq 2 ]; then
+    PASS=$((PASS+1))
+    [ "$VERBOSE" -eq 1 ] && printf '  ok   %s
+' "$h fails closed on an unreachable root"
+  else
+    FAIL=$((FAIL+1)); FAILED_NAMES="$FAILED_NAMES
+    - $h fails closed on an unreachable root (wanted exit 2, got $RC)"
+    printf '  FAIL %s fails closed on an unreachable root -- wanted exit 2, got %s
+' "$h" "$RC"
+  fi
+done
 
 # ==========================================================================
 echo
