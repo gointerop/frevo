@@ -2,8 +2,7 @@
 //!
 //! Upstream reference: hapi-fhir/hapi-fhir-jpaserver-base/.../dao
 //!
-//! Capability register: `docs/capabilities/store.md`
-//! Requirements (once archived): `openspec/specs/store/spec.md`
+//! Capability spec: `openspec/specs/store/spec.md`
 //!
 //! This crate is a Phase 0 placeholder: it carries no behaviour yet. Every
 //! requirement arrives through an OpenSpec change on a `change/<id>` branch.

@@ -2,8 +2,7 @@
 //!
 //! Upstream reference: hapi-fhir/hapi-fhir-jpaserver-mdm
 //!
-//! Capability register: `docs/capabilities/mdm.md`
-//! Requirements (once archived): `openspec/specs/mdm/spec.md`
+//! Capability spec: `openspec/specs/mdm/spec.md`
 //!
 //! This crate is a Phase 0 placeholder: it carries no behaviour yet. Every
 //! requirement arrives through an OpenSpec change on a `change/<id>` branch.

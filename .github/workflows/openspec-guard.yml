@@ -162,7 +162,9 @@ jobs:
           exit $rc
 
       - name: Post the coverage report to the pull request
-        if: always() && github.event_name == 'pull_request'
+        # hashFiles guards the case where an earlier step failed before the
+        # report was written; the action errors out on a missing path.
+        if: always() && github.event_name == 'pull_request' && hashFiles('/tmp/coverage.md') != ''
         uses: marocchino/sticky-pull-request-comment@v2
         with:
           header: scenario-coverage

@@ -2,8 +2,7 @@
 //!
 //! Upstream reference: hapi-fhir-jpaserver-starter/.../mcp
 //!
-//! Capability register: `docs/capabilities/mcp.md`
-//! Requirements (once archived): `openspec/specs/mcp/spec.md`
+//! Capability spec: `openspec/specs/mcp/spec.md`
 //!
 //! This crate is a Phase 0 placeholder: it carries no behaviour yet. Every
 //! requirement arrives through an OpenSpec change on a `change/<id>` branch.

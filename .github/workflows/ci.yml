@@ -79,23 +79,24 @@ jobs:
           fi
 
       - name: Reference pins must be internally consistent
-        # PINS.md is the definition of "correct" for every differential gate.
-        # The table and the clone script must not be able to disagree.
+        # PINS.md is the definition of "correct" for every differential gate, so
+        # the table and the clone script must not be able to disagree.
+        #
+        # Compare only the SHAs in the pins TABLE (rows starting with "| `"),
+        # not every 40-hex string in the file: PINS.md also documents the
+        # annotated tag-object SHA of the starter release, which is deliberately
+        # not a pinned commit and must not appear in clone.sh.
         run: |
-          rc=0
-          while read -r sha; do
-            if ! grep -q "$sha" reference/PINS.md; then
-              echo "::error file=reference/clone.sh::SHA $sha in clone.sh is absent from reference/PINS.md"
-              rc=1
-            fi
-          done < <(grep -oE '\b[0-9a-f]{40}\b' reference/clone.sh | sort -u)
-          while read -r sha; do
-            if ! grep -q "$sha" reference/clone.sh; then
-              echo "::error file=reference/PINS.md::SHA $sha in PINS.md is absent from reference/clone.sh"
-              rc=1
-            fi
-          done < <(grep -oE '\b[0-9a-f]{40}\b' reference/PINS.md | sort -u)
-          exit $rc
+          table_shas="$(grep -E '^\| `' reference/PINS.md | grep -oE '[0-9a-f]{40}' | sort -u)"
+          script_shas="$(grep -oE '[0-9a-f]{40}' reference/clone.sh | sort -u)"
+          echo "pins table:  $(echo "$table_shas" | wc -l) SHA(s)"
+          echo "clone.sh:    $(echo "$script_shas" | wc -l) SHA(s)"
+          if [ "$table_shas" != "$script_shas" ]; then
+            echo "::error::reference/PINS.md and reference/clone.sh disagree about the pinned commits."
+            diff <(echo "$table_shas") <(echo "$script_shas") || true
+            exit 1
+          fi
+          echo "pins agree."
 
       - name: Crate names must use the frevo- prefix
         # Trademark constraint: no crate, binary or image name may contain
@@ -114,6 +115,13 @@ jobs:
             esac
           done
           exit $rc
+
+      - name: README parity table must match the inventory
+        # The inventory itself cannot be regenerated in CI: it is derived from
+        # reference/, which is gigabytes of upstream source that is never
+        # committed. The parity table, however, is derived from the committed
+        # inventory, so a stale table is detectable here.
+        run: bash harness/scripts/parity-table.sh --check
 
       - name: No secrets, PHI markers or licensed terminology committed
         run: |
