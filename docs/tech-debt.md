@@ -184,7 +184,13 @@ them is the whole reason that decision is safe to make.
 - **Trigger:** now — before `oracle-builder` starts on
   `add-fhirpath-and-codegen-r4`.
 - **Size:** small. One `chore/oracles-*` branch.
-- **Status:** blocking
+- **Status:** paid — pull request 13, commit `1098b31`. The suite is pinned by
+  SHA-256 as `r4-example-roundtrip`, licence determined (CC0-1.0, declared in
+  the package manifest rather than on HL7's licence pages), fetched rather than
+  vendored on size, and wired into `oracles/run.sh` as a stub that exits 2. The
+  licence trail is recorded in `oracles/PINS.md`, because the two obvious
+  sources do not answer the question and the next agent to re-pin this suite
+  will hit the same dead ends.
 - **Reviewed:** 2026-11-08, owner
 
 ### DEBT-0007 — `enforce_admins` is off on `main`
