@@ -1,0 +1,232 @@
+suite: store.crud
+description: >
+  Create, read, update, delete and history at the instance level.
+
+  Every case tags the resources it creates with {{run}}, the per-run id, and
+  scopes any search to that tag. Two runs therefore never see each other's
+  data, which is what makes a self-test against a single server two independent
+  runs rather than the second reading the first one's rows.
+
+cases:
+  # ----------------------------------------------------------------- create
+  - id: store.create.001
+    description: creating a resource returns 201 with a server-assigned id
+    scenarios: [store.create.001]
+    request:
+      method: POST
+      path: /Patient
+      body:
+        resourceType: Patient
+        identifier:
+          - system: "http://frevo.test/run"
+            value: "{{run}}"
+        name:
+          - family: Gonzalez
+            given: [Ana]
+        gender: female
+        birthDate: "1985-03-14"
+    expect_status_class: 2xx
+    compare_headers: true
+    normalize: [ids, meta_lastupdated, meta_versionid, timestamps, base_url, etag, volatile_headers, narrative]
+
+  - id: store.create.002
+    description: >
+      a create with a client-supplied id is rejected on POST; the id must come
+      from the server
+    scenarios: [store.create.002]
+    request:
+      method: POST
+      path: /Patient
+      body:
+        resourceType: Patient
+        id: "client-chosen-{{run}}"
+        identifier:
+          - system: "http://frevo.test/run"
+            value: "{{run}}"
+    expect_status_class: 2xx
+    normalize: [ids, meta_lastupdated, meta_versionid, timestamps, base_url, narrative]
+
+  # ------------------------------------------------------------------- read
+  - id: store.read.001
+    description: reading a just-created resource returns it unchanged
+    scenarios: [store.read.001]
+    setup:
+      - method: POST
+        path: /Patient
+        body:
+          resourceType: Patient
+          identifier:
+            - system: "http://frevo.test/run"
+              value: "{{run}}"
+          name:
+            - family: Okafor
+              given: [Chidi]
+          gender: male
+          birthDate: "1972-11-02"
+        capture:
+          pid: id
+    request:
+      method: GET
+      path: /Patient/{{pid}}
+    expect_status_class: 2xx
+    compare_headers: true
+    normalize: [ids, meta_lastupdated, meta_versionid, timestamps, base_url, etag, volatile_headers, narrative]
+
+  - id: store.read.002
+    description: reading an unknown id returns 404 with an OperationOutcome
+    scenarios: [store.read.002]
+    request:
+      method: GET
+      path: /Patient/definitely-not-here-{{run}}
+    expect_status_class: 404
+    # outcome_text is applied because HAPI embeds the id and its own class
+    # names in the diagnostics; severity and code are what must match.
+    normalize: [ids, meta_lastupdated, timestamps, base_url, narrative, outcome_text, volatile_headers]
+
+  # ----------------------------------------------------------------- update
+  - id: store.update.001
+    description: an update increments the version and returns the new content
+    scenarios: [store.update.001]
+    setup:
+      - method: POST
+        path: /Patient
+        body:
+          resourceType: Patient
+          identifier:
+            - system: "http://frevo.test/run"
+              value: "{{run}}"
+          name:
+            - family: Haddad
+          gender: other
+        capture:
+          pid: id
+    request:
+      method: PUT
+      path: /Patient/{{pid}}
+      body:
+        resourceType: Patient
+        id: "{{pid}}"
+        identifier:
+          - system: "http://frevo.test/run"
+            value: "{{run}}"
+        name:
+          - family: Haddad
+            given: [Layla]
+        gender: female
+        birthDate: "1990-07-21"
+    expect_status_class: 2xx
+    compare_headers: true
+    # meta_versionid is NOT normalised: the point of the case is that the
+    # version advanced, so the value has to be compared.
+    normalize: [ids, meta_lastupdated, timestamps, base_url, etag, volatile_headers, narrative]
+
+  - id: store.update.002
+    description: update as create (PUT to an id that does not exist yet)
+    scenarios: [store.update.002]
+    request:
+      method: PUT
+      path: /Patient/frevo-upsert-{{run}}
+      body:
+        resourceType: Patient
+        id: "frevo-upsert-{{run}}"
+        identifier:
+          - system: "http://frevo.test/run"
+            value: "{{run}}"
+        gender: unknown
+    expect_status_class: 2xx
+    normalize: [ids, meta_lastupdated, timestamps, base_url, narrative]
+
+  # ---------------------------------------------------------------- history
+  - id: store.history.001
+    description: instance history after one update contains two versions
+    scenarios: [store.history.001]
+    setup:
+      - method: POST
+        path: /Patient
+        body:
+          resourceType: Patient
+          identifier:
+            - system: "http://frevo.test/run"
+              value: "{{run}}"
+          gender: male
+        capture:
+          pid: id
+      - method: PUT
+        path: /Patient/{{pid}}
+        body:
+          resourceType: Patient
+          id: "{{pid}}"
+          identifier:
+            - system: "http://frevo.test/run"
+              value: "{{run}}"
+          gender: female
+    request:
+      method: GET
+      path: /Patient/{{pid}}/_history
+    expect_status_class: 2xx
+    # bundle_entry_order is deliberately NOT applied: history is ordered by
+    # time, newest first, and that order is part of the behaviour.
+    normalize: [ids, meta_lastupdated, timestamps, paging_links, base_url, narrative]
+
+  - id: store.vread.001
+    description: reading version 1 after an update returns the original content
+    scenarios: [store.vread.001]
+    setup:
+      - method: POST
+        path: /Patient
+        body:
+          resourceType: Patient
+          identifier:
+            - system: "http://frevo.test/run"
+              value: "{{run}}"
+          name:
+            - family: Original
+        capture:
+          pid: id
+      - method: PUT
+        path: /Patient/{{pid}}
+        body:
+          resourceType: Patient
+          id: "{{pid}}"
+          identifier:
+            - system: "http://frevo.test/run"
+              value: "{{run}}"
+          name:
+            - family: Replaced
+    request:
+      method: GET
+      path: /Patient/{{pid}}/_history/1
+    expect_status_class: 2xx
+    normalize: [ids, meta_lastupdated, timestamps, base_url, narrative]
+
+  # ----------------------------------------------------------------- delete
+  - id: store.delete.001
+    description: deleting a resource makes a subsequent read return 410
+    scenarios: [store.delete.001]
+    setup:
+      - method: POST
+        path: /Patient
+        body:
+          resourceType: Patient
+          identifier:
+            - system: "http://frevo.test/run"
+              value: "{{run}}"
+        capture:
+          pid: id
+      - method: DELETE
+        path: /Patient/{{pid}}
+    request:
+      method: GET
+      path: /Patient/{{pid}}
+    expect_status_class: 410
+    normalize: [ids, meta_lastupdated, timestamps, base_url, narrative, outcome_text, volatile_headers]
+
+  # ------------------------------------------------------------ capabilities
+  #
+  # There is deliberately no CapabilityStatement case here. The differential
+  # harness is the wrong instrument for it: the statement's contents ARE the
+  # parity progress, so until parity is reached it differs from HAPI's on every
+  # run by design, and the only way to make such a case pass would be to
+  # normalise away the very thing being built. CapabilityStatement behaviour is
+  # specified in openspec/specs/server/spec.md and tested directly
+  # (server.metadata.001, server.metadata.002).

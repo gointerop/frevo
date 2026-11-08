@@ -1,0 +1,349 @@
+suite: search.basic
+description: >
+  Search parameter types, modifiers, result parameters, chaining and includes.
+
+  Every case seeds its own resources tagged with {{run}} and scopes the search
+  to that tag, so the result set is exactly what the case created. That is what
+  makes a count or an ordering assertion meaningful: an unscoped search would
+  return every resource any previous run ever created.
+
+cases:
+  # ------------------------------------------------------------------ token
+  - id: search.token.001
+    description: token search on identifier returns exactly the tagged resource
+    scenarios: [search.token.001]
+    setup:
+      - method: POST
+        path: /Patient
+        body:
+          resourceType: Patient
+          identifier: [{system: "http://frevo.test/run", value: "{{run}}"}]
+          name: [{family: Singh, given: [Priya]}]
+          gender: female
+          birthDate: "1979-05-09"
+    request:
+      method: GET
+      path: /Patient?identifier=http://frevo.test/run|{{run}}
+    expect_status_class: 2xx
+    normalize: [ids, meta_lastupdated, meta_versionid, timestamps, paging_links, base_url, narrative, bundle_entry_order]
+
+  - id: search.token.002
+    description: a token search that matches nothing returns an empty searchset
+    scenarios: [search.token.002]
+    request:
+      method: GET
+      path: /Patient?identifier=http://frevo.test/run|nothing-{{run}}
+    expect_status_class: 2xx
+    normalize: [ids, meta_lastupdated, timestamps, paging_links, base_url, narrative]
+
+  # ----------------------------------------------------------------- string
+  - id: search.string.001
+    description: ":exact restricts a string search to an exact match"
+    scenarios: [search.string.001]
+    setup:
+      - method: POST
+        path: /Patient
+        body:
+          resourceType: Patient
+          identifier: [{system: "http://frevo.test/run", value: "{{run}}"}]
+          name: [{family: "Andersen"}]
+      - method: POST
+        path: /Patient
+        body:
+          resourceType: Patient
+          identifier: [{system: "http://frevo.test/run", value: "{{run}}"}]
+          name: [{family: "Andersens"}]
+    request:
+      method: GET
+      path: /Patient?identifier=http://frevo.test/run|{{run}}&family:exact=Andersen
+    expect_status_class: 2xx
+    normalize: [ids, meta_lastupdated, meta_versionid, timestamps, paging_links, base_url, narrative, bundle_entry_order]
+
+  # ---------------------------------------------------------------- missing
+  - id: search.missing.001
+    description: ":missing=true finds resources with the element absent"
+    scenarios: [search.missing.001]
+    setup:
+      - method: POST
+        path: /Patient
+        body:
+          resourceType: Patient
+          identifier: [{system: "http://frevo.test/run", value: "{{run}}"}]
+          gender: male
+      - method: POST
+        path: /Patient
+        body:
+          resourceType: Patient
+          identifier: [{system: "http://frevo.test/run", value: "{{run}}"}]
+    request:
+      method: GET
+      path: /Patient?identifier=http://frevo.test/run|{{run}}&gender:missing=true
+    expect_status_class: 2xx
+    normalize: [ids, meta_lastupdated, meta_versionid, timestamps, paging_links, base_url, narrative, bundle_entry_order]
+
+  # ------------------------------------------------------------------- date
+  - id: search.date.001
+    description: date prefixes ge and le bound a birthDate range
+    scenarios: [search.date.001]
+    setup:
+      - method: POST
+        path: /Patient
+        body:
+          resourceType: Patient
+          identifier: [{system: "http://frevo.test/run", value: "{{run}}"}]
+          birthDate: "1960-01-01"
+      - method: POST
+        path: /Patient
+        body:
+          resourceType: Patient
+          identifier: [{system: "http://frevo.test/run", value: "{{run}}"}]
+          birthDate: "1990-06-15"
+      - method: POST
+        path: /Patient
+        body:
+          resourceType: Patient
+          identifier: [{system: "http://frevo.test/run", value: "{{run}}"}]
+          birthDate: "2010-12-31"
+    request:
+      method: GET
+      path: /Patient?identifier=http://frevo.test/run|{{run}}&birthdate=ge1980-01-01&birthdate=le2000-01-01
+    expect_status_class: 2xx
+    normalize: [ids, meta_lastupdated, meta_versionid, timestamps, paging_links, base_url, narrative, bundle_entry_order]
+
+  # ------------------------------------------------------------------- sort
+  - id: search.sort.001
+    description: >
+      _sort=birthdate orders ascending. bundle_entry_order is deliberately NOT
+      applied: the order is the behaviour under test, so sorting the entries
+      before comparing would make the case pass regardless of the result.
+    scenarios: [search.sort.001]
+    setup:
+      - method: POST
+        path: /Patient
+        body:
+          resourceType: Patient
+          identifier: [{system: "http://frevo.test/run", value: "{{run}}"}]
+          birthDate: "1995-02-02"
+      - method: POST
+        path: /Patient
+        body:
+          resourceType: Patient
+          identifier: [{system: "http://frevo.test/run", value: "{{run}}"}]
+          birthDate: "1975-08-08"
+      - method: POST
+        path: /Patient
+        body:
+          resourceType: Patient
+          identifier: [{system: "http://frevo.test/run", value: "{{run}}"}]
+          birthDate: "2005-04-04"
+    request:
+      method: GET
+      path: /Patient?identifier=http://frevo.test/run|{{run}}&_sort=birthdate
+    expect_status_class: 2xx
+    normalize: [ids, meta_lastupdated, meta_versionid, timestamps, paging_links, base_url, narrative]
+
+  - id: search.sort.002
+    description: _sort=-birthdate orders descending
+    scenarios: [search.sort.002]
+    setup:
+      - method: POST
+        path: /Patient
+        body:
+          resourceType: Patient
+          identifier: [{system: "http://frevo.test/run", value: "{{run}}"}]
+          birthDate: "1995-02-02"
+      - method: POST
+        path: /Patient
+        body:
+          resourceType: Patient
+          identifier: [{system: "http://frevo.test/run", value: "{{run}}"}]
+          birthDate: "1975-08-08"
+    request:
+      method: GET
+      path: /Patient?identifier=http://frevo.test/run|{{run}}&_sort=-birthdate
+    expect_status_class: 2xx
+    normalize: [ids, meta_lastupdated, meta_versionid, timestamps, paging_links, base_url, narrative]
+
+  # ------------------------------------------------------------------ total
+  - id: search.total.001
+    description: _total=accurate reports the exact match count
+    scenarios: [search.total.001]
+    setup:
+      - method: POST
+        path: /Patient
+        body:
+          resourceType: Patient
+          identifier: [{system: "http://frevo.test/run", value: "{{run}}"}]
+      - method: POST
+        path: /Patient
+        body:
+          resourceType: Patient
+          identifier: [{system: "http://frevo.test/run", value: "{{run}}"}]
+    request:
+      method: GET
+      path: /Patient?identifier=http://frevo.test/run|{{run}}&_total=accurate&_count=0
+    expect_status_class: 2xx
+    normalize: [ids, meta_lastupdated, timestamps, paging_links, base_url, narrative]
+
+  # ------------------------------------------------------------------ count
+  - id: search.paging.001
+    description: >
+      _count limits the page and the bundle offers a next link. The link's
+      continuation token is normalised, but the set of link relations is not --
+      that is the behaviour being checked.
+    scenarios: [search.paging.001]
+    setup:
+      - method: POST
+        path: /Patient
+        body:
+          resourceType: Patient
+          identifier: [{system: "http://frevo.test/run", value: "{{run}}"}]
+          birthDate: "1991-01-01"
+      - method: POST
+        path: /Patient
+        body:
+          resourceType: Patient
+          identifier: [{system: "http://frevo.test/run", value: "{{run}}"}]
+          birthDate: "1992-02-02"
+      - method: POST
+        path: /Patient
+        body:
+          resourceType: Patient
+          identifier: [{system: "http://frevo.test/run", value: "{{run}}"}]
+          birthDate: "1993-03-03"
+    request:
+      method: GET
+      path: /Patient?identifier=http://frevo.test/run|{{run}}&_count=2&_sort=birthdate
+    expect_status_class: 2xx
+    normalize: [ids, meta_lastupdated, meta_versionid, timestamps, paging_links, base_url, narrative]
+
+  # ---------------------------------------------------------------- include
+  - id: search.include.001
+    description: _include pulls the referenced Patient into the bundle
+    scenarios: [search.include.001]
+    setup:
+      - method: POST
+        path: /Patient
+        body:
+          resourceType: Patient
+          identifier: [{system: "http://frevo.test/run", value: "{{run}}"}]
+          name: [{family: Referenced}]
+        capture:
+          pid: id
+      - method: POST
+        path: /Observation
+        body:
+          resourceType: Observation
+          identifier: [{system: "http://frevo.test/run", value: "{{run}}"}]
+          status: final
+          code:
+            coding: [{system: "http://loinc.org", code: "8867-4", display: "Heart rate"}]
+          subject:
+            reference: "Patient/{{pid}}"
+          valueQuantity:
+            value: 72
+            unit: "/min"
+            system: "http://unitsofmeasure.org"
+            code: "/min"
+    request:
+      method: GET
+      path: /Observation?identifier=http://frevo.test/run|{{run}}&_include=Observation:subject
+    expect_status_class: 2xx
+    normalize: [ids, meta_lastupdated, meta_versionid, timestamps, paging_links, base_url, narrative, bundle_entry_order]
+
+  # ------------------------------------------------------------------ chain
+  - id: search.chain.001
+    description: a forward chained search matches on the referenced resource
+    scenarios: [search.chain.001]
+    setup:
+      - method: POST
+        path: /Patient
+        body:
+          resourceType: Patient
+          identifier: [{system: "http://frevo.test/run", value: "{{run}}"}]
+          name: [{family: "Chainable{{run}}"}]
+        capture:
+          pid: id
+      - method: POST
+        path: /Observation
+        body:
+          resourceType: Observation
+          identifier: [{system: "http://frevo.test/run", value: "{{run}}"}]
+          status: final
+          code:
+            coding: [{system: "http://loinc.org", code: "8310-5"}]
+          subject:
+            reference: "Patient/{{pid}}"
+    request:
+      method: GET
+      path: /Observation?subject:Patient.family=Chainable{{run}}
+    expect_status_class: 2xx
+    normalize: [ids, meta_lastupdated, meta_versionid, timestamps, paging_links, base_url, narrative, bundle_entry_order]
+
+  # ------------------------------------------------------------------- _has
+  - id: search.has.001
+    description: _has finds Patients referenced by a matching Observation
+    scenarios: [search.has.001]
+    setup:
+      - method: POST
+        path: /Patient
+        body:
+          resourceType: Patient
+          identifier: [{system: "http://frevo.test/run", value: "{{run}}"}]
+        capture:
+          pid: id
+      - method: POST
+        path: /Observation
+        body:
+          resourceType: Observation
+          identifier: [{system: "http://frevo.test/has", value: "{{run}}"}]
+          status: final
+          code:
+            coding: [{system: "http://loinc.org", code: "9279-1"}]
+          subject:
+            reference: "Patient/{{pid}}"
+    request:
+      method: GET
+      path: /Patient?_has:Observation:subject:identifier=http://frevo.test/has|{{run}}
+    expect_status_class: 2xx
+    normalize: [ids, meta_lastupdated, meta_versionid, timestamps, paging_links, base_url, narrative, bundle_entry_order]
+
+  # -------------------------------------------------------------- transaction
+  - id: store.transaction.001
+    description: >
+      a transaction bundle with an internal urn:uuid reference resolves the
+      reference and returns entries in request order. bundle_entry_order is NOT
+      applied: a transaction response must mirror the request order.
+    scenarios: [store.transaction.001]
+    request:
+      method: POST
+      path: /
+      body:
+        resourceType: Bundle
+        type: transaction
+        entry:
+          - fullUrl: "urn:uuid:11111111-1111-4111-8111-111111111111"
+            resource:
+              resourceType: Patient
+              identifier: [{system: "http://frevo.test/run", value: "{{run}}"}]
+              name: [{family: TxPatient}]
+            request:
+              method: POST
+              url: Patient
+          - resource:
+              resourceType: Observation
+              identifier: [{system: "http://frevo.test/run", value: "{{run}}"}]
+              status: final
+              code:
+                coding: [{system: "http://loinc.org", code: "8480-6"}]
+              subject:
+                reference: "urn:uuid:11111111-1111-4111-8111-111111111111"
+            request:
+              method: POST
+              url: Observation
+    expect_status_class: 2xx
+    # outcome_text is needed here: HAPI puts the assigned id and its own
+    # elapsed time into each entry's diagnostics ("Successfully created
+    # resource ... Took 2ms"). Severity, code and location are what the case
+    # checks; the wording and the timing are not comparable.
+    normalize: [ids, meta_lastupdated, meta_versionid, timestamps, base_url, narrative, etag, outcome_text]
