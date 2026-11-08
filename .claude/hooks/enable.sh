@@ -27,15 +27,19 @@ except Exception: sys.exit(1)
 sys.exit(0 if s.get("hooks") else 1)
 '; then
     echo "hooks: ACTIVE"
-    "$PY" -I -c '
+    # Backslash-escaped quotes inside an f-string expression are a syntax error
+    # in this Python, and nesting them through a single-quoted shell string made
+    # it worse. Build the string without any quoting inside the braces.
+    "$PY" - <<'PYEOF'
 import json
-s=json.load(open(".claude/settings.json"))
-for ev,entries in sorted(s.get("hooks",{}).items()):
+s = json.load(open(".claude/settings.json", encoding="utf-8"))
+for ev, entries in sorted(s.get("hooks", {}).items()):
     for e in entries:
-        m=e.get("matcher","*")
-        for h in e.get("hooks",[]):
-            print(f"  {ev:<14} {m:<28} {h.get(\"command\",\"\").split(\"/\")[-1]}")
-'
+        m = e.get("matcher", "*")
+        for h in e.get("hooks", []):
+            script = h.get("command", "").replace("\\", "/").rstrip('"').split("/")[-1]
+            print("  {:<14} {:<30} {}".format(ev, m, script))
+PYEOF
     exit 0
   fi
   echo "hooks: NOT active"
