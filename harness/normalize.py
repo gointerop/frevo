@@ -87,6 +87,12 @@ RULES: dict[str, str] = {
         "Normalises ETag and Content-Location headers. "
         "STOPS CHECKING: the literal version token in those headers."
     ),
+    "_last_modified_note": (
+        "Not a rule you select. The Last-Modified header's value is "
+        "placeholdered whenever meta_lastupdated or timestamps is applied, "
+        "because it carries the same server-generated instant. "
+        "STOPS CHECKING: that instant. The header's presence is still checked."
+    ),
     "volatile_headers": (
         "Drops Date, Server, X-Powered-By, Content-Length, Keep-Alive and "
         "similar transport headers. "
@@ -135,7 +141,10 @@ class Normalizer:
 
     def __init__(self, rules: list[str], base_urls: list[str] | None = None,
                  tokens: dict[str, str] | None = None):
-        unknown = [r for r in rules if r not in RULES]
+        # Entries starting with "_" are documentation of implicit behaviour,
+        # not selectable rules; selecting one would do nothing and imply it had.
+        selectable = {k for k in RULES if not k.startswith("_")}
+        unknown = [r for r in rules if r not in selectable]
         if unknown:
             raise ValueError(
                 f"unknown normalisation rule(s): {unknown}. "
@@ -342,6 +351,18 @@ class Normalizer:
                 continue
             if lk == "etag" and "etag" in self.rules:
                 out[lk] = re.sub(r'W?/?"[^"]*"', '"<version>"', v)
+                continue
+            # Last-Modified carries the resource's lastUpdated instant, so its
+            # VALUE is server-generated while its PRESENCE is meaningful. It gets
+            # the same treatment as meta.lastUpdated: placeholder the value, keep
+            # the header. Without this, two runs that straddle a second boundary
+            # differ -- which is a flake, not a parity failure, and it only
+            # showed up once the database was large enough to slow the runs
+            # down. The earlier all-green result was partly luck.
+            if lk == "last-modified" and (
+                "meta_lastupdated" in self.rules or "timestamps" in self.rules
+            ):
+                out[lk] = PLACEHOLDER_TS
                 continue
             if lk in ("content-location", "location"):
                 out[lk] = self._rewrite_ref_string(v) if "ids" in self.rules \
