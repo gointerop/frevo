@@ -35,7 +35,13 @@ the oracle:
   and operator" — real evidence of maturity;
 - for both engines: the exact type of their evaluation seam.
 
-**Pass rates against `oracles/fhirpath` (1,193 cases) were not measured.** The
+**Pass rates against `oracles/fhirpath` (1,191 cases) were not measured.**
+
+> The case count here was 1,193 in the first draft of this ADR, and that was
+> wrong. `tests-fhir-r4.xml` wraps the whole `testDollarResource` group in an
+> XML comment whose bodies still contain `<test ...>` text, so a textual count
+> reports 104 groups and 1,193 cases where parsing reports **103 and 1,191**.
+> The independent spec review caught it. Count by parsing, never by matching. The
 suite references external FHIR example files in XML, so running it needs a FHIR
 XML parser and a test harness — which is precisely the harness
 `oracle-builder` builds as task 1 of this change. Quoting a pass rate now would
@@ -129,7 +135,7 @@ Other blocking facts:
    harness only, never of a shipped crate. MIT is compatible for that, and
    nothing in the product links it.
 
-4. **The gate stays the official suite.** `oracles/fhirpath`, 1,193 cases, at
+4. **The gate stays the official suite.** `oracles/fhirpath`, 1,191 cases, at
    or above HAPI 8.12.0's rate on the same cases. A second implementation to
    diff against is a debugging aid, never the standard.
 
@@ -156,7 +162,7 @@ Bad, and accepted:
 
 - We write a FHIRPath engine. The reference implementation is roughly 8k lines
   in `haste-fhirpath`'s case, which is a fair estimate of the work, and the
-  1,193-case suite is unforgiving. This is the largest single piece of
+  1,191-case suite is unforgiving. This is the largest single piece of
   avoidable work being deliberately taken on.
 - `helios-fhirpath` could have been a genuine shortcut if MIT-only
   dependencies and a shared model were acceptable. If the pass-rate measurement
@@ -171,7 +177,7 @@ rates and throughput in this ADR.
 
 Reverse this decision if **either** holds:
 
-- `helios-fhirpath` passes the 1,193-case suite at or above HAPI 8.12.0's rate
+- `helios-fhirpath` passes the 1,191-case suite at or above HAPI 8.12.0's rate
   **and** `IntoEvaluationResult` can be implemented over the lazy model without
   materialising whole resources. Then reuse it, pin it, and spend the saved
   time on `frevo-store`.
