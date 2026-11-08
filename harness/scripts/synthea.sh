@@ -3,7 +3,7 @@
 # benchmarks.
 #
 #   bash harness/scripts/synthea.sh generate small          # 100 patients
-#   bash harness/scripts/synthea.sh generate medium         # 10000 patients
+#   bash harness/scripts/synthea.sh generate medium         # 1000 patients
 #   bash harness/scripts/synthea.sh load small http://localhost:8090/fhir
 #   bash harness/scripts/synthea.sh stats small
 #
