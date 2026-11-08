@@ -249,8 +249,8 @@ names the oracles `fhirpath` and `r4-example-roundtrip`.
 3. **Generated-code volume.** 146 concrete resources with a full codec each
    could produce a crate that is slow to compile and unpleasant to review.
    `design.md` sets a compile-time budget for exactly this reason.
-4. **Nine HAPI-versus-specification divergences are recorded, and none is a
-   deviation from HAPI.** `DEV-0001` to `DEV-0009` in
+4. **Ten HAPI-versus-specification divergences are recorded, and none is a
+   deviation from HAPI.** `DEV-0001` to `DEV-0010` in
    [`docs/deviations.md`](../../../docs/deviations.md) record places where the
    pinned R4 engine does not do what the FHIRPath specification describes:
    `single()` on an empty collection throws, a multi-item ordered comparison
@@ -258,8 +258,14 @@ names the oracles `fhirpath` and `r4-example-roundtrip`.
    mirrors accept them, comparison and the transcendental math functions go
    through binary doubles, incommensurable quantities compare by magnitude, a
    string function over a non-string focus returns empty, `extension(url)` also
-   returns modifier extensions, `now()` is not stable within an evaluation, and
-   `toDate()` does not exist. Every one is resolved as HAPI's behaviour, so the
+   returns modifier extensions, `now()` is not stable within an evaluation,
+   `toDate()` does not exist, and — the one with the widest blast radius — a
+   host application constant resolved implicitly at the entry of an expression
+   **shadows a real element of the resource**, so a host service that answers
+   for `name` makes `Patient.name` unreachable through the expression `name`.
+   That last one is live on the write path, because search-parameter extraction
+   and the validator both pass an application context, which is the condition
+   the engine gates it on. Every one is resolved as HAPI's behaviour, so the
    port stays faithful; the entries exist because rule 1 of the constitution
    requires a HAPI-versus-specification disagreement to be recorded, and because
    each of these is something an implementer reading the specification would
@@ -280,9 +286,15 @@ names the oracles `fhirpath` and `r4-example-roundtrip`.
    with the handler `FhirContext` installs by default, which is
    `LenientErrorHandler`. That handler logs and continues for an unknown
    element, an unknown attribute, an incorrect JSON type, an unexpected
-   repeating element and a missing required element, and its own documentation
-   states that only `invalidValue` and
-   `extensionContainsValueAndNestedExtensions` abort a parse. So HAPI 8.12.0
+   repeating element, a missing required element, a contained resource with no
+   `id`, a `#` reference whose target is not contained and — on the encode side
+   — a `#` reference being serialised with no matching contained resource; its
+   own documentation states that only `invalidValue` and
+   `extensionContainsValueAndNestedExtensions` abort a parse. That is the
+   **complete** set: HAPI's parser error surface has exactly ten conditions,
+   nine on decode and one on encode, and this change specifies all ten in both
+   modes, because strict mode one condition short of HAPI's is a parity break
+   the round-trip oracle cannot see. So HAPI 8.12.0
    answers `2xx` to a `Patient` carrying `"nmae": []`, to `"active": "true"`,
    to a single object where a `0..*` array belongs, to an array where a `0..1`
    value belongs, and to an `Observation` with no `status`. `frevo-model`

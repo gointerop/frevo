@@ -1692,18 +1692,75 @@ The engine SHALL resolve the environment variables `FHIRPathEngine` resolves int
 
 #### Scenario: [path.env.015] the host service is told which constant-evaluation mode is in force
 
-- **WHEN** a host service is asked to resolve an environment variable
-- **THEN** it is told which of four modes applies — the name was written
-  explicitly, the name is being resolved for its type with no value wanted, or
-  the name is being resolved implicitly before or after the expression it
-  appears in
-- **AND** the explicit mode is in force for a `%name` the expression itself
-  writes, and the no-value mode is in force during the check pass, where only
-  the type is wanted
+- **WHEN** a host service is asked to resolve a constant, in either the
+  evaluation pass or the check pass
+- **THEN** it is told which of exactly four modes applies, and each mode is in
+  force at exactly the sites below:
+  - **explicit** — the expression itself wrote `%name` and the engine does not
+    recognise the name internally. In force at the evaluation pass's constant
+    node and at the check pass's constant node, and nowhere else
+  - **no-value** — the engine was invoked with **no focus at all**. In force at
+    exactly one site: the check pass's name node, when the node is at the entry
+    of the expression and the focus type is absent. This is what checking an
+    expression with no context type produces, which is how the 90 cases in the
+    pinned suite that carry no `inputfile` are checked
+  - **implicit-before** — the engine is about to navigate a named property and
+    is offering the host the chance to supply a value first (`path.env.016`)
+  - **implicit-after** — the engine navigated a named property, found nothing,
+    and is offering the host the chance to supply a value (`path.env.017`)
+- **AND** the no-value mode is **not** "resolved for its type with no value
+  wanted": an explicit `%name` in the check pass is reported as **explicit**,
+  not as no-value, so a host service that keys its type answers off the mode
+  rather than off the pass must see the same split
+- **AND** the no-value mode reaches the host only through the type-resolution
+  entry point, and with no host service configured that site fails with the
+  no-host-services error rather than yielding empty (`path.env.011`)
 - **AND** the four modes map one-for-one onto the four the server-facing
   wrapper passes through to its own evaluation context, so a host service
   written against that wrapper sees the same value
-- **AND** no live case grades the mode argument, so it is differential-only
+- **AND** no live case grades the mode argument, so it is differential-only;
+  `DEV-0010` records the implicit modes' divergence from the FHIRPath grammar
+
+#### Scenario: [path.env.016] a host constant can shadow a real property
+
+- **WHEN** an expression whose leading name is a real element of the focus
+  resource — `Patient.name` evaluated as the expression `name`, say — is
+  evaluated with a non-null application context **and** a host service whose
+  implicit-before answer for `name` is a non-empty collection
+- **THEN** the result is the host service's collection, and the element is
+  **never navigated**: the host constant shadows the real property
+- **AND** the host service is asked before any navigation and before the
+  leading-type-name special case that matches a resource type, at the leading
+  name of the expression **and** at the leading name of every argument the
+  engine evaluates as an expression in its own right — `where()`'s criteria and
+  `trace()`'s name among them — and once per focus item, because the per-item
+  loop asks for each item separately
+- **AND** an empty implicit-before answer leaves navigation to proceed normally,
+  so a host service that answers empty for every unknown name is
+  indistinguishable from no host service on this path
+- **AND** this path is live for every caller this port ships that passes an
+  application context — search-parameter extraction and the validator both do —
+  so a host service must answer empty for any name it does not own, or a
+  resource's own elements become unreachable
+- **AND** no live case in the pinned suite grades this, so it is
+  differential-only; `DEV-0010` records it
+
+#### Scenario: [path.env.017] the implicit-after mode is a fall-through, and both implicit modes need an application context
+
+- **WHEN** an expression whose leading name is not an element of the focus
+  resource is evaluated with a non-null application context and a host service
+- **THEN** navigation runs first and yields empty, and only then is the host
+  service asked with the implicit-after mode, whose answer becomes the result
+- **WHEN** the same expression is evaluated with the **same** host service but a
+  **null** application context
+- **THEN** neither implicit mode fires at all, the host service is not consulted
+  for the leading name, and the result is empty
+- **AND** that gate is on the application context, not on the host service, so
+  installing a host service without an application context changes nothing about
+  name resolution — only `%name`, `resolve()`, `conformsTo()`, `memberOf()`,
+  `trace()` and custom functions still reach it
+- **AND** no live case in the pinned suite grades this, so it is
+  differential-only; `DEV-0010` records it
 
 #### Scenario: [path.env.013] `defineVariable` introduces a variable for the rest of the expression
 
@@ -1727,6 +1784,16 @@ The engine SHALL implement the utility and FHIR-specific functions `FHIRPathEngi
 - **THEN** every case yields its stated output
 - **AND** the trace log is retrievable after evaluation and contains the names
   the expressions passed to `trace`
+- **AND** the engine exposes a has-log predicate and a take-log accessor, and
+  **taking the log clears it**: a second take with no intervening `trace`
+  returns the empty string and the has-log predicate is false
+- **AND** that is what lets the oracle harness drain the log after each case
+  without the previous case's lines leaking into the next one, which it must do
+  because the engine is reused across all 1,191 cases (`path.oracle.001`)
+- **AND** a log entry is the trace name, then `: `, then the traced items'
+  string values joined by `,`; entries are joined by `; ` in evaluation order
+- **AND** `trace` is the only construct that writes to the log; no other
+  function or operator appends to it
 
 #### Scenario: [path.utility.002] `trace` with a projection logs the projection, not the input
 
@@ -1924,6 +1991,32 @@ The engine SHALL implement the utility and FHIR-specific functions `FHIRPathEngi
   unevaluated, as its `paramIsType` answer directs
 - **AND** no live case grades it, so it is differential-only
 
+#### Scenario: [path.utility.028] a host service may intercept `trace` and suppress the engine's log
+
+- **WHEN** an expression calling `trace('n')` is evaluated with a host service
+  whose log hook returns **true**
+- **THEN** the hook is called with the trace name and the traced items, the
+  expression's own result is still the traced input passed through, and the
+  engine's trace log stays **empty**: the has-log predicate is false and the
+  take-log accessor returns the empty string
+- **WHEN** the same expression is evaluated with a host service whose log hook
+  returns **false**
+- **THEN** the hook is called and the engine **also** appends the entry to its
+  own log, so the entry is observable both ways
+- **AND** with no host service configured the engine appends the entry with no
+  hook call, which is the configuration `path.utility.001` and the oracle
+  harness run in
+- **AND** the hook is reached only from `trace`; the math `log()` function has
+  no connection to it
+- **AND** the host-service surface has exactly ten methods and this is the last
+  of them to get a scenario, so with it the surface is fully specified:
+  constant and constant-type resolution by `path.env.012`, `path.env.015`,
+  `path.env.016` and `path.env.017`; function resolution, function type
+  checking, function execution and the type-parameter predicate by
+  `path.utility.027`; reference resolution by `path.utility.020`; profile
+  conformance by `path.utility.012`; value-set resolution by `path.utility.015`
+- **AND** no live case grades it, so it is differential-only
+
 #### Scenario: [path.utility.021] the appointment and explanation-of-benefit cases hold
 
 - **WHEN** the cases whose `inputfile` is `appointment-examplereq.json`,
@@ -2024,6 +2117,21 @@ it.
   carrying a message and a stable message id
 - **AND** a warning does not make the check fail, so an expression that produces
   warnings is still evaluated
+- **AND** the warning channel is graded by an **in-process unit oracle** over
+  the generated R4 model, not by the vendored suite and not by the differential
+  harness: the suite's `invalid="semantic"` selector grades only whether the
+  check fails, and a live HAPI server over HTTP never exposes the list. The
+  oracle's case selector is the warning's message id, each of which is a stable
+  constant name in the upstream engine. `path.check.015` through
+  `path.check.019` are the only `path.check.*` scenarios graded this way; the
+  rest are graded by the suite selector named in
+  [`../../spec.md`](../../spec.md)
+- **AND** the nine message ids the check pass can emit are the complete set:
+  choice-without-type-specifier, choice-with-spurious-type-specifier,
+  collection-status-on-an-operation's-left-operand, the same for the right
+  operand, collection-status-on-a-function-parameter,
+  collection-status-on-a-context, not-a-collection, unknown-extension and
+  of-type-impossible. A tenth id, or a missing one, fails the oracle
 
 #### Scenario: [path.check.016] comparing a collection with a singleton produces a warning, not a failure
 
@@ -2288,12 +2396,55 @@ The oracle harness SHALL run every case in the vendored suite without modifying 
 
 #### Scenario: [path.oracle.002] the harness reads every attribute the case carries
 
-- **WHEN** the harness parses a case
-- **THEN** it records `name`, `description`, `inputfile`, `expression`, the
-  expression's `invalid` value, `predicate`, `ordered`, `mode`, `context`,
-  `contextType`, `version`, `testing` and `checkOrderedFunctions`
-- **AND** an attribute it does not understand fails the run rather than being
-  ignored
+- **WHEN** the harness parses the pinned suite
+- **THEN** it accepts, per element, exactly the attributes that element carries
+  in the pinned file, and no others:
+  - `<tests>` (root) — `name`, `description`, `reference`
+  - `<group>` — `name`, `description`, `mode`, `reference`
+  - `<test>` — `name`, `description`, `inputfile`, `mode`, `context`,
+    `contextType`, `version`, `testing`, `predicate`, `ordered`,
+    `checkOrderedFunctions`
+  - `<expression>` — `invalid`, `mode`
+  - `<output>` — `type`
+- **AND** an attribute on an element where that element does not carry it in the
+  pinned file fails the run rather than being silently ignored, because an
+  unread attribute is a silently weakened oracle
+- **AND** a run against the pinned file therefore reports **zero** unhandled
+  attributes, which is the assertion this scenario exists to make: `reference`
+  appears on the root `<tests>` element and on `<group name="from-Zulip">`
+  (`tests-fhir-r4.xml:1583`), and `mode` appears on one `<expression>`
+  (`tests-fhir-r4.xml:625`), on 11 `<test>` elements and on two `<group>`
+  elements
+- **AND** the attribute value domains the pinned file uses are recorded and
+  asserted: `expression/@invalid` ∈ {`syntax`, `semantic`, `execution`},
+  `expression/@mode` ∈ {`strict`}, `test/@mode` ∈ {`element`, `strict`},
+  `group/@mode` ∈ {`custom`, `semantic`}, `test/@predicate` ∈ {`true`, `false`},
+  `test/@ordered` ∈ {`false`}, `test/@checkOrderedFunctions` ∈ {`true`},
+  `test/@version` ∈ {`2.1.0`}; a value outside the recorded domain fails the run
+  with status `did-not-run`, never `passed`
+- **AND** `tests/@reference` and `group/@reference` are recorded and reported but
+  change no grading, `test/@testing` drives `path.oracle.014`'s out-of-scope
+  reporting, and the expression-level `mode` is handled as `path.oracle.017`
+  requires
+
+#### Scenario: [path.oracle.017] the expression-level `mode` attribute changes no outcome
+
+- **WHEN** `testIif/testIif6` is run, whose expression element is
+  `<expression mode="strict" invalid="semantic">iif('non boolean criteria', 'true-result', 'true-result')</expression>`
+  at `tests-fhir-r4.xml:625` — the only expression-level `mode` in the pinned
+  file, and one of the 29 cases `path.check.002` requires to fail the check
+- **THEN** the case fails the check pass and is therefore graded `passed`,
+  identically to a run that ignored the attribute, which is what HAPI's pinned
+  harness does
+- **AND** the harness records that it read `mode="strict"` on the expression and
+  that it changed no grading, rather than leaving the attribute unhandled
+- **AND** the outcome does not depend on the attribute because the engine types
+  `iif`'s first parameter against a singleton boolean unconditionally — the
+  `case Iif` arm of the type pass runs `checkParamTypes` with no mode gate — so
+  the case is a semantic failure in every configuration the engine offers
+- **AND** the harness must not implement the attribute as "fail the check only in
+  strict mode", because that would let an implementation which accepts a
+  non-boolean `iif` condition in the default configuration pass this case
 
 #### Scenario: [path.oracle.003] the harness loads each referenced input file
 
@@ -2325,21 +2476,51 @@ The oracle harness SHALL run every case in the vendored suite without modifying 
 
 #### Scenario: [path.oracle.007] the harness applies `ordered="false"` as an unordered comparison
 
-- **WHEN** a case carries `ordered="false"`
-- **THEN** each outcome item is matched against any expected output rather than
-  against the one at its index
+- **WHEN** a case carries `ordered="false"` — which in the pinned file is exactly
+  one case, `testMiscellaneousAccessorTests/testExpressions` at
+  `tests-fhir-r4.xml:321`
+- **THEN** each outcome item is matched against **any** expected `<output>`
+  element rather than against the one at its index, and the item passes if some
+  expected element satisfies both of (`type` absent or empty, or `type` equal to
+  the item's FHIR type name) and (body absent or empty, or body equal to the
+  item's string value)
+- **AND** the unordered branch compares the **plain** string value — a
+  `Quantity` item through the engine's quantity-to-string conversion and every
+  other item through its primitive string value — and therefore carries **no**
+  `@` or `@T` prefix, unlike the ordered branch (`path.oracle.008`)
+- **AND** the two branches must not be unified on one comparison function: the
+  one `ordered="false"` case in the pinned file yields strings, so the
+  divergence is latent today and would surface as a whole-suite failure the
+  first time a temporal result appears in an unordered case
+- **AND** an expected element may be matched by more than one outcome item,
+  because the match is existential per item and consumes nothing
 
 #### Scenario: [path.oracle.008] the harness compares count, and compares type and value only when the expectation states them
 
-- **WHEN** a case's outputs are compared
+- **WHEN** a case's outputs are compared on the ordered branch, which is every
+  case without `ordered="false"`
 - **THEN** the number of outputs must match the number of result items
 - **AND** an output whose `type` attribute is absent or empty means "do not
   check the type", and an output whose body is absent or empty means "do not
-  check the value" — 71 of the suite's outputs carry no `type` attribute, so a
-  harness that required one would fail cases HAPI passes
+  check the value" — 71 of the suite's 1,103 outputs carry no `type` attribute,
+  so a harness that required one would fail cases HAPI passes
 - **AND** where the `type` attribute is present it must equal the result item's
   FHIR type name, and where the body is present it must equal the result item's
-  FHIRPath string value
+  FHIRPath string value, which is **not** the primitive value for a temporal
+  type: a `date`, `dateTime` or `instant` result renders as `@` followed by its
+  primitive value, a `time` result as `@T` followed by its primitive value, and
+  every other primitive as its primitive value unchanged
+- **AND** that is why the suite's expectations read
+  `<output type="date">@1974-12-25</output>` (`tests-fhir-r4.xml:59`) and
+  `<output type="dateTime">@1974-01-01T00:00:00.000+10:00</output>`
+  (`tests-fhir-r4.xml:1282`), and the harness compares the prefixed form
+- **AND** the prefix is a property of the comparison, not of the result: the
+  engine's own string conversion, the `toString()` function and the value Frevo
+  returns to a caller all carry no `@`
+- **AND** stripping the `@` from an expectation, or normalising it away on
+  either side, is weakening the oracle and is forbidden by constitution rule 3;
+  a mismatch on a temporal case is a bug in the renderer the harness compares
+  with, not in the suite
 
 #### Scenario: [path.oracle.009] the harness picks the Quantity comparison from the result item's type, not from the expectation
 

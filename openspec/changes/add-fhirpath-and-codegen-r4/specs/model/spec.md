@@ -96,8 +96,10 @@ Parsing SHALL materialise only the elements a caller actually asks for
 `frevo-model` SHALL decode the R4 JSON representation as the parser the starter
 actually uses does — `ca.uhn.fhir.parser.JsonParser` with the error handler
 `FhirContext` installs by default — and SHALL offer the two parse modes HAPI
-offers: lenient by default, strict on request. Which upstream file governs which
-part is recorded in [`../../design.md`](../../design.md) section 3.
+offers, lenient by default and strict on request, raising in strict mode all ten
+of HAPI's parser error conditions and no fewer. Which upstream file and which
+scenario govern each of the ten is recorded in
+[`../../design.md`](../../design.md) section 3.
 
 #### Scenario: [model.json.001] the resource type comes from `resourceType`
 
@@ -282,6 +284,48 @@ part is recorded in [`../../design.md`](../../design.md) section 3.
 - **AND** a server asked to store a resource with an invalid primitive value
   answers `400 Bad Request`
 
+#### Scenario: [model.json.024] a contained resource with no `id` survives a lenient decode but cannot be referenced
+
+- **WHEN** a `Patient` whose `contained` array holds one `Organization` with no
+  `id` is decoded in lenient mode
+- **THEN** decoding **succeeds**, `Patient.contained` holds that `Organization`,
+  and a diagnostic is returned saying the resource has a contained child
+  resource with no id — the resource is appended to `contained` regardless,
+  which is the opposite of what HAPI's own code comment at the call site claims
+- **AND** the contained resource is **not** entered into the decode's
+  id-to-resource map, so no `#` reference can ever be woven to it: a sibling
+  `Patient.managingOrganization.reference` of `#` plus anything produces the
+  dangling-reference diagnostic of `model.json.025` rather than resolving to it
+- **AND** re-serialising the resource unchanged emits the same `contained` entry
+  with no `id`
+- **WHEN** the same document is decoded in strict mode
+- **THEN** decoding fails with a data-format error carrying HAPI's message code
+  `1819` and the text "Resource has contained child resource with no ID"
+- **AND** `model.json.006` covers the with-`id` case, where the resource is both
+  appended and mapped
+
+#### Scenario: [model.json.025] a `#` reference with no matching contained resource is a diagnostic, not a resolution
+
+- **WHEN** a `Patient` whose `managingOrganization.reference` is `#org1` is
+  decoded in lenient mode and no contained resource has `id` `org1`
+- **THEN** decoding **succeeds**, the reference's literal text is preserved as
+  `#org1`, the reference's resolved target is absent, and a diagnostic is
+  returned saying the resource has an invalid reference and naming `#org1`
+- **AND** the check runs in a post-decode weaving pass over the local references
+  the decode collected, so a reference that appears **before** its target in
+  document order still resolves and produces no diagnostic
+- **AND** a reference whose text is exactly `#`, or whose text is blank, is
+  **not** diagnosed: only a `#` followed by at least one character is looked up
+- **WHEN** the same document is decoded in strict mode
+- **THEN** decoding fails with a data-format error carrying HAPI's message code
+  `1826` and the text "Resource has invalid reference: #org1"
+- **AND** this is the decode-side counterpart of `path.utility.017`, which
+  specifies what `resolve()` does with the same dangling reference at evaluation
+  time; the two must agree that the reference text survives decoding
+- **AND** no example in the R4 example package carries a dangling `#`
+  reference, so the round-trip oracle cannot reach this and it is graded by the
+  decode unit oracle and the differential harness
+
 #### Scenario: [model.json.020] element `id` and `extension` decode on any element
 
 - **WHEN** a `HumanName` carries `"id": "n1"` and an `extension` array
@@ -391,6 +435,33 @@ oracle compares like with like.
 
 - **WHEN** the same resource is serialised canonically and with indentation
 - **THEN** decoding both yields resources whose every element is equal
+
+#### Scenario: [model.canonical.007] encoding a `#` reference with no matching contained resource is diagnosed on the encode side
+
+- **WHEN** a constructed `Patient` whose `managingOrganization.reference` is
+  `#org1` is serialised in lenient mode and the resource contains no resource
+  with `id` `org1`
+- **THEN** serialisation **succeeds**, the reference is emitted as `#org1`
+  unchanged, and a diagnostic is returned naming the element and the reference —
+  HAPI's text is "Resource has a reference that begins with '#', but no resource
+  with this ID is contained"
+- **AND** a reference whose text is exactly `#` is **not** diagnosed, because a
+  bare `#` is a reference to the containing resource itself
+- **AND** a reference that is not local — one with no leading `#` — is not
+  diagnosed on this path whatever it points at, and a reference with a blank id
+  part takes the contained-resource-naming branch instead and is not diagnosed
+  either
+- **WHEN** the same resource is serialised in strict mode
+- **THEN** serialisation fails with a data-format error carrying HAPI's message
+  code `2724` and the text "There is a reference that begins with #, but no
+  resource with this ID is contained. [reference=#org1]"
+- **AND** this is the **only** error condition on the encode side; every other
+  condition in HAPI's parser error surface is a decode condition
+  (`model.json.004`, `.013`, `.014`, `.015`, `.016`, `.018`, `.022`, `.023`,
+  `.024`, `.025` and `codegen.cardinality.002`, `.004`, `.005`)
+- **AND** no example in the R4 example package carries a dangling `#`
+  reference, so the round-trip oracle cannot reach this; it is graded by the
+  encode unit oracle and the differential harness
 
 ### Requirement: Copy-on-write mutation with byte splicing
 

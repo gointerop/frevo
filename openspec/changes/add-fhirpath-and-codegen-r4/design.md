@@ -191,9 +191,39 @@ So HAPI 8.12.0 answers `2xx` to all of these, and `frevo-model` must too:
 | `"name": [null]` | accepted as a value-less element | `model.json.018` |
 | `Extension` with both a value and nested extensions | **rejected**, `DataFormatException` | `model.json.022` |
 | a primitive with a non-blank invalid value | **rejected**, `DataFormatException` | `model.json.023` |
+| `contained` holding a resource with no `id` | accepted, warning logged, resource still appended to `contained` | `model.json.024` |
+| `"reference": "#org1"` with no contained `org1` | accepted, warning logged, reference text preserved | `model.json.025` |
+| **encoding** `"reference": "#org1"` with no contained `org1` | emitted unchanged, warning logged | `model.canonical.007` |
 
-Two of those nine have no error-handler callback at all, so they are read from
-the parser rather than from the handler. HAPI reads JSON through a Jackson
+Those twelve rows are the whole of HAPI's parser error surface. Stated as the
+handler interface's own ten callbacks, so that nothing is left to be inferred:
+
+| `IParserErrorHandler` callback | Side | Scenario |
+|---|---|---|
+| `unknownElement` | decode | `model.json.004` |
+| `unknownAttribute` | decode | `model.json.004` — in JSON this is reached for a stray property the generic fallback state sees, and for an `id` property on a construct that cannot carry an element id; same diagnostic shape as an unknown element |
+| `incorrectJsonType` | decode | `model.json.013` |
+| `unexpectedRepeatingElement` | decode | `model.json.014`, `model.json.015` |
+| `missingRequiredElement` | decode | `codegen.cardinality.002`, `codegen.cardinality.004` |
+| `invalidValue` | decode | `model.json.023`, `codegen.cardinality.005` |
+| `extensionContainsValueAndNestedExtensions` | decode | `model.json.022` |
+| `containedResourceWithNoId` | decode | `model.json.024` |
+| `unknownReference` | decode | `model.json.025` |
+| `invalidInternalReference` | **encode** | `model.canonical.007` |
+
+Beyond the ten there are the two conditions below that have no callback at
+all. Strict mode's only value is that
+it raises the same set HAPI's does, so a short set is a parity break with
+nothing to catch it: the R4 example package contains neither a contained
+resource without an `id` nor a dangling `#` reference, so the round-trip oracle
+cannot reach the last three rows at all. They are graded by the in-process
+`model-parser-errors` oracle instead. The last row is the only error condition
+on the **encode** side; it fires from `determineReferenceText`, which treats a
+reference of exactly `#` as a reference to the containing resource and so never
+diagnoses it.
+
+Two of the first nine have no error-handler callback at all, so they are read
+from the parser rather than from the handler. HAPI reads JSON through a Jackson
 `ObjectMapper` built without `FAIL_ON_READING_DUP_TREE_KEY` and without
 `STRICT_DUPLICATE_DETECTION`, so a repeated field name silently overwrites —
 hence last-wins for a duplicate key. And `JsonParser.parseChildren` has an
@@ -376,26 +406,55 @@ pub trait HostServices: Send + Sync {
     fn param_is_type(&self, name: &str, index: usize) -> bool;
 
     // --- diagnostics -----------------------------------------------------
-    fn log(&self, name: &str, focus: &[Value]);
+    /// `true` suppresses the engine's own trace buffer for this entry.
+    fn log(&self, name: &str, focus: &[Value]) -> bool;
 }
 
 pub struct FunctionDetails { pub name: String, pub min_params: usize, pub max_params: usize }
 ```
 
-Four things in that signature are not cosmetic.
+Six things in that signature are not cosmetic.
 
 **`resolve_constant` returns a `Vec`.** HAPI's
 `FHIRPathTests.resolveConstantReturnsList` asserts that a host service may
 return two values for one `%name`, so a single-value signature would be wrong
 (`path.env.012`).
 
-**`ConstantMode` has exactly four values.** They are the four
-`FHIRPathConstantEvaluationMode` carries, and `FhirPathR4.setEvaluationContext`
-maps them one-for-one onto `IFhirPathEvaluationContext.ConstantEvaluationMode`.
-A host service written against HAPI's wrapper therefore sees the same value
-Frevo passes. The explicit mode is in force for a `%name` the expression writes;
-the no-value mode is in force during the check pass, which wants a type and not
-a value (`path.env.015`).
+**`ConstantMode` has exactly four values, and each has exactly one site.** They
+are the four `FHIRPathConstantEvaluationMode` carries, and
+`FhirPathR4.setEvaluationContext` maps them one-for-one onto
+`IFhirPathEvaluationContext.ConstantEvaluationMode`, so a host service written
+against HAPI's wrapper sees the same value Frevo passes. The sites are not
+interchangeable and the easy reading of them is wrong:
+
+| Mode | Site |
+|---|---|
+| `Explicit` | a `%name` the expression wrote, at both the evaluation and the check constant node |
+| `NoValue` | **one** site: the check pass's name node, at the entry of the expression, when there is **no focus type at all**. Not "during the check pass": an explicit `%name` in the check pass is `Explicit` |
+| `ImplicitBefore` | the entry of evaluation, before navigation |
+| `ImplicitAfter` | after navigation yielded empty |
+
+`NoValue` is what checking an expression with no context type produces — the
+state the enum's own documentation calls "the engine was invoked with no focus
+provided", and the state the 90 cases in the pinned suite with no `inputfile`
+are checked in (`path.env.015`).
+
+**The two implicit modes can shadow navigation, and that is live on the write
+path.** At the entry of `execute`, if the application context is non-null **and**
+a host service is installed, the engine asks `resolve_constant(name,
+ImplicitBefore)` for the leading name — not for a `%constant` — and if the answer
+is non-empty it returns that answer and never navigates the element. "Entry" is
+per sub-expression, not per expression text: a function argument the engine
+evaluates in its own right, such as `where()`'s criteria, has its own entry, and
+the per-item loop asks once per focus item. So a host
+service answering for `name` makes `Patient.name` unreachable through the
+expression `name`. `ImplicitAfter` is the benign mirror: it fires only after
+navigation produced empty. Both are gated on the application context, not on the
+host service, so a host service installed with a null application context never
+sees either. Search-parameter extraction and the validator both pass an
+application context, so Frevo's own host services must answer empty for every
+name they do not own. This is `DEV-0010`, `path.env.016` and `path.env.017`;
+match HAPI, no flag.
 
 **The four function methods exist because `Function::Custom` does.** The parser
 takes a custom function's arity from the host service's `FunctionDetails`
@@ -410,6 +469,17 @@ and CQL both use it (`path.utility.027`).
 `Reference.reference` and `Reference.identifier` and passes both on, so a host
 service that can resolve by business identifier is able to
 (`path.utility.017`).
+
+**`log` returns `bool`, and the engine's own trace buffer clears on read.** The
+engine appends to its buffer only when there is no host service **or** the host
+service's `log` returned `false`, so a host service returning `true` suppresses
+the buffer entirely (`path.utility.028`). A `()` return would make that
+unexpressible. Separately, the engine's buffer accessor **takes** the buffer: it
+returns the accumulated text and resets it. That is what lets the oracle harness
+drain the log per case across a shared engine without one case's lines leaking
+into the next, and it is the only reason 1,191 cases can share one engine
+(`path.utility.001`). Only `trace` writes to the buffer; the math `log()`
+function is unrelated.
 
 Three implementations exist by the end of this change:
 
@@ -574,6 +644,16 @@ The 4 KiB `Patient` is a fixed fixture, committed with the benchmark, so the
 numbers are comparable across commits. The reference environment is the one
 `bench/targets.md` states: Docker Desktop on Windows, a Linux VM with 12 CPUs and
 8 GiB RAM.
+
+`path-extract-patient` runs **with an application context and the extraction
+host service installed**, because that is the configuration the write path uses
+and it is the configuration in which the engine asks the host service
+`resolve_constant(name, ImplicitBefore)` once per expression before navigating
+(section 4.4). The 300 µs budget therefore includes one host-service call per
+enabled expression, and the host service's answer-empty path must be cheap — a
+hash lookup, not a scan. Measuring this workload without an application context
+would make the budget meaningless, because the implicit-before call would never
+fire.
 
 ### Regression policy
 

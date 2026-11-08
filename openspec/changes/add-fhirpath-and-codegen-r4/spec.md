@@ -8,9 +8,9 @@ capability, because that is the layout `openspec validate` parses and
 | Capability | Delta file | Scenarios |
 |---|---|---:|
 | `codegen` | [`specs/codegen/spec.md`](specs/codegen/spec.md) | 49 |
-| `model` | [`specs/model/spec.md`](specs/model/spec.md) | 80 |
-| `path` | [`specs/path/spec.md`](specs/path/spec.md) | 357 |
-| **Total** | | **486** |
+| `model` | [`specs/model/spec.md`](specs/model/spec.md) | 83 |
+| `path` | [`specs/path/spec.md`](specs/path/spec.md) | 361 |
+| **Total** | | **493** |
 
 This file carries no normative text of its own. It carries the ID registry,
 which is the thing a later change must not collide with.
@@ -37,6 +37,17 @@ describe is corrected; `path.subset.003`, `path.compare.007`,
 `codegen.cardinality.002` all now state the opposite of what they first said,
 because the pinned source says the opposite.
 
+Revision after the second review: 7 further IDs were **added** at the end of
+their areas — `model.json.024`, `model.json.025`, `model.canonical.007`,
+`path.env.016`, `path.env.017`, `path.oracle.017` and `path.utility.028` — and 6
+existing scenarios were **rewritten** in place: `path.oracle.002`,
+`path.oracle.007`, `path.oracle.008`, `path.env.015`, `path.utility.001` and
+`path.check.015`. Again none was removed, renumbered, reused or repurposed; each
+rewritten ID still covers the same harness attribute inventory, the same
+comparison branch, the same constant-evaluation surface, the same `trace`
+function and the same check-pass warning channel it covered before, stated
+correctly.
+
 | Area | IDs allocated | Range |
 |---|---:|---|
 | `codegen.inputs.*` | 6 | `001`-`006` |
@@ -50,9 +61,9 @@ because the pinned source says the opposite.
 | `codegen.roundtrip.*` | 4 | `001`-`004` |
 | `model.bytes.*` | 6 | `001`-`006` |
 | `model.lazy.*` | 6 | `001`-`006` |
-| `model.json.*` | 23 | `001`-`023` |
+| `model.json.*` | 25 | `001`-`025` |
 | `model.primext.*` | 9 | `001`-`009` |
-| `model.canonical.*` | 6 | `001`-`006` |
+| `model.canonical.*` | 7 | `001`-`007` |
 | `model.mutate.*` | 7 | `001`-`007` |
 | `model.nav.*` | 12 | `001`-`012` |
 | `model.errors.*` | 5 | `001`-`005` |
@@ -76,13 +87,13 @@ because the pinned source says the opposite.
 | `path.quantity.*` | 18 | `001`-`018` |
 | `path.boundary.*` | 10 | `001`-`010` |
 | `path.types.*` | 13 | `001`-`013` |
-| `path.env.*` | 15 | `001`-`015` |
-| `path.utility.*` | 27 | `001`-`027` |
+| `path.env.*` | 17 | `001`-`017` |
+| `path.utility.*` | 28 | `001`-`028` |
 | `path.check.*` | 19 | `001`-`019` |
 | `path.strictness.*` | 10 | `001`-`010` |
 | `path.errors.*` | 5 | `001`-`005` |
 | `path.api.*` | 8 | `001`-`008` |
-| `path.oracle.*` | 16 | `001`-`016` |
+| `path.oracle.*` | 17 | `001`-`017` |
 | `path.perf.*` | 6 | `001`-`006` |
 
 ## Oracles by scenario group
@@ -90,7 +101,9 @@ because the pinned source says the opposite.
 | Scenario group | Oracle | Case selector |
 |---|---|---|
 | `path.*` except `path.perf.*` | `oracles/fhirpath` — `tests-fhir-r4.xml`, pinned `c95adbee099c875de97d25ed7616aae7d66dd85b` | 1,191 `<test>` elements in 103 `<group>`s, addressed `<group name>/<test name>`; the gate is pass rate at or above HAPI 8.12.0's measured rate on the same cases |
-| `path.check.*` | same suite | the 29 `invalid="semantic"` cases plus the `isSemanticChecks` group |
+| `path.check.*` except `015`-`019` | same suite | the 29 `invalid="semantic"` cases plus the `isSemanticChecks` group |
+| `path.check.015`-`019` | `path-check-warnings` — an in-process unit oracle over the generated R4 model | the nine check-pass warning message ids, asserted per expression: choice-no-type-specifier, choice-spurious-type-specifier, collection-status-operation-left, collection-status-operation-right, collection-status-parameter, collection-status-context, not-a-collection, unknown-extension, of-type-impossible. The suite selector above grades only whether the check **fails**, and a live HAPI server over HTTP never exposes the warning list, so neither can reach this channel |
+| `model.json.024`, `model.json.025`, `model.canonical.007` | `model-parser-errors` — an in-process unit oracle over hand-built documents | one document per condition, asserted in both parse modes; the lenient diagnostic set and the strict error, by HAPI message code. The `r4-example-roundtrip` selector cannot reach these because no example in `hl7.fhir.r4.examples#4.0.1` carries a contained resource without an `id` or a dangling `#` reference |
 | `path.errors.*` | same suite | the 27 `invalid="execution"` cases |
 | `path.lexer.*`, `path.parse.*` | same suite | the 7 `invalid="syntax"` cases, plus the `comments` group |
 | `model.*`, `codegen.roundtrip.*` | `r4-example-roundtrip` | every example in `hl7.fhir.r4.examples#4.0.1`, canonicalised both sides; interim selector is the 103 examples in `oracles/fhir-test-cases/fetched/r4/examples/` |
@@ -104,19 +117,29 @@ contain `<test ...>` text — and are leftover Java, not well-formed test
 elements. `documentFunctions` is 115 cases, not 114. The `invalid` counts are
 unaffected: 7 syntax, 29 semantic, 27 execution.
 
-**Sixteen scenarios have no live case to grade them and say so in their own
-text**: `path.subset.003`, `path.subset.013`, `path.compare.007`,
-`path.compare.011`, `path.convert.012`, `path.datetime.003`,
-`path.quantity.015`, `path.quantity.018`, `path.env.015`, `path.utility.017`,
-`path.utility.022`, `path.utility.023`, `path.utility.024`, `path.utility.027`,
-`path.strictness.005` and `path.strictness.006`. The pinned suite exercises
-none of `resolve()`, `memberOf`, `defineVariable`, `%rootResource`, `%context`,
-`modifierExtension` or `toDate`, and no case sets `allowPolymorphicNames`,
-`allowDoubleQuotes`, `doImplicitStringConversion` or `emitSQLonFHIRWarning`, so
-those scenarios are graded by the differential harness against live HAPI
-8.12.0. A scenario that names no oracle at all would be ungradeable;
-"differential-only" is an oracle, and naming it is what stops a behaviour from
-quietly going unchecked.
+**Nineteen scenarios have no live case in the pinned suite to grade them and
+say so in their own text**: `path.subset.003`, `path.subset.013`,
+`path.compare.007`, `path.compare.011`, `path.convert.012`,
+`path.datetime.003`, `path.quantity.015`, `path.quantity.018`, `path.env.015`,
+`path.env.016`, `path.env.017`, `path.utility.017`, `path.utility.022`,
+`path.utility.023`, `path.utility.024`, `path.utility.027`,
+`path.utility.028`, `path.strictness.005` and `path.strictness.006`. The pinned
+suite exercises none of `resolve()`, `memberOf`, `defineVariable`,
+`%rootResource`, `%context`, `modifierExtension` or `toDate`, installs no host
+service and passes no application context, and no case sets
+`allowPolymorphicNames`, `allowDoubleQuotes`, `doImplicitStringConversion` or
+`emitSQLonFHIRWarning`, so those scenarios are graded by the differential
+harness against live HAPI 8.12.0. A scenario that names no oracle at all would
+be ungradeable; "differential-only" is an oracle, and naming it is what stops a
+behaviour from quietly going unchecked.
+
+Five further scenarios — `path.check.015` through `path.check.019` — are graded
+by neither the suite nor the differential harness but by the in-process
+`path-check-warnings` oracle named above, and three — `model.json.024`,
+`model.json.025` and `model.canonical.007` — by the in-process
+`model-parser-errors` oracle. Those two oracles exist precisely because the
+behaviour they grade is invisible to both the vendored suite and an HTTP
+differential.
 
 Input files the FHIRPath suite references all live in
 `oracles/fhir-test-cases/fetched/r4/` — the directory
@@ -253,6 +276,8 @@ Every allocated ID, grouped as it is grouped in the delta files.
 - `model.json.021` — the parse mode is selectable and lenient is the default
 - `model.json.022` — an extension carrying both a value and nested extensions is fatal in both modes
 - `model.json.023` — an invalid primitive value is fatal in both modes
+- `model.json.024` — a contained resource with no `id` survives a lenient decode but cannot be referenced
+- `model.json.025` — a `#` reference with no matching contained resource is a diagnostic, not a resolution
 - `model.json.020` — element `id` and `extension` decode on any element
 
 **Requirement: Primitive extensions — the `_field` form**
@@ -275,6 +300,7 @@ Every allocated ID, grouped as it is grouped in the delta files.
 - `model.canonical.004` — canonical form is idempotent
 - `model.canonical.005` — canonicalising a pretty-printed example yields the same bytes as canonicalising the round-trip
 - `model.canonical.006` — canonical and pretty forms differ only in whitespace and key order
+- `model.canonical.007` — encoding a `#` reference with no matching contained resource is diagnosed on the encode side
 
 **Requirement: Copy-on-write mutation with byte splicing**
 
@@ -643,6 +669,8 @@ Every allocated ID, grouped as it is grouped in the delta files.
 - `path.env.011` — an unknown environment variable with no host service is an execution error
 - `path.env.012` — a host service may supply an environment variable, including a collection
 - `path.env.015` — the host service is told which constant-evaluation mode is in force
+- `path.env.016` — a host constant can shadow a real property
+- `path.env.017` — the implicit-after mode is a fall-through, and both implicit modes need an application context
 - `path.env.013` — `defineVariable` introduces a variable for the rest of the expression
 - `path.env.014` — a variable defined by `defineVariable` shadows nothing and does not leak
 
@@ -674,6 +702,7 @@ Every allocated ID, grouped as it is grouped in the delta files.
 - `path.utility.025` — `memberOf` falls back to the worker context when no host service is set
 - `path.utility.026` — `memberOf` returns empty for a focus whose type it cannot validate
 - `path.utility.027` — a host service may supply a custom function
+- `path.utility.028` — a host service may intercept `trace` and suppress the engine's log
 - `path.utility.021` — the appointment and explanation-of-benefit cases hold
 
 **Requirement: The static type-check pass**
@@ -734,6 +763,7 @@ Every allocated ID, grouped as it is grouped in the delta files.
 
 - `path.oracle.001` — the harness parses every case in the suite
 - `path.oracle.002` — the harness reads every attribute the case carries
+- `path.oracle.017` — the expression-level `mode` attribute changes no outcome
 - `path.oracle.003` — the harness loads each referenced input file
 - `path.oracle.004` — the harness handles both XML and JSON inputs
 - `path.oracle.005` — the harness evaluates in three stages and attributes the failure to the right one

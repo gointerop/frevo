@@ -28,11 +28,23 @@ checkpoint because it changes what a gate measures.
   `oracles/fhirpath/tests-fhir-r4.xml` into cases: assert 103 groups and 1,191
   `<test>` elements **counted by XML parse, not by text match** — a grep says
   104 and 1,193 because the `testDollarResource` group at lines 1576-1582 is
-  inside an XML comment whose bodies still contain `<test ...>` text — and read every attribute a case carries — `name`,
-  `description`, `inputfile`, `expression` plus its `invalid` value,
-  `predicate`, `ordered`, `mode`, `context`, `contextType`, `version`,
-  `testing`, `checkOrderedFunctions` — failing on an attribute the harness does
-  not understand. Load each of the 15 referenced input files from
+  inside an XML comment whose bodies still contain `<test ...>` text — and read
+  every attribute, **per element**, that the pinned file actually carries:
+  `<tests>` takes `name`, `description`, `reference`; `<group>` takes `name`,
+  `description`, `mode`, `reference`; `<test>` takes `name`, `description`,
+  `inputfile`, `mode`, `context`, `contextType`, `version`, `testing`,
+  `predicate`, `ordered`, `checkOrderedFunctions`; `<expression>` takes
+  `invalid` and `mode`; `<output>` takes `type`. Fail the run on an attribute an
+  element does not carry in the pinned file, and on an attribute value outside
+  the recorded domain, and assert that a run against the pinned file reports
+  **zero** unhandled attributes — `reference` on the root and on
+  `<group name="from-Zulip">` (line 1583) and `mode` on the one `<expression>`
+  (line 625) are the three a thirteen-attribute inventory misses and that would
+  otherwise abort the run. Handle the expression-level `mode` by recording it
+  and letting it change no grading: `testIif/testIif6` must fail the check pass
+  whatever `mode` says, because the engine types `iif`'s condition against a
+  singleton boolean with no mode gate. Load each of the 15 referenced input
+  files from
   `oracles/fhir-test-cases/fetched/r4/` (the directory
   `TestingUtilities.loadTestResource("r4", input)` resolves to), both the XML
   and the JSON ones, through a **test-only** reader. Implement the three-stage
@@ -40,13 +52,20 @@ checkpoint because it changes what a gate measures.
   the `predicate="true"` boolean conversion, the `ordered="false"` unordered
   comparison, the count/type/value comparison and the `Quantity` deep
   comparison, and a per-case status of `passed`, `failed`, `did-not-run` or
-  `skipped-for-licence`. Fix the evaluation time zone to `UTC+1100`, as
+  `skipped-for-licence`. The two comparison branches use **different** renderers
+  and must not be unified: the ordered branch compares against the FHIRPath
+  string value, which prefixes `@` for a `date`, `dateTime` or `instant` and
+  `@T` for a `time` — which is why the suite's expectations read `@1974-12-25` —
+  while the unordered branch compares the plain string value with no prefix and
+  matches each item against any expected element on type-and-value. Never strip
+  the `@` from an expectation or normalise it away on either side; that is
+  weakening the oracle under constitution rule 3. Fix the evaluation time zone to `UTC+1100`, as
   `FHIRPathTests.test` does. The harness runs against a trait object, so it
   works before any engine exists.
   Satisfies `path.oracle.001`, `path.oracle.002`, `path.oracle.003`,
   `path.oracle.004`, `path.oracle.005`, `path.oracle.006`, `path.oracle.007`,
   `path.oracle.008`, `path.oracle.009`, `path.oracle.010`, `path.oracle.015`,
-  `path.datetime.004`.
+  `path.oracle.017`, `path.datetime.004`.
 
 - [ ] **2. Measure `helios-fhirpath` and `haste-fhirpath` through the harness and
   record the numbers in ADR 0004.** Create `harness/fhirpath-compare/`, listed
@@ -83,19 +102,53 @@ checkpoint because it changes what a gate measures.
 - [ ] **4. Write the failing tests for every `path.*` scenario.** One test per
   scenario ID, each carrying a `// covers: path.<area>.<nnn>` comment, with the
   oracle-backed scenarios driven from the harness's case selectors and the rest
-  written directly. All 356 must fail, and none by `todo!()`, `#[ignore]` or a
+  written directly. All 361 must fail, and none by `todo!()`, `#[ignore]` or a
   bare `#[should_panic]`. Where a scenario says it is differential-only, the
   test is written against a recorded HAPI response rather than against a suite
-  case, and says so.
-  Covers all 356 `path.*` scenarios.
+  case, and says so. `path.check.015`-`019` are driven from the in-process
+  `path-check-warnings` oracle of task 4a, not from a suite selector.
+  Covers all 361 `path.*` scenarios.
+
+- [ ] **4a. Build the `path-check-warnings` in-process oracle.** The check
+  pass's warning channel is reachable by neither the vendored suite — whose
+  `invalid="semantic"` selector grades only whether the check *fails* — nor the
+  HTTP differential harness, which never sees the list. Build a unit oracle over
+  the generated R4 model whose case selector is the warning message id, with at
+  least one expression per id and the complete id set asserted as exactly nine:
+  choice-no-type-specifier, choice-spurious-type-specifier,
+  collection-status-operation-left, collection-status-operation-right,
+  collection-status-parameter, collection-status-context, not-a-collection,
+  unknown-extension, of-type-impossible. Assert that a warning never makes the
+  check fail, that the warning accumulator is cleared at the start of every
+  check so warnings cannot leak between expressions on a reused engine, and that
+  the check surface taking no warning list returns the same pass/fail verdict
+  while discarding the warnings.
+  Satisfies the oracle named by `path.check.015`, `path.check.016`,
+  `path.check.017`, `path.check.018`, `path.check.019`.
 
 - [ ] **5. Write the failing tests for every `codegen.*` and `model.*`
   scenario.** Same discipline: one test per scenario ID with a `covers:`
-  comment, 49 plus 80 of them, including the `bench/micro/` workloads as
+  comment, 49 plus 83 of them, including the `bench/micro/` workloads as
   benchmarks with assertions on their budgets. Interim round-trip selector is
   the 103 examples in `oracles/fhir-test-cases/fetched/r4/examples/`, with the
   test reporting that it is the interim set.
-  Covers all 48 `codegen.*` and 77 `model.*` scenarios.
+  Covers all 49 `codegen.*` and 83 `model.*` scenarios.
+
+- [ ] **5a. Build the `model-parser-errors` in-process oracle.** Three of HAPI's
+  ten parser error conditions cannot be reached by the round-trip oracle,
+  because no example in `hl7.fhir.r4.examples#4.0.1` carries a contained
+  resource without an `id` or a dangling `#` reference. Build a unit oracle over
+  hand-built documents — one per condition — asserting, in **both** parse modes,
+  the lenient diagnostic and the surviving resource, and the strict error with
+  HAPI's message code. The three conditions and their codes are a contained
+  resource with no `id` (code `1819`), a `#` reference whose target is not
+  contained (code `1826`, raised by the post-decode weaving pass) and, on the
+  **encode** side, serialising a reference beginning `#` that matches no
+  contained resource (code `2724`). Assert the exemptions too: a reference whose
+  text is exactly `#`, or whose id part is blank, is not diagnosed on either
+  side.
+  Satisfies the oracle named by `model.json.024`, `model.json.025`,
+  `model.canonical.007`.
 
 ---
 
@@ -220,11 +273,31 @@ checkpoint because it changes what a gate measures.
   nothing else, with identical paths and offsets. Non-UTF-8 input fails in both.
   This task is the one the differential gate would otherwise catch on day one,
   so it comes before any other decoding work lands.
+  Cover **all ten** of HAPI's parser error conditions, not the seven that are
+  easy to reach: a short strict mode is a silent parity break. The two that
+  remain on the decode side are task 21a's; the one on the encode side is task
+  23a's.
   Satisfies `model.json.004`, `model.json.013`, `model.json.014`,
   `model.json.015`, `model.json.016`, `model.json.018`, `model.json.019`,
   `model.json.021`, `model.json.022`, `model.json.023`, `model.errors.003`,
   `codegen.cardinality.002`, `codegen.cardinality.004`,
   `codegen.cardinality.005`.
+
+- [ ] **21a. Implement the two contained-resource decode diagnostics.** A
+  contained resource with no `id` is **still appended** to the parent's
+  `contained` list in lenient mode — HAPI's code comment at the call site says
+  the opposite of what the code does — but is **not** entered into the
+  id-to-resource map, so no `#` reference can ever be woven to it. Strict mode
+  fails with message code `1819`. Separately, run a post-decode weaving pass
+  over the local references the decode collected: a reference of `#` plus at
+  least one character whose target is not among `contained` is a lenient
+  diagnostic naming the reference text and a strict error with message code
+  `1826`; a reference that is exactly `#`, or blank, is not looked up at all.
+  Because the pass runs after the whole document is decoded, a reference that
+  appears before its target still resolves. The reference's literal text
+  survives in both modes, which is what `path.utility.017` then resolves
+  against.
+  Satisfies `model.json.024`, `model.json.025`.
 
 - [ ] **22. Implement the `_field` primitive-extension representation.** Two
   independent spans per node; singleton and index-aligned array forms; `null`
@@ -239,6 +312,18 @@ checkpoint because it changes what a gate measures.
   array order preserved in both; presented decimal form preserved;
   idempotence; and the direct-versus-round-trip equality the oracle compares.
   Satisfies `model.canonical.001` through `model.canonical.006`.
+
+- [ ] **23a. Implement the encode-side dangling-internal-reference diagnostic.**
+  This is the **only** error condition on the encode side, and the round-trip
+  oracle cannot reach it. When serialising a reference whose id part is
+  non-blank and whose text begins `#`, check it against the resources actually
+  contained in the document being written: no match is a lenient diagnostic
+  naming the element and the reference and a strict error with message code
+  `2724`. The reference is emitted unchanged either way. A reference of exactly
+  `#` is a reference to the containing resource and is never diagnosed; a
+  non-local reference is not checked on this path at all; a reference with a
+  blank id part takes the contained-resource-naming branch instead.
+  Satisfies `model.canonical.007`.
 
 - [ ] **24. Implement copy-on-write mutation and byte splicing.** Untouched
   subtrees keeping their original bytes on element change, append and remove;
@@ -419,10 +504,34 @@ checkpoint because it changes what a gate measures.
   service, and `defineVariable` with its scoping.
   Satisfies `path.env.001` through `path.env.015`.
 
+- [ ] **47a. Implement the implicit constant-resolution sites.** Four
+  constant-evaluation modes with exactly the sites the engine has: **explicit**
+  for a `%name` the expression wrote, at both the evaluation and the check
+  constant node; **no-value** at exactly one site, the check pass's name node
+  when it is at the entry of the expression and there is no focus type at all —
+  not, as is easy to assume, wherever the check pass resolves a constant;
+  **implicit-before** at the entry of evaluation, before any navigation and
+  before the leading-type-name match, whose non-empty answer is returned
+  immediately so that a host constant **shadows a real element**; and
+  **implicit-after** as a fall-through after navigation yielded empty. Gate both
+  implicit modes on a non-null application context, which is the condition the
+  engine tests — a host service with a null application context never sees
+  either. Ship the server-facing host service answering empty for every name it
+  does not own, because anything else makes a resource's own elements
+  unreachable on the search-parameter extraction path. `DEV-0010` records the
+  divergence from the FHIRPath grammar; match HAPI, no flag.
+  Satisfies `path.env.016`, `path.env.017`.
+
 - [ ] **48. Implement the utility functions.** `trace` with its retrievable log,
   `check`, `aggregate` with and without an initial value, `sort` with no
   argument, one key and several keys including descending, and `extension(url)`
-  including on a primitive.
+  including on a primitive. The log is `name`, `: `, then the traced items'
+  string values joined by `,`, with entries joined by `; `; `trace` is the only
+  construct that writes to it. Expose a has-log predicate and a take-log
+  accessor, and make **taking the log clear it** — a second take with no
+  intervening `trace` returns the empty string. The oracle harness drains the
+  log after every case and the engine is shared across all 1,191 of them, so
+  without the clear-on-take one case's lines leak into the next.
   Satisfies `path.utility.001` through `path.utility.011`.
 
 - [ ] **49. Implement the host-service functions.** `conformsTo` against the
@@ -437,8 +546,13 @@ checkpoint because it changes what a gate measures.
   service, and with a host-service exception swallowed to empty;
   `extension(url)` over both `extension` and `modifierExtension`; and
   host-supplied custom functions through `resolve_function`, `check_function`,
-  `execute_function` and `param_is_type`.
-  Satisfies `path.utility.012` through `path.utility.027`.
+  `execute_function` and `param_is_type`. Implement the tenth and last method on
+  the host-service surface too: the `trace` log hook, which is offered the trace
+  name and the traced items and whose **`true` answer suppresses the engine's
+  own log entirely** while a `false` answer leaves the engine to append as well.
+  With the hook implemented the host-service surface is complete; a missing
+  method there is a host integration that silently cannot be written.
+  Satisfies `path.utility.012` through `path.utility.028`.
 
 - [ ] **50. Implement the static type-check pass.** Separate from evaluation;
   all 29 `invalid="semantic"` cases failing it with the offending path named;
@@ -454,7 +568,9 @@ checkpoint because it changes what a gate measures.
   unknown-extension, of-type-impossible and not-a-collection warnings; the
   simple surface discarding warnings; and the list being cleared between checks
   on a reused engine. Each warning carries a stable message id, because the
-  validator will key on it.
+  validator will key on it, and because the message id is the case selector the
+  `path-check-warnings` oracle of task 4a grades by — neither the vendored suite
+  nor the HTTP differential can see this channel at all.
   Satisfies `path.check.015` through `path.check.019`, `path.strictness.008`.
 
 - [ ] **51. Implement type-guard narrowing in the check pass.** The `is` operator
@@ -547,14 +663,16 @@ checkpoint because it changes what a gate measures.
   Confirm every derived file carries the required provenance header and every
   generated file the `@generated` marker.
 
-- [ ] **61a. Confirm the nine deviation entries against the implementation.**
-  `DEV-0001` to `DEV-0009` in `docs/deviations.md` were written from the pinned
+- [ ] **61a. Confirm the ten deviation entries against the implementation.**
+  `DEV-0001` to `DEV-0010` in `docs/deviations.md` were written from the pinned
   Java source before any Rust existed. Re-run each one's reproducing expression
   through both engines, confirm the recorded HAPI behaviour is what HAPI
-  actually does, fill in the `Reviewed` line, and raise all nine at the
+  actually does, fill in the `Reviewed` line, and raise all ten at the
   checkpoint. An entry whose recorded behaviour turns out to be wrong is
   corrected or deleted, not left standing — an inaccurate deviation is worse
-  than none, because it licenses a difference nobody checked.
+  than none, because it licenses a difference nobody checked. `DEV-0010` needs
+  `DEBT-0006` added to `docs/tech-debt.md`, which lives on `main` and so cannot
+  be written from this branch; open that as part of the merge.
 
 - [ ] **62. Update `tasks/graph.yaml` and finalise ADR 0004.** Set this change's
   `status` to `done`, so `add-server-skeleton` and `add-store-schema` unblock.

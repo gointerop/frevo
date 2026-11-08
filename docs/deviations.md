@@ -45,7 +45,7 @@ decision.
 
 ## Entries
 
-The nine entries below all come from `add-fhirpath-and-codegen-r4` and are the
+The ten entries below all come from `add-fhirpath-and-codegen-r4` and are the
 same kind of case: the pinned R4 `FHIRPathEngine` does something the FHIRPath
 specification does not describe. In every one the chosen behaviour is **HAPI's**,
 because the point of the port is that an existing deployment can switch without
@@ -53,12 +53,18 @@ changing anything. None is a deviation *from HAPI*; each is a place where
 following HAPI means not following the specification, which is what rule 1 of
 the constitution says to record here.
 
-All nine were reviewed and accepted by the owner on 2026-11-08: **match HAPI,
-no configuration flag.** Five of them leave something owed even so — a flag we
-may need, a bug report we owe upstream, or behaviour we have not characterised
-— and those carry a `Debt:` field pointing at `docs/tech-debt.md`. The other
-four owe nothing beyond parity. Accepting a deviation is not the same as
-deciding it is harmless; the registry is what keeps the difference visible.
+`DEV-0001` through `DEV-0009` were reviewed and accepted by the owner on
+2026-11-08: **match HAPI, no configuration flag.** `DEV-0010` was raised after
+that review, by the second revision of this change, and is still `pending`: it
+follows the same standing decision, but a new deviation is a phase-boundary
+checkpoint and needs its own sign-off.
+
+Six of the ten leave something owed even where the behaviour is settled — a
+flag we may need, a bug report we owe upstream, or behaviour we have not
+characterised — and those carry a `Debt:` field pointing at
+`docs/tech-debt.md`. The other four owe nothing beyond parity. Accepting a
+deviation is not the same as deciding it is harmless; the register is what keeps
+the difference visible.
 
 Short path below: `ENGINE` =
 `reference/org.hl7.fhir.core/org.hl7.fhir.r4/src/main/java/org/hl7/fhir/r4/fhirpath/FHIRPathEngine.java`
@@ -214,7 +220,7 @@ file, so its prose is not redistributable here (see `oracles/PINS.md`).
 
 - **Area:** path
 - **Scenario IDs:** path.utility.023
-- **HAPI 8.12.0 behaviour:** `funcExtension` (`ENGINE:5462`) collects
+- **HAPI 8.12.0 behaviour:** `funcExtension` (`ENGINE:5464`) collects
   `getChildrenByName(item, "extension", ext)` and then
   `getChildrenByName(item, "modifierExtension", ext)` before filtering by URL,
   so a modifier extension with the requested URL is returned.
@@ -282,6 +288,45 @@ file, so its prose is not redistributable here (see `oracles/PINS.md`).
 - **Reviewed:** 2026-11-08, owner — accepted. Match HAPI, no
   configuration flag; the residual hazard is tracked as `DEBT-0004`.
 
+### DEV-0010 — a host constant resolved implicitly before navigation shadows a real element
+
+- **Area:** path
+- **Scenario IDs:** path.env.015, path.env.016, path.env.017
+- **HAPI 8.12.0 behaviour:** at the entry of every expression, `execute`
+  (`ENGINE:3183-3191`) checks `context.appInfo != null && hostServices != null`
+  and, if both hold, calls
+  `hostServices.resolveConstant(this, context.appInfo, exp.getName(),
+  IMPLICIT_BEFORE)` for the leading **name** — not for a `%constant`. If the
+  answer is non-empty the engine returns it and **never navigates the element**,
+  so a host service that answers for `name` makes `Patient.name` unreachable
+  through the expression `name`. A second site (`ENGINE:3210-3214`) asks with
+  `IMPLICIT_AFTER` only after navigation produced an empty result, which is a
+  harmless fall-through. Both are gated on a non-null application context, so
+  with a null `appInfo` neither fires however the host service is configured.
+- **Specification requirement:** FHIRPath 2.0.0, Path selection — a leading
+  identifier selects children of the context by name; environment variables are
+  written `%name` and are a distinct production. Nothing in the grammar lets a
+  host pre-empt a property name, and `%`-less shadowing is not described.
+- **Chosen behaviour:** HAPI
+- **Configuration flag:** none
+- **Debt:** `DEBT-0010`
+- **Rationale:** every caller this port ships that passes an application context
+  — search-parameter extraction and the validator, and later CQL — travels this
+  path, so it is live on the write path rather than academic. Not implementing
+  it would make Frevo navigate an element where HAPI returns a host value: a
+  silent difference in extracted index rows, which is the most expensive shape
+  of parity bug to find. Implementing it means Frevo's own host services must
+  answer empty for every name they do not own; that obligation is what
+  `DEBT-0010` records, together with the diagnostic we have not built that
+  would report a host constant shadowing a known element.
+- **Normalizer impact:** none — HAPI and Frevo are expected to agree, and the
+  differential harness grades the agreement rather than excusing it.
+- **Reviewed:** pending — raised by `add-fhirpath-and-codegen-r4` after the
+  2026-11-08 review of DEV-0001..0009, so it has not been seen by the owner.
+  The chosen behaviour follows the standing decision of that review (match
+  HAPI, no configuration flag), but the entry itself is a new deviation and
+  needs its own sign-off.
+
 ## Considered and not recorded as deviations
 
 Recorded so the reasoning is not re-derived:
@@ -294,10 +339,27 @@ Recorded so the reasoning is not re-derived:
   `FhirContext.setParserErrorHandler`. Frevo keeps both modes and the same
   default, so it matches HAPI rather than differing from it. See
   `model.json.004`, `.013`, `.014`, `.015`, `.016`, `.018`, `.021`, `.022`,
-  `.023` and `codegen.cardinality.002`.
+  `.023`, `.024`, `.025`, `model.canonical.007` and `codegen.cardinality.002`.
+  The same reasoning covers the three conditions specified last: a contained
+  resource with no `id` survives a lenient decode and is still appended to
+  `contained` (`model.json.024`), a `#` reference with no matching contained
+  resource is a lenient diagnostic and a strict error (`model.json.025`), and
+  the encode-side counterpart of that reference is diagnosed rather than
+  rejected (`model.canonical.007`). All three are HAPI behaviour in both of the
+  handlers HAPI ships, so none is a deviation.
 - **Double quotes rejected as string delimiters.** `allowDoubleQuotes` is off by
   default and both HAPI wrappers leave it off; FHIRPath uses single quotes, so
   the default agrees with the specification. No divergence.
+- **The `@` prefix on a temporal expectation in the FHIRPath suite.** The
+  pinned suite writes `<output type="date">@1974-12-25</output>`, and the pinned
+  harness compares against `PrimitiveType.fpValue()`, which prepends `@` for a
+  date, dateTime or instant and `@T` for a time. That is a property of the
+  harness's comparison renderer, not of the engine: nothing in the engine's own
+  string conversion, in `toString()` or in a value returned to a caller carries
+  the prefix, and `fpValue()` has no caller in the engine at all. So there is no
+  divergence to record — only a harness requirement, which is
+  `path.oracle.008`. Normalising the prefix away on either side would be
+  weakening the oracle under constitution rule 3.
 - **The `documentFunctions` oracle group.** The R4 engine implements none of its
   seven functions, so 115 of the 1,191 cases fail for HAPI too. That is parity —
   not a gap and not a deviation — and belongs in a note on the suite's runner.
