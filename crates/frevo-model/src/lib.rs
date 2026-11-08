@@ -2,8 +2,7 @@
 //!
 //! Upstream reference: org.hl7.fhir.core/org.hl7.fhir.r4/model (regenerated, never translated)
 //!
-//! Capability register: `docs/capabilities/model.md`
-//! Requirements (once archived): `openspec/specs/model/spec.md`
+//! Capability spec: `openspec/specs/model/spec.md`
 //!
 //! This crate is a Phase 0 placeholder: it carries no behaviour yet. Every
 //! requirement arrives through an OpenSpec change on a `change/<id>` branch.

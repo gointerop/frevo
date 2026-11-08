@@ -60,7 +60,7 @@ license-files = [{ path = "LICENSE", hash = 0xbd0eed23 }]
 [bans]
 multiple-versions = "warn"
 wildcards = "deny"
-highlight = "all-duplicates"
+highlight = "all"
 
 # Runtime dependency policy, from the constitution: PostgreSQL is the only
 # runtime dependency. These are the things that would quietly violate that.
