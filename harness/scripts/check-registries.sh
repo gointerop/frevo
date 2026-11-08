@@ -18,11 +18,19 @@
 #      because debt with no cost is not debt.
 #   3. Every DEV entry has a Debt field, naming either `none` or DEBT ids that
 #      exist.
-#   4. Reciprocity: if a DEBT entry's Origin cites DEV-NNNN and that deviation
-#      is present in this checkout, the deviation must cite the DEBT id back.
+#   4. Reciprocity, in BOTH directions: if a DEBT entry's Origin cites DEV-NNNN
+#      the deviation must cite the DEBT id back, and if a deviation's Debt field
+#      cites DEBT-NNNN that entry must name the deviation as its origin.
 #      "If present" is deliberate -- a deviation and the debt it creates can
 #      arrive on different branches, and this check must not couple their merge
 #      order. Once both are on main it is exact.
+#
+#      The second direction exists because the first is not enough. A revision
+#      once pointed DEV-0010's Debt field at DEBT-0006, which existed and was a
+#      PAID entry about an unrelated oracle. Checking only that a cited id
+#      exists passes that silently: the reference is live, well formed, and
+#      about the wrong thing. Only requiring the target to name its origin
+#      catches it.
 #   5. No dangling DEBT reference anywhere under docs/ or tasks/.
 #
 # Entry-format examples live inside fenced code blocks, which are stripped
@@ -156,6 +164,11 @@ for did, body in dev:
             err("%s: cites %s, which is not an entry in %s" % (did, c, TECH_DEBT))
 
 # ---- reciprocity --------------------------------------------------------
+debt_origin = {}
+for did, body in debt:
+    debt_origin[did] = set(re.findall(r"DEV-\d{4}", fields(body).get("Origin", "")))
+
+# DEBT -> DEV: the deviation named as the origin must cite this entry back.
 for did, body in debt:
     origin = fields(body).get("Origin", "")
     for dev_id in sorted(set(re.findall(r"DEV-\d{4}", origin))):
@@ -168,6 +181,20 @@ for did, body in debt:
         if did not in back:
             err("%s names %s as its origin, but %s does not cite %s back"
                 % (did, dev_id, dev_id, did))
+
+# DEV -> DEBT: an entry a deviation points at must name that deviation as its
+# origin. Without this, pointing at the wrong existing id passes silently.
+for dev_id in sorted(dev_fields):
+    cited = set(re.findall(r"DEBT-\d{4}", dev_fields[dev_id].get("Debt", "")))
+    for c in sorted(cited):
+        if c not in debt_set:
+            continue          # already reported as a dangling reference
+        origins = debt_origin.get(c) or set()
+        if dev_id not in origins:
+            err("%s cites %s as its debt, but %s's origin is %s. A deviation "
+                "must not point at an entry raised by something else -- pick "
+                "the next free DEBT id instead."
+                % (dev_id, c, c, ", ".join(sorted(origins)) or "not a deviation"))
 
 # ---- dangling references ------------------------------------------------
 for path in sorted(list(Path("docs").rglob("*.md")) + list(Path("tasks").rglob("*.md"))):

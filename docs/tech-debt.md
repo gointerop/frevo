@@ -252,3 +252,32 @@ them is the whole reason that decision is safe to make.
   from the pinned Synthea version and fixed seeds.
 - **Status:** open
 - **Reviewed:** 2026-11-08, owner
+
+### DEBT-0010 — a Frevo host service can shadow a real element, and nothing reports it
+
+- **Area:** path
+- **Origin:** `DEV-0010`, change `add-fhirpath-and-codegen-r4`
+- **Owed:** two things. First, the rule that every host service Frevo ships
+  answers empty for any name it does not own, stated once and tested, because
+  the engine returns a non-empty implicit-before answer *instead of* navigating
+  the element. Second, a diagnostic that reports when a host constant shadowed a
+  name the model knows, which is the only way the mistake becomes visible.
+- **Why deferred:** needs `frevo-path` and the extraction host service to exist
+  before either can be written. `tasks.md` task 47a is where it lands.
+- **Cost if unpaid:** a host service that answers for a bare element name makes
+  that element unreachable through the expression that names it — answer for
+  `name` and `Patient.name` evaluated as `name` returns the host value. Every
+  caller that passes an application context travels this path:
+  search-parameter extraction, the validator, later CQL. The result is wrong
+  index rows written silently on the ingest path, with no error and no log line,
+  which is the most expensive shape of parity bug this project can have.
+- **Trigger:** when the host-service trait lands in `frevo-path` — the rule is
+  due with it, not after. The diagnostic is due before the first release that
+  lets an operator configure a host service.
+- **Size:** small for the rule and its test; the diagnostic is small but needs a
+  decision about where it goes, since the engine has no warning channel on the
+  evaluation pass, only on the check pass.
+- **Status:** open
+- **Reviewed:** pending — `DEV-0010` itself is still pending the owner's
+  sign-off, so this entry inherits that. It is recorded now rather than after,
+  because the obligation exists the moment the behaviour is matched.
