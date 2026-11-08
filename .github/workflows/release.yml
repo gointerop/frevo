@@ -139,6 +139,19 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      - name: Log in to GHCR
+        # Trivy pulls the image from the registry, so it needs credentials of
+        # its own: the job's `packages: read` permission is an Actions token
+        # scope, not a docker login. Without this the scan fails with
+        # "UNAUTHORIZED: authentication required" and the gate never actually
+        # runs -- which is the dangerous kind of failure, because a scan that
+        # cannot run tells us nothing while looking like a red check.
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Trivy scan (fails on CRITICAL)
         uses: aquasecurity/trivy-action@v0.36.0
         with:
