@@ -1,0 +1,317 @@
+{
+  "label": "HAPI FHIR 8.12.0",
+  "base": "http://localhost:8090/fhir",
+  "dataset": "synthea-small (112 patients)",
+  "dataset_profile": {
+    "Patient": 112,
+    "Observation": 39842,
+    "Encounter": 5355,
+    "Condition": 3502,
+    "Procedure": 12283,
+    "MedicationRequest": 3965,
+    "Organization": 282,
+    "Practitioner": 282,
+    "Immunization": 1743,
+    "DiagnosticReport": 4570,
+    "Claim": 9320
+  },
+  "generated_at": "2026-11-08T14:10:14Z",
+  "workloads": [
+    {
+      "name": "read-by-id",
+      "method": "GET",
+      "path": "/Patient/{patient}",
+      "iterations": 2000,
+      "concurrency": 16,
+      "ok": 2000,
+      "errors": 0,
+      "status_counts": {
+        "200": 2000
+      },
+      "p50_ms": 42.36,
+      "p95_ms": 68.95,
+      "p99_ms": 82.79,
+      "mean_ms": 44.38,
+      "rps": 354.28,
+      "bytes_mean": 3493,
+      "cpu_peak_pct": 297.7,
+      "cpu_mean_pct": 167.3,
+      "rss_peak_mib": 3405
+    },
+    {
+      "name": "vread",
+      "method": "GET",
+      "path": "/Patient/{patient}/_history/1",
+      "iterations": 1000,
+      "concurrency": 8,
+      "ok": 1000,
+      "errors": 0,
+      "status_counts": {
+        "200": 1000
+      },
+      "p50_ms": 27.68,
+      "p95_ms": 56.01,
+      "p99_ms": 75.76,
+      "mean_ms": 31.33,
+      "rps": 252.42,
+      "bytes_mean": 3494,
+      "cpu_peak_pct": 169.0,
+      "cpu_mean_pct": 139.2,
+      "rss_peak_mib": 3414
+    },
+    {
+      "name": "search-token",
+      "method": "GET",
+      "path": "/Patient?identifier=http://hl7.org/fhir/sid/us-ssn|999-99-9999&_count=20",
+      "iterations": 500,
+      "concurrency": 8,
+      "ok": 500,
+      "errors": 0,
+      "status_counts": {
+        "200": 500
+      },
+      "p50_ms": 22.08,
+      "p95_ms": 33.29,
+      "p99_ms": 38.79,
+      "mean_ms": 22.93,
+      "rps": 341.7,
+      "bytes_mean": 354,
+      "cpu_peak_pct": 197.7,
+      "cpu_mean_pct": 197.7,
+      "rss_peak_mib": 3417
+    },
+    {
+      "name": "search-name",
+      "method": "GET",
+      "path": "/Patient?family={family}&_count=20",
+      "iterations": 500,
+      "concurrency": 8,
+      "ok": 494,
+      "errors": 6,
+      "status_counts": {
+        "0": 6,
+        "200": 494
+      },
+      "p50_ms": 27.91,
+      "p95_ms": 45.28,
+      "p99_ms": 58.46,
+      "mean_ms": 30.69,
+      "rps": 254.08,
+      "bytes_mean": 5638,
+      "cpu_peak_pct": 278.7,
+      "cpu_mean_pct": 278.7,
+      "rss_peak_mib": 3417
+    },
+    {
+      "name": "search-date-range",
+      "method": "GET",
+      "path": "/Observation?date=ge2015-01-01&date=le2020-12-31&_count=20",
+      "iterations": 500,
+      "concurrency": 8,
+      "ok": 500,
+      "errors": 0,
+      "status_counts": {
+        "200": 500
+      },
+      "p50_ms": 42.75,
+      "p95_ms": 63.32,
+      "p99_ms": 93.45,
+      "mean_ms": 45.18,
+      "rps": 175.19,
+      "bytes_mean": 35784,
+      "cpu_peak_pct": 381.4,
+      "cpu_mean_pct": 381.4,
+      "rss_peak_mib": 3420
+    },
+    {
+      "name": "search-patient-observations",
+      "method": "GET",
+      "path": "/Observation?subject=Patient/{patient}&_count=50",
+      "iterations": 500,
+      "concurrency": 8,
+      "ok": 500,
+      "errors": 0,
+      "status_counts": {
+        "200": 500
+      },
+      "p50_ms": 64.86,
+      "p95_ms": 101.3,
+      "p99_ms": 122.05,
+      "mean_ms": 68.49,
+      "rps": 115.05,
+      "bytes_mean": 76711,
+      "cpu_peak_pct": 428.5,
+      "cpu_mean_pct": 394.6,
+      "rss_peak_mib": 3421
+    },
+    {
+      "name": "search-sorted",
+      "method": "GET",
+      "path": "/Observation?subject=Patient/{patient}&_sort=-date&_count=50",
+      "iterations": 500,
+      "concurrency": 8,
+      "ok": 500,
+      "errors": 0,
+      "status_counts": {
+        "200": 500
+      },
+      "p50_ms": 57.52,
+      "p95_ms": 77.11,
+      "p99_ms": 85.46,
+      "mean_ms": 58.4,
+      "rps": 136.13,
+      "bytes_mean": 83612,
+      "cpu_peak_pct": 378.6,
+      "cpu_mean_pct": 369.8,
+      "rss_peak_mib": 3424
+    },
+    {
+      "name": "search-total-accurate",
+      "method": "GET",
+      "path": "/Observation?subject=Patient/{patient}&_total=accurate&_count=0",
+      "iterations": 500,
+      "concurrency": 8,
+      "ok": 500,
+      "errors": 0,
+      "status_counts": {
+        "200": 500
+      },
+      "p50_ms": 21.27,
+      "p95_ms": 35.33,
+      "p99_ms": 44.6,
+      "mean_ms": 23.1,
+      "rps": 340.74,
+      "bytes_mean": 365,
+      "cpu_peak_pct": 132.5,
+      "cpu_mean_pct": 132.5,
+      "rss_peak_mib": 3424
+    },
+    {
+      "name": "search-chained",
+      "method": "GET",
+      "path": "/Observation?subject:Patient.family={family}&_count=20",
+      "iterations": 200,
+      "concurrency": 8,
+      "ok": 198,
+      "errors": 2,
+      "status_counts": {
+        "200": 198,
+        "0": 2
+      },
+      "p50_ms": 50.29,
+      "p95_ms": 79.12,
+      "p99_ms": 97.72,
+      "mean_ms": 52.03,
+      "rps": 147.52,
+      "bytes_mean": 30229,
+      "cpu_peak_pct": 438.7,
+      "cpu_mean_pct": 438.7,
+      "rss_peak_mib": 3424
+    },
+    {
+      "name": "search-include",
+      "method": "GET",
+      "path": "/Observation?subject=Patient/{patient}&_include=Observation:subject&_count=50",
+      "iterations": 500,
+      "concurrency": 8,
+      "ok": 500,
+      "errors": 0,
+      "status_counts": {
+        "200": 500
+      },
+      "p50_ms": 63.21,
+      "p95_ms": 81.74,
+      "p99_ms": 95.92,
+      "mean_ms": 64.08,
+      "rps": 123.48,
+      "bytes_mean": 80954,
+      "cpu_peak_pct": 391.7,
+      "cpu_mean_pct": 384.9,
+      "rss_peak_mib": 3426
+    },
+    {
+      "name": "search-revinclude",
+      "method": "GET",
+      "path": "/Patient?_id={patient}&_revinclude=Observation:subject&_count=50",
+      "iterations": 200,
+      "concurrency": 8,
+      "ok": 200,
+      "errors": 0,
+      "status_counts": {
+        "200": 200
+      },
+      "p50_ms": 124.44,
+      "p95_ms": 376.63,
+      "p99_ms": 465.83,
+      "mean_ms": 151.15,
+      "rps": 49.59,
+      "bytes_mean": 377372,
+      "cpu_peak_pct": 690.9,
+      "cpu_mean_pct": 603.9,
+      "rss_peak_mib": 3427
+    },
+    {
+      "name": "everything",
+      "method": "GET",
+      "path": "/Patient/{patient}/$everything?_count=100",
+      "iterations": 100,
+      "concurrency": 4,
+      "ok": 100,
+      "errors": 0,
+      "status_counts": {
+        "200": 100
+      },
+      "p50_ms": 121.73,
+      "p95_ms": 166.14,
+      "p99_ms": 175.7,
+      "mean_ms": 124.96,
+      "rps": 31.38,
+      "bytes_mean": 256562,
+      "cpu_peak_pct": 313.0,
+      "cpu_mean_pct": 164.1,
+      "rss_peak_mib": 3427
+    },
+    {
+      "name": "transaction-ingest",
+      "method": "POST",
+      "path": "/",
+      "iterations": 300,
+      "concurrency": 8,
+      "ok": 300,
+      "errors": 0,
+      "status_counts": {
+        "200": 300
+      },
+      "p50_ms": 32.92,
+      "p95_ms": 48.65,
+      "p99_ms": 111.75,
+      "mean_ms": 35.14,
+      "rps": 220.97,
+      "bytes_mean": 1652,
+      "cpu_peak_pct": 168.3,
+      "cpu_mean_pct": 168.3,
+      "rss_peak_mib": 3427
+    },
+    {
+      "name": "create-single",
+      "method": "POST",
+      "path": "/Patient",
+      "iterations": 500,
+      "concurrency": 8,
+      "ok": 500,
+      "errors": 0,
+      "status_counts": {
+        "201": 500
+      },
+      "p50_ms": 26.73,
+      "p95_ms": 38.23,
+      "p99_ms": 134.68,
+      "mean_ms": 28.9,
+      "rps": 271.13,
+      "bytes_mean": 365,
+      "cpu_peak_pct": 71.3,
+      "cpu_mean_pct": 71.3,
+      "rss_peak_mib": 3427
+    }
+  ]
+}

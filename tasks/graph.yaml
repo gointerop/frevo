@@ -1,0 +1,496 @@
+# Frevo work queue.
+#
+# One node per OpenSpec change. This file orders the port; OpenSpec owns what
+# each change actually says. A node is `done` only when its change has been
+# archived, which the archive guard already ties to green gates.
+#
+# Query it with:
+#   tasks/next.sh                 what is ready now
+#   tasks/next.sh --limit 3       the next three
+#   tasks/next.sh --blocked       what is waiting, and on what
+#   tasks/next.sh --validate      internal consistency (CI runs this)
+#
+# status: pending | in_progress | done | blocked
+#
+# Phases exist so the owner can review at boundaries. Within a phase, order is
+# determined by `depends_on`, not by position in this file.
+
+meta:
+  reference: HAPI FHIR JPA Server Starter 8.12.0 (see reference/PINS.md)
+  inventory: docs/inventory.md
+  total_parity_rows: 454
+
+phases:
+  0: Bootstrap, oracles, harness, baseline
+  1: FHIRPath, code generation, models, configuration
+  2: Storage
+  3: Search
+  4: Validation, terminology, packages
+  5: Batch jobs, bulk data
+  6: Subscriptions, MDM
+  7: CQL
+  8: Clinical reasoning
+  9: Long tail and other FHIR versions
+  10: Cutover tooling
+
+nodes:
+  # ------------------------------------------------------------------ phase 0
+  - id: bootstrap
+    phase: 0
+    status: done
+    summary: Repo, licensing, constitution, enforcement, CI, image, inventory, harness, oracles, baseline
+    crates: []
+    depends_on: []
+    oracles: [hook-selftests, differential-selftest]
+
+  # ------------------------------------------------------------------ phase 1
+  - id: add-fhirpath-and-codegen-r4
+    phase: 1
+    status: pending
+    summary: >
+      frevo-codegen generates R4 models from StructureDefinitions with a lazy,
+      byte-preserving JSON codec; frevo-path implements the FHIRPath engine.
+    crates: [frevo-codegen, frevo-model, frevo-path]
+    depends_on: [bootstrap]
+    oracles: [fhirpath, r4-example-roundtrip]
+    notes: >
+      Everything else depends on this. The model codec decides whether the
+      "serve stored JSON as bytes" principle is achievable at all, and FHIRPath
+      is needed by search parameter extraction, validation invariants and CQL.
+
+  - id: add-config-application-yaml
+    phase: 1
+    status: pending
+    summary: >
+      frevo-config reads the starter's application.yaml with the same
+      hapi.fhir.* key names and semantics (209 keys in the inventory).
+    crates: [frevo-config]
+    depends_on: [bootstrap]
+    oracles: [config-roundtrip]
+    notes: >
+      Independent of the model work, so it can run in parallel. Spring relaxed
+      binding (kebab-case, snake_case, camelCase, env vars) is an open question
+      in docs/capabilities/config.md.
+
+  - id: add-server-skeleton
+    phase: 1
+    status: pending
+    summary: >
+      axum app, routing, content negotiation, the interceptor pipeline, and a
+      CapabilityStatement generated from what is actually wired in.
+    crates: [frevo-server]
+    depends_on: [add-fhirpath-and-codegen-r4, add-config-application-yaml]
+    oracles: [differential]
+
+  # ------------------------------------------------------------------ phase 2
+  - id: add-store-schema
+    phase: 2
+    status: pending
+    summary: PostgreSQL schema and migrations for resources, versions and indexes.
+    crates: [frevo-store]
+    depends_on: [add-fhirpath-and-codegen-r4]
+    oracles: [differential]
+    notes: >
+      Carries the biggest open design decision in the project: whether to match
+      HAPI's HFJ_* schema (making the migrator trivial and the query planner
+      constrained) or use a native schema plus a converter. See
+      docs/capabilities/store.md.
+
+  - id: add-store-crud
+    phase: 2
+    status: pending
+    summary: create, read, vread, update, delete, with ETags and optimistic locking.
+    crates: [frevo-store]
+    depends_on: [add-store-schema, add-server-skeleton]
+    oracles: [differential]
+
+  - id: add-store-history
+    phase: 2
+    status: pending
+    summary: history at instance, type and system level.
+    crates: [frevo-store]
+    depends_on: [add-store-crud]
+    oracles: [differential]
+
+  - id: add-store-transactions
+    phase: 2
+    status: pending
+    summary: >
+      transaction and batch bundles, placeholder reference resolution,
+      conditional operations inside a transaction.
+    crates: [frevo-store]
+    depends_on: [add-store-crud]
+    oracles: [differential]
+
+  - id: add-store-conditional-and-integrity
+    phase: 2
+    status: pending
+    summary: >
+      conditional create/update/delete, referential integrity, cascading
+      delete, placeholder targets, client/server id strategies.
+    crates: [frevo-store]
+    depends_on: [add-store-transactions]
+    oracles: [differential]
+
+  - id: add-store-patch
+    phase: 2
+    status: pending
+    summary: JSON Patch and FHIRPath Patch, plus $diff.
+    crates: [frevo-store, frevo-path]
+    depends_on: [add-store-crud]
+    oracles: [differential]
+
+  - id: add-store-binary-and-offload
+    phase: 2
+    status: pending
+    summary: binary storage offload (filesystem, S3) and $binary-access-*.
+    crates: [frevo-store]
+    depends_on: [add-store-crud]
+    oracles: [differential]
+
+  - id: add-partitioning
+    phase: 2
+    status: pending
+    summary: partitioning and multitenancy.
+    crates: [frevo-store, frevo-server]
+    depends_on: [add-store-conditional-and-integrity]
+    oracles: [differential]
+
+  # ------------------------------------------------------------------ phase 3
+  - id: add-search-core
+    phase: 3
+    status: pending
+    summary: >
+      search parameter extraction and indexing for all types, with modifiers,
+      prefixes, keyset paging, _sort, _total and result parameters.
+    crates: [frevo-search]
+    depends_on: [add-store-crud]
+    oracles: [differential]
+
+  - id: add-search-chaining
+    phase: 3
+    status: pending
+    summary: forward chaining, _has, uplifted refchains.
+    crates: [frevo-search]
+    depends_on: [add-search-core]
+    oracles: [differential]
+
+  - id: add-search-includes
+    phase: 3
+    status: pending
+    summary: _include, _revinclude, :iterate.
+    crates: [frevo-search]
+    depends_on: [add-search-core]
+    oracles: [differential]
+
+  - id: add-search-composite-and-combo
+    phase: 3
+    status: pending
+    summary: composite parameters, combo-unique and combo-non-unique indexes.
+    crates: [frevo-search]
+    depends_on: [add-search-core]
+    oracles: [differential]
+
+  - id: add-search-custom-params
+    phase: 3
+    status: pending
+    summary: custom SearchParameter resources and $reindex.
+    crates: [frevo-search, frevo-jobs]
+    depends_on: [add-search-core]
+    oracles: [differential]
+
+  - id: add-search-fulltext
+    phase: 3
+    status: pending
+    summary: _content and _text via embedded tantivy, kept consistent across a crash.
+    crates: [frevo-search]
+    depends_on: [add-search-core]
+    oracles: [differential]
+
+  - id: add-search-special
+    phase: 3
+    status: pending
+    summary: _filter, _list, _contained, $lastn.
+    crates: [frevo-search]
+    depends_on: [add-search-core]
+    oracles: [differential]
+
+  - id: add-everything
+    phase: 3
+    status: pending
+    summary: $everything at Patient and Encounter level.
+    crates: [frevo-search]
+    depends_on: [add-search-includes]
+    oracles: [differential]
+
+  # ------------------------------------------------------------------ phase 4
+  - id: add-package-install
+    phase: 4
+    status: pending
+    summary: FHIR NPM package and IG installation, startup and runtime, transitive deps.
+    crates: [frevo-package]
+    depends_on: [add-store-crud]
+    oracles: [differential]
+
+  - id: add-validator-core
+    phase: 4
+    status: pending
+    summary: >
+      snapshot generation, slicing, invariants, bindings, profile resolution;
+      request and response validation and the repository validating interceptor.
+    crates: [frevo-validator]
+    depends_on: [add-fhirpath-and-codegen-r4, add-package-install]
+    oracles: [fhir-test-cases]
+
+  - id: add-terminology-store
+    phase: 4
+    status: pending
+    summary: native terminology store, code system loaders and deltas, pre-expansion.
+    crates: [frevo-terminology]
+    depends_on: [add-store-crud]
+    oracles: [differential]
+    notes: >
+      SNOMED CT, LOINC and ICD-10-CM content is not redistributable, so a large
+      share of the cases here are environment-conditional. Loaders must accept
+      operator-supplied files.
+
+  - id: add-terminology-operations
+    phase: 4
+    status: pending
+    summary: $expand, $validate-code, $lookup, $subsumes, $translate, remote routing.
+    crates: [frevo-terminology]
+    depends_on: [add-terminology-store]
+    oracles: [differential]
+
+  # ------------------------------------------------------------------ phase 5
+  - id: add-jobs-engine
+    phase: 5
+    status: pending
+    summary: PostgreSQL SKIP LOCKED job engine with Batch2-compatible job status.
+    crates: [frevo-jobs]
+    depends_on: [add-store-crud]
+    oracles: [differential]
+
+  - id: add-bulk-export
+    phase: 5
+    status: pending
+    summary: $export at system, Group and Patient level, with $export-poll-status.
+    crates: [frevo-jobs]
+    depends_on: [add-jobs-engine, add-search-core]
+    oracles: [inferno-bulk-data, differential]
+
+  - id: add-bulk-import
+    phase: 5
+    status: pending
+    summary: $import and $import-poll-status.
+    crates: [frevo-jobs]
+    depends_on: [add-jobs-engine]
+    oracles: [differential]
+
+  - id: add-maintenance-jobs
+    phase: 5
+    status: pending
+    summary: $expunge, delete-expunge, $reindex as batch jobs.
+    crates: [frevo-jobs]
+    depends_on: [add-jobs-engine]
+    oracles: [differential]
+
+  # ------------------------------------------------------------------ phase 6
+  - id: add-subscriptions-resthook
+    phase: 6
+    status: pending
+    summary: >
+      REST-hook, websocket, email and message delivery on a PostgreSQL outbox
+      with LISTEN/NOTIFY.
+    crates: [frevo-subscription]
+    depends_on: [add-search-core, add-jobs-engine]
+    oracles: [differential]
+
+  - id: add-subscriptions-topic
+    phase: 6
+    status: pending
+    summary: R5 topic-based subscriptions, the R4/R4B backport, $trigger-subscription.
+    crates: [frevo-subscription]
+    depends_on: [add-subscriptions-resthook]
+    oracles: [differential]
+
+  - id: add-mdm
+    phase: 6
+    status: pending
+    summary: >
+      HAPI-compatible mdm-rules.json, all matchers, golden records, links,
+      $mdm-* operations, :mdm expansion, $merge.
+    crates: [frevo-mdm]
+    depends_on: [add-search-core, add-jobs-engine]
+    oracles: [differential]
+
+  # ------------------------------------------------------------------ phase 7
+  - id: add-cql-translator
+    phase: 7
+    status: pending
+    summary: CQL to ELM translation.
+    crates: [frevo-cql]
+    depends_on: [add-fhirpath-and-codegen-r4]
+    oracles: [cql-tests]
+
+  - id: add-cql-engine
+    phase: 7
+    status: pending
+    summary: ELM evaluation engine over the repository.
+    crates: [frevo-cql]
+    depends_on: [add-cql-translator, add-search-core, add-terminology-operations]
+    oracles: [cql-tests]
+
+  # ------------------------------------------------------------------ phase 8
+  - id: add-cr-measures
+    phase: 8
+    status: pending
+    summary: $evaluate-measure, $care-gaps, $collect-data, $submit-data, $data-requirements.
+    crates: [frevo-cr]
+    depends_on: [add-cql-engine]
+    oracles: [cr-fixtures, differential]
+
+  - id: add-cr-apply
+    phase: 8
+    status: pending
+    summary: PlanDefinition and ActivityDefinition $apply, Library $evaluate.
+    crates: [frevo-cr]
+    depends_on: [add-cql-engine]
+    oracles: [cr-fixtures, differential]
+
+  - id: add-cr-sdc
+    phase: 8
+    status: pending
+    summary: SDC $questionnaire, $populate, $extract.
+    crates: [frevo-cr]
+    depends_on: [add-cr-apply]
+    oracles: [differential]
+
+  - id: add-cds-hooks
+    phase: 8
+    status: pending
+    summary: CDS Hooks discovery and service invocation.
+    crates: [frevo-cr, frevo-server]
+    depends_on: [add-cr-apply]
+    oracles: [differential]
+
+  # ------------------------------------------------------------------ phase 9
+  - id: add-converters
+    phase: 9
+    status: pending
+    summary: cross-version conversion, generated from StructureDefinition differences.
+    crates: [frevo-convert, frevo-codegen]
+    depends_on: [add-fhirpath-and-codegen-r4]
+    oracles: [fhir-test-cases]
+
+  - id: add-r4b-r5
+    phase: 9
+    status: pending
+    summary: R4B and R5 model generation and endpoints.
+    crates: [frevo-model, frevo-server]
+    depends_on: [add-converters, add-search-core]
+    oracles: [differential]
+
+  - id: add-dstu3-dstu2
+    phase: 9
+    status: pending
+    summary: DSTU3 and DSTU2 model generation and endpoints.
+    crates: [frevo-model, frevo-server]
+    depends_on: [add-r4b-r5]
+    oracles: [differential]
+
+  - id: add-ips
+    phase: 9
+    status: pending
+    summary: $summary (International Patient Summary).
+    crates: [frevo-ips]
+    depends_on: [add-everything, add-narrative]
+    oracles: [differential]
+
+  - id: add-graphql
+    phase: 9
+    status: pending
+    summary: GraphQL endpoint.
+    crates: [frevo-graphql]
+    depends_on: [add-search-core]
+    oracles: [differential]
+
+  - id: add-hfql
+    phase: 9
+    status: pending
+    summary: HFQL.
+    crates: [frevo-hfql]
+    depends_on: [add-search-core]
+    oracles: [differential]
+
+  - id: add-narrative
+    phase: 9
+    status: pending
+    summary: narrative generation with minijinja.
+    crates: [frevo-narrative]
+    depends_on: [add-fhirpath-and-codegen-r4]
+    oracles: [differential]
+    notes: >
+      Byte-identical narrative against HAPI's Thymeleaf templates is not
+      achievable; expect a recorded deviation.
+
+  - id: add-openapi
+    phase: 9
+    status: pending
+    summary: OpenAPI document and Swagger UI.
+    crates: [frevo-openapi]
+    depends_on: [add-server-skeleton]
+    oracles: [differential]
+
+  - id: add-tester-ui
+    phase: 9
+    status: pending
+    summary: the web tester UI the starter exposes.
+    crates: [frevo-server]
+    depends_on: [add-openapi]
+    oracles: [differential]
+
+  - id: add-mcp
+    phase: 9
+    status: pending
+    summary: MCP server bridging FHIR and CDS Hooks.
+    crates: [frevo-mcp]
+    depends_on: [add-search-core, add-cds-hooks]
+    oracles: [mcp-conformance]
+
+  - id: add-security-hooks
+    phase: 9
+    status: pending
+    summary: SMART, search narrowing and consent interceptor hooks.
+    crates: [frevo-server]
+    depends_on: [add-search-core]
+    oracles: [inferno-smart, differential]
+
+  - id: add-observability
+    phase: 9
+    status: pending
+    summary: Prometheus metrics and configurable access logging.
+    crates: [frevo-server]
+    depends_on: [add-server-skeleton]
+    oracles: [differential]
+
+  # ----------------------------------------------------------------- phase 10
+  - id: add-migrator-from-hapi
+    phase: 10
+    status: pending
+    summary: >
+      migrate an existing HAPI database (HFJ_*, TRM_*, MPI_*, BT2_*) into
+      Frevo's schema.
+    crates: [frevo-store]
+    depends_on: [add-partitioning, add-terminology-store, add-mdm, add-jobs-engine]
+    oracles: [migration-fixtures]
+
+  - id: add-shadow-traffic
+    phase: 10
+    status: pending
+    summary: >
+      shadow-traffic tooling: mirror production requests to both servers and
+      report diffs continuously.
+    crates: []
+    depends_on: [add-migrator-from-hapi]
+    oracles: [differential]

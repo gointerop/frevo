@@ -1,0 +1,124 @@
+# Benchmark workloads.
+#
+# These are the operations a FHIR server's cost is actually dominated by, not a
+# synthetic micro-benchmark. Each one names what it is meant to stress, because
+# a number without that context cannot be acted on.
+#
+# Placeholders are filled from ids sampled off the server under test:
+#   {patient}     a random Patient id
+#   {encounter}   a random Encounter id
+#   {family}      a family name present in the data
+#   {run}         a unique token per benchmark run
+#
+# Durations: `iterations` requests at `concurrency`, after `warmup` requests
+# that are measured but discarded. Warmup matters a great deal against HAPI:
+# the JVM needs it, and a cold measurement would flatter Frevo unfairly.
+
+defaults:
+  warmup: 50
+  iterations: 500
+  concurrency: 8
+  timeout: 120
+
+workloads:
+  - name: read-by-id
+    stresses: >
+      The cheapest possible read. Dominated by one indexed primary-key lookup
+      plus serialization, so it is the clearest measure of per-request
+      overhead. Frevo's design bet -- serving stored JSON as bytes without
+      reparsing -- should show up here first.
+    method: GET
+    path: /Patient/{patient}
+    iterations: 2000
+    concurrency: 16
+
+  - name: vread
+    stresses: Version-specific read; a second index and a different row path.
+    method: GET
+    path: /Patient/{patient}/_history/1
+    iterations: 1000
+
+  - name: search-token
+    stresses: >
+      The most common search shape: one token parameter against the
+      search-parameter index.
+    method: GET
+    path: /Patient?identifier=http://hl7.org/fhir/sid/us-ssn|999-99-9999&_count=20
+
+  - name: search-name
+    stresses: String-parameter search with a prefix match and paging.
+    method: GET
+    path: /Patient?family={family}&_count=20
+
+  - name: search-date-range
+    stresses: Date-range predicate over an ordered index.
+    method: GET
+    path: /Observation?date=ge2015-01-01&date=le2020-12-31&_count=20
+
+  - name: search-patient-observations
+    stresses: >
+      Reference search plus paging -- the single most common clinical query
+      shape, and the one most sensitive to index layout.
+    method: GET
+    path: /Observation?subject=Patient/{patient}&_count=50
+
+  - name: search-sorted
+    stresses: Sorting a result set; keyset vs offset pagination shows here.
+    method: GET
+    path: /Observation?subject=Patient/{patient}&_sort=-date&_count=50
+
+  - name: search-total-accurate
+    stresses: >
+      An exact count over the match set. HAPI pays a second query for this;
+      it is where _total modes diverge most.
+    method: GET
+    path: /Observation?subject=Patient/{patient}&_total=accurate&_count=0
+
+  - name: search-chained
+    stresses: >
+      A forward chained search. HAPI resolves this with a join that grows with
+      the referenced set, and it is the workload most likely to expose a
+      pathological query plan.
+    method: GET
+    path: /Observation?subject:Patient.family={family}&_count=20
+    iterations: 200
+
+  - name: search-include
+    stresses: >
+      _include, which turns one query into two and re-serializes the included
+      resources.
+    method: GET
+    path: /Observation?subject=Patient/{patient}&_include=Observation:subject&_count=50
+
+  - name: search-revinclude
+    stresses: _revinclude, the reverse direction, usually the more expensive one.
+    method: GET
+    path: /Patient?_id={patient}&_revinclude=Observation:subject&_count=50
+    iterations: 200
+
+  - name: everything
+    stresses: >
+      $everything on a Patient compartment: the heaviest read in routine use,
+      and a good proxy for compartment traversal cost.
+    method: GET
+    path: /Patient/{patient}/$everything?_count=100
+    iterations: 100
+    concurrency: 4
+
+  - name: transaction-ingest
+    stresses: >
+      Write path: a small transaction bundle with an internal reference. Tests
+      per-transaction overhead and reference resolution rather than bulk
+      throughput.
+    method: POST
+    path: /
+    iterations: 300
+    concurrency: 8
+    body_template: transaction-small
+
+  - name: create-single
+    stresses: The simplest write; isolates per-create overhead.
+    method: POST
+    path: /Patient
+    iterations: 500
+    body_template: patient-small
