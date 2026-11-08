@@ -15,7 +15,11 @@
 # the JVM needs it, and a cold measurement would flatter Frevo unfairly.
 
 defaults:
-  warmup: 50
+  # 300, not 50. HAPI runs on the JVM, and the first few hundred requests
+  # are interpreted before the JIT settles. Measuring at 50 made the small-set
+  # baseline look SLOWER than the medium one on seven of fourteen workloads --
+  # which flatters every Frevo target, the worse way to be wrong.
+  warmup: 300
   iterations: 500
   concurrency: 8
   timeout: 120

@@ -33,12 +33,26 @@ CLINICIAN_SEED=20261108
 
 size_to_count() {
   case "$1" in
-    small)  echo 100 ;;
-    medium) echo 10000 ;;
     tiny)   echo 10 ;;
+    small)  echo 100 ;;
+    medium) echo 1000 ;;
+    large)  echo 10000 ;;
     *)      echo "" ;;
   esac
 }
+
+# Sizing note, from measurement rather than guesswork.
+#
+# "medium" was 10000 and is now 1000. Generating 10000 patients produced 31 GB
+# of transaction bundles on its own, and loading them into HAPI's PostgreSQL
+# needs several times that again -- more than a typical development machine
+# has spare. A baseline that cannot be reproduced is not a baseline.
+#
+# 1000 patients is roughly 2.5 GB of bundles and about 400k resources, which is
+# past the point where an index stops fitting comfortably in cache -- the thing
+# the small set cannot show -- while still running on a laptop.
+#
+# "large" keeps 10000 for a machine or CI runner with the disk to host it.
 
 die() { printf 'FATAL: %s\n' "$*" >&2; exit 1; }
 
