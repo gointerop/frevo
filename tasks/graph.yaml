@@ -19,6 +19,12 @@ meta:
   reference: HAPI FHIR JPA Server Starter 8.12.0 (see reference/PINS.md)
   inventory: docs/inventory.md
   total_parity_rows: 454
+  # Confirmed by the owner, 2026-11-08: R4 first (phases 1-8), then R4B and R5,
+  # then DSTU3 and DSTU2 (phase 9). This is why every phase before 9 names only
+  # R4 artifacts, and why add-converters gates add-r4b-r5, which gates
+  # add-dstu3-dstu2 -- each later version reuses the generator and the
+  # conversion layer rather than re-porting the stack.
+  fhir_version_order: [R4, R4B, R5, DSTU3, DSTU2]
 
 phases:
   0: Bootstrap, oracles, harness, baseline
