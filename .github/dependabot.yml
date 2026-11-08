@@ -1,0 +1,54 @@
+version: 2
+
+updates:
+  # Rust dependencies. Grouped so that a routine refresh is one pull request
+  # rather than twenty, because every pull request costs a full gate run.
+  - package-ecosystem: cargo
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
+    labels: ["dependencies", "rust"]
+    groups:
+      runtime-core:
+        patterns: ["axum", "hyper", "tokio", "tower", "tower-http"]
+      serde:
+        patterns: ["serde", "serde_*"]
+      observability:
+        patterns: ["tracing", "tracing-*"]
+      patch-level:
+        update-types: ["patch"]
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+    commit-message:
+      prefix: "chore(ci)"
+    labels: ["dependencies", "ci"]
+    groups:
+      actions:
+        patterns: ["*"]
+
+  - package-ecosystem: docker
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+    commit-message:
+      prefix: "chore(docker)"
+    labels: ["dependencies", "docker"]
+
+# Deliberately NOT managed by Dependabot:
+#
+#   reference/   pinned upstream sources. The pins in reference/PINS.md define
+#                what "correct" means, so moving them is a reviewed decision,
+#                not a dependency bump.
+#   oracles/     vendored test suites, for the same reason. Re-pinning one
+#                changes every gate and belongs on a chore/oracles-* branch.
+#   harness/     the HAPI 8.12.0 image tag is the oracle under test. Bumping it
+#                silently would invalidate every recorded baseline.

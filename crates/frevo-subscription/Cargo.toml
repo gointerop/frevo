@@ -1,0 +1,11 @@
+[package]
+name = "frevo-subscription"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Subscriptions: REST-hook, websocket, email and message delivery, plus topic-based subscriptions."
+
+[dependencies]

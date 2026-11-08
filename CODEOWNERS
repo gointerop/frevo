@@ -1,0 +1,21 @@
+# Default owner for everything.
+*                               @gointerop/frevo-maintainers
+
+# The enforcement machinery. Specs, gates, hooks, agent definitions and the
+# guard workflow define what "done" means, so they are reviewed separately from
+# the code they govern.
+/.claude/                       @gointerop/frevo-maintainers
+/.github/workflows/             @gointerop/frevo-maintainers
+/gates/                         @gointerop/frevo-maintainers
+/openspec/specs/                @gointerop/frevo-maintainers
+/CLAUDE.md                      @gointerop/frevo-maintainers
+/AGENTS.md                      @gointerop/frevo-maintainers
+
+# Licensing, attribution and provenance: changes here have legal effect.
+/LICENSE                        @gointerop/frevo-maintainers
+/NOTICE                         @gointerop/frevo-maintainers
+/docs/provenance.md             @gointerop/frevo-maintainers
+
+# Oracles define correctness; re-pinning one changes every gate.
+/oracles/                       @gointerop/frevo-maintainers
+/reference/PINS.md              @gointerop/frevo-maintainers

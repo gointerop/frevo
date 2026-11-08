@@ -1,0 +1,11 @@
+[package]
+name = "frevo-convert"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Cross-version resource conversion (DSTU2/DSTU3/R4/R4B/R5)."
+
+[dependencies]

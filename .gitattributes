@@ -1,0 +1,46 @@
+# Normalise everything to LF in the repository. Shell scripts under
+# .claude/hooks/ and harness/ run on Linux in CI; a CRLF line ending there makes
+# bash fail with an unreadable "\r: command not found", so this is correctness,
+# not style.
+* text=auto eol=lf
+
+# Scripts and configuration that must be LF wherever they are checked out.
+*.sh            text eol=lf
+*.bash          text eol=lf
+*.rs            text eol=lf
+*.toml          text eol=lf
+*.yaml          text eol=lf
+*.yml           text eol=lf
+*.json          text eol=lf
+*.md            text eol=lf
+*.sql           text eol=lf
+Dockerfile*     text eol=lf
+Makefile        text eol=lf
+.gitattributes  text eol=lf
+.gitignore      text eol=lf
+
+# Windows-only helpers keep CRLF.
+*.bat           text eol=crlf
+*.cmd           text eol=crlf
+*.ps1           text eol=crlf
+
+# Binary: never normalise, never diff as text.
+*.png           binary
+*.jpg           binary
+*.ico           binary
+*.gz            binary
+*.zip           binary
+*.tgz           binary
+*.woff2         binary
+
+# Generated code: keep it out of pull-request diffs by default. It is still
+# reviewed by regenerating it, which is the only legitimate way to change it.
+crates/frevo-model/src/generated/**  linguist-generated=true
+crates/frevo-convert/src/generated/** linguist-generated=true
+
+# Vendored oracle suites are not this project's code and should not count
+# toward language statistics.
+oracles/**      linguist-vendored=true
+
+# Lock files: keep them, do not treat conflicts as mergeable text.
+Cargo.lock      merge=binary -diff

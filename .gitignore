@@ -1,0 +1,40 @@
+# Rust
+/target/
+**/*.rs.bk
+*.pdb
+
+# Upstream reference sources: cloned read-only, never committed, never compiled.
+/reference/*
+!/reference/PINS.md
+!/reference/clone.sh
+!/reference/README.md
+
+# Harness working data (datasets, HAPI volumes, captured corpora output)
+/harness/data/
+/harness/.hapi/
+/harness/out/
+/bench/out/
+
+# Oracle suites are vendored selectively; fetched trees stay out.
+/oracles/*/.git/
+/oracles/**/fetched/
+
+# Gate reports are agent-local unless explicitly committed
+/gates/**/*.tmp.json
+
+# Tooling / editors
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# Node (OpenSpec CLI local installs)
+node_modules/
+
+# Never commit env or secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key

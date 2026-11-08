@@ -1,0 +1,51 @@
+name: Bug report
+description: Something is broken that is not a behavioural difference from HAPI.
+title: "[bug] "
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        For a response that differs from HAPI FHIR 8.12.0, use the
+        **Parity difference** template instead — it routes straight into a
+        differential test case.
+
+        **Do not include real patient data or PHI.**
+
+  - type: input
+    id: version
+    attributes:
+      label: Frevo version or image digest
+    validations:
+      required: true
+
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      placeholder: "container image / Helm chart / built from source; PostgreSQL version; OS and architecture"
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected to happen
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened instead
+      description: Include the error, and server logs at `info` or finer if you have them.
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Smallest sequence that shows the problem.
+    validations:
+      required: true

@@ -1,0 +1,51 @@
+name: Feature request
+description: Ask for a capability, or for one to be brought forward.
+title: "[feature] "
+labels: ["enhancement", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Frevo is porting the whole HAPI FHIR JPA Server Starter 8.12.0 feature
+        surface, so most capabilities are already planned rather than missing by
+        choice. Check `docs/inventory.md` first: it lists every configuration
+        key, interaction and operation with the phase it lands in.
+
+        The useful request is therefore usually **"bring this forward"**, with
+        the reason it blocks you.
+
+  - type: input
+    id: inventory_row
+    attributes:
+      label: Inventory row, if you found one
+      placeholder: "e.g. hapi.fhir.mdm_enabled, or $care-gaps"
+    validations:
+      required: false
+
+  - type: textarea
+    id: need
+    attributes:
+      label: What you are trying to do
+      description: The deployment or workflow this blocks. Concrete beats general.
+    validations:
+      required: true
+
+  - type: textarea
+    id: hapi_behaviour
+    attributes:
+      label: How HAPI 8.12.0 does it today
+      description: >
+        If this exists in HAPI, describe or link the behaviour you rely on. That
+        is what Frevo has to match, so it defines the request.
+    validations:
+      required: false
+
+  - type: dropdown
+    id: blocking
+    attributes:
+      label: Is this blocking a migration from HAPI?
+      options:
+        - "Yes — we cannot switch without it"
+        - "No — we would use it, but can wait"
+    validations:
+      required: true

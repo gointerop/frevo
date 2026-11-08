@@ -1,0 +1,50 @@
+Frevo
+Copyright 2026 The Frevo authors
+
+This product includes software developed as a port of, and derived from, the
+projects listed below. Each derived source file carries a header naming the
+upstream path and the pinned commit it was derived from, and states that it was
+modified. Per-crate provenance, including upstream module and commit SHA, is
+recorded in docs/provenance.md.
+
+-------------------------------------------------------------------------------
+HAPI FHIR (ca.uhn.hapi.fhir) and HAPI FHIR JPA Server Starter
+https://github.com/hapifhir/hapi-fhir
+https://github.com/hapifhir/hapi-fhir-jpaserver-starter
+Licensed under the Apache License, Version 2.0.
+
+  Copyright 2015, University Health Network
+
+HAPI FHIR is a project of University Health Network and Smile Digital Health.
+-------------------------------------------------------------------------------
+HL7 FHIR Core Java reference implementation (org.hl7.fhir.core)
+https://github.com/hapifhir/org.hl7.fhir.core
+Licensed under the Apache License, Version 2.0.
+
+  Copyright (c) 2011+, HL7, Inc.
+-------------------------------------------------------------------------------
+Clinical Quality Language reference implementation
+https://github.com/cqframework/clinical_quality_language
+Licensed under the Apache License, Version 2.0.
+
+  Copyright 2014+ The University of Utah and contributors
+-------------------------------------------------------------------------------
+Clinical Reasoning (org.opencds.cqf.fhir)
+https://github.com/cqframework/clinical-reasoning
+Licensed under the Apache License, Version 2.0.
+
+  Copyright 2019+ Smile Digital Health and contributors
+-------------------------------------------------------------------------------
+
+TRADEMARKS
+
+HL7(R), FHIR(R) and the FHIR flame design are registered trademarks of Health
+Level Seven International, and their use does not constitute endorsement by
+HL7. This project does not use the FHIR flame design.
+
+HAPI FHIR is a project of University Health Network / Smile Digital Health;
+this project is independent of and not endorsed by them.
+
+The name "Frevo" and the binary, crate, repository and image names used by this
+project do not incorporate the HL7, FHIR or HAPI marks. References to those
+marks in this project's documentation are descriptive only.

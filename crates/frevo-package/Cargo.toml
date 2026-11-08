@@ -1,0 +1,11 @@
+[package]
+name = "frevo-package"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "FHIR NPM package and implementation-guide installation, including transitive dependencies."
+
+[dependencies]

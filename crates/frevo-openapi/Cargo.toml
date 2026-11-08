@@ -1,0 +1,11 @@
+[package]
+name = "frevo-openapi"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "OpenAPI document generation and the Swagger UI surface."
+
+[dependencies]

@@ -1,0 +1,6 @@
+[toolchain]
+channel = "stable"
+components = ["rustfmt", "clippy"]
+profile = "minimal"
+# Cross targets (x86_64/aarch64 musl) are added inside the container build,
+# not here, so a local checkout does not pay for std downloads it cannot link.

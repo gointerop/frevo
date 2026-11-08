@@ -1,0 +1,11 @@
+[package]
+name = "frevo-cr"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Clinical reasoning: measures, care gaps, PlanDefinition apply, SDC and CDS Hooks."
+
+[dependencies]

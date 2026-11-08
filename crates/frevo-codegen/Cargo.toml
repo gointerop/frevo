@@ -1,0 +1,11 @@
+[package]
+name = "frevo-codegen"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Code generator: FHIR StructureDefinitions to Rust models, codecs and search-parameter tables."
+
+[dependencies]

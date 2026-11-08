@@ -1,0 +1,77 @@
+name: Parity difference from HAPI FHIR 8.12.0
+description: Frevo answers a request differently from HAPI FHIR JPA Server Starter 8.12.0.
+title: "[parity] "
+labels: ["parity", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This is the most useful kind of report for this project. HAPI 8.12.0 is
+        the reference behaviour, so a difference is a bug here unless it is
+        already recorded in `docs/deviations.md`.
+
+        **Do not include real patient data.** Reproduce with Synthea output or
+        specification examples.
+
+  - type: input
+    id: version
+    attributes:
+      label: Frevo version or image digest
+      placeholder: "ghcr.io/gointerop/frevo:edge @ sha256:..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: request
+    attributes:
+      label: The request
+      description: Method, path, headers that matter, and body.
+      render: http
+    validations:
+      required: true
+
+  - type: textarea
+    id: frevo_response
+    attributes:
+      label: Frevo's response
+      description: Status line and body.
+      render: json
+    validations:
+      required: true
+
+  - type: textarea
+    id: hapi_response
+    attributes:
+      label: HAPI 8.12.0's response to the same request
+      description: >
+        If you have not compared against HAPI, say so — we will. If you have,
+        this turns the report straight into a differential test case.
+      render: json
+    validations:
+      required: false
+
+  - type: textarea
+    id: config
+    attributes:
+      label: Relevant application.yaml
+      description: The `hapi.fhir.*` keys in play. Remove credentials.
+      render: yaml
+    validations:
+      required: false
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - store (CRUD, history, transactions)
+        - search
+        - validation
+        - terminology
+        - subscriptions
+        - MDM
+        - clinical reasoning / CQL
+        - bulk export or import
+        - other / not sure
+    validations:
+      required: true

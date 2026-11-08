@@ -1,0 +1,11 @@
+[package]
+name = "frevo-validator"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Full profile validation: snapshot generation, slicing, invariants, bindings."
+
+[dependencies]

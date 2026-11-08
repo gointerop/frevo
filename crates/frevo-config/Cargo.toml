@@ -1,0 +1,11 @@
+[package]
+name = "frevo-config"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "application.yaml-compatible configuration with the starter's hapi.fhir.* key semantics."
+
+[dependencies]

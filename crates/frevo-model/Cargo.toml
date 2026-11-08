@@ -1,0 +1,11 @@
+[package]
+name = "frevo-model"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Generated FHIR resource and datatype models with a lazy, byte-preserving JSON codec."
+
+[dependencies]
