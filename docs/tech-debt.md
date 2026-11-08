@@ -278,6 +278,7 @@ them is the whole reason that decision is safe to make.
   decision about where it goes, since the engine has no warning channel on the
   evaluation pass, only on the check pass.
 - **Status:** open
-- **Reviewed:** pending — `DEV-0010` itself is still pending the owner's
-  sign-off, so this entry inherits that. It is recorded now rather than after,
+- **Reviewed:** 2026-11-08, owner — accepted with `DEV-0010`. The behaviour is
+  HAPI's with no configuration flag, so this entry is what carries the
+  obligation forward: it was recorded before the sign-off rather than after,
   because the obligation exists the moment the behaviour is matched.
