@@ -202,8 +202,8 @@ handler interface's own ten callbacks, so that nothing is left to be inferred:
 |---|---|---|
 | `unknownElement` | decode | `model.json.004` |
 | `unknownAttribute` | decode | `model.json.004` — in JSON this is reached for a stray property the generic fallback state sees, and for an `id` property on a construct that cannot carry an element id; same diagnostic shape as an unknown element |
-| `incorrectJsonType` | decode | `model.json.013` |
-| `unexpectedRepeatingElement` | decode | `model.json.014`, `model.json.015` |
+| `incorrectJsonType` | decode | `model.json.013`, `model.json.014` — `JsonParser.java:1461` raises it for a repeating element given a bare object outside an array |
+| `unexpectedRepeatingElement` | decode | `model.json.015` — one production call site, `ParserState.java:669` |
 | `missingRequiredElement` | decode | `codegen.cardinality.002`, `codegen.cardinality.004` |
 | `invalidValue` | decode | `model.json.023`, `codegen.cardinality.005` |
 | `extensionContainsValueAndNestedExtensions` | decode | `model.json.022` |

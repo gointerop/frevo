@@ -337,7 +337,14 @@ Recorded so the reasoning is not re-derived:
   with a `2xx`. That is not a deviation, because HAPI also ships
   `StrictErrorHandler` and chooses between them with
   `FhirContext.setParserErrorHandler`. Frevo keeps both modes and the same
-  default, so it matches HAPI rather than differing from it. See
+  default, so it matches HAPI rather than differing from it. With one
+  qualification: `model.json.016` (a duplicate JSON key) and `model.json.018`
+  (a `null` inside a non-primitive array) give Frevo's strict mode an error
+  HAPI has no callback for, so strict mode is a superset there rather than a
+  match. It costs no parity, because the starter never selects strict mode --
+  `ParserErrorHandler`, `StrictErrorHandler` and `LenientErrorHandler` appear
+  nowhere in `reference/hapi-fhir-jpaserver-starter/src` -- so the differential
+  cannot reach it. See
   `model.json.004`, `.013`, `.014`, `.015`, `.016`, `.018`, `.021`, `.022`,
   `.023`, `.024`, `.025`, `model.canonical.007` and `codegen.cardinality.002`.
   The same reasoning covers the three conditions specified last: a contained

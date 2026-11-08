@@ -1,301 +1,187 @@
-CHANGES_REQUESTED
+APPROVED
 
-Second review of `add-fhirpath-and-codegen-r4`. All 21 findings from the first
-review are **resolved**; six new ones replace them, two of which block.
+Third review of `add-fhirpath-and-codegen-r4`, at commit `258a5b9`. All six
+findings from the second review are **resolved**, and the eight substantive
+claims the revision makes about the pinned source are **correct as written**.
+Nothing blocks. Six items are recorded at the end as non-blocking; one of them
+(`tasks.md:674`) is a wrong register id that should be corrected before merge.
 
 Reviewed against `reference/org.hl7.fhir.core` at
-`73c432b5f43ddbce979978a760ec4aa81e929094`
-(`org.hl7.fhir.r4/src/main/java/org/hl7/fhir/r4/fhirpath/`, read from
-`C:/gointerop/git/frevo/reference/`), `reference/hapi-fhir` at
+`73c432b5f43ddbce979978a760ec4aa81e929094`, `reference/hapi-fhir` at
 `7ab4c7c7c49281496faa1b3c2498a652457669ae`, and
 `oracles/fhirpath/tests-fhir-r4.xml` at
-`c95adbee099c875de97d25ed7616aae7d66dd85b`. Unqualified `:NNN` line references
-below are `FHIRPathEngine.java`.
+`c95adbee099c875de97d25ed7616aae7d66dd85b`, all read from
+`C:/gointerop/git/frevo/reference/` and `C:/gointerop/git/frevo/oracles/`.
+Unqualified `:NNN` references are `FHIRPathEngine.java`; `ParserState`,
+`BaseParser`, `JsonParser`, `LenientErrorHandler` and `StrictErrorHandler` are
+in `reference/hapi-fhir/hapi-fhir-base/src/main/java/ca/uhn/fhir/parser/`.
 
-## What I verified, and how
+## The record of the three passes
 
-I re-derived the behaviour from the pinned source before reading the revised
-artifacts, and treated the spec delta's claims as assertions to be checked
-rather than as evidence.
+| Pass | Commit graded | Verdict | Findings | Disposition |
+|---|---|---|---|---|
+| 1 | `3c3f092` | `CHANGES_REQUESTED` | 21 | all 21 resolved by `1bbe673`, verified in pass 2 |
+| 2 | `1bbe673` | `CHANGES_REQUESTED` | 6 (2 blocking) | all 6 resolved by `258a5b9`, verified below |
+| 3 | `258a5b9` | **`APPROVED`** | 0 | 6 non-blocking notes |
 
-- **Suite inventory**, by XML parse of `oracles/fhirpath/tests-fhir-r4.xml`:
-  103 `<group>`, 1,191 `<test>`, `documentFunctions` = 115, no
-  `testDollarResource` group, `invalid` counts 7 syntax / 29 semantic /
-  27 execution. I also enumerated every attribute the file actually carries
-  (see finding 2).
-- **The R4 engine**: `FHIRPathEngine.java` (7,008 lines),
-  `ExpressionNode.java`, `FHIRLexer.java`, `IHostApplicationServices.java`,
-  `org.hl7.fhir.utilities/.../FHIRPathConstantEvaluationMode.java`. I walked the
-  whole `Function` enum (`ExpressionNode.java:48-63`) and the whole `Operation`
-  enum (`:272-273`) against the delta: every function and every operator now has
-  a scenario or a named out-of-scope row. I also listed every public setter on
-  the engine and ticked them off.
-- **The pinned harness**,
-  `org.hl7.fhir.r4/src/test/java/org/hl7/fhir/r4/test/FHIRPathTests.java`, for
-  everything the delta claims about grading.
-- **HAPI's parser error surface**: `IParserErrorHandler` (10 callbacks),
-  `LenientErrorHandler`, `StrictErrorHandler`, `ParserState`, `BaseParser`,
-  `FhirContext`.
-- **Codegen input counts**, by parsing the pinned HAPI copy:
-  `profiles-types.xml` 63 SDs of which 20 `primitive-type`;
-  `profiles-resources.xml` 149 SDs = 146 concrete + 2 abstract + 1 logical;
-  `profiles-others.xml` 44; `sp/search-parameters.json` 1,375 SearchParameters.
-  Every number `codegen.inputs.006`, `codegen.types.001/005` and
-  `codegen.searchparam.001` assert is correct.
+Pass 1's findings and their evidence are in the git history of this file at
+`93898b1`; pass 2's are in its parent. Both are recoverable with
+`git show 93898b1:openspec/changes/add-fhirpath-and-codegen-r4/review.md`.
 
-### No scenario was deleted, renumbered or repurposed
+## Scenario integrity — clean
 
-I extracted the scenario-ID set from commit `3c3f092` (the state my first review
-graded) and from the current working tree:
+Verified by extracting the `#### Scenario: [id]` set from `3c3f092`, `1bbe673`
+and the working tree:
 
-- old 454 IDs, new 486 IDs;
-- `comm -23` of the two sets is **empty** — nothing vanished;
-- 32 IDs added, all at the end of their own area:
-  `codegen.cardinality.005`, `model.json.021-023`, `path.check.015-019`,
-  `path.compare.011-012`, `path.convert.012-014`, `path.datetime.007`,
-  `path.env.015`, `path.lexer.015-016`, `path.oracle.016`, `path.quantity.018`,
-  `path.strictness.008-010`, `path.string.023-024`, `path.subset.013`,
-  `path.utility.022-027`;
-- the 14 IDs `spec.md:33-38` says were rewritten in place still carry a
-  behaviour of the same shape (same function, same operator, same parse mode) —
-  they now state what the engine does rather than what the specification says,
-  which is the correct resolution;
-- every ID matches `^[a-z]+\.[a-z]+\.[0-9]{3}$`, all 486 are unique across the
-  four files, and every area is contiguous from `001` with no gaps;
-- the per-area table at `spec.md:40-86` and the totals at `spec.md:8-13`
-  (49 / 80 / 357 / 486) match the files exactly.
+- 454 -> 486 -> **493** ids;
+- `comm -23` of `1bbe673` against the tree is **empty**, and of `3c3f092`
+  against the tree is **empty** — nothing was removed or renumbered at either
+  revision;
+- exactly seven added, and they are exactly the seven claimed:
+  `model.canonical.007`, `model.json.024`, `model.json.025`, `path.env.016`,
+  `path.env.017`, `path.oracle.017`, `path.utility.028`;
+- the six rewritten in place (`path.oracle.002`, `.007`, `.008`,
+  `path.env.015`, `path.utility.001`, `path.check.015`) kept their headings;
+  only their bodies changed;
+- all 493 match `^[a-z]+\.[a-z]+\.[0-9]{3}$`, all are unique across the three
+  delta files, and **every one of the 45 areas is contiguous from `001`** with
+  no gaps;
+- per-capability totals are `codegen` 49, `model` 83, `path` 361 = **493**,
+  matching `spec.md:8-13`, and every row of the per-area table at
+  `spec.md:51-96` matches the files exactly;
+- every one of the 493 is named by at least one task in `tasks.md` (expanding
+  its `X through Y` ranges), and `tasks.md` names **no** id that does not
+  exist.
 
-Deviation hygiene: the spec delta references `DEV-0001` … `DEV-0009` and all
-nine exist in `docs/deviations.md` with `Reviewed: 2026-11-08, owner`, a `Debt:`
-field, and a `Scenario IDs:` line naming a scenario that exists. `DEBT-0001` …
-`DEBT-0005` exist in `docs/tech-debt.md` on `main`. The sixteen scenarios
-`spec.md:107-112` lists as having no live case are exactly the sixteen whose own
-text says `differential-only` — I checked both directions.
+The nineteen scenarios `spec.md:124-131` lists as having no live case are
+exactly the nineteen whose own text says `differential-only` — checked in both
+directions. `path.check.015` and `path.oracle.013` mention the differential
+harness for other reasons and are correctly excluded from that list.
 
----
-
-## Disposition of the 21 standing findings
+## Disposition of the six standing findings
 
 | # | Prior finding | Disposition | Evidence I checked |
 |---|---|---|---|
-| 1 | Suite is 103/1,191, not 104/1,193; `documentFunctions` is 115 | **addressed** | XML parse gives 103/1,191/115; `testDollarResource` absent. `proposal.md` "The suite's size", `spec.md:100-105` and `path.oracle.001` all state the XML-parse figures and name the commented block at `tests-fhir-r4.xml:1576-1582`. `path.env.006` re-pointed to the six live `isSemanticChecks` `%resource.status` cases and `path.navigation.021` to six live `descendants()` cases — both selectors exist in the file |
-| 2 | `single()` on empty throws | **addressed** | `path.subset.003` now says evaluation fails. `:5087-5092`: `funcSingle` returns the focus only when `focus.size() == 1`, else throws `FHIRPATH_NO_COLLECTION`. Cites `DEV-0001` |
-| 3 | Multi-item ordered comparison yields empty, not an error | **addressed** | `path.compare.007`. `:2410-2454`: `opLessThan` handles empty operands and the two singleton shapes, then falls through to `return new ArrayList<Base>()` at `:2454`. Cites `DEV-0002` |
-| 4 | Incommensurable units do not fail | **addressed** | `path.quantity.015` rewritten: boolean with UCUM loaded, `false` with none. `:2443-2451` compares canonical decimals with no dimension check; `:2443-2444` returns `makeBoolean(false)` when `worker.getUcumService() == null`; `qtyToCanonicalDecimal` at `:2301-2312` returns a bare decimal. Cites `DEV-0005`. New `path.quantity.018` adds the non-UCUM-`system` case (`:2302-2303` returns `null`) |
-| 5 | String function on a non-string yields empty | **addressed** | `path.string.020` plus new `path.string.024`. `FHIR_TYPES_STRING` at `:2407` lists exactly the 12 types the delta lists; the guard shape is at `:4849` (`hasType(FHIR_TYPES_STRING) \|\| doImplicitStringConversion`). Cites `DEV-0006`. New `path.string.023` draws the line against the functions that *do* raise |
-| 6 | `conformsTo()` with no host service throws | **addressed** | New `path.utility.022`. `:5972-5975`: `funcConformsTo` throws `FHIRPATH_HO_HOST_SERVICES` before looking at its argument; `:5977-5979` returns `false` for a non-singleton focus once a service is set. `path.utility.014` now scopes itself to the configured-but-always-false server host service |
-| 7 | R4 `resolve()` has no Bundle `fullUrl` resolution | **addressed** | `path.utility.018` rewritten. `funcResolve` at `:5413-5453`: `#`-prefixed only, against `context.rootResource.getChildByName("contained")` (`:5437-5447`), everything else to `hostServices.resolveReference` (`:5448-5453`). `path.utility.017` correctly states the **root**-resource lookup, the primitive focus (`:5430-5432`) and `Reference.identifier` (`:5426-5429`); `path.utility.020` correctly states the swallowed host error (`:5451-5453`) |
-| 8 | `now()` is not stable within one evaluation | **addressed** | `path.datetime.003`. `funcNow` at `:4772-4776` is `result.add(DateTimeType.now())` per call, nothing caches an instant. Cites `DEV-0008` |
-| 9 | `toDate()` does not exist | **addressed** | `path.convert.012` says it is a parse failure. No `"toDate"` string in `ExpressionNode.java` or `FHIRPathEngine.java`; the enum has `ConvertsToDate` but no `ToDate` (`ExpressionNode.java:53`, `:144`). Cites `DEV-0009`. New `path.convert.013/014` cover `toTime`/`toBoolean`, which do exist |
-| 10 | Four public engine settings unspecified | **addressed** | The complete setter set is `hostServices` (`:227`), `location` (`:236`), `legacyMode` (`:291`), `doImplicitStringConversion` (`:300`), `doNotEnforceAsSingletonRule` (`:308`), `doNotEnforceAsCaseSensitive` (`:316`), `allowPolymorphicNames` (`:6977`), `liquidMode` (`:6985`), `allowDoubleQuotes` (`:6996`), `emitSQLonFHIRWarning` (`:7004`). Now covered by `path.api.007`, `path.strictness.007`, `path.string.024`+`path.strictness.009`, `path.strictness.001/003/004/005`, `path.strictness.006`, `path.strictness.010`, `path.lexer.015/016`, `path.check.017`+`path.strictness.008`. Only `setLocation` has no scenario — see the note below |
-| 11 | `path.strictness.006` stated the opposite of the engine | **addressed, now correct** | The flag is a plain field defaulting `false` (`:177`), read in `getChildrenByName` during evaluation (`:257`) **and** passed to `getElementDefinition` during the type pass (`:6473`), so the scenario's "read both when resolving children and when resolving an element definition" is right. The suite's "not supported in R4" comment does sit on commented-out `modeTest` elements |
-| 12 | Check pass's warning channel absent | **addressed** | `path.check.015-019` added. `typeWarnings` at `:183`; the `checkOnTypes(..., List<IssueMessage> warnings)` overloads at `:477`, `:532`, `:539` each `typeWarnings.clear()` then `warnings.addAll(typeWarnings)` (`:478`/`:528`), which is exactly `path.check.019`'s no-leak clause. Every warning id the delta describes exists: `FHIRPATH_CHOICE_NO_TYPE_SPECIFIER`/`_SPURIOUS_TYPE_SPECIFIER` (`:1646`/`:1649`, gated on `emitSQLonFHIRWarning` at `:1642`), `COLLECTION_STATUS_OPERATION_LEFT`/`RIGHT` (`:1972-1983`), `FHIRPATH_NOT_A_COLLECTION` (`:3302`), `FHIRPATH_UNKNOWN_EXTENSION` (`:3579`/`:3588`), `FHIRPATH_OFTYPE_IMPOSSIBLE` (`:3783`), `COLLECTION_STATUS_PARAMETER` (`:3834`), `COLLECTION_STATUS_CONTEXT` (`:3841`). The plain `check(...)` overloads (`:405`, `:421`, `:557`, `:596`, `:625`, `:631`) take no warning list, as `path.check.019` says. See finding 6 for the oracle |
-| 13 | Ordered-collection checking covers six constructs, unconditionally | **addressed** | `path.subset.013` names exactly the six and says no setting disables it. Call sites: `item` `:3364`, `first` `:3408`, `last` `:3412`, `tail` `:3416`, `skip` `:3420`, `take` `:3425`; `checkOrdered` at `:3845-3847` throws `FHIRPATH_ORDERED_ONLY` with no flag in the condition. `path.navigation.022` correctly notes `testDollarOrderNotAllowed` carries `mode="strict" checkOrderedFunctions="true"` (`tests-fhir-r4.xml:213`) and that no R4 harness reads them |
-| 14 | `memberOf` binary operator has no scenario and differs from the function | **addressed** | `path.utility.024/025/026` added and all three are right. `opMemberOf` `:2602-2628` loops the whole left collection and ORs, `makeBoolean(false)` when the value set is unresolved; `funcMemberOf` `:4786-4807` returns empty unless both focus and argument are singletons, empty when `vs == null` (`:4794-4796`), empty for an unhandled focus type (`:4804-4806`), `withGuessSystem()` for `code`/`string`/`uri` (`:4799`) and plain options for `Coding`/`CodeableConcept` (`:4801`/`:4803`); both forms fall back to `worker.fetchResource(ValueSet.class, url)` when `hostServices == null` (`:2605`, `:4793`). `Operation.MemberOf` exists (`ExpressionNode.java:273`, `:326`) and types as singleton boolean (`:2095`) |
-| 15 | `extension(url)` also returns modifier extensions | **addressed** | `path.utility.023`. `funcExtension` `:5464-5482` collects `extension` then `modifierExtension` before filtering by URL. Cites `DEV-0007` |
-| 16 | Host custom functions and the constant-evaluation mode unspecified | **partly addressed** | `path.utility.027` is correct: `case Custom` at `:4020-4022` consults `hostServices.paramIsType` per parameter, arity comes from `resolveFunction`'s `FunctionDetails`, the type from `checkFunction`, the value from `executeFunction`. `path.env.015` names four modes and there are exactly four (`FHIRPathConstantEvaluationMode`), but it mis-describes one of them and omits the behaviour that makes them observable — **new finding 4** |
-| 17 | Model delta decoded strictly where HAPI's server is lenient | **addressed** | `FhirContext.java:128` is `new LenientErrorHandler()`, used for `newJsonParser()` at `:946`. `model.json.021` makes lenient the default and strict a mode, and `model.json.004/.013/.014/.015/.016/.018` plus `codegen.cardinality.002/.004/.005` each state the lenient outcome and the strict outcome. Each matches its `LenientErrorHandler` method (`unknownElement`, `incorrectJsonType` `:79-94`, `unexpectedRepeatingElement` `:177-185`, `missingRequiredElement` `:130-136`) and its `StrictErrorHandler` counterpart (`:43`-`:91`) |
-| 18 | `extensionContainsValueAndNestedExtensions` had no scenario | **addressed** | `model.json.022`, plus `model.json.023` for the other fatal case. `LenientErrorHandler.java:52-53` sets `myErrorOnInvalidValue = true` and `myErrorOnInvalidExtension = true`; `:97-105` shows the blank-value exemption that `model.json.023` and `codegen.cardinality.005` both rely on; the class javadoc at `:28-45` says these are the only two |
-| 19 | `path.oracle.009` keyed the Quantity comparison off the wrong side | **addressed** | Now keyed off the result item's runtime type. `FHIRPathTests.java:291-296`: `if (outcome.get(i) instanceof Quantity) { Quantity q = fp.parseQuantityString(v); assertTrue(outcome.get(i).equalsDeep(q)); }`. The non-Quantity branch asserts `instanceof PrimitiveType` and fails otherwise, which `path.oracle.009`'s last clause now states |
-| 20 | Gate treatment of cases HAPI structurally cannot pass | **addressed** | New `path.oracle.016` plus the `hapi-cannot-pass` status in `path.oracle.011` and `ahead-of-hapi` in `path.oracle.012`. `FHIRPathTests.java:218-222` reads neither `context` nor `contextType` and always calls `fp.check(res, "Resource", res.getResourceType(), res.getResourceType(), node)`, so the premise holds, and the four named pairs do differ only by those attributes |
-| 21 | `path.strictness.002/005` needed the flag ordering | **addressed** | `path.strictness.002` is exactly right. `FHIRPathTests.java:220/222` calls `check(...)`; `:234-235` then calls `setDoNotEnforceAsCaseSensitive(false)` and `setDoNotEnforceAsSingletonRule(false)`; `:239` evaluates. `fp` is `private static` (`:119`), so the "only the first case's check pass sees the initial `true` values" clause is correct too. `path.strictness.001` correctly attributes the defaults to `initFlags()` (`:211-216`, `!isR5Plus`) |
+| 1 | Three of `IParserErrorHandler`'s ten callbacks have no scenario (blocking) | **addressed** | `model.json.024` (`containedResourceWithNoId`), `model.json.025` (`unknownReference`) and `model.canonical.007` (`invalidInternalReference`) added, each with the lenient diagnostic, the surviving resource, and the strict error with its HAPI code. Codes verified: `1819` (`StrictErrorHandler.java:38-40`), `1826` (`:94-97`), `2724` (`:100-105`); lenient log texts at `LenientErrorHandler.java:75-79`, `:207-211`, `:214-221`. `design.md:200-209` now carries the full ten-callback table and every callback maps to a scenario |
+| 2 | `path.oracle.002`'s attribute inventory incomplete, fatally (blocking) | **addressed, and now exhaustive** | I re-enumerated every attribute in the pinned file by XML walk. Result, per element: `tests` {`name`,`description`,`reference`}; `group` {`name`(103),`description`(4),`reference`(1),`mode`(2)}; `test` {`name`(1191),`inputfile`(1101),`description`(106),`predicate`(2),`mode`(11),`checkOrderedFunctions`(1),`ordered`(1),`version`(31),`testing`(153),`context`(38),`contextType`(35)}; `output` {`type`(1032)}; `expression` {`invalid`(63),`mode`(1)}. The scenario's five lists match exactly, and every value domain it records matches: `expression/@invalid` {syntax 7, semantic 29, execution 27}, `expression/@mode` {strict}, `test/@mode` {strict 5, element 6}, `group/@mode` {semantic 1, custom 1}, `test/@predicate` {true,false}, `test/@ordered` {false}, `test/@checkOrderedFunctions` {true}, `test/@version` {2.1.0}. The expression-level `mode` is no longer unhandled: `path.oracle.017` was added for it, and its claim that the outcome cannot depend on the attribute is right — `doSQLOnFHIRCheck` aside, nothing in the type pass gates on a mode, and `iif`'s first parameter is typed against a singleton boolean unconditionally |
+| 3 | The `@`/`@T` prefix on a temporal expectation | **addressed, both halves** | `path.oracle.008` now states the prefix and names the rule. Verified: `BaseDateTimeType.java:1069-1072` returns `"@" + primitiveValue()`, `TimeType.java:147-150` returns `"@T" + primitiveValue()`, `PrimitiveType.java:259-261` returns `primitiveValue()`. The ordered branch at `FHIRPathTests.java:301-308` compares against `fpValue()`. `path.oracle.007` now states the unordered branch separately and correctly: `FHIRPathTests.java:265-283` uses `fp.convertToString` for a `Quantity` and `((PrimitiveType) …).asStringValue()` otherwise — no prefix — and matches existentially on `(type absent or equal) AND (body absent or equal)`, consuming nothing. I confirmed the one `ordered="false"` case is `testMiscellaneousAccessorTests/testExpressions` at `:321`, and that 71 of 1,103 `<output>` elements carry no `type` |
+| 4 | `path.env.015` mis-described `NOVALUE` and omitted the implicit override | **addressed, now correct** | The mode sites are exactly as the rewritten scenario states. `EXPLICIT`: two sites only, `:1497` (evaluation constant node) and `:1610` (check constant node). `NOVALUE`: one site only, `:1586`, reached under `atEntry && focus == null` in the type pass's `case Name` (`:1578-1586`), and `executeContextType` at `:3222-3227` throws `FHIRPATH_HO_HOST_SERVICES` with no host service, which is the clause `path.env.015` adds. `IMPLICIT_BEFORE`: `:3184-3191`, gated on `atEntry && context.appInfo != null && hostServices != null`, **before** the uppercase leading-type-name special case (`:3192`) and before `getChildrenByName` (`:3209`), returning the host answer and never navigating when it is non-empty. `IMPLICIT_AFTER`: `:3211-3215`, gated additionally on `result.isEmpty()`. New `path.env.016` and `path.env.017` state both, and `DEV-0010` records the divergence |
+| 5 | `log` unspecified, `takeLog` destructive | **addressed** | `path.utility.001` now states the take-and-clear semantics (`:6692-6698`: `takeLog` returns the buffer then assigns a fresh `StringBuilder`; `hasLog` at `:6687-6689`) and the entry format (`:927-944`: name, `": "`, items joined by `","`, entries joined by `"; "`). New `path.utility.028` states the host hook: `:928` is `if (hostServices == null || !hostServices.log(name, contents))`, so a `true` return suppresses the buffer. The private `log(...)` has exactly two callers, both in `funcTrace` (`:5628`, `:5630`); `Math.log` at `:4209` and `customLog` at `:4244` are unrelated, as the scenario says |
+| 6 | `path.check.015-019` named an oracle that cannot grade them | **addressed** | `spec.md:101` now maps `path.check.015`-`019` to `path-check-warnings`, an in-process unit oracle whose selector is the warning message id, and `spec.md:100` narrows the suite row to "`path.check.*` except `015`-`019`". `model.json.024`, `.025` and `model.canonical.007` get the matching `model-parser-errors` row at `spec.md:102`. Both names are used consistently in `spec.md`, `tasks.md` and `design.md`, and both have a build task (`4a`, `5a`) with the scenario ids they satisfy. `spec.md:133-137` restates that these eight are graded by neither the suite nor the differential, so no scenario in the delta is now without a reachable oracle |
 
-Also checked and found correct, beyond the standing findings:
-`path.compare.001-004` and `DEV-0003` against `:2418` versus `:2465`/`:2513`/
-`:2563` (`<` omits `unsignedInt`/`positiveInt`, the three mirrors include them);
-`path.datetime.007` against `DateTimeUtil.getDatePrecision` (strips separators
-and returns the length, so `today()` gives 8) and `funcPrecision` `:4378-4394`;
-`path.lexer.015/016` against `FHIRLexer.java:209` and `FHIRPathEngine.java:334`;
-`path.oracle.014` against the R4 `Function` enum, which has no `section`,
-`entry`, `entryIn`, `resources`, `resourcesIn`, `sameSubject` or `hasCoding`;
-and the whole `Function` and `Operation` enums for uncovered members — none.
+## The revision's own claims about the source — all verified
 
----
+Each of these is load-bearing in the new text, so I checked each against the
+pinned code rather than against the delta.
 
-## Findings
+| Claim | Verdict | Evidence |
+|---|---|---|
+| In the R4 contained-resource state the resource **is** appended to `contained` with no `id`, merely withheld from the id map, and HAPI's own comment contradicts the code | **correct** | `ParserState.java:436-455` (`ContainedResourcesStateHl7Org.wereBack`). The comment at `:442-443` says "we don't keep the resource because it's useless"; `:454` then runs `def.getChildByName("contained").getMutator().addValue(preResCurrentElement, res)` **unconditionally**, outside the `if`/`else`. Only the `getContainedResources().put(...)` at `:447-449` is inside the `else`. The HAPI-structures sibling at `:395-416` is the same shape |
+| `weaveContainedResources` resolves only refs longer than a bare `#` | **correct** | `ParserState.java:1277-1292`: `if (isNotBlank(ref))` then `if (ref.startsWith("#") && ref.length() > 1)`. A bare `#` and a blank reference are neither resolved nor diagnosed. The pass runs from `postProcess` (`:1319`, `:1364`), i.e. after the whole document, so a forward reference resolves — which is what `model.json.025` asserts |
+| `isValidInternalReference` exempts exactly `"#"` and non-local references | **correct** | `BaseParser.java:269-274`: `return !ref.isLocal() || ref.getValue().equals("#") || theContext.getContainedResources().referenceMatchesAContainedResource(ref);`. The call is guarded by `else` on `if (isBlank(ref.getIdPart()))` at `:200`, so a blank id part takes the contained-resource-naming branch and is never diagnosed — exactly `model.canonical.007`'s third clause |
+| `invalidInternalReference` is the only encode-side condition | **correct** | `grep 'myErrorHandler\.' BaseParser.java JsonParser.java XmlParser.java` returns one hit, `BaseParser.java:247`. Every other callback fires from `ParserState` |
+| `fpValue()` has no caller in the engine | **correct** | Across the whole of `reference/org.hl7.fhir.core`, the only callers are the three per-version `FHIRPathTests` harnesses (R4 at `:301`, `:304`, `:306`, `:308`). The three implementations are the only definitions. So the prefix really is a property of the harness's comparison, as `path.oracle.008` and `docs/deviations.md`'s "considered and not recorded" entry both say |
+| The private `log(...)` has exactly two callers, both in `funcTrace` | **correct** | `:5628` and `:5630`, in `funcTrace` (`:5622-5632`) |
+| `IHostApplicationServices` has exactly ten methods | **correct** | `resolveConstant`, `resolveConstantType`, `log`, `resolveFunction`, `checkFunction`, `executeFunction`, `resolveReference`, `conformsToProfile`, `resolveValueSet`, `paramIsType` (`IHostApplicationServices.java:51`, `71`, `80`, `88`, `97`, `105`, `123`, `125`, `130`, `138`). `path.utility.028`'s closing inventory assigns a scenario to each, and I checked the nine cross-references it names resolve to scenarios that exist |
+| Exactly nine distinct check-pass warning ids | **correct** | The 12 `typeWarnings.add` sites (`:1646`, `:1649`, `:1972`, `:1974`, `:1980`, `:1983`, `:3302`, `:3579`, `:3588`, `:3783`, `:3834`, `:3841`) carry 9 distinct `I18nConstants` ids: `FHIRPATH_CHOICE_NO_TYPE_SPECIFIER`, `_SPURIOUS_TYPE_SPECIFIER`, `FHIRPATH_COLLECTION_STATUS_OPERATION_LEFT`, `_RIGHT`, `_PARAMETER`, `_CONTEXT`, `FHIRPATH_NOT_A_COLLECTION`, `FHIRPATH_UNKNOWN_EXTENSION`, `FHIRPATH_OFTYPE_IMPOSSIBLE`. A tenth would fail `path.check.015`, as it requires |
+| `atEntry` propagates into function arguments, so `IMPLICIT_BEFORE`'s call sites are broader than the leading name of the whole expression | **correct** | The list-level `execute` (`:1467`) passes `atEntry` straight into the per-item `execute` (`:1482`) inside the per-focus-item loop, and 56 call sites in the engine evaluate a function parameter with `execute(..., exp.getParameters().get(n), true)` — e.g. `funcWhere` at `:6255`, `funcTrace` at `:5623`. So the host is asked once per focus item at the entry of each sub-expression, which is what `path.env.016` and `design.md:434-440` say |
+| `unknownAttribute` is reachable in JSON mode via an `id` property | **correct** | `ParserState.java:1517-1527` (`PrimitiveState.attributeValue`): an `id` on an instance that is none of `IIdentifiableElement`, `IBaseElement`, `IBaseResource` calls `unknownAttribute` with a `ParseLocation`. The generic `BaseState.attributeValue` at `:282-284` is the other site. Worth knowing for the implementer: `ElementCompositeState.attributeValue` at `:616-621` routes a **non**-`id` attribute to `incorrectJsonType` in JSON mode and to `unknownAttribute` only in XML mode — so `model.json.004`'s JSON wording must not be read as covering that third site |
+| The four constant modes map one-for-one onto HAPI's server-facing wrapper | **correct** | `IFhirPathEvaluationContext.java:38-47` declares the same four, with the javadoc at `:31-32` stating it "matches org.hl7.fhir.core 1-to-1"; `FhirPathR4.java:106-113` is an exhaustive four-arm `switch`. The wrapper's own `log` returns `false` (`FhirPathR4.java:128-131`), so HAPI's server never suppresses the engine buffer — consistent with `path.utility.028` |
 
-### 1. Three of `IParserErrorHandler`'s ten callbacks have no scenario and no out-of-scope note (blocking)
+## The new and rewritten scenarios say what the code does
 
-`specs/model/spec.md:96-100` says `frevo-model` "SHALL decode the R4 JSON
-representation as the parser the starter actually uses does … and SHALL offer the
-two parse modes HAPI offers". `IParserErrorHandler` has exactly ten callbacks;
-seven are now covered (finding 17 above). Three are not, in either mode:
+Spot-checked beyond the claims above:
 
-- **`containedResourceWithNoId`.** `ParserState.java:399-415` and `:437-452`: a
-  contained resource with no `id` is still appended to the parent's `contained`
-  list, but is **not** put into the id→resource map, so the later
-  `weaveContainedResources` pass cannot find it. Lenient logs
-  (`LenientErrorHandler.java:73-77`); strict throws `DataFormatException`
-  `Msg.code(1819)` (`StrictErrorHandler.java:38-40`). Nothing in the delta says
-  a contained resource without an `id` survives a lenient decode, and
-  `model.json.006` covers only the *with*-`id` case.
-- **`unknownReference`.** `ParserState.java:1277-1293`
-  (`weaveContainedResources`): a `#id` reference whose target is not among
-  `contained` calls `myErrorHandler.unknownReference(null, ref)`. Lenient logs;
-  strict throws `Msg.code(1826)` (`StrictErrorHandler.java:94-97`). This
-  interacts directly with `path.utility.017`, which specifies the resolve-side
-  behaviour of the same dangling reference — the decode-side diagnostic is
-  unspecified.
-- **`invalidInternalReference`.** `BaseParser.java:245-250`, on the **encode**
-  path (`determineReferenceText`): serialising a resource whose reference starts
-  with `#` but matches no contained resource calls it. Lenient logs; strict
-  throws `Msg.code(2724)` (`StrictErrorHandler.java:100-105`). The canonical
-  serialisation requirement (`specs/model/spec.md:355-359`) has no scenario for
-  it, and it is the only error condition on the encode side.
+- `path.check.016` against `checkCardinalityForComparabilitySame` (`:1971-1976`)
+  and `checkCardinalityForSingle` (`:1978-1986`) — the left/right split is on
+  `isList()`, and the parameter and context variants are `checkParamTypes`
+  (`:3833-3835`) and `checkSingleton` (`:3839-3843`). All warn, none throws.
+- `path.check.017` against `doSQLOnFHIRCheck` (`:1641-1652`): gated on
+  `emitSQLonFHIRWarning`, `FHIRPATH_CHOICE_NO_TYPE_SPECIFIER` when the focus is
+  a choice and the inner node is not `OfType`, `_SPURIOUS_TYPE_SPECIFIER` when
+  it is not a choice and the inner node is `OfType`. Exactly the scenario's
+  three cases.
+- `path.check.019` against the surfaces: only the three `checkOnTypes`
+  overloads (`:477`, `:532`, `:539`) `typeWarnings.clear()` and then
+  `warnings.addAll(typeWarnings)` (`:528`, `:535`, `:542`); the six plain
+  `check(...)` overloads (`:405`, `:421`, `:557`, `:596`, `:625`, `:631`) take
+  no list and never clear. The clear is at the **start** of a
+  warning-taking check, which makes the scenario's no-leak clause observably
+  exact.
+- `model.json.014` against `JsonParser.java:1459-1462`: a repeating element
+  given a single object calls `incorrectJsonType(ARRAY expected, OBJECT found)`
+  and then parses the one entry anyway — which is what the scenario says. (See
+  note 2 below for `design.md`'s table.)
+- `model.json.015` against `ParserState.java:660-673`: a `0..1` child seen
+  twice calls `unexpectedRepeatingElement` and pushes
+  `SwallowChildrenWholeState`, so the first repetition is kept.
+- `path.api.*` against the engine's public surface. I listed every `public`
+  member of `FHIRPathEngine` (61 of them) and confirmed the delta's omissions
+  are deliberate and harmless: `parsePartial`, `evaluateDefinition`,
+  `getElementDefinition`, `bytesToHex`/`hexStringToByteArray`,
+  `makeIdentifier`, `forLog`, `getWorker`, `getProfileUtilities` and
+  `getTerminologyServiceOptions` are not on the starter's `IFhirPath` surface
+  and are not reached by any caller this change ships. `parseQuantityString`
+  is covered by `path.oracle.009`, `convertToString` by `path.oracle.007`.
 
-The text must either add a scenario for each — lenient diagnostic plus strict
-error, with the path and the message's identifying content, in the same shape as
-`model.json.015` — or add an explicit out-of-scope row naming the change that
-covers it. Leaving them unstated means strict mode ships three error conditions
-short of HAPI's and lenient mode three diagnostics short, and the round-trip
-oracle cannot catch it because the R4 example package contains no dangling `#`
-reference.
+## Noted, no action required to unblock
 
-### 2. `path.oracle.002`'s attribute inventory is incomplete, and the scenario makes that fatal (blocking)
+1. **`tasks.md:674` still cites `DEBT-0006`.** `docs/deviations.md`'s `DEV-0010`
+   correctly carries `Debt: DEBT-0010`, and `DEBT-0010` exists on
+   `chore/tech-debt-0010` (`### DEBT-0010 — a Frevo host service can shadow a
+   real element, and nothing reports it`, origin `DEV-0010`, landing at task
+   47a). Task 61a still reads "`DEV-0010` needs `DEBT-0006` added to
+   `docs/tech-debt.md`". `DEBT-0006` on `main` is the **paid**
+   `r4-example-roundtrip` entry; following that sentence would edit an
+   unrelated register entry. Correct the id to `DEBT-0010` before merge, and
+   drop the "cannot be written from this branch" clause — the entry already
+   exists on its own branch. This is the only place in the artifacts that still
+   names `DEBT-0006`.
+2. **`design.md:204` maps `unexpectedRepeatingElement` to `model.json.014`.**
+   `model.json.014` is an `incorrectJsonType` case
+   (`JsonParser.java:1461`); `unexpectedRepeatingElement` is `model.json.015`
+   alone (`ParserState.java:669`). The callback is still covered and the
+   normative scenario is right, so nothing is missing — but the design table
+   would send an implementer to the wrong diagnostic for `.014`.
+3. **`model.json.016` and `model.json.018` give strict mode two errors HAPI
+   has no callback for.** Both scenarios say so themselves (a duplicate JSON
+   key, and `null` in a non-primitive array), and `model.json.021` makes every
+   lenient diagnostic a strict error by rule, so the behaviour is specified and
+   testable. It costs no parity: `reference/hapi-fhir-jpaserver-starter/src`
+   contains no occurrence of `ParserErrorHandler`, `StrictErrorHandler` or
+   `LenientErrorHandler`, so the starter never selects strict mode and the
+   differential harness cannot reach it. `docs/deviations.md`'s "Lenient
+   request parsing" entry currently says Frevo "keeps both modes and the same
+   default, so it matches HAPI rather than differing from it"; a clause noting
+   these two strict-only additions would make the register exactly true.
+4. **`path.check.018`'s not-a-collection clause is vaguer than the code.** It
+   says "a navigation into a non-collection where a collection is expected".
+   The actual trigger is `first`, `last`, `tail`, `skip` or `take` applied to a
+   focus whose collection status is `SINGLETON` (`:3300-3303`). An oracle
+   author would probably land on a working expression, but naming the five
+   functions would remove the guess.
+5. **`setLocation` (`:236`) still has no scenario.** Carried unchanged from pass
+   2: it is observable (`:574-576`, `:586-588` append a `FHIRPATH_LOCATION`
+   clause when `location` is non-null), but it defaults to `null`, no HAPI
+   wrapper and no caller this change ships sets it, and `path.errors.002`
+   specifies the rest of the message. Worth a line when `add-validator-core`
+   arrives.
+6. **`design.md`'s `path-extract-patient` paragraph says the engine asks the
+   host service "once per expression".** It is once per focus item at the entry
+   of each sub-expression (`:1481-1483` inside the per-item loop). The budget
+   argument the paragraph makes is strengthened by that, not weakened.
 
-`specs/path/spec.md:2289-2296` lists thirteen attributes and then says "an
-attribute it does not understand fails the run rather than being ignored". An
-exhaustive attribute enumeration of the pinned file gives:
+## Deviation register — no approval is claimed that did not happen
 
-| Element | Attributes present |
-|---|---|
-| `tests` (root) | `name`, `description`, **`reference`** |
-| `group` | `name`, `description`, `mode`, **`reference`** |
-| `test` | `name`, `description`, `inputfile`, `mode`, `context`, `contextType`, `version`, `testing`, `predicate`, `ordered`, `checkOrderedFunctions` |
-| `expression` | `invalid`, **`mode`** |
-| `output` | `type` |
-
-Three are unaccounted for. The one that bites hardest is **`mode` on
-`<expression>`**: `tests-fhir-r4.xml:625` is
-`<expression mode="strict" invalid="semantic">iif('non boolean criteria', …)</expression>`
-in `testIif/testIif6` — the only expression-level `mode` in the file, and one of
-the 29 cases `path.check.002` requires to fail the check. `reference` appears on
-the root `<tests>` element and on `<group name="from-Zulip">`
-(`tests-fhir-r4.xml:1583`). A harness built exactly to this scenario fails the
-run on the pinned suite, which is the opposite of what the scenario is for.
-
-The text must list the attributes per element, including `<expression mode>` and
-`reference`, and say what the harness does with the expression-level `mode` given
-that `path.check.002` grades `testIif6`. For what it is worth the outcome does
-not change — `:3441-3444` runs `checkParamTypes` against a singleton boolean
-unconditionally, so `testIif6` fails the check whatever `mode` says — but the
-scenario has to say so rather than leave the attribute unhandled.
-
-### 3. The oracle's expected text for a temporal result carries an `@` prefix, and neither `path.oracle.008` nor `.007` says so
-
-`path.oracle.008` (`specs/path/spec.md:2340-2342`) says the body "must equal the
-result item's FHIRPath string value". That value is `fpValue()`, and for temporal
-types it is **not** the primitive value:
-
-- `org.hl7.fhir.r4/src/main/java/org/hl7/fhir/r4/model/BaseDateTimeType.java:1070-1072`
-  — `fpValue()` returns `"@" + primitiveValue()`;
-- `TimeType.java:148-150` — returns `"@T" + primitiveValue()`;
-- `PrimitiveType.java:259-261` — returns `primitiveValue()` for everything else.
-
-That is why the suite's expectations read
-`<output type="date">@1974-12-25</output>` (`tests-fhir-r4.xml:59`,
-`:1280-1283`). A harness that compares the plain value fails every `date`,
-`dateTime`, `instant` and `time` case in the suite, and the obvious "fix" is to
-strip the `@` from the expectation — which is weakening an oracle, and rule 3
-forbids it.
-
-`path.oracle.007` is under-specified in the same place: the `ordered="false"`
-branch at `FHIRPathTests.java:263-281` uses `fp.convertToString(...)` for a
-`Quantity` and `((PrimitiveType) …).asStringValue()` — **not** `fpValue()`, so no
-`@` prefix — for everything else, and matches each outcome against any expected
-element where `(type absent OR type equal) AND (body absent OR body equal)`. The
-only `ordered="false"` case in the file (`:321`, `testExpressions`) yields
-strings, so the divergence is latent today and surfaces the first time the suite
-is re-pinned.
-
-The text must state the `@`/`@T` prefix for temporal results in
-`path.oracle.008`, and state in `path.oracle.007` that the unordered branch
-compares the plain string value and matches on type-and-value per expected
-element.
-
-### 4. `path.env.015` mis-describes `NOVALUE` and omits the implicit-constant override, which can shadow real navigation
-
-`specs/path/spec.md:1693-1706`. Two problems.
-
-**The mode description is wrong.** It says "the no-value mode is in force during
-the check pass, where only the type is wanted". `NOVALUE` is used at exactly one
-site, `:1585-1586`, and the condition is `atEntry && focus == null` — the type
-pass with **no focus type at all**, which is what `fp.check(null, null, null,
-node)` produces for the suite's 90 no-`inputfile` cases. An explicit `%name` in
-the check pass goes through `EXPLICIT` instead (`:1610`). The enum's own
-documentation agrees: `NOVALUE` is "The FHIRPathEngine was invoked with no focus
-provided", not "resolved for its type".
-
-**The observable behaviour is missing.** `IMPLICIT_BEFORE` and `IMPLICIT_AFTER`
-are not "before or after the expression it appears in":
-
-- `:3183-3191` — at the entry of `execute`, if
-  `context.appInfo != null && hostServices != null`, the engine asks
-  `resolveConstant(..., IMPLICIT_BEFORE)` for the name, and **if the answer is
-  non-empty it returns that answer and never navigates the element**. A host
-  constant therefore shadows a real property of the resource.
-- `:3210-3214` — `IMPLICIT_AFTER` fires only after navigation produced an empty
-  result.
-- Both are gated on `context.appInfo != null`. With a null application context
-  neither mode ever fires, whatever host service is installed.
-
-This is not academic for this port: search-parameter extraction, validation
-invariants and CQL will all pass an `appInfo`, so the shadowing path is live on
-the write path. The text must say which site uses which mode, that
-`IMPLICIT_BEFORE` pre-empts navigation on a non-empty answer, that
-`IMPLICIT_AFTER` is a fall-through on empty, and that both require a non-null
-application context.
-
-### 5. `IHostApplicationServices.log` is unspecified, and `takeLog` is destructive
-
-`path.utility.001` (`specs/path/spec.md:1724-1729`) says only that "the trace log
-is retrievable after evaluation and contains the names the expressions passed to
-`trace`". Two behaviours are missing:
-
-- `:927-928` — `if (hostServices == null || !hostServices.log(name, contents))`
-  the engine appends to its own buffer. A host service whose `log` returns
-  **`true` suppresses the engine's trace buffer entirely**. `log` is the tenth
-  method on `IHostApplicationServices` and now the only one with no scenario;
-  the other nine are covered by `path.env.012/015` and
-  `path.utility.012/015/020/027`.
-- `:6687-6699` — `hasLog()`/`takeLog()`, where `takeLog()` returns the buffer
-  **and resets it**. That is what lets `FHIRPathTests.java:250-252` drain it per
-  case without leakage between cases, and the harness scenarios depend on it.
-
-Add the host hook and the clear-on-take semantics to `path.utility.001`, or give
-them a scenario of their own.
-
-### 6. `path.check.015-019` name an oracle that cannot grade them (minor, but it is a hole in the gate)
-
-`spec.md:93` maps `path.check.*` to "the 29 `invalid="semantic"` cases plus the
-`isSemanticChecks` group". That selector grades pass/fail of the check, not its
-**warning** channel, and the warning list is not visible to a differential
-harness that talks to a live HAPI server over HTTP either. The five new warning
-scenarios are therefore the only scenarios in the delta with no oracle that can
-reach them, and they are not among the sixteen `differential-only` scenarios
-listed at `spec.md:107-112`.
-
-They are perfectly testable — `checkOnTypes(..., warnings)` is a public method
-and the message ids are stable constants — so the fix is to name that as the
-oracle (an in-process unit oracle over the generated R4 model, with the message
-ids as the selector) rather than leave `path.check.*`'s suite selector implying a
-grading it cannot perform.
-
----
-
-## Noted, no action required
-
-- **`setLocation` (`:236`) has no scenario.** It is the one public engine setter
-  without one, and it is observable: `:574-576` and `:586-588` append a
-  `FHIRPATH_LOCATION` clause to every error message when `location` is non-null.
-  It defaults to `null`, no HAPI wrapper and no caller this change ships sets it,
-  and `path.errors.002` specifies the rest of the message, so omitting it costs
-  no parity here. Worth a line when `add-validator-core` arrives, which is the
-  caller that sets it.
-- **`DEV-0007` cites `ENGINE:5462`; `funcExtension` begins at `:5464`.** Two
-  lines, no ambiguity about which method is meant.
-- **`FHIRLexer`'s `metadataFormat` and the engine's `liquidMode` field.** `:334`
-  hard-codes `metadataFormat` to `false` and never threads `liquidMode` into the
-  lexer it constructs, so `path.strictness.010`'s assertion about the off state
-  is correct for a reason slightly stronger than it states. No change needed
-  while liquid mode is out of scope.
+- `docs/deviations.md` references `DEV-0001` … `DEV-0010`; all ten exist, each
+  with an `Area`, `Scenario IDs` line naming scenarios that exist, a chosen
+  behaviour, a `Debt:` field and a `Reviewed:` line.
+- `DEV-0001` … `DEV-0009` carry `Reviewed: 2026-11-08, owner — accepted`.
+- `DEV-0010` carries `Reviewed: pending — raised by add-fhirpath-and-codegen-r4
+  after the 2026-11-08 review of DEV-0001..0009, so it has not been seen by the
+  owner`, and the Entries preamble (`:56-60`) says the same: nine accepted,
+  `DEV-0010` still `pending` and needing its own sign-off.
+- I grepped the whole change directory and `docs/deviations.md` for any claim
+  that `DEV-0010` is accepted, or that all ten were reviewed on 2026-11-08.
+  There is none. `tasks.md:665-675` treats all ten as still to be raised at the
+  checkpoint. The register claims no approval that did not happen.

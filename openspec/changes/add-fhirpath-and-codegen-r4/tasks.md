@@ -671,7 +671,7 @@ checkpoint because it changes what a gate measures.
   checkpoint. An entry whose recorded behaviour turns out to be wrong is
   corrected or deleted, not left standing — an inaccurate deviation is worse
   than none, because it licenses a difference nobody checked. `DEV-0010` needs
-  `DEBT-0006` added to `docs/tech-debt.md`, which lives on `main` and so cannot
+  `DEBT-0010` added to `docs/tech-debt.md`, which lives on `main` and so cannot
   be written from this branch; open that as part of the merge.
 
 - [ ] **62. Update `tasks/graph.yaml` and finalise ADR 0004.** Set this change's
