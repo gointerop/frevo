@@ -189,31 +189,116 @@ pub trait LazyOracle {
 
 /// The codec this oracle grades. Phase C replaces this body with the real one.
 fn codec_under_test() -> Box<dyn LazyOracle> {
-    Box::new(UnboundCodec)
+    Box::new(FrevoCodec)
 }
 
-struct UnboundCodec;
+struct FrevoCodec;
 
-impl LazyOracle for UnboundCodec {
-    fn run(&self, _bytes: &[u8], _ops: &[Op]) -> Result<RunResult, CodecError> {
-        Err(CodecError::NotImplemented)
+impl FrevoCodec {
+    fn owned(bytes: &[u8]) -> std::sync::Arc<[u8]> {
+        // The adapter's copy, not the codec's: the server gets an owned buffer
+        // from the database driver and moves it into the Arc.
+        std::sync::Arc::from(bytes.to_vec().into_boxed_slice())
+    }
+
+    fn drive(
+        resource: &mut frevo_model::Resource,
+        ops: &[Op],
+    ) -> Result<(Vec<ReadResult>, Vec<usize>), CodecError> {
+        let mut reads = Vec::new();
+        let mut counts = Vec::new();
+        for op in ops {
+            match op {
+                Op::Read(path) => {
+                    let found = resource
+                        .read(path)
+                        .map_err(|e| CodecError::Failed(e.to_string()))?;
+                    let (type_name, value) = match found {
+                        Some((type_name, value)) => (Some(type_name), value),
+                        None => (None, None),
+                    };
+                    reads.push(ReadResult {
+                        path: (*path).to_string(),
+                        value,
+                        type_name,
+                        tokens_scanned_so_far: resource.report().tokens_scanned,
+                    });
+                }
+                Op::Count(path) => counts.push(
+                    resource
+                        .count(path)
+                        .map_err(|e| CodecError::Failed(e.to_string()))?,
+                ),
+                Op::Set(path, value) => resource
+                    .set(path, value)
+                    .map_err(|e| CodecError::Failed(e.to_string()))?,
+                Op::MaterialiseAll => resource
+                    .materialise_all()
+                    .map_err(|e| CodecError::Failed(e.to_string()))?,
+            }
+        }
+        Ok((reads, counts))
+    }
+
+    fn finish(
+        resource: &frevo_model::Resource,
+        reads: Vec<ReadResult>,
+        counts: Vec<usize>,
+    ) -> Result<RunResult, CodecError> {
+        let output = resource
+            .to_stored_vec()
+            .map_err(|e| CodecError::Failed(e.to_string()))?;
+        let report = resource.report();
+        Ok(RunResult {
+            reads,
+            counts,
+            tokens_scanned: report.tokens_scanned,
+            size_proportional_allocations: report.size_proportional_allocations,
+            materialised: report.materialised,
+            xhtml_validated: report.xhtml_validated,
+            output,
+            modified: resource.is_modified(),
+        })
+    }
+}
+
+impl LazyOracle for FrevoCodec {
+    fn run(&self, bytes: &[u8], ops: &[Op]) -> Result<RunResult, CodecError> {
+        let mut resource = frevo_model::Resource::from_stored(Self::owned(bytes));
+        let (reads, counts) = Self::drive(&mut resource, ops)?;
+        Self::finish(&resource, reads, counts)
     }
 
     fn build(
         &self,
-        _resource_type: &str,
-        _properties: &[(&str, &str)],
-        _ops: &[Op],
+        resource_type: &str,
+        properties: &[(&str, &str)],
+        ops: &[Op],
     ) -> Result<RunResult, CodecError> {
-        Err(CodecError::NotImplemented)
+        let mut resource = frevo_model::Resource::build(resource_type);
+        for (path, value) in properties {
+            resource
+                .set(path, value)
+                .map_err(|e| CodecError::Failed(e.to_string()))?;
+        }
+        let (reads, counts) = Self::drive(&mut resource, ops)?;
+        Self::finish(&resource, reads, counts)
     }
 
     fn build_then_canonicalise(
         &self,
-        _resource_type: &str,
-        _properties: &[(&str, &str)],
+        resource_type: &str,
+        properties: &[(&str, &str)],
     ) -> Result<Vec<u8>, CodecError> {
-        Err(CodecError::NotImplemented)
+        let mut resource = frevo_model::Resource::build(resource_type);
+        for (path, value) in properties {
+            resource
+                .set(path, value)
+                .map_err(|e| CodecError::Failed(e.to_string()))?;
+        }
+        resource
+            .to_canonical_vec()
+            .map_err(|e| CodecError::Failed(e.to_string()))
     }
 }
 

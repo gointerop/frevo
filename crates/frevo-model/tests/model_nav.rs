@@ -161,62 +161,118 @@ pub trait ModelInfo {
 /// The `frevo-model` node this oracle grades. Phase C replaces this body with
 /// the real one.
 fn node_under_test() -> Box<dyn NavOracle> {
-    Box::new(UnboundModel)
+    Box::new(FrevoModel)
 }
 
 /// The `frevo-model` model information this oracle grades.
 fn model_under_test() -> Box<dyn ModelInfo> {
-    Box::new(UnboundModel)
+    Box::new(FrevoModel)
 }
 
-struct UnboundModel;
+struct FrevoModel;
 
-impl NavOracle for UnboundModel {
-    fn type_name_at(&self, _doc: &str, _path: &str) -> Result<String, NavError> {
-        Err(NavError::NotImplemented)
+impl FrevoModel {
+    fn node(doc: &str, path: &str) -> Result<frevo_model::ResourceNode, NavError> {
+        let bytes = std::sync::Arc::from(doc.as_bytes().to_vec().into_boxed_slice());
+        let resource = frevo_model::Resource::from_stored(bytes);
+        let stored = std::sync::Arc::clone(
+            resource
+                .stored()
+                .ok_or_else(|| NavError::Failed("not a stored resource".to_string()))?,
+        );
+        frevo_model::ResourceNode::at(stored, path)
+            .map_err(|e| NavError::Failed(e.to_string()))?
+            .ok_or_else(|| NavError::Failed(format!("{path} is absent")))
     }
 
-    fn is_resource_at(&self, _doc: &str, _path: &str) -> Result<bool, NavError> {
-        Err(NavError::NotImplemented)
+    fn child_of(name: String, value: &frevo_path::Value) -> Child {
+        let node = value.as_node().expect("a FHIR element is a node");
+        Child {
+            name,
+            type_name: frevo_path::Node::type_name(node.as_ref()).to_string(),
+            primitive: frevo_path::Node::primitive(node.as_ref())
+                .map(|primitive| primitive.lexical),
+            is_resource: frevo_path::Node::is_resource(node.as_ref()),
+        }
+    }
+}
+
+impl NavOracle for FrevoModel {
+    fn type_name_at(&self, doc: &str, path: &str) -> Result<String, NavError> {
+        Ok(frevo_path::Node::type_name(&Self::node(doc, path)?).to_string())
     }
 
-    fn children(&self, _doc: &str, _path: &str, _name: &str) -> Result<Vec<Child>, NavError> {
-        Err(NavError::NotImplemented)
+    fn is_resource_at(&self, doc: &str, path: &str) -> Result<bool, NavError> {
+        Ok(frevo_path::Node::is_resource(&Self::node(doc, path)?))
     }
 
-    fn all_children(&self, _doc: &str, _path: &str) -> Result<Vec<Child>, NavError> {
-        Err(NavError::NotImplemented)
+    fn children(&self, doc: &str, path: &str, name: &str) -> Result<Vec<Child>, NavError> {
+        let node = Self::node(doc, path)?;
+        let values =
+            frevo_path::Node::children(&node, name).map_err(|e| NavError::Failed(e.to_string()))?;
+        Ok(values
+            .iter()
+            .map(|value| Self::child_of(name.to_string(), value))
+            .collect())
     }
 
-    fn primitive_at(&self, _doc: &str, _path: &str) -> Result<Option<String>, NavError> {
-        Err(NavError::NotImplemented)
+    fn all_children(&self, doc: &str, path: &str) -> Result<Vec<Child>, NavError> {
+        let node = Self::node(doc, path)?;
+        let values =
+            frevo_path::Node::all_children(&node).map_err(|e| NavError::Failed(e.to_string()))?;
+        Ok(values
+            .iter()
+            .map(|(name, value)| Self::child_of(name.clone(), value))
+            .collect())
+    }
+
+    fn primitive_at(&self, doc: &str, path: &str) -> Result<Option<String>, NavError> {
+        Ok(frevo_path::Node::primitive(&Self::node(doc, path)?).map(|primitive| primitive.lexical))
     }
 
     fn children_outliving_their_parent(
         &self,
-        _doc: &str,
-        _path: &str,
-        _name: &str,
+        doc: &str,
+        path: &str,
+        name: &str,
     ) -> Result<Vec<Child>, NavError> {
-        Err(NavError::NotImplemented)
+        let children = {
+            let node = Self::node(doc, path)?;
+            frevo_path::Node::children(&node, name).map_err(|e| NavError::Failed(e.to_string()))?
+        };
+        Ok(children
+            .iter()
+            .map(|value| Self::child_of(name.to_string(), value))
+            .collect())
     }
 }
 
-impl ModelInfo for UnboundModel {
-    fn base_type(&self, _type_name: &str) -> Result<Option<String>, NavError> {
-        Err(NavError::NotImplemented)
+impl ModelInfo for FrevoModel {
+    fn base_type(&self, type_name: &str) -> Result<Option<String>, NavError> {
+        Ok(
+            frevo_path::Model::base_type(&frevo_model::R4Model::default(), type_name)
+                .map(str::to_owned),
+        )
     }
 
-    fn derives_from(&self, _type_name: &str, _ancestor: &str) -> Result<bool, NavError> {
-        Err(NavError::NotImplemented)
+    fn derives_from(&self, type_name: &str, ancestor: &str) -> Result<bool, NavError> {
+        Ok(frevo_path::Model::derives_from(
+            &frevo_model::R4Model::default(),
+            type_name,
+            ancestor,
+        ))
     }
 
     fn element_types(
         &self,
-        _type_name: &str,
-        _element: &str,
+        type_name: &str,
+        element: &str,
     ) -> Result<Option<Vec<String>>, NavError> {
-        Err(NavError::NotImplemented)
+        Ok(frevo_path::Model::element_types(
+            &frevo_model::R4Model::default(),
+            type_name,
+            element,
+        ))
     }
 }
 
