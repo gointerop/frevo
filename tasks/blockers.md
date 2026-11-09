@@ -297,3 +297,76 @@ arbitrary-precision decimal crate was added. `frevo_path::Decimal` takes the
 fallback the design names — the lexical form plus an integer mantissa and scale
 — so `1.58700` re-serialises as `1.58700` and reports a precision of 5 with no
 binary-float path and no new dependency.
+
+## 2026-11-08 — `add-fhirpath-and-codegen-r4` — tasks 6 and 7, one decision recorded
+
+Both tasks are **done and committed**; nothing here blocks them. One decision is
+recorded because the same question was answered differently by the
+`frevo-model` implementer an hour earlier, and the project should answer it once.
+
+### 1. The oracle seam was rebound, where the `frevo-model` implementer declined to
+
+`crates/frevo-codegen/tests/codegen_r4.rs` has the same construction as the two
+`frevo-model` oracles in finding 1 of the previous entry: a `Codegen` trait and
+its whole data model are defined *inside* the integration test binary, and
+`generator_under_test()` returns an `UnboundGenerator` whose every method answers
+`NotImplemented`. No file under `crates/frevo-codegen/src/**` can replace it, so
+none of the 49 tests can go green without an edit to the test file.
+
+The file's own documentation reserves exactly that edit:
+
+```rust
+/// The generator this oracle grades.
+///
+/// Tasks 6 to 14 replace this body with the real one. Nothing else in this file
+/// changes when they do.
+fn generator_under_test() -> Box<dyn Codegen> {
+```
+
+**What was done.** The seam was rebound, and only the seam. `src/bind.rs`
+exports `frevo_codegen::bind_oracle!`, a macro that expands at the call site to
+the struct and the `impl Codegen for` it — the impl has to be expanded in the
+test crate, because the trait and its types are test-local and no library can
+name them. The oracle file's diff is the function body plus one macro call, and
+the 69-line stub it replaces:
+
+```
+crates/frevo-codegen/tests/codegen_r4.rs | 74 +++-----------------------------
+```
+
+No assertion, constant, helper, fixture or `#[test]` was touched. Tasks 8 to 14
+extend the macro in `src/bind.rs`; the oracle file does not change again.
+
+**Why this reading and not the other.** The brief for tasks 6 and 7 names
+`crates/frevo-codegen/**` — `src/` and all — as the files this work may edit,
+and names the oracle as "the tests that must go green ... all failing on an
+unbound seam". The brief for tasks 16 and 17 said instead "do not touch anything
+under `crates/frevo-model/tests/`". The prohibition both briefs share is on
+weakening a test; rebinding a documented seam weakens nothing, and the
+alternative is that no task in this change can ever turn its tests green.
+
+**Decision needed.** Rule once, for every oracle in this change, and make the
+two briefs agree: either the implementer rebinds the documented seam, or the
+oracle author ships the binding and the implementer never touches `tests/`. The
+second needs someone to rebind `model_bytes_lazy_perf.rs` and `model_nav.rs`,
+where 24 of 30 tests are measured to pass and are committed red.
+
+### 2. `codegen.inputs.005` is unconditional, where the design says conditional
+
+`tasks.md` task 7 asks for "the `reference/`-conditional cross-check", and
+`design.md` section 2 says "a test that runs only when `reference/` is present".
+The test as written is not conditional: it panics, naming `bash
+reference/clone.sh`, if the cross-check cannot run. The implementation matches —
+a missing `reference/` is a loud error and never a silent pass, because the
+alternative would be a report that satisfies every assertion without comparing
+anything.
+
+So the gate now requires `reference/hapi-fhir` at
+`7ab4c7c7c49281496faa1b3c2498a652457669ae` to be cloned before
+`cargo test -p frevo-codegen` is green. That is a CI prerequisite nobody has
+written down. No change was made to the test.
+
+**Decision needed.** Either CI clones `reference/` for this gate, or the
+oracle's author makes the test skip-with-a-report when the tree is absent. The
+first is the better answer: a cross-check that silently skips is a cross-check
+nobody runs.
