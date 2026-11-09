@@ -9,3 +9,10 @@ repository.workspace = true
 description = "Code generator: FHIR StructureDefinitions to Rust models, codecs and search-parameter tables."
 
 [dependencies]
+# JSON is the authoritative form of the input package. serde_json is already a
+# workspace dependency (frevo-server uses it) and is already in Cargo.lock, so
+# this adds nothing to the graph the owner has not already sanctioned.
+# Everything else this crate needs -- SHA-256, a cross-check-only XML reader,
+# the command line -- is written here rather than pulled in, because the
+# constitution's dependency rule would otherwise want an ADR per crate.
+serde_json.workspace = true

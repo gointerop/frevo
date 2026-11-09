@@ -1,0 +1,3 @@
+# The input package is fetched, not vendored: 12 MB compressed, 31 MB
+# extracted, and reproducible from the pin in PINS.md. See design.md section 2.
+/fetched/

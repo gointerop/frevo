@@ -101,6 +101,9 @@ dependencies = [
 [[package]]
 name = "frevo-codegen"
 version = "0.0.0"
+dependencies = [
+ "serde_json",
+]
 
 [[package]]
 name = "frevo-config"

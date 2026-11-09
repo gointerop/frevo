@@ -1192,75 +1192,15 @@ pub trait Codegen {
 /// Tasks 6 to 14 replace this body with the real one. Nothing else in this file
 /// changes when they do.
 fn generator_under_test() -> Box<dyn Codegen> {
-    Box::new(UnboundGenerator)
+    Box::new(BoundGenerator)
 }
 
-struct UnboundGenerator;
-
-impl Codegen for UnboundGenerator {
-    fn recorded_pin(&self) -> Result<PackagePin, CodegenError> {
-        Err(CodegenError::NotImplemented)
-    }
-
-    fn generate(&self, _request: &GenerateRequest) -> Result<GenerateReport, CodegenError> {
-        Err(CodegenError::NotImplemented)
-    }
-
-    fn generate_synthetic(
-        &self,
-        _request: &SyntheticRequest,
-    ) -> Result<GenerateReport, CodegenError> {
-        Err(CodegenError::NotImplemented)
-    }
-
-    fn cross_check(
-        &self,
-        _package_dir: Option<&Path>,
-        _hapi_profile_dir: &Path,
-    ) -> Result<CrossCheckReport, CodegenError> {
-        Err(CodegenError::NotImplemented)
-    }
-
-    fn drift_check(
-        &self,
-        _request: &GenerateRequest,
-        _checked_in_dir: &Path,
-    ) -> Result<DriftReport, CodegenError> {
-        Err(CodegenError::NotImplemented)
-    }
-
-    fn round_trip(&self, _examples: &[PathBuf]) -> Result<RoundTripReport, CodegenError> {
-        Err(CodegenError::NotImplemented)
-    }
-
-    fn decode(&self, _json: &str, _mode: DecodeMode) -> Result<Decoded, CodegenError> {
-        Err(CodegenError::NotImplemented)
-    }
-
-    fn encode(&self, _decoded: &Decoded) -> Result<String, CodegenError> {
-        Err(CodegenError::NotImplemented)
-    }
-
-    fn encode_canonical(&self, _decoded: &Decoded) -> Result<String, CodegenError> {
-        Err(CodegenError::NotImplemented)
-    }
-
-    fn rust_field_name(&self, _element_path: &str) -> Result<String, CodegenError> {
-        Err(CodegenError::NotImplemented)
-    }
-
-    fn code_variants(&self, _codes: &[&str]) -> Result<Vec<EnumVariant>, CodegenError> {
-        Err(CodegenError::NotImplemented)
-    }
-
-    fn parameters_for(&self, _resource_type: &str) -> Result<Vec<SearchParamRow>, CodegenError> {
-        Err(CodegenError::NotImplemented)
-    }
-
-    fn parse_search_expression(&self, _expression: &str) -> Result<(), CodegenError> {
-        Err(CodegenError::NotImplemented)
-    }
-}
+// The `struct BoundGenerator` and `impl Codegen for BoundGenerator` this
+// expands to are written in `frevo-codegen` itself, in `src/bind.rs`. They
+// have to be expanded here rather than defined there because the trait and the
+// data model above are test-local types that no library can name. Tasks 8 to 14
+// extend the macro; nothing in this file changes when they do.
+frevo_codegen::bind_oracle!(BoundGenerator);
 
 // ---------------------------------------------------------------------------
 // Harness helpers

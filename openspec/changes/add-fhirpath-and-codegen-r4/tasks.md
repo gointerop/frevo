@@ -154,18 +154,40 @@ checkpoint because it changes what a gate measures.
 
 ## Phase B — `frevo-codegen`
 
-- [ ] **6. Fetch and pin the R4 definition package.** A script that fetches
+- [x] **6. Fetch and pin the R4 definition package.** A script that fetches
   `hl7.fhir.r4.core#4.0.1` into a git-ignored directory and verifies it against a
   SHA-256 recorded in the repository, plus the generator's refusal paths.
   Satisfies `codegen.inputs.001`, `codegen.inputs.002`, `codegen.inputs.003`,
   `codegen.inputs.004`.
+  Done: `crates/frevo-codegen/packages/{fetch.sh,PINS.md,.gitignore}` and
+  `src/{pin,package,sha256,emit,run,error}.rs`. Two digests are recorded, and
+  they check different things — the archive digest `ebd7731d…` before
+  extraction, and the content digest `8af9fe30…` of the extracted tree on every
+  run, because an archive digest says nothing about a tree edited afterwards.
+  SHA-256 is written here rather than taken from a crate, so no new dependency
+  enters the graph; its output was checked against `sha256sum` and against an
+  independent implementation of the same canonical manifest.
 
-- [ ] **7. Read StructureDefinitions and assert the input inventory.** Parse the
+- [x] **7. Read StructureDefinitions and assert the input inventory.** Parse the
   package's definitions, classify them by `kind`, `abstract` and `derivation`,
   and fail the run on a count other than 63 datatypes, 149 resource definitions
   (146 concrete, 2 abstract, 1 logical) and 1,375 SearchParameters. Add the
   `reference/`-conditional cross-check against the HAPI copy at `7ab4c7c7`.
   Satisfies `codegen.inputs.005`, `codegen.inputs.006`.
+  Done: `src/{inventory,crosscheck,xml}.rs`. The package is **not** split the
+  way HAPI's copy is — it ships 658 StructureDefinitions and 1,400
+  SearchParameters in one flat directory — so a scoping rule was needed before
+  any count could be compared. Measured over the whole package and the whole
+  HAPI copy: a definition is the specification's own iff it carries
+  `structuredefinition-standards-status` **and** declares a `derivation` or
+  `abstract = true` (exactly 256, identical URL set to `profile/*.xml`), and
+  within those it is a type rather than a profile on one iff `id == name`
+  (exactly 212 = 63 + 149, leaving exactly the 44 of `profiles-others.xml`).
+  The same stamp selects exactly 1,375 of the 1,400 SearchParameters. All 256
+  definitions agree with HAPI on every snapshot element's path, cardinality and
+  type codes — 0 disagreements. `src/inventory.rs` records the derivation
+  shapes, so a repinned package whose shape differs fails the assertion rather
+  than generating a different model.
 
 - [ ] **8. Generate primitive and complex datatypes.** The 20 primitives with
   their value regexes, the complex types, and the metadata types.
