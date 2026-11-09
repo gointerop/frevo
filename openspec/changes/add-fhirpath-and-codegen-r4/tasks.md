@@ -227,20 +227,32 @@ checkpoint because it changes what a gate measures.
 
 ## Phase C — `frevo-model`
 
-- [ ] **16. Define the `Value`, `Node`, `Model` and `HostServices` traits in
+- [x] **16. Define the `Value`, `Node`, `Model` and `HostServices` traits in
   `frevo-path`.** The seam from `design.md` section 4, with no implementation
   behind it. Adding it here rather than in Phase D is deliberate: `frevo-model`
   depends on these definitions, and `frevo-path` must not depend on
   `frevo-model`.
   Satisfies `path.api.007`, `path.api.008`.
+  Done in `crates/frevo-path/src/seam/`. `Decimal` takes the
+  lexical-form-plus-integer-mantissa fallback `design.md` section 6 names, so no
+  arbitrary-precision crate was added and no new dependency enters the graph.
 
-- [ ] **17. Implement the span-based buffer, the lazy index and pass-through.**
+- [x] **17. Implement the span-based buffer, the lazy index and pass-through.**
   `Arc<[u8]>` plus per-object lazily built index; load-and-serialise-unchanged as
   a byte copy with a zero token counter; reading an element not disturbing
   pass-through; the constructed form serialising in generated element order; the
   two forms indistinguishable to a reader.
   Satisfies `model.bytes.001`, `model.bytes.002`, `model.bytes.003`,
   `model.bytes.004`, `model.bytes.005`, `model.bytes.006`.
+  Done in `crates/frevo-model/src/codec/`. Measured: a pass-through scans **0**
+  JSON tokens, makes **0** size-proportional allocations and hands back the
+  input allocation itself; a lazy read of `Patient.birthDate` scans **39**
+  tokens at 4 KiB and at 64 KiB, against 1,570 for a full decode. **The six
+  oracle tests are still red as committed**: the seam in
+  `crates/frevo-model/tests/model_bytes_lazy_perf.rs` is hard-coded to
+  `UnboundCodec`, which no file under `src/` can replace. They pass when it is
+  rebound. See `tasks/blockers.md`, 2026-11-08, finding 1 — and finding 5, which
+  records that the element-order table is provisional until task 14.
 
 - [ ] **18. Implement lazy materialisation and its instrumentation.** Unread
   siblings, indexed access, counting without materialising, idempotent cached

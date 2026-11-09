@@ -9,3 +9,6 @@ repository.workspace = true
 description = "Generated FHIR resource and datatype models with a lazy, byte-preserving JSON codec."
 
 [dependencies]
+# The evaluation seam: the `Value`, `Node`, `Model` and `HostServices`
+# definitions. The edge runs this way and never the other (`path.api.008`).
+frevo-path = { workspace = true }

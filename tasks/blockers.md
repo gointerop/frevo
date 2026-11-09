@@ -103,3 +103,197 @@ Left in place rather than deleted, because this file is appended to and never
 rewritten, and because a blocker that was raised in good faith and turned out
 not to exist is worth exactly as much as one that did -- it records what the
 next agent need not re-investigate.
+
+---
+
+## 2026-11-08 — `add-fhirpath-and-codegen-r4` — tasks 16 and 17, five findings
+
+**Raised by** `implementer`, after landing the trait seam (task 16) and the
+span-based buffer, lazy index and pass-through (task 17).
+
+The headline is good news and it is recorded here first: **constitution rule 6.1
+holds, measured.** The four findings after it are the ones that need a decision.
+
+### 0. Byte preservation: confirmed, with numbers
+
+`design.md` section 10 names a missed `model.perf.001` as an owner checkpoint
+and says that if pass-through cannot be made a byte copy then the `read-by-id`
+premise in `bench/targets.md` is wrong. It is not wrong.
+
+Over the 4 KiB and 64 KiB `Patient` fixtures the oracle builds, release profile,
+median of 200 after 20 warm-up runs, on the dev box (not the reference
+environment):
+
+| measurement | 4 KiB | 64 KiB |
+|---|---|---|
+| pass-through, JSON tokens scanned | **0** | **0** |
+| pass-through, size-proportional allocations | **0** | **0** |
+| pass-through, elements materialised | **0** | **0** |
+| pass-through, load + serialise to a sink | **0.1–0.3 µs** | **0.1–0.3 µs** |
+| `Resource::untouched_bytes()` returns the input allocation | yes | yes |
+| lazy read of `Patient.birthDate`, tokens | **39** | **39** |
+| full decode, tokens | 1,570 | 25,275 |
+| lazy read / full decode, wall clock | **63–75× cheaper** | — |
+
+`untouched_bytes()` is pointer-identical to the buffer the resource was loaded
+with, asserted in
+`crates/frevo-model/src/codec/tests.rs::a_pass_through_hands_back_the_same_allocation`.
+A read does not disturb it. The token counter for a lazy read is **39 at both
+sizes**, because the index is built incrementally and stops at the element
+asked for: the document can grow arbitrarily after `birthDate` without the read
+getting more expensive. The `read-by-id` ratio in `bench/targets.md` stands on
+this, and nothing here undermines it.
+
+### 1. The two `frevo-model` oracles have no binding, and the implementer cannot add one
+
+`crates/frevo-model/tests/model_bytes_lazy_perf.rs` and
+`crates/frevo-model/tests/model_nav.rs` each hard-code their seam to an unbound
+stub:
+
+```rust
+/// The codec this oracle grades. Phase C replaces this body with the real one.
+fn codec_under_test() -> Box<dyn LazyOracle> {
+    Box::new(UnboundCodec)
+}
+```
+
+`UnboundCodec` returns `CodecError::NotImplemented` from every method, and every
+helper turns that into a panic. The stub is defined *inside the integration test
+binary*, so nothing in `crates/frevo-model/src/**` can replace it: those 30
+tests cannot go green without an edit to a file under
+`crates/frevo-model/tests/`.
+
+The test files' own doc comments say "Phase C replaces this body with the real
+one", so the author intended the implementer to do it. The implementer brief for
+tasks 16 and 17 says the opposite — "Do not touch anything under
+`crates/frevo-model/tests/`" — and asks for a `git diff --stat` confirming
+nothing there changed. Both cannot be satisfied.
+
+**What was tried.** The binding was written, applied, measured and reverted; the
+numbers in this entry and in the hand-back come from that run. With it applied:
+
+- `model_bytes_lazy_perf.rs`: **12 of 18 pass** — `model.bytes.001`–`006` and
+  `model.lazy.001`–`006`, all six of each, which is exactly tasks 17 and 18.
+  The six `model.perf.*` remain red; see findings 2, 3 and 4.
+- `model_nav.rs`: **12 of 12 pass** — `model.nav.001`–`012`.
+
+With it reverted, as committed: 0 of 30 pass. The codec is nonetheless verified,
+by 27 unit tests in `crates/frevo-model/src/codec/tests.rs` that assert the same
+invariants from inside the crate; they carry no `covers:` tag, because the
+scenario ids belong to the oracle files and claiming them twice would make the
+coverage accounting read as broader than it is.
+
+**Decision needed.** Who applies the four-line seam rebinding in each of the two
+test files, and under what authority. The diff touches only the
+`codec_under_test` / `node_under_test` / `model_under_test` bodies and the
+unbound stubs: no assertion, fixture or test function changes. Until it is
+applied, no `model.*` scenario can be shown green and the gatekeeper cannot
+grade Phase C at all. The same wall is in front of tasks 18 to 27.
+
+### 2. `model.perf.004`'s in-process half cannot be satisfied by any implementation
+
+The scenario is right and the design's reasoning is right: a metadata update
+*is* proportional to `meta` and not to the document. Measured, with the buffer
+reused and the output written to a sink:
+
+| | 4 KiB | 64 KiB | spread |
+|---|---|---|---|
+| `meta.versionId` + `meta.lastUpdated`, then serialise | 2.7–5.0 µs | 2.7–5.2 µs | **under 10%** |
+
+Well inside the 25% the scenario asks for.
+
+But the oracle does not measure that. `LazyOracle::run` takes `&[u8]` and
+returns `RunResult { output: Vec<u8>, .. }`, so every call must produce one owned
+copy of the input and one owned copy of the output. Timing **that shape with no
+codec work at all** — `Arc::from(bytes.to_vec())`, then
+`Vec::with_capacity(n)` and a copy — gives:
+
+| | 4 KiB | 64 KiB | spread |
+|---|---|---|---|
+| the oracle signature's floor, zero codec work | 0.4–0.9 µs | 56.5–70.5 µs | **> 6,000%** |
+
+So the in-process assertion is unsatisfiable: no codec can make producing 64 KiB
+of output cost within 25% of producing 4 KiB, and the only way to pass would be
+to make the fixed overhead dwarf the copy — that is, to be slow. The oracle
+reports 139% spread against the implementation; the implementation contributes
+under 10% of it.
+
+**Decision needed.** Either the `bench/micro/` `model-meta-update` workload of
+task 27 measures the update with the buffer reused and the output to a sink —
+which is what `design.md` section 3 describes and what the server does — and the
+in-process half of `model.perf.004` is restated against the codec rather than
+against the oracle's calling convention; or the scenario is withdrawn as not
+measurable through this seam. Not an implementer's call: it changes what a gate
+measures.
+
+### 3. `model.perf.005`'s fixture cannot reach the size its own assertion requires
+
+`canonical_serialisation_of_a_constructed_resource_stays_within_budget` builds a
+`Patient` by pushing `Patient.address[i].{city,district,state,country,postalCode}`
+until an estimator passes 4 KiB:
+
+```rust
+let path = format!("Patient.address[{i}].{element}");
+approximate += path.len() + value.len() + 8;
+```
+
+The estimator counts the whole **element path** as if it were emitted, but only
+the leaf property name appears in the JSON: `Patient.address[12].district` is 28
+bytes to the estimator and `"district"` is 10 in the output. So it over-counts
+by about 2.4× and the loop stops at 20 addresses, after which:
+
+```
+assert!(out.len() >= 4 * 1024, "the constructed Patient must canonicalise to at least 4 KiB, ...")
+```
+
+sees **2,125 bytes**. A canonical encoder emits no whitespace, so there is no
+byte-exact implementation for which this holds; 41 addresses would be needed and
+the estimator yields 20. The test is red on the recorded half as well (finding
+4), so no gate verdict changes, but the reason matters: this half is a defect in
+the fixture and not a shortfall in the codec.
+
+**Decision needed.** Whoever owns the oracle file corrects the estimator — count
+the emitted property name, not the path — when the seam is rebound. Not done
+here, under the rule against editing a test to make it pass.
+
+### 4. Five `model.perf.*` tests are red on a file that does not exist yet
+
+`model.perf.001`–`006` grade their absolute budgets against
+`bench/micro/results.json` and `bench/micro/baseline.json`. Neither exists;
+`bench/` is outside tasks 16 and 17. This is expected and is task 27's. Every
+in-process half except findings 2 and 3 passes:
+
+- `model.perf.001` — zero tokens for a pass-through, output equal to input: **passes**;
+- `model.perf.002` — lazy read at most a tenth of a full parse: **passes**, at 63–75×;
+- `model.perf.003` — a full parse scans tokens, more at 64 KiB, and reaches the
+  repeating elements: **passes**.
+
+### 5. The element-order and type tables are provisional, and `model.perf.003`
+will need the streaming decode that tasks 19 and 20 build
+
+Task 17 needs the generated element order (`model.bytes.005` is graded on it)
+and the generated type table (`model.nav.001`, `model.nav.011`). Those are
+`frevo-codegen`'s output — tasks 7 to 14 — and `crates/frevo-model/src/r4/` does
+not exist. Rather than block, the codec reads
+`crates/frevo-model/src/codec/provisional_r4.rs`: a hand-written subset covering
+the types the Phase C oracles exercise, carrying a header that says it is not
+`@generated`, is not the final table, and is superseded by one `const`
+rebinding in `codec/mod.rs`. It is **unverified against
+`hl7.fhir.r4.core#4.0.1`**, because the package is not vendored here (task 6
+fetches it into a git-ignored directory). The rows were written from the R4
+StructureDefinition snapshots; the generator's output is the authority and a
+disagreement is a defect in the provisional file.
+
+Separately, and worth recording before task 19 starts: a full decode currently
+routes through the lazy index, so it pays a `Mutex<HashMap>` entry and a member
+list per object — overhead a streaming recursive descent would not pay. Measured
+4 KiB full decode, instrumentation log off: **43–86 µs against a 20 µs budget**.
+The lazy index is the right structure for a lazy read (39 tokens, 1.4–2.0 µs)
+and the wrong one for a full parse. `model.perf.003` needs the direct decode path
+of tasks 19 and 20; it is not reachable by tuning the index.
+
+Also recorded, because `design.md` section 6 asks for it in `tasks.md`: no
+arbitrary-precision decimal crate was added. `frevo_path::Decimal` takes the
+fallback the design names — the lexical form plus an integer mantissa and scale
+— so `1.58700` re-serialises as `1.58700` and reports a precision of 5 with no
+binary-float path and no new dependency.
