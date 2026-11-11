@@ -281,6 +281,12 @@ fn absorb(definition: &mut XmlDefinition, relative: &[String], event: &xml::Even
             min: None,
             max: None,
             types: Vec::new(),
+            // The cross-check compares the published `type.code` against
+            // HAPI's copy of the same attribute, so the resolved form and the
+            // lexical regex are not read on this side: an unused field here
+            // would be a second, unverified parse of the same XML.
+            fhir_types: Vec::new(),
+            value_regex: None,
             content_reference: None,
             binding: None,
         }),

@@ -414,3 +414,79 @@ asking again.
 oracle shape, `model.perf.005`'s fixture estimator, the `reference/` clone as a
 CI prerequisite for `codegen.inputs.005`, and the `oracles/run.sh` wiring. None
 is resolved by this ruling.
+
+---
+
+## 2026-11-11 — `add-fhirpath-and-codegen-r4` — two assertions in `codegen_r4.rs` contradict others in the same file
+
+**Raised by** the implementer of tasks 8, 9 and 10. **No test was changed.**
+
+`codegen.types.001` and `codegen.types.007` cannot be made to pass by any
+implementation, because each asserts a thing and its negation. Both are
+assertions the oracle adds beyond the scenario text, and in both cases the
+other side of the contradiction is right.
+
+### 1. `codegen.types.001`: `xhtml.value` must have `min` 0 and `min` 1
+
+`crates/frevo-codegen/tests/codegen_r4.rs`:
+
+- line 1854, inside `for primitive in R4_PRIMITIVES` — which includes
+  `"xhtml"`:
+
+      assert_eq!(value.min, 0, "{primitive}.value");
+
+- line 1872, after the loop:
+
+      assert_eq!(xhtml.element_or_panic("value").min, 1);
+
+The package is unambiguous: `StructureDefinition-xhtml.json` declares
+`xhtml.value` with `"min": 1`, and the oracle's own comment at lines 1864-1865
+says so — "`xhtml.value` is the only required primitive value". So line 1872 is
+right, line 1854 is right for the other nineteen, and the loop needs to exempt
+`xhtml` — for instance `assert_eq!(value.min, u32::from(primitive == "xhtml"))`.
+That is the oracle author's edit to make, not the implementer's.
+
+The scenario text requires neither assertion: `spec.md`'s
+`codegen.types.001` says only that a type exists for each of the 20 primitives
+and that each carries the `id` and `extension` properties `Element` declares.
+
+### 2. `codegen.types.007`: a choice element's `path` must and must not carry `[x]`
+
+Lines 2165-2170 require, for every element of `Questionnaire.item` and its three
+nested types:
+
+    assert_eq!(element.path, format!("{path}.{}", element.fhir_name), ...)
+
+Three of those four types own a choice element —
+`Questionnaire.item.enableWhen.answer[x]`,
+`Questionnaire.item.answerOption.value[x]` and
+`Questionnaire.item.initial.value[x]` — whose `fhir_name` is the base name, so
+this demands `path` **without** the `[x]`. The same file demands the opposite
+three times:
+
+- lines 507-509, the field's own documentation: "The snapshot path, `[x]`
+  included, so the generated element can be traced back to its definition";
+- lines 2339-2342, `codegen.choice.001`:
+  `assert_eq!(value.path, "Observation.value[x]", ...)`;
+- line 2507, `codegen.choice.003`:
+  `assert_eq!(value.path, "SingleChoice.value[x]")`.
+
+`codegen.types.006` passes only because no element of `Patient.contact`,
+`Patient.communication` or `Patient.link` is a choice. The fix is for the
+types.007 loop to accept the `[x]` suffix on an element whose `is_choice` is
+set; the generator records the snapshot path verbatim, which is what the other
+three assertions and the spec delta ask for.
+
+**Decision needed.** Both are one-line corrections in the oracle, and neither
+changes what the spec delta requires. They need `oracle-builder` (or the owner)
+to make them, because rule 3 reserves every assertion in a test file to its
+author. Until then `codegen.types.001` and `codegen.types.007` stay red with
+their generation facts otherwise fully satisfied: every other assertion in both
+tests passes, including the 20-primitives count, `xhtml.extension` being `0..0`,
+all four nested `Questionnaire` types existing with the right kinds, and their
+non-choice elements tracing to their own snapshot prefix.
+
+**Not recorded in `docs/known-gaps.md` on purpose.** A known gap records a
+behaviour Frevo does not have. Here the behaviour is present and the test is
+self-contradictory, so filing it as a gap would claim a deficiency that does not
+exist.

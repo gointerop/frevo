@@ -10,11 +10,17 @@ use std::path::{Path, PathBuf};
 
 use crate::crosscheck::{self, CrossCheckReport};
 use crate::emit::{self, GeneratedFile};
+use crate::emit_tables;
 use crate::error::{CodegenError, Result};
 use crate::inventory::{self, Inventory};
+use crate::model::{self, Model};
 use crate::package::{self, Package};
 use crate::pin::{self, PACKAGE_NAME, PACKAGE_VERSION, PackagePin, VERSION_SELECTOR};
 use crate::synthetic;
+
+/// The modules a run writes beside the R4 module root, in the order the module
+/// root declares them.
+const GENERATED_MODULES: [&str; 2] = ["elements", "types"];
 
 /// One generator invocation.
 #[derive(Debug, Clone)]
@@ -59,6 +65,8 @@ pub struct GenerateReport {
     pub inventory: Inventory,
     /// Every path the run opened.
     pub inputs_read: Vec<PathBuf>,
+    /// Every type the run generated, with its elements.
+    pub model: Model,
     pub files: Vec<GeneratedFile>,
 }
 
@@ -79,6 +87,7 @@ struct Plan {
     summary: String,
     inventory: Inventory,
     inputs_read: Vec<PathBuf>,
+    model: Model,
     files: Vec<GeneratedFile>,
 }
 
@@ -109,28 +118,45 @@ fn plan(request: &GenerateRequest) -> Result<Plan> {
     inventory::assert_pinned(found)?;
 
     let pin = pin::recorded_pin();
-    let files = vec![emit::module_root(&pin, &found)];
-    let summary = summary(&pin, &loaded, &found, &files);
+    let model = model::from_package(&loaded)?;
+    let files = files_for(&pin, &found, &model);
+    let summary = summary(&pin, &loaded, &found, &model, &files);
     Ok(Plan {
         pin,
         summary,
         inventory: found,
         inputs_read: loaded.files_read.clone(),
+        model,
         files,
     })
+}
+
+/// Every file a run writes, in the order it writes them.
+fn files_for(pin: &PackagePin, inventory: &Inventory, model: &Model) -> Vec<GeneratedFile> {
+    vec![
+        emit::module_root(pin, inventory, &GENERATED_MODULES),
+        emit_tables::elements_file(pin, model),
+        emit_tables::types_file(pin, model),
+    ]
 }
 
 fn summary(
     pin: &PackagePin,
     loaded: &Package,
     found: &Inventory,
+    model: &Model,
     files: &[GeneratedFile],
 ) -> String {
+    use crate::model::TypeKind;
+    let count = |kind: TypeKind| model.of_kind(kind).count();
     format!(
         "{PACKAGE_NAME} {PACKAGE_VERSION} verified: SHA-256 {digest} over {hashed} files \
          ({bytes} bytes). Read {datatypes} datatype StructureDefinitions, {resources} resource \
          StructureDefinitions ({concrete} concrete, {abstract_count} abstract, {logical} \
-         logical) and {parameters} SearchParameter resources. Wrote {written} file(s).",
+         logical) and {parameters} SearchParameter resources. Generated {types} types \
+         ({primitives} primitive, {complex} complex, {resource_types} resource, \
+         {backbone} backbone, {element_sets} abstract element set(s), {logical_types} logical) \
+         with {elements} elements. Wrote {written} file(s).",
         digest = pin.sha256,
         hashed = loaded.digest_file_count,
         bytes = loaded.digest_byte_count,
@@ -140,6 +166,14 @@ fn summary(
         abstract_count = found.abstract_resources,
         logical = found.logical_resources,
         parameters = found.search_parameters,
+        types = model.types.len(),
+        primitives = count(TypeKind::Primitive),
+        complex = count(TypeKind::Complex),
+        resource_types = count(TypeKind::Resource),
+        backbone = count(TypeKind::Backbone),
+        element_sets = count(TypeKind::AbstractElementSet),
+        logical_types = count(TypeKind::Logical),
+        elements = model.types.iter().map(|t| t.elements.len()).sum::<usize>(),
         written = files.len(),
     )
 }
@@ -154,6 +188,7 @@ pub fn generate(request: &GenerateRequest) -> Result<GenerateReport> {
         summary: planned.summary,
         inventory: planned.inventory,
         inputs_read: planned.inputs_read,
+        model: planned.model,
         files: planned.files,
     })
 }
@@ -161,17 +196,44 @@ pub fn generate(request: &GenerateRequest) -> Result<GenerateReport> {
 /// A run over definitions written by a caller rather than read from the
 /// package.
 ///
-/// The one behaviour tasks 6 and 7 owe this surface is the inventory
-/// assertion: a synthetic input set that claims to be the pinned R4 package
-/// and is not fails the run (`codegen.inputs.006`). Generating a model from
-/// synthetic definitions is tasks 8 to 13, and until one of them lands this
-/// answers [`CodegenError::NotImplemented`] rather than an empty success,
-/// so a scenario that needs a generated type cannot be read as passing.
+/// Used only where the pinned R4 core package contains no instance of a
+/// condition a scenario describes: a `[x]` element with exactly one declared
+/// type (`codegen.choice.003`), a pair of element names that collapse onto one
+/// Rust name (`codegen.naming.003`).
+///
+/// The input inventory is asserted only when the request asks for it, which is
+/// how a synthetic set that claims to be the pinned R4 package and is not
+/// fails the run (`codegen.inputs.006`). The pin in the report, and in the
+/// header of every file written, is the recorded one: a synthetic run
+/// generates from definitions the caller wrote, so the digest says which
+/// package the *generator* is pinned to and not where these definitions came
+/// from.
 pub fn generate_synthetic(request: &synthetic::Request) -> Result<GenerateReport> {
+    let inventory = synthetic::inventory_of(&request.definitions);
     if request.assert_pinned_inventory {
-        inventory::assert_pinned(synthetic::inventory_of(&request.definitions))?;
+        inventory::assert_pinned(inventory)?;
     }
-    Err(CodegenError::NotImplemented)
+    let pin = pin::recorded_pin();
+    let model = model::from_synthetic(request)?;
+    let files = files_for(&pin, &inventory, &model);
+    emit::write_all(&request.out_dir, &files)?;
+
+    Ok(GenerateReport {
+        exit_code: 0,
+        summary: format!(
+            "generated {} type(s) with {} element(s) from {} definition(s) written by the \
+             caller. Wrote {} file(s).",
+            model.types.len(),
+            model.types.iter().map(|t| t.elements.len()).sum::<usize>(),
+            request.definitions.len(),
+            files.len(),
+        ),
+        pin,
+        inventory,
+        inputs_read: Vec::new(),
+        model,
+        files,
+    })
 }
 
 /// Compare the pinned package with HAPI's copy (`codegen.inputs.005`).

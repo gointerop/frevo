@@ -26,7 +26,10 @@
 //! | classifying definitions and asserting the input inventory | [`inventory`] |
 //! | comparing the package with HAPI's copy | [`crosscheck`] |
 //! | one `generate` run, the drift check, the refusal paths | [`run`] |
+//! | every generated type, its elements and their names | [`model`] |
 //! | the header and the written files | [`emit`] |
+//! | the type and element tables | [`emit_tables`] |
+//! | emitting source `rustfmt` already agrees with | [`rustsrc`] |
 //! | definitions written by a caller rather than read | [`synthetic`] |
 //! | binding the `codegen-r4` oracle to all of it | [`bind_oracle!`] |
 #![forbid(unsafe_code)]
@@ -34,11 +37,14 @@
 pub mod bind;
 pub mod crosscheck;
 pub mod emit;
+pub mod emit_tables;
 pub mod error;
 pub mod inventory;
+pub mod model;
 pub mod package;
 pub mod pin;
 pub mod run;
+pub mod rustsrc;
 pub mod sha256;
 pub mod synthetic;
 pub mod xml;

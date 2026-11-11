@@ -123,6 +123,56 @@ macro_rules! bind_oracle {
                 }
             }
 
+            fn max(max: $crate::model::Max) -> Max {
+                match max {
+                    $crate::model::Max::Zero => Max::Zero,
+                    $crate::model::Max::One => Max::One,
+                    $crate::model::Max::Many => Max::Many,
+                }
+            }
+
+            fn type_kind(kind: $crate::model::TypeKind) -> TypeKind {
+                match kind {
+                    $crate::model::TypeKind::Primitive => TypeKind::Primitive,
+                    $crate::model::TypeKind::Complex => TypeKind::Complex,
+                    $crate::model::TypeKind::Resource => TypeKind::Resource,
+                    $crate::model::TypeKind::Backbone => TypeKind::Backbone,
+                    $crate::model::TypeKind::AbstractElementSet => TypeKind::AbstractElementSet,
+                    $crate::model::TypeKind::Logical => TypeKind::Logical,
+                }
+            }
+
+            fn element(element: $crate::model::Element) -> GeneratedElement {
+                GeneratedElement {
+                    fhir_name: element.fhir_name,
+                    rust_name: element.rust_name,
+                    path: element.path,
+                    types: element.types,
+                    is_choice: element.is_choice,
+                    json_property_names: element.json_property_names,
+                    min: element.min,
+                    max: Self::max(element.max),
+                    binding: element.binding.map(|binding| BindingInfo {
+                        strength: binding.strength,
+                        value_set: binding.value_set,
+                        enumeration: binding.enumeration,
+                    }),
+                    content_reference: element.content_reference,
+                }
+            }
+
+            fn generated_type(ty: $crate::model::Type) -> GeneratedType {
+                GeneratedType {
+                    element_order: ty.element_order(),
+                    fhir_name: ty.fhir_name,
+                    rust_name: ty.rust_name,
+                    kind: Self::type_kind(ty.kind),
+                    base: ty.base,
+                    instantiable: ty.instantiable,
+                    elements: ty.elements.into_iter().map(Self::element).collect(),
+                }
+            }
+
             fn report(report: $crate::run::GenerateReport) -> GenerateReport {
                 GenerateReport {
                     exit_code: report.exit_code,
@@ -141,17 +191,30 @@ macro_rules! bind_oracle {
                         search_parameters: report.inventory.search_parameters,
                     },
                     inputs_read: report.inputs_read,
-                    // Tasks 8 to 13 fill these: the generated types, their
-                    // required-binding enumerations, the resource registry and
-                    // the search-parameter table. Until then a run reports the
-                    // input package it verified and the module root it wrote,
-                    // and every scenario that grades a generated type fails on
-                    // the type being absent rather than on a stub standing in
-                    // for one.
-                    types: Vec::new(),
+                    types: report
+                        .model
+                        .types
+                        .into_iter()
+                        .map(Self::generated_type)
+                        .collect(),
+                    resource_registry: report
+                        .model
+                        .resource_registry
+                        .into_iter()
+                        .map(|(fhir_name, rust_name)| RegistryEntry {
+                            fhir_name,
+                            rust_name,
+                        })
+                        .collect(),
+                    // Tasks 12 and 13 fill these: the required-binding
+                    // enumerations, the bindings the generator could not
+                    // resolve, and the search-parameter table. Each element's
+                    // binding is already reported above, as the snapshot
+                    // declares it, with no enumeration chosen for it yet --
+                    // so a scenario that grades an enumeration fails on its
+                    // absence rather than on a stub standing in for one.
                     enumerations: Vec::new(),
                     unresolved_bindings: Vec::new(),
-                    resource_registry: Vec::new(),
                     search_parameters: Vec::new(),
                     files: report
                         .files

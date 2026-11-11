@@ -36,8 +36,19 @@ pub struct SnapshotElement {
     pub min: Option<u32>,
     /// `ElementDefinition.max`, as the literal `"0"`, `"1"` or `"*"`.
     pub max: Option<String>,
-    /// `ElementDefinition.type.code`, in declared order.
+    /// `ElementDefinition.type.code`, in declared order, verbatim — which for
+    /// a primitive's `id` and `value` is a `http://hl7.org/fhirpath/System.*`
+    /// URI rather than a FHIR type name. This is the form the cross-check
+    /// compares against HAPI's XML copy, so it is kept exactly as published.
     pub types: Vec<String>,
+    /// The same list with every `System.*` code resolved to the FHIR type the
+    /// `structuredefinition-fhir-type` extension beside it names, which is the
+    /// form the generated model navigates by.
+    pub fhir_types: Vec<String>,
+    /// The `structuredefinition-regex` extension on the element's first type:
+    /// the lexical form a primitive's value must match. Every R4 primitive but
+    /// `xhtml` declares one on its `value`.
+    pub value_regex: Option<String>,
     /// `ElementDefinition.contentReference`.
     pub content_reference: Option<String>,
     /// `ElementDefinition.binding.strength` and `.valueSet`.
@@ -333,7 +344,59 @@ fn definition(value: &Value, path: &Path) -> Result<Definition> {
     })
 }
 
+/// `ElementDefinition.type.extension` naming the FHIR type behind a FHIRPath
+/// system type.
+pub const FHIR_TYPE_EXTENSION: &str =
+    "http://hl7.org/fhir/StructureDefinition/structuredefinition-fhir-type";
+/// `ElementDefinition.type.extension` giving a primitive's lexical form.
+pub const REGEX_EXTENSION: &str = "http://hl7.org/fhir/StructureDefinition/regex";
+/// The prefix every FHIRPath system type code carries.
+pub const SYSTEM_TYPE_PREFIX: &str = "http://hl7.org/fhirpath/System.";
+
+/// The FHIR type one `ElementDefinition.type` names.
+///
+/// A primitive's `id` and `value` declare a FHIRPath system type —
+/// `http://hl7.org/fhirpath/System.String` — and name the FHIR type beside it
+/// in the `structuredefinition-fhir-type` extension. `xhtml.id` declares the
+/// system type and no extension, which is why there is a fallback rather than
+/// a default of the raw URI: a type name no definition declares would navigate
+/// nowhere.
+fn fhir_type_of(ty: &Value) -> String {
+    let code = string_at(ty, "code").unwrap_or_default();
+    let Some(system) = code.strip_prefix(SYSTEM_TYPE_PREFIX) else {
+        return code.to_string();
+    };
+    if let Some(named) = type_extension(ty, FHIR_TYPE_EXTENSION, "valueUrl") {
+        return named;
+    }
+    match system {
+        "String" => "string",
+        "Boolean" => "boolean",
+        "Integer" => "integer",
+        "Decimal" => "decimal",
+        "Date" => "date",
+        "DateTime" => "dateTime",
+        "Time" => "time",
+        other => other,
+    }
+    .to_string()
+}
+
+fn type_extension(ty: &Value, url: &str, field: &str) -> Option<String> {
+    ty.get("extension")?
+        .as_array()?
+        .iter()
+        .find(|e| string_at(e, "url") == Some(url))
+        .and_then(|e| string_at(e, field))
+        .map(str::to_string)
+}
+
 fn snapshot_element(value: &Value) -> SnapshotElement {
+    let declared: Vec<&Value> = value
+        .get("type")
+        .and_then(Value::as_array)
+        .map(|types| types.iter().collect())
+        .unwrap_or_default();
     SnapshotElement {
         path: string_at(value, "path").unwrap_or_default().to_string(),
         min: value
@@ -341,16 +404,14 @@ fn snapshot_element(value: &Value) -> SnapshotElement {
             .and_then(Value::as_u64)
             .map(|m| m.min(u32::MAX as u64) as u32),
         max: string_at(value, "max").map(str::to_string),
-        types: value
-            .get("type")
-            .and_then(Value::as_array)
-            .map(|types| {
-                types
-                    .iter()
-                    .map(|t| string_at(t, "code").unwrap_or_default().to_string())
-                    .collect()
-            })
-            .unwrap_or_default(),
+        types: declared
+            .iter()
+            .map(|t| string_at(t, "code").unwrap_or_default().to_string())
+            .collect(),
+        fhir_types: declared.iter().map(|t| fhir_type_of(t)).collect(),
+        value_regex: declared
+            .first()
+            .and_then(|t| type_extension(t, REGEX_EXTENSION, "valueString")),
         content_reference: string_at(value, "contentReference").map(str::to_string),
         binding: value.get("binding").map(|b| ElementBinding {
             strength: string_at(b, "strength").unwrap_or_default().to_string(),

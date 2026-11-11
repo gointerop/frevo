@@ -189,24 +189,66 @@ checkpoint because it changes what a gate measures.
   shapes, so a repinned package whose shape differs fails the assertion rather
   than generating a different model.
 
-- [ ] **8. Generate primitive and complex datatypes.** The 20 primitives with
+- [x] **8. Generate primitive and complex datatypes.** The 20 primitives with
   their value regexes, the complex types, and the metadata types.
   Satisfies `codegen.types.001`, `codegen.types.002`, `codegen.types.003`.
+  Done: `src/{model,emit_tables,rustsrc}.rs`, output in
+  `crates/frevo-model/src/r4/`. 20 primitives with 19 value regexes (`xhtml`
+  declares none) and all 43 `complex-type` definitions, `Element` and the two
+  `constraint` profiles on `Quantity` included. `codegen.types.002` and
+  `codegen.types.003` pass. **`codegen.types.001` cannot pass as written**: its
+  loop requires `xhtml.value` to have `min` 0 and its closing assertion
+  requires `min` 1. Recorded in `tasks/blockers.md`, 2026-11-11; no test was
+  changed. A primitive's JSON form is read from the **root** of its base chain,
+  because `positiveInt.value` and `unsignedInt.value` both declare
+  `System.String` in R4 and both are JSON numbers.
 
-- [ ] **9. Generate resources, abstract element sets and backbone elements.** The
+- [x] **9. Generate resources, abstract element sets and backbone elements.** The
   146 concrete resources, the shared `Resource` and `DomainResource` element
   sets, nested backbone types at every level, and termination on recursive
   backbones and datatype cycles.
   Satisfies `codegen.types.004`, `codegen.types.005`, `codegen.types.006`,
   `codegen.types.007`, `codegen.types.008`, `codegen.types.009`.
+  Done: 146 resources, 2 abstract element sets, 1 logical and **473 nested
+  backbone types**, 685 types and 7,500 elements in all. R4 snapshots are fully
+  expanded, so `Resource`'s and `DomainResource`'s elements are on each
+  resource by construction rather than by inheritance. `codegen.types.004`,
+  `.005`, `.006` and `.009` pass. Termination is structural, not guarded:
+  generation never follows a type reference — a backbone type comes from a path
+  prefix and an element's type is recorded as a name — so a recursive
+  `contentReference` resolves to a type that already exists and the
+  `Reference`/`Identifier` cycle is two complete types naming each other. A
+  depth limit would have been the bug. `codegen.types.008`'s generation half
+  passes and its second half needs `decode`, which is task 19's seam.
+  **`codegen.types.007` cannot pass as written**: its element-prefix loop
+  requires a choice element's `path` to omit the `[x]` that the field's own
+  documentation, `codegen.choice.001` and `codegen.choice.003` all require it
+  to carry. Recorded in `tasks/blockers.md`, 2026-11-11.
 
-- [ ] **10. Generate choice elements and cardinality.** `value[x]` under its base
+- [x] **10. Generate choice elements and cardinality.** `value[x]` under its base
   name with its full property-name map and its declared type set, the
   single-permitted-type case, the two-values-for-one-choice rejection, and the
   four cardinality shapes.
   Satisfies `codegen.choice.001`, `codegen.choice.002`, `codegen.choice.003`,
   `codegen.choice.004`, `codegen.cardinality.001`, `codegen.cardinality.002`,
   `codegen.cardinality.003`, `codegen.cardinality.004`.
+  Done: every `[x]` element is generated under its base name with its declared
+  type set and one JSON property name per type — 50 for `Extension.value[x]`,
+  11 for `Observation.value[x]` — and no typed spelling is an element name.
+  `min` and all three upper bounds (`0`, `1`, `*`) are carried into
+  `r4/elements.rs`, which exists because the codec's hand-written `ElementDef`
+  has nowhere to put a minimum and cannot express the `0..0` of
+  `xhtml.extension`. `codegen.choice.003` passes, through `generate_synthetic`:
+  no core element has a `[x]` path with exactly one `type`.
+  **Seven of these eight scenarios are not reachable from this task.**
+  `codegen.choice.001`, `.002`, `.004` and `codegen.cardinality.001` to `.004`
+  all assert on `decode`/`encode`, and every one of them now fails at its first
+  `decode` call with every preceding generation assertion satisfied. That seam
+  belongs to tasks 19 to 22 (`codegen.cardinality.002`, `.004` and `.005` are
+  already assigned to task 21 by this file), and `codegen.choice.004` plus
+  `.cardinality.002`/`.004` are the three conflicts with HAPI the oracle records
+  at its own call sites. **Task 10 as scoped cannot satisfy them**; the
+  decomposition is wrong, not the implementation.
 
 - [ ] **11. Generate the Rust naming map.** snake_case fields, deterministic
   keyword escaping, collision detection that fails rather than loses an element,

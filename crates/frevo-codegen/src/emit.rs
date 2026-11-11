@@ -68,13 +68,11 @@ pub fn header(pin: &PackagePin) -> String {
     )
 }
 
-/// The R4 module root: the one file tasks 6 and 7 produce.
+/// The R4 module root.
 ///
-/// It carries the facts those two tasks establish — which package was read,
+/// It carries the facts tasks 6 and 7 establish — which package was read,
 /// which digest was verified, and what the input inventory was — as constants
-/// a consumer can assert against. The type, enumeration, element-order and
-/// search-parameter modules are tasks 8 to 14; each adds its own file beside
-/// this one and a `pub mod` line here.
+/// a consumer can assert against, and declares the modules written beside it.
 ///
 /// The emitted source is already in `rustfmt`'s own output form, which is what
 /// `codegen.output.004` asserts: a generated file that `cargo fmt --all
@@ -82,7 +80,14 @@ pub fn header(pin: &PackagePin) -> String {
 /// out to `rustfmt` without making its output depend on the toolchain
 /// installed. That is why `SOURCE_PACKAGE_SHA256` is emitted wrapped — the
 /// unwrapped line is 106 columns, past the 100-column default.
-pub fn module_root(pin: &PackagePin, inventory: &Inventory) -> GeneratedFile {
+pub fn module_root(pin: &PackagePin, inventory: &Inventory, modules: &[&str]) -> GeneratedFile {
+    let mut declarations = String::new();
+    for module in modules {
+        declarations.push_str(&format!("pub mod {module};\n"));
+    }
+    if !declarations.is_empty() {
+        declarations.push('\n');
+    }
     let source = format!(
         "{header}\n\
          //! The generated R4 model.\n\
@@ -95,6 +100,7 @@ pub fn module_root(pin: &PackagePin, inventory: &Inventory) -> GeneratedFile {
          //!   {abstract_count} abstract, {logical} logical\n\
          //! - {parameters} SearchParameter resources\n\
          \n\
+         {declarations}\
          /// The FHIR version this module was generated for.\n\
          pub const FHIR_VERSION: &str = \"{version}\";\n\
          \n\
