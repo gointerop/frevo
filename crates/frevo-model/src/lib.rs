@@ -12,6 +12,14 @@
 
 pub mod codec;
 
+/// The generated R4 model: type, element, code and search-parameter tables.
+///
+/// Produced by `frevo-codegen` from `hl7.fhir.r4.core#4.0.1`; every file carries
+/// an `@generated` marker. Declared here so the compiler and
+/// `cargo clippy --workspace` actually see it -- until this line existed the
+/// 73,465 emitted lines were in the repository but not in the build.
+pub mod r4;
+
 pub use codec::{DecodeError, R4, R4Model, Report, Resource, ResourceNode};
 
 /// Crate identity, used by the server to report which capabilities are linked in.
