@@ -292,7 +292,14 @@ expect_block "H2 blocks (fails closed) when openspec CLI is absent" require-acti
 echo "H3 protect-paths"
 setup_sandbox; on_branch change/add-store; make_change add-store APPROVED open
 expect_block "H3 blocks openspec/specs edit"      protect-paths.sh "$(json_edit Write openspec/specs/store/spec.md "# edited")"
-expect_block "H3 blocks generated frevo-model"    protect-paths.sh "$(json_edit Write crates/frevo-model/src/x.rs "pub fn x() {}")"
+expect_block "H3 blocks a generated model version dir" protect-paths.sh "$(json_edit Write crates/frevo-model/src/r4/types.rs "pub const X: u8 = 1;")"
+expect_block "H3 blocks generated converters"    protect-paths.sh "$(json_edit Write crates/frevo-convert/src/generated/r4_to_r5.rs "pub fn c() {}")"
+# ...and the hand-written parts of the same crates stay editable. `pub mod r4;`
+# lives in src/lib.rs, so blocking it kept 73,465 generated lines out of the
+# build entirely -- never compiled, never linted.
+expect_allow "H3 allows the model crate's own lib.rs" protect-paths.sh "$(json_edit Write crates/frevo-model/src/lib.rs "pub mod codec;
+pub mod r4;")"
+expect_allow "H3 allows the hand-written codec"  protect-paths.sh "$(json_edit Write crates/frevo-model/src/codec/stored.rs "pub fn s() {}")"
 expect_block "H3 blocks @generated marked file"   protect-paths.sh "$(json_edit Edit crates/frevo-model/src/gen.rs "" "a" "b")"
 expect_block "H3 blocks reference/ clone edit"    protect-paths.sh "$(json_edit Write reference/upstream.java "class X {}")"
 expect_allow "H3 allows reference/PINS.md"        protect-paths.sh "$(json_edit Write reference/PINS.md "# pins")"
@@ -547,7 +554,9 @@ expect_block_at "$WT" "worktree: H5 still blocks a push to main"   guard-bash.sh
 # ==========================================================================
 setup_sandbox; on_branch change/add-store; make_change add-store APPROVED open
 
-expect_block "H3 blocks a generated model source file" protect-paths.sh   "$(json_edit Write crates/frevo-model/src/gen.rs '// hand edit')"
+# This one is caught by the @generated MARKER, not by a path: src/gen.rs is not
+# in a generated directory, but the sandbox file carries the marker.
+expect_block "H3 blocks an @generated file by its marker" protect-paths.sh   "$(json_edit Write crates/frevo-model/src/gen.rs '// hand edit')"
 
 expect_allow "H3 allows a test under the model crate" protect-paths.sh   "$(json_edit Write crates/frevo-model/tests/codec.rs '// covers: store.create.001')"
 

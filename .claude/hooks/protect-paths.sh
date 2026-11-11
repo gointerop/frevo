@@ -5,7 +5,9 @@
 # that makes the rest of the rules mean anything:
 #
 #   openspec/specs/**     settled requirements; change only via openspec archive
-#   crates/frevo-model/src/** generated; fix the generator instead (tests/ is not)
+#   crates/frevo-model/src/<ver>/** and crates/frevo-convert/src/generated/**
+#                         generated; fix the generator instead. The rest of
+#                         those crates' src/ is hand-written and editable.
 #   any @generated file   same
 #   reference/**          read-only pinned upstream source
 #   oracles/**            vendored suites; only on chore/oracles-*
@@ -37,22 +39,27 @@ That is what keeps the spec and the implementation from drifting apart.
 EOF
       ;;
 
-    crates/frevo-model/src/*|crates/frevo-convert/src/*)
+    crates/frevo-model/src/r4/*|crates/frevo-model/src/r4b/*|crates/frevo-model/src/r5/*|crates/frevo-model/src/dstu3/*|crates/frevo-model/src/dstu2/*|crates/frevo-convert/src/generated/*)
       block <<EOF
 BLOCKED: $p is generated code.
 
-crates/frevo-model/src and crates/frevo-convert/src are produced by
-frevo-codegen from FHIR StructureDefinitions. FHIR models are regenerated from
-the specification artifacts, never translated or hand-corrected -- a hand edit
-is silently lost on the next regeneration.
+crates/frevo-model/src/<version>/ and crates/frevo-convert/src/generated/ are
+produced by frevo-codegen from FHIR StructureDefinitions. FHIR models are
+regenerated from the specification artifacts, never translated or
+hand-corrected -- a hand edit is silently lost on the next regeneration.
 
 Fix the generator in crates/frevo-codegen, then regenerate.
 
-This rule covers src/ only. crates/frevo-model/tests/** is ordinary test code
-and oracle-builder writes it; the old rule matched the whole crate and refused
-those files as generated. The @generated marker check still catches the real
-outputs file by file, which is the check that does not depend on guessing which
-directories a generator writes to.
+Scope, twice corrected. The rule first matched crates/frevo-model/* and refused
+tests/ as generated. Narrowing it to src/* then refused src/lib.rs and
+src/codec/**, which are hand-written -- so the 73,465 generated lines could not
+be declared with `pub mod r4;` and were never compiled or linted in tree at
+all. It now names the generated roots: the per-version model directories and
+the converters'.
+
+The @generated marker check below still catches an output wherever it sits, but
+only once the file exists -- it cannot judge a new file -- so these paths are
+what stops a hand-written file being created inside a generated tree.
 EOF
       ;;
 
