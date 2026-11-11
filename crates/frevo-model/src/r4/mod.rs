@@ -17,7 +17,9 @@
 //!   2 abstract, 1 logical
 //! - 1375 SearchParameter resources
 
+pub mod codes;
 pub mod elements;
+pub mod searchparam;
 pub mod types;
 
 /// The FHIR version this module was generated for.

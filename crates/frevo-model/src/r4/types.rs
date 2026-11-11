@@ -15849,6 +15849,20 @@ const TYPES: &[TypeDef] = &[
 /// The type tables the codec reads.
 pub const TABLES: Tables = Tables { types: TYPES };
 
+/// The element order one generated type declares: its elements in the order
+/// the StructureDefinition snapshot declares them, which is the order a
+/// resource this crate constructed is serialised in.
+///
+/// Distinct from the lexical key order canonical serialisation uses. A choice
+/// element appears once, under its base name, and the JSON property name it
+/// takes depends on which of its declared types the value holds.
+pub fn element_order(type_name: &str) -> Option<&'static [ElementDef]> {
+    TYPES
+        .iter()
+        .find(|ty| ty.name == type_name)
+        .map(|ty| ty.elements)
+}
+
 /// Every concrete resource type, alphabetically: the registry that maps a
 /// FHIR type name onto its generated type and back. The Rust type name is
 /// the FHIR name verbatim, so one list is the whole mapping.

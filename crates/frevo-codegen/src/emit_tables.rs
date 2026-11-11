@@ -1,11 +1,23 @@
 //! Writing the generated R4 type tables.
 //!
-//! Two files come out of [`crate::model::Model`]:
+//! Two of a run's four files come out of [`crate::model::Model`] here; the
+//! other two are [`crate::emit_codes`] and [`crate::emit_searchparam`]:
 //!
 //! | File | Holds | Read by |
 //! |---|---|---|
 //! | `types.rs` | every type, its base, its kind, its JSON form and its elements **in snapshot order** | the codec, as `crate::codec::tables::Tables` |
 //! | `elements.rs` | each element's declared cardinality, its value-set binding and its `contentReference` | anything that needs more than the codec's four fields |
+//!
+//! # The element-order table
+//!
+//! `types.rs` is where it lives (`codegen.roundtrip.004`), because the element
+//! order **is** the element set in snapshot order: each `TypeDef`'s `elements`
+//! are in the order its StructureDefinition snapshot declares them, which is
+//! the order a resource this crate constructed is serialised in -- as distinct
+//! from the lexical key order canonical serialisation uses. A second array of
+//! the same 7,500 property names would be a second thing to keep in step with
+//! the snapshot, so what is emitted beside the table is a named accessor over
+//! it rather than a copy of it.
 //!
 //! # Why two, and why this shape
 //!
@@ -291,8 +303,28 @@ fn type_table(model: &Model) -> String {
     out.push_str(
         "\n/// The type tables the codec reads.\npub const TABLES: Tables = Tables { types: TYPES };\n",
     );
+    out.push_str(ELEMENT_ORDER_LOOKUP);
     out
 }
+
+/// The accessor over the element-order table, which is `TYPES` itself.
+///
+/// See this module's documentation for why the order is not copied into a
+/// second array.
+const ELEMENT_ORDER_LOOKUP: &str = "\n\
+/// The element order one generated type declares: its elements in the order\n\
+/// the StructureDefinition snapshot declares them, which is the order a\n\
+/// resource this crate constructed is serialised in.\n\
+///\n\
+/// Distinct from the lexical key order canonical serialisation uses. A choice\n\
+/// element appears once, under its base name, and the JSON property name it\n\
+/// takes depends on which of its declared types the value holds.\n\
+pub fn element_order(type_name: &str) -> Option<&'static [ElementDef]> {\n\
+\x20   TYPES\n\
+\x20       .iter()\n\
+\x20       .find(|ty| ty.name == type_name)\n\
+\x20       .map(|ty| ty.elements)\n\
+}\n";
 
 fn name_lists(model: &Model) -> String {
     let mut out = String::new();

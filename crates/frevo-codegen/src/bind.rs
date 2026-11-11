@@ -123,6 +123,74 @@ macro_rules! bind_oracle {
                 }
             }
 
+            fn variant(variant: $crate::bindings::Variant) -> EnumVariant {
+                EnumVariant {
+                    code: variant.code,
+                    rust_name: variant.rust_name,
+                }
+            }
+
+            fn enumeration(generated: $crate::bindings::Enumeration) -> GeneratedEnum {
+                GeneratedEnum {
+                    rust_name: generated.rust_name,
+                    value_set: generated.value_set,
+                    element_paths: generated.element_paths,
+                    variants: generated.variants.into_iter().map(Self::variant).collect(),
+                }
+            }
+
+            fn unresolved_binding(
+                binding: $crate::bindings::UnresolvedBinding,
+            ) -> UnresolvedBinding {
+                UnresolvedBinding {
+                    element_path: binding.element_path,
+                    value_set_url: binding.value_set_url,
+                    strength: binding.strength,
+                }
+            }
+
+            fn search_param_row(
+                $crate::searchparam::Row {
+                    id,
+                    code,
+                    url,
+                    search_type,
+                    base,
+                    declared_bases,
+                    expression,
+                    components,
+                    targets,
+                    multiple_or,
+                    multiple_and,
+                    comparator,
+                    modifier,
+                    chain,
+                }: $crate::searchparam::Row,
+            ) -> SearchParamRow {
+                SearchParamRow {
+                    id,
+                    code,
+                    url,
+                    search_type,
+                    base,
+                    declared_bases,
+                    expression,
+                    components: components
+                        .into_iter()
+                        .map(|component| SearchParamComponent {
+                            definition: component.definition,
+                            expression: component.expression,
+                        })
+                        .collect(),
+                    targets,
+                    multiple_or,
+                    multiple_and,
+                    comparator,
+                    modifier,
+                    chain,
+                }
+            }
+
             fn max(max: $crate::model::Max) -> Max {
                 match max {
                     $crate::model::Max::Zero => Max::Zero,
@@ -206,16 +274,23 @@ macro_rules! bind_oracle {
                             rust_name,
                         })
                         .collect(),
-                    // Tasks 12 and 13 fill these: the required-binding
-                    // enumerations, the bindings the generator could not
-                    // resolve, and the search-parameter table. Each element's
-                    // binding is already reported above, as the snapshot
-                    // declares it, with no enumeration chosen for it yet --
-                    // so a scenario that grades an enumeration fails on its
-                    // absence rather than on a stub standing in for one.
-                    enumerations: Vec::new(),
-                    unresolved_bindings: Vec::new(),
-                    search_parameters: Vec::new(),
+                    enumerations: report
+                        .model
+                        .enumerations
+                        .into_iter()
+                        .map(Self::enumeration)
+                        .collect(),
+                    unresolved_bindings: report
+                        .model
+                        .unresolved_bindings
+                        .into_iter()
+                        .map(Self::unresolved_binding)
+                        .collect(),
+                    search_parameters: report
+                        .search_parameters
+                        .into_iter()
+                        .map(Self::search_param_row)
+                        .collect(),
                     files: report
                         .files
                         .into_iter()
@@ -304,10 +379,34 @@ macro_rules! bind_oracle {
                     .map_err(Self::error)
             }
 
-            // --- tasks 8 to 14 -------------------------------------------
-            // Each of these is bound by the task that implements it. They
+            fn rust_field_name(&self, element_path: &str) -> Result<String, CodegenError> {
+                // Total by construction: the rule is applied to the last
+                // segment of the path, so it answers for a path the package
+                // does not contain.
+                Ok($crate::model::rust_field_name_of_path(element_path))
+            }
+
+            fn code_variants(&self, codes: &[&str]) -> Result<Vec<EnumVariant>, CodegenError> {
+                Ok($crate::bindings::code_variants(codes)
+                    .into_iter()
+                    .map(Self::variant)
+                    .collect())
+            }
+
+            fn parameters_for(
+                &self,
+                resource_type: &str,
+            ) -> Result<Vec<SearchParamRow>, CodegenError> {
+                $crate::run::parameters_for(resource_type)
+                    .map(|rows| rows.into_iter().map(Self::search_param_row).collect())
+                    .map_err(Self::error)
+            }
+
+            // --- the codec, and the FHIRPath parser ----------------------
+            // Each of these is bound by the task that implements it: the
+            // codec is tasks 19 to 23 and the parser is tasks 28 to 30. They
             // answer NotImplemented rather than a plausible-looking default,
-            // so no scenario below can read as satisfied by silence.
+            // so no scenario can read as satisfied by silence.
 
             fn round_trip(&self, _examples: &[PathBuf]) -> Result<RoundTripReport, CodegenError> {
                 Err(CodegenError::NotImplemented)
@@ -322,21 +421,6 @@ macro_rules! bind_oracle {
             }
 
             fn encode_canonical(&self, _decoded: &Decoded) -> Result<String, CodegenError> {
-                Err(CodegenError::NotImplemented)
-            }
-
-            fn rust_field_name(&self, _element_path: &str) -> Result<String, CodegenError> {
-                Err(CodegenError::NotImplemented)
-            }
-
-            fn code_variants(&self, _codes: &[&str]) -> Result<Vec<EnumVariant>, CodegenError> {
-                Err(CodegenError::NotImplemented)
-            }
-
-            fn parameters_for(
-                &self,
-                _resource_type: &str,
-            ) -> Result<Vec<SearchParamRow>, CodegenError> {
                 Err(CodegenError::NotImplemented)
             }
 

@@ -10,17 +10,18 @@ use std::path::{Path, PathBuf};
 
 use crate::crosscheck::{self, CrossCheckReport};
 use crate::emit::{self, GeneratedFile};
-use crate::emit_tables;
 use crate::error::{CodegenError, Result};
 use crate::inventory::{self, Inventory};
 use crate::model::{self, Model};
 use crate::package::{self, Package};
 use crate::pin::{self, PACKAGE_NAME, PACKAGE_VERSION, PackagePin, VERSION_SELECTOR};
+use crate::searchparam::{self, Row};
 use crate::synthetic;
+use crate::{emit_codes, emit_searchparam, emit_tables};
 
 /// The modules a run writes beside the R4 module root, in the order the module
 /// root declares them.
-const GENERATED_MODULES: [&str; 2] = ["elements", "types"];
+const GENERATED_MODULES: [&str; 4] = ["codes", "elements", "searchparam", "types"];
 
 /// One generator invocation.
 #[derive(Debug, Clone)]
@@ -65,8 +66,12 @@ pub struct GenerateReport {
     pub inventory: Inventory,
     /// Every path the run opened.
     pub inputs_read: Vec<PathBuf>,
-    /// Every type the run generated, with its elements.
+    /// Every type the run generated, with its elements, its required-binding
+    /// enumerations and the bindings it could not resolve.
     pub model: Model,
+    /// The search-parameter table: one row per declared base
+    /// (`codegen.searchparam.001`).
+    pub search_parameters: Vec<Row>,
     pub files: Vec<GeneratedFile>,
 }
 
@@ -88,6 +93,7 @@ struct Plan {
     inventory: Inventory,
     inputs_read: Vec<PathBuf>,
     model: Model,
+    search_parameters: Vec<Row>,
     files: Vec<GeneratedFile>,
 }
 
@@ -119,23 +125,32 @@ fn plan(request: &GenerateRequest) -> Result<Plan> {
 
     let pin = pin::recorded_pin();
     let model = model::from_package(&loaded)?;
-    let files = files_for(&pin, &found, &model);
-    let summary = summary(&pin, &loaded, &found, &model, &files);
+    let search_parameters = searchparam::table(&loaded);
+    let files = files_for(&pin, &found, &model, &search_parameters);
+    let summary = summary(&pin, &loaded, &found, &model, &search_parameters, &files);
     Ok(Plan {
         pin,
         summary,
         inventory: found,
         inputs_read: loaded.files_read.clone(),
         model,
+        search_parameters,
         files,
     })
 }
 
 /// Every file a run writes, in the order it writes them.
-fn files_for(pin: &PackagePin, inventory: &Inventory, model: &Model) -> Vec<GeneratedFile> {
+fn files_for(
+    pin: &PackagePin,
+    inventory: &Inventory,
+    model: &Model,
+    search_parameters: &[Row],
+) -> Vec<GeneratedFile> {
     vec![
         emit::module_root(pin, inventory, &GENERATED_MODULES),
+        emit_codes::codes_file(pin, model),
         emit_tables::elements_file(pin, model),
+        emit_searchparam::searchparam_file(pin, search_parameters),
         emit_tables::types_file(pin, model),
     ]
 }
@@ -145,6 +160,7 @@ fn summary(
     loaded: &Package,
     found: &Inventory,
     model: &Model,
+    search_parameters: &[Row],
     files: &[GeneratedFile],
 ) -> String {
     use crate::model::TypeKind;
@@ -156,7 +172,9 @@ fn summary(
          logical) and {parameters} SearchParameter resources. Generated {types} types \
          ({primitives} primitive, {complex} complex, {resource_types} resource, \
          {backbone} backbone, {element_sets} abstract element set(s), {logical_types} logical) \
-         with {elements} elements. Wrote {written} file(s).",
+         with {elements} elements, {enumerations} required-binding enumeration(s) over \
+         {codes} code(s), {unresolved} unresolvable required binding(s) and {rows} \
+         search-parameter row(s). Wrote {written} file(s).",
         digest = pin.sha256,
         hashed = loaded.digest_file_count,
         bytes = loaded.digest_byte_count,
@@ -174,6 +192,14 @@ fn summary(
         element_sets = count(TypeKind::AbstractElementSet),
         logical_types = count(TypeKind::Logical),
         elements = model.types.iter().map(|t| t.elements.len()).sum::<usize>(),
+        enumerations = model.enumerations.len(),
+        codes = model
+            .enumerations
+            .iter()
+            .map(|generated| generated.variants.len())
+            .sum::<usize>(),
+        unresolved = model.unresolved_bindings.len(),
+        rows = search_parameters.len(),
         written = files.len(),
     )
 }
@@ -189,6 +215,7 @@ pub fn generate(request: &GenerateRequest) -> Result<GenerateReport> {
         inventory: planned.inventory,
         inputs_read: planned.inputs_read,
         model: planned.model,
+        search_parameters: planned.search_parameters,
         files: planned.files,
     })
 }
@@ -215,16 +242,21 @@ pub fn generate_synthetic(request: &synthetic::Request) -> Result<GenerateReport
     }
     let pin = pin::recorded_pin();
     let model = model::from_synthetic(request)?;
-    let files = files_for(&pin, &inventory, &model);
+    // A synthetic request carries no SearchParameters: the four scenarios it
+    // reaches are about naming, cardinality and bindings, and a table that
+    // claimed rows nobody wrote would be an invention.
+    let search_parameters: Vec<Row> = Vec::new();
+    let files = files_for(&pin, &inventory, &model, &search_parameters);
     emit::write_all(&request.out_dir, &files)?;
 
     Ok(GenerateReport {
         exit_code: 0,
         summary: format!(
-            "generated {} type(s) with {} element(s) from {} definition(s) written by the \
-             caller. Wrote {} file(s).",
+            "generated {} type(s) with {} element(s) and {} required-binding \
+             enumeration(s) from {} definition(s) written by the caller. Wrote {} file(s).",
             model.types.len(),
             model.types.iter().map(|t| t.elements.len()).sum::<usize>(),
+            model.enumerations.len(),
             request.definitions.len(),
             files.len(),
         ),
@@ -232,8 +264,23 @@ pub fn generate_synthetic(request: &synthetic::Request) -> Result<GenerateReport
         inventory,
         inputs_read: Vec::new(),
         model,
+        search_parameters,
         files,
     })
+}
+
+/// The search-parameter table, queried by resource type
+/// (`codegen.searchparam.002`).
+///
+/// The abstract bases are resolved here rather than stored: a row whose base
+/// is `Resource` is stored as `Resource`, and a query for `Binary` finds it by
+/// walking `Binary`'s `baseDefinition` chain. `_text` is declared on
+/// `DomainResource`, so the same walk is what excludes it from `Binary`,
+/// `Bundle` and `Parameters` -- the only three concrete R4 resources that are
+/// not `DomainResource`s.
+pub fn parameters_for(resource_type: &str) -> Result<Vec<Row>> {
+    let loaded = package::pinned()?;
+    searchparam::applicable(&loaded, resource_type)
 }
 
 /// Compare the pinned package with HAPI's copy (`codegen.inputs.005`).

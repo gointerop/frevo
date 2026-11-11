@@ -250,29 +250,111 @@ checkpoint because it changes what a gate measures.
   at its own call sites. **Task 10 as scoped cannot satisfy them**; the
   decomposition is wrong, not the implementation.
 
-- [ ] **11. Generate the Rust naming map.** snake_case fields, deterministic
+- [x] **11. Generate the Rust naming map.** snake_case fields, deterministic
   keyword escaping, collision detection that fails rather than loses an element,
   verbatim type names, and enumeration variants whose original code strings are
   recoverable.
   Satisfies `codegen.naming.001`, `codegen.naming.002`, `codegen.naming.003`,
   `codegen.naming.004`, `codegen.naming.005`.
+  Done: `codegen.naming.001`, `.003` and `.004` pass. `rust_field_name` is
+  bound to `model::rust_field_name_of_path`, so the rule answers for a snapshot
+  path the package does not contain, and `code_variants` to the new
+  `bindings::code_variants`. The variant rule is total, deterministic and
+  collision-free: each alphanumeric run upper-cased on its first character and
+  concatenated (`entered-in-error` → `EnteredInError`), a code with no
+  alphanumeric character spelled from a symbol table (`>=` → `GreaterEqual`),
+  an `N` on a name that would start with a digit (`0.5.0` → `N050`), a
+  trailing `_` on a keyword, and a numeric disambiguator behind all of it.
+  Measured over all **2,066** codes behind R4's required bindings: every
+  variant name is a plain non-raw non-keyword Rust identifier, and the only
+  value sets where the alphanumeric rule alone would collide are
+  `quantity-comparator` and `questionnaire-enable-operator`, whose codes are
+  punctuation.
+  **`codegen.naming.002` and `.005` are not reachable from this task.** Both
+  end in `decode`/`encode` calls that belong to tasks 19 to 23; every
+  generation assertion in `.005` passes, and `.002` additionally fails at an
+  assertion that is wrong — line 3339 requires `Encounter.class` to get a Rust
+  name different from `class`, and `class` is not a Rust keyword in any
+  edition. Recorded in `tasks/blockers.md`, 2026-11-11, with the evidence and
+  the two ways out; the generator escapes Rust's keywords and reserved words
+  and nothing else, because escaping `class` would be inventing a rule the
+  spec delta does not state over a name with no observable effect.
 
-- [ ] **12. Generate required-binding enumerations.** Closed enumerations only
+- [x] **12. Generate required-binding enumerations.** Closed enumerations only
   for resolvable `required` bindings; codes outside a required binding preserved
   rather than dropped; nothing generated for extensible, preferred or example
   bindings or for an unresolvable value set.
   Satisfies `codegen.binding.001`, `codegen.binding.002`,
   `codegen.binding.003`, `codegen.binding.004`.
+  Done: `codegen.binding.004` passes. `package.rs` now also reads the
+  package's 1,316 `ValueSet` and 1,062 `CodeSystem` resources — the two inputs
+  `design.md` section 2 already lists and nothing had read yet — and
+  `bindings.rs` expands a value set only when it can be expanded from the
+  package alone: no `exclude`, and every `include` either lists its `concept`
+  codes or names one `system` the package ships with `content = complete`. A
+  `CodeSystem`'s codes are taken **depth-first pre-order**, which is what makes
+  `observation-status` read `… amended, corrected, cancelled …` as
+  `codegen.naming.005` lists it, since `corrected` is a child of `amended`.
+  Measured: R4 binds **224** distinct value sets `required` across the 212 core
+  definitions, all 224 naming them with a `|4.0.1` suffix; **220** expand, to
+  2,066 codes; **4** do not and are reported with their element paths (17 of
+  them) rather than guessed at — `currencies`, `mimetypes` and `ucum-units`,
+  whose code systems are `urn:iso:std:iso:4217`, `urn:ietf:bcp:13` and
+  `http://unitsofmeasure.org`, and `http://loinc.org/vs/LL379-9`, which the
+  package does not ship at all because LOINC is licensed.
+  Emitted as a **data table** in `r4/codes.rs` rather than 220 Rust `enum`s,
+  which is `design.md` section 8's stated lever and the shape tasks 8 to 10
+  already took; each variant's `rust_name` is still a valid identifier, so a
+  later change that wants a real `enum` per value set can generate it from this
+  table without renaming anything.
+  **`codegen.binding.001`, `.002` and `.003` are not reachable from this
+  task.** All three end in `decode`/`encode` calls belonging to tasks 19 to 23,
+  and all three now fail at the first of those with every generation assertion
+  satisfied: `Patient.gender` carries enumeration `AdministrativeGender` with
+  exactly `male, female, other, unknown`; `Observation.code` is `example` and
+  carries none; and no enumeration anywhere comes from a binding weaker than
+  `required`. `.002` is additionally one of the three conflicts with HAPI the
+  oracle records at its own call site.
 
-- [ ] **13. Generate the search-parameter table.** All 1,375 rows with code, URL,
+- [x] **13. Generate the search-parameter table.** All 1,375 rows with code, URL,
   type, bases, expression, composite components, reference targets and the
   modifier flags, with absent distinguished from false, and a row per base for a
   multi-base parameter.
   Satisfies `codegen.searchparam.001`, `codegen.searchparam.002`,
   `codegen.searchparam.003`, `codegen.searchparam.004`,
   `codegen.searchparam.006`.
+  Done: all five pass. **1,706 rows** over the 1,375 parameters the
+  specification stamps — one row per declared `base`, because the index is
+  keyed by resource type — each carrying the whole declared base list so the
+  parameters stay recoverable from the rows. `clinical-patient` declares 32
+  bases and contributes 32 rows. 46 parameters state `multipleOr` and every
+  one states it `false`; 142 state `comparator`, all the same nine codes;
+  `multipleAnd`, `modifier` and `chain` are stated by none, which is what makes
+  absent-versus-`false` observable, and every flag is an `Option`.
+  `DomainResource-text`, `Resource-content` and `Resource-query` declare no
+  `expression` and are recorded as `None`, distinctly from an empty one.
+  Base resolution happens at **query** time, in `searchparam::applicable`, by
+  walking the queried type's `baseDefinition` chain: a row declared on
+  `Resource` is stored as `Resource`, so `_id` reaches `Binary` and `_text`,
+  declared on `DomainResource`, does not. Storing 146 expanded rows per
+  whole-system parameter would have added ~1,300 rows and lost the fact that
+  the specification declared one.
+  **`SearchParameter.status` is deliberately not a column.** The package and
+  HAPI's `sp/search-parameters.json` disagree about it — all 1,375 read
+  `"draft"` in `hl7.fhir.r4.core#4.0.1` and `"active"` in HAPI, and it is the
+  only field that differs across all 1,375 — and nothing downstream of a
+  search-parameter table consults it, because a parameter is enabled by
+  configuration rather than by its publication state. No row carries it, so
+  there is no source to pick between and **no `docs/deviations.md` entry is
+  due**: a deviation records a behaviour difference, and a field neither source
+  can be observed through is not one. The reasoning is in
+  `r4/searchparam.rs`'s own header so it is not rediscovered.
+  `codegen.searchparam.005` is **not** this task's: it hands every expression
+  to `frevo-path`'s parser, which is tasks 28 to 30. The table side of it is
+  already satisfied — 1,344 distinct non-empty expressions and exactly the
+  three absent ones.
 
-- [ ] **14. Generate the element-order tables and enforce output discipline.**
+- [x] **14. Generate the element-order tables and enforce output discipline.**
   Per-type element order for serialisation; byte-identical regeneration on the
   same platform and across platforms; the `@generated` header naming the
   generator, the package, the version and the digest; `fmt` and `clippy -D
@@ -280,6 +362,37 @@ checkpoint because it changes what a gate measures.
   Satisfies `codegen.roundtrip.004`, `codegen.output.001`,
   `codegen.output.002`, `codegen.output.003`, `codegen.output.004`,
   `codegen.output.005`, `codegen.output.006`.
+  Done: all six `codegen.output.*` pass. The element-order table is `TYPES`
+  itself — each entry's elements are in snapshot order, which is the order a
+  resource this crate constructed is serialised in — with a named
+  `element_order(type_name)` accessor emitted beside it rather than a second
+  copy of the same 7,500 property names, which would be a second thing to keep
+  in step with the snapshot.
+  Five files, **73,464 lines and 2,183,049 bytes**: `mod.rs`, `codes.rs`,
+  `elements.rs`, `searchparam.rs`, `types.rs`. Three consecutive runs agree by
+  SHA-256, and `elements.rs` is byte-identical to the output tasks 8 to 10
+  checked in, so the two new files are additive rather than a reshuffle.
+  One layout rule in `rustsrc.rs` was **wrong and is now measured**: it moved
+  an over-long right-hand side down a line unconditionally, where `rustfmt`
+  moves it only when that makes it fit. A 64-character package digest at
+  indent 0 fits once moved and so moves; the longest R4 search-parameter
+  expression is 1,386 characters, fits nowhere, and so stays on one line.
+  `codegen.output.004` found it, which is what it is for. A new
+  `--bin fmtcheck` prints where the emitted bytes and `rustfmt`'s own output
+  disagree, so the next such rule is findable rather than guessable.
+  No `#[allow]` anywhere in the output: a search-parameter row is a struct
+  literal rather than a 14-argument constructor precisely because the
+  constructor would have needed
+  `#[allow(clippy::too_many_arguments)]`, which `codegen.output.004` forbids.
+  Verified out of tree, because `crates/frevo-model/src/lib.rs` does not
+  declare `pub mod r4;` and `cargo clippy --workspace` therefore never compiles
+  the output: all five files type-check and are `clippy -D warnings` clean
+  against the real `codec::tables` shape.
+  **`codegen.roundtrip.004` is not reachable from this task.** Its element-order
+  assertions pass — every type's order is its element set in snapshot order,
+  `Patient` is the 24 the oracle lists with `[x]` resolved, and
+  `Patient.contact` is its 10 — and it then fails at `decode`, which is tasks
+  19 to 23.
 
 - [ ] **15. Check the compile-time budget and decide.** Measure a cold
   `cargo build -p frevo-model --release` on the reference environment against

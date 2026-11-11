@@ -490,3 +490,70 @@ non-choice elements tracing to their own snapshot prefix.
 behaviour Frevo does not have. Here the behaviour is present and the test is
 self-contradictory, so filing it as a gap would claim a deficiency that does not
 exist.
+
+---
+
+## 2026-11-11 — `add-fhirpath-and-codegen-r4` — `codegen.naming.002` asserts that `class` is a Rust keyword, and it is not
+
+Found implementing tasks 11 to 14. `crates/frevo-codegen/tests/codegen_r4.rs`
+line 3339, inside the loop at lines 3325-3330, requires every one of four
+elements to get a Rust field name **different from** its FHIR name:
+
+    assert_ne!(element.rust_name, fhir_name);
+
+over `("Encounter", "class")`, `("ElementDefinition", "type")`,
+`("Identifier", "use")` and `("Claim", "use")`.
+
+`type` and `use` are Rust keywords, and the generator escapes both — to `type_`
+and `use_`, which `is_plain_rust_identifier` accepts and which are distinct
+from each other, as lines 3360-3383 separately require. **`class` is not a Rust
+keyword in any edition.** It is not in the keyword list, it is not in the
+reserved list (`abstract become box do final macro override priv try typeof
+unsized virtual yield`), and it is not in the oracle's own `RUST_KEYWORDS`
+constant at lines 1328-1335 — which is why the assertion at lines 3334-3338,
+`is_plain_rust_identifier(&element.rust_name)`, passes on the unescaped name
+while line 3339 fails on it. Measured, not assumed:
+
+    $ rustc --edition 2024 -  <<< 'fn main() { let class = 1; let _ = class; }'
+    exit 0
+
+The scenario text does not require the escape either. `spec.md`
+`codegen.naming.002`'s THEN clauses are "each gets a deterministic non-keyword
+Rust name" and "the FHIR property names `class`, `type` and `use` are still
+what is read and written". `class` satisfies the first as it stands, and the
+generator satisfies the second: `Encounter.class`'s `json_property_names` is
+`["class"]`, which lines 3353-3357 assert and which passes.
+
+**Where `class_` comes from.** HAPI's generated Java model does rename it —
+`Encounter.java` declares `protected Coding class_;` — because `class` *is* a
+Java keyword. The scenario looks ported from that, and its WHEN clause also
+names `OperationDefinition.use`, an element R4 does not have, which the oracle
+already had to hedge around at its lines 3322-3324. Both are the same defect:
+the scenario's examples were drawn from the Java side rather than from R4 plus
+Rust.
+
+**Decision needed**, and it is a proposal decision rather than an implementer's:
+
+1. Correct the scenario and the assertion to be about Rust keywords, which
+   means dropping `class` from the WHEN clause and from the loop; or
+2. Decide that the naming rule escapes a **stated superset** of Rust's
+   keywords, write that superset and its justification into
+   `spec.md`, and the generator will apply it.
+
+The generator currently implements (1): `crate::model::element_rust_name`
+appends one `_` to a name that is a Rust keyword or reserved word, and leaves
+every other name as snake_case. Escaping `class` on the strength of the
+assertion alone would be inventing a rule the spec does not state, over a name
+that has no observable effect — the wire form is `class` either way, because
+the JSON property name is carried separately from the Rust name.
+
+`codegen.naming.002` therefore stays red. It would be red regardless: its last
+assertions (lines 3385-3406) call `decode` and `encode`, which belong to
+tasks 19 to 23. Every other assertion in the test passes, including the
+determinism of the escape, the three-distinct-names check, and the
+`json_property_names` round trip.
+
+**Not recorded in `docs/known-gaps.md` on purpose**, for the same reason as the
+two entries above: the behaviour the spec describes is present, and what is
+wrong is an example in the scenario. Filing a gap would claim a deficiency
+that does not exist.

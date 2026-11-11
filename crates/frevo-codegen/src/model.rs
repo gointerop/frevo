@@ -43,6 +43,7 @@
 
 use std::collections::BTreeMap;
 
+use crate::bindings::{self, Codes, Enumeration, Resolution, UnresolvedBinding};
 use crate::error::{CodegenError, FailureKind, Result};
 use crate::inventory::Classification;
 use crate::package::{Package, SnapshotElement};
@@ -180,8 +181,9 @@ impl JsonForm {
 /// An element's value-set binding, as the snapshot declares it.
 ///
 /// `enumeration` is the name of the closed enumeration the generator chose to
-/// emit for it, and is `None` throughout tasks 8 to 10: task 12 is the one
-/// that decides which `required` bindings are resolvable.
+/// emit for it, and is `None` unless the binding is `required` *and* its value
+/// set expands from the input alone. [`crate::bindings`] is where that
+/// decision is made and why.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Binding {
     pub strength: String,
@@ -247,13 +249,20 @@ impl Type {
     }
 }
 
-/// Every type the generator emits, plus the resource-type registry.
+/// Every type the generator emits, plus the resource-type registry and the
+/// enumerations its required bindings closed.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Model {
     pub types: Vec<Type>,
     /// FHIR type name to Rust type name, for the 146 concrete resources only
     /// (`codegen.types.005`).
     pub resource_registry: Vec<(String, String)>,
+    /// One closed enumeration per resolvable `required` binding, in value-set
+    /// order (`codegen.binding.001`).
+    pub enumerations: Vec<Enumeration>,
+    /// Every `required` binding whose value set the input could not expand,
+    /// reported rather than passed over (`codegen.binding.004`).
+    pub unresolved_bindings: Vec<UnresolvedBinding>,
 }
 
 impl Model {
@@ -342,7 +351,7 @@ pub fn from_package(package: &Package) -> Result<Model> {
             elements: definition.snapshot.iter().map(raw_element).collect(),
         });
     }
-    build(roots)
+    build(roots, &Codes::of_package(package))
 }
 
 fn raw_element(element: &SnapshotElement) -> RawElement {
@@ -397,14 +406,14 @@ pub fn from_synthetic(request: &synthetic::Request) -> Result<Model> {
                 .collect(),
         })
         .collect();
-    build(roots)
+    build(roots, &Codes::of_synthetic(&request.value_sets))
 }
 
 // ---------------------------------------------------------------------------
 // The build
 // ---------------------------------------------------------------------------
 
-fn build(mut roots: Vec<Root>) -> Result<Model> {
+fn build(mut roots: Vec<Root>, codes: &Codes) -> Result<Model> {
     roots.sort_by(|a, b| {
         a.kind
             .rank()
@@ -426,10 +435,59 @@ fn build(mut roots: Vec<Root>) -> Result<Model> {
         .collect();
     resource_registry.sort();
 
+    let resolution = resolve_bindings(&mut types, codes);
+
     Ok(Model {
         types,
         resource_registry,
+        enumerations: resolution.enumerations,
+        unresolved_bindings: resolution.unresolved,
     })
+}
+
+/// Decide which `required` bindings close, and write the chosen enumeration
+/// onto each element that binds one.
+///
+/// Two passes, because the decision is per *value set* and the record is per
+/// *element*: the first collects every declared binding so that names are
+/// assigned in value-set order rather than in whichever order an element was
+/// visited, and the second writes the answer back. An element bound to a value
+/// set the input cannot expand keeps `enumeration: None` and stays open, which
+/// is the whole of `codegen.binding.004`.
+fn resolve_bindings(types: &mut [Type], codes: &Codes) -> Resolution {
+    let declared: Vec<(String, String, String)> = types
+        .iter()
+        .flat_map(|ty| ty.elements.iter())
+        .filter_map(|element| {
+            element.binding.as_ref().map(|binding| {
+                (
+                    element.path.clone(),
+                    binding.strength.clone(),
+                    binding.value_set.clone(),
+                )
+            })
+        })
+        .collect();
+    let bound: Vec<bindings::BoundElement<'_>> = declared
+        .iter()
+        .map(|(path, strength, value_set)| bindings::BoundElement {
+            path,
+            strength,
+            value_set,
+        })
+        .collect();
+    let resolution = bindings::resolve(&bound, codes);
+
+    for ty in types.iter_mut() {
+        for element in ty.elements.iter_mut() {
+            if let Some(binding) = element.binding.as_mut() {
+                binding.enumeration =
+                    bindings::enumeration_of(&resolution, &binding.strength, &binding.value_set)
+                        .map(str::to_string);
+            }
+        }
+    }
+    resolution
 }
 
 /// Each primitive's JSON form, resolved from the root of its base chain.

@@ -12,7 +12,7 @@
 //!
 //! | Construct | Rule |
 //! |---|---|
-//! | an assignment whose right-hand side does not fit | the right-hand side moves to the next line, indented once, **before** anything inside it is broken |
+//! | an assignment whose right-hand side does not fit | the right-hand side moves to the next line, indented once, **before** anything inside it is broken — and only when that makes it fit |
 //! | a call | one line while its argument list is at most [`FN_CALL_WIDTH`] wide **and** the line fits in [`MAX_WIDTH`]; otherwise one argument per line |
 //! | an array | one line while the whole statement fits in [`MAX_WIDTH`]; otherwise filled — several items per line — while **every** item is at most [`SHORT_ITEM_WIDTH`] wide; otherwise one item per line |
 //! | either, broken | a trailing comma after the last item |
@@ -137,9 +137,19 @@ pub fn scalar_statement(indent: usize, prefix: &str, value: &str, suffix: &str) 
     if single.len() <= MAX_WIDTH {
         return format!("{single}\n");
     }
-    // `rustfmt` moves the right-hand side down a line before it gives up; a
-    // string literal it still cannot fit is left over the margin, because
-    // `format_strings` is off.
+    // `rustfmt` moves the right-hand side down a line **only when that makes
+    // it fit**. A value still over the margin one indent further in is left
+    // where it is, on one line: breaking gains nothing, and `format_strings`
+    // is off so the literal itself is never split.
+    //
+    // Both halves of the rule are load-bearing. A 64-character package digest
+    // at indent 0 is 106 columns and fits once moved, so it moves -- that is
+    // `SOURCE_PACKAGE_SHA256` in `mod.rs`. The longest R4 search-parameter
+    // expression is 1,386 characters and fits nowhere, so it stays put --
+    // that is `X_0001` and 90-odd others in `searchparam.rs`.
+    if indent + INDENT + value.len() + suffix.len() > MAX_WIDTH {
+        return format!("{single}\n");
+    }
     format!(
         "{}{}\n{}{value}{suffix}\n",
         pad(indent),

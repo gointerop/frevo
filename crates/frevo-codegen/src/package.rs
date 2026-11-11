@@ -2,8 +2,15 @@
 //!
 //! The package is a directory of one-resource-per-file JSON, as published by
 //! the FHIR package registry. This module locates it, verifies its digest, and
-//! parses the two resource types the generator takes as input:
-//! `StructureDefinition` and `SearchParameter`.
+//! parses the four resource types the generator takes as input:
+//! `StructureDefinition`, `SearchParameter`, `ValueSet` and `CodeSystem`.
+//!
+//! The last two are read for one purpose only: the codes behind a `required`
+//! binding (`codegen.binding.001`). A `ValueSet` is reduced to its `compose`
+//! and a `CodeSystem` to the codes of its concept tree **in depth-first
+//! pre-order**, which is what `ValueSet` order means here --
+//! `observation-status` nests `corrected` under `amended`, and the eight codes
+//! `codegen.naming.005` lists are that traversal.
 //!
 //! Three properties matter beyond "it parses":
 //!
@@ -126,6 +133,46 @@ impl SearchParameter {
     }
 }
 
+/// One `ValueSet.compose.include`, reduced to what an expansion from the
+/// package alone can use.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ValueSetInclude {
+    /// `include.system`, absent when the include only imports other value
+    /// sets.
+    pub system: Option<String>,
+    /// `include.concept.code`, in declared order. Empty means "every code the
+    /// system declares".
+    pub concepts: Vec<String>,
+    /// `include.filter`, which needs a terminology server rather than a
+    /// package to evaluate.
+    pub has_filter: bool,
+    /// `include.valueSet`, which imports another value set.
+    pub imports: Vec<String>,
+}
+
+/// One `ValueSet`, reduced to its composition.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ValueSetDefinition {
+    pub url: String,
+    pub version: Option<String>,
+    /// `false` when the resource declares no `compose` at all.
+    pub has_compose: bool,
+    pub includes: Vec<ValueSetInclude>,
+    /// `compose.exclude`, which subtracts codes an include brought in.
+    pub has_exclude: bool,
+}
+
+/// One `CodeSystem`, reduced to the codes it declares.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CodeSystemDefinition {
+    pub url: String,
+    /// `CodeSystem.content`: only `complete` means the codes below are all of
+    /// them.
+    pub content: Option<String>,
+    /// Every `concept.code`, depth-first pre-order.
+    pub codes: Vec<String>,
+}
+
 /// A loaded, digest-verified package.
 #[derive(Debug)]
 pub struct Package {
@@ -143,6 +190,10 @@ pub struct Package {
     pub definitions: Vec<Definition>,
     /// Every `SearchParameter` in the directory, in canonical-URL order.
     pub search_parameters: Vec<SearchParameter>,
+    /// Every `ValueSet` in the directory, in canonical-URL order.
+    pub value_sets: Vec<ValueSetDefinition>,
+    /// Every `CodeSystem` in the directory, in canonical-URL order.
+    pub code_systems: Vec<CodeSystemDefinition>,
 }
 
 /// The canonical content digest of a directory.
@@ -267,14 +318,22 @@ fn read(dir: &Path) -> Result<Package> {
 
     let mut definitions = Vec::new();
     let mut search_parameters = Vec::new();
+    let mut value_sets = Vec::new();
+    let mut code_systems = Vec::new();
     for path in &files_read {
         let name = path
             .file_name()
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_default();
-        let is_definition = name.starts_with("StructureDefinition-") && name.ends_with(".json");
-        let is_parameter = name.starts_with("SearchParameter-") && name.ends_with(".json");
-        if !is_definition && !is_parameter {
+        let wanted = [
+            "StructureDefinition-",
+            "SearchParameter-",
+            "ValueSet-",
+            "CodeSystem-",
+        ]
+        .iter()
+        .any(|prefix| name.starts_with(prefix));
+        if !wanted || !name.ends_with(".json") {
             continue;
         }
         let text = std::fs::read_to_string(path)
@@ -284,6 +343,8 @@ fn read(dir: &Path) -> Result<Package> {
         match string_at(&value, "resourceType").unwrap_or_default() {
             "StructureDefinition" => definitions.push(definition(&value, path)?),
             "SearchParameter" => search_parameters.push(search_parameter(&value, path)?),
+            "ValueSet" => value_sets.push(value_set(&value, path)?),
+            "CodeSystem" => code_systems.push(code_system(&value, path)?),
             other => {
                 return Err(CodegenError::other(format!(
                     "{} declares resourceType {other:?}, which its file name contradicts",
@@ -294,6 +355,8 @@ fn read(dir: &Path) -> Result<Package> {
     }
     definitions.sort_by(|a, b| a.url.cmp(&b.url));
     search_parameters.sort_by(|a, b| a.url.cmp(&b.url));
+    value_sets.sort_by(|a, b| a.url.cmp(&b.url));
+    code_systems.sort_by(|a, b| a.url.cmp(&b.url));
 
     Ok(Package {
         dir: dir.to_path_buf(),
@@ -303,6 +366,8 @@ fn read(dir: &Path) -> Result<Package> {
         files_read,
         definitions,
         search_parameters,
+        value_sets,
+        code_systems,
     })
 }
 
@@ -457,6 +522,78 @@ fn search_parameter(value: &Value, path: &Path) -> Result<SearchParameter> {
         chain: optional_string_array(value, "chain"),
         standards_status: extension_value_code(value, STANDARDS_STATUS_EXTENSION),
     })
+}
+
+fn value_set(value: &Value, path: &Path) -> Result<ValueSetDefinition> {
+    let url = string_at(value, "url").map(str::to_string).ok_or_else(|| {
+        CodegenError::other(format!("{} is a ValueSet with no url", path.display()))
+    })?;
+    let compose = value.get("compose");
+    Ok(ValueSetDefinition {
+        url,
+        version: string_at(value, "version").map(str::to_string),
+        has_compose: compose.is_some(),
+        includes: compose
+            .and_then(|c| c.get("include"))
+            .and_then(Value::as_array)
+            .map(|includes| includes.iter().map(value_set_include).collect())
+            .unwrap_or_default(),
+        has_exclude: compose
+            .and_then(|c| c.get("exclude"))
+            .and_then(Value::as_array)
+            .is_some_and(|exclude| !exclude.is_empty()),
+    })
+}
+
+fn value_set_include(value: &Value) -> ValueSetInclude {
+    ValueSetInclude {
+        system: string_at(value, "system").map(str::to_string),
+        concepts: value
+            .get("concept")
+            .and_then(Value::as_array)
+            .map(|concepts| {
+                concepts
+                    .iter()
+                    .map(|c| string_at(c, "code").unwrap_or_default().to_string())
+                    .collect()
+            })
+            .unwrap_or_default(),
+        has_filter: value
+            .get("filter")
+            .and_then(Value::as_array)
+            .is_some_and(|filters| !filters.is_empty()),
+        imports: string_array(value, "valueSet"),
+    }
+}
+
+fn code_system(value: &Value, path: &Path) -> Result<CodeSystemDefinition> {
+    let url = string_at(value, "url").map(str::to_string).ok_or_else(|| {
+        CodegenError::other(format!("{} is a CodeSystem with no url", path.display()))
+    })?;
+    let mut codes = Vec::new();
+    concept_codes(value, &mut codes);
+    Ok(CodeSystemDefinition {
+        url,
+        content: string_at(value, "content").map(str::to_string),
+        codes,
+    })
+}
+
+/// Every `concept.code` below `value`, depth-first pre-order.
+///
+/// Pre-order is not a preference: `observation-status` declares `corrected` as
+/// a child of `amended`, and the eight codes in the order
+/// `codegen.naming.005` lists them are exactly this traversal.
+fn concept_codes(value: &Value, out: &mut Vec<String>) {
+    let Some(concepts) = value.get("concept").and_then(Value::as_array) else {
+        return;
+    };
+    for concept in concepts {
+        if let Some(code) = string_at(concept, "code") {
+            out.push(code.to_string());
+        }
+        concept_codes(concept, out);
+    }
 }
 
 fn string_at<'a>(value: &'a Value, field: &str) -> Option<&'a str> {
