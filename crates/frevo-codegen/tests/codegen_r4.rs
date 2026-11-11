@@ -1851,7 +1851,12 @@ fn every_primitive_datatype_is_generated() {
         assert_eq!(extension.types, vec!["Extension".to_string()]);
         // And the value itself.
         let value = ty.element_or_panic("value");
-        assert_eq!(value.min, 0, "{primitive}.value");
+        // `xhtml.value` is the only required primitive value: upstream
+        // profiles-types.xml declares it min=1 max=1, and the xhtml-specific
+        // assertion below says so too. Asserting 0 for all twenty contradicted
+        // that, so this test could not pass against a correct generator.
+        let expected_min = u32::from(primitive == "xhtml");
+        assert_eq!(value.min, expected_min, "{primitive}.value");
         assert_eq!(value.max, Max::One, "{primitive}.value");
     }
 
@@ -2163,9 +2168,19 @@ fn deeply_nested_backbone_elements_are_generated_at_every_level() {
         let ty = report.ty_or_panic(path);
         assert_eq!(ty.kind, TypeKind::Backbone, "{path}");
         for element in &ty.elements {
+            // A choice element is addressed as `value` but keeps `[x]` in its
+            // snapshot path -- which is what the `path` field documents and
+            // what codegen.choice.001 and .003 assert. Three of these four
+            // backbone types own a choice element, so the bare format! could
+            // never match and this test could not pass against a correct
+            // generator.
+            let expected = if element.is_choice {
+                format!("{path}.{}[x]", element.fhir_name)
+            } else {
+                format!("{path}.{}", element.fhir_name)
+            };
             assert_eq!(
-                element.path,
-                format!("{path}.{}", element.fhir_name),
+                element.path, expected,
                 "{path} must take its elements from its own snapshot prefix"
             );
         }
