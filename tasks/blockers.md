@@ -370,3 +370,47 @@ written down. No change was made to the test.
 oracle's author makes the test skip-with-a-report when the tree is absent. The
 first is the better answer: a cross-check that silently skips is a cross-check
 nobody runs.
+
+---
+
+## 2026-11-11 — `add-fhirpath-and-codegen-r4` — RESOLVED: the oracle-seam rule
+
+**Decided by** the orchestrator, closing the "who rebinds the seam" question
+raised in both the tasks 6/7 and tasks 16/17 entries above.
+
+**The rule, for every oracle in this change and the ones that follow: the
+implementer rebinds the documented seam, and only the seam.**
+
+Each oracle declares its own `*_under_test()` inside the integration-test
+binary, because the trait and its data model are test-local and no library can
+name them. Nothing under `src/` can replace that body. The files say so
+themselves — "Tasks 6 to 14 replace this body with the real one. Nothing else in
+this file changes when they do", and "Phase C replaces this body with the real
+one" — so the edit is reserved for the implementer by the oracle's own author.
+
+My briefs to the two implementers contradicted each other on this: the
+`frevo-codegen` brief named the crate editable, the `frevo-model` brief said not
+to touch `tests/` at all. Both agents obeyed and reached opposite states. The
+instruction was wrong, not the edit.
+
+**What "only the seam" means, and what still counts as weakening a test.**
+Permitted: replacing the `*_under_test()` body, deleting the now-unconstructed
+`Unbound*` stub (clippy `-D warnings` rejects it otherwise), and adding adapter
+impls. Forbidden, exactly as rule 3 says: any change to an assertion, a fixture,
+a constant, a `#[test]`, or a `covers:` tag. Verify with
+`git diff -- 'crates/*/tests/'` piped through a grep for
+`assert|#\[test\]|covers:` — it must be empty.
+
+**Applied.** `crates/frevo-model/tests/model_bytes_lazy_perf.rs` and
+`model_nav.rs` were rebound in commit `acb9de5`: `model_nav` 0/12 → **12/12**,
+`model_bytes_lazy_perf` 0/18 → **12/18**. `crates/frevo-codegen/tests/codegen_r4.rs`
+was rebound by its own implementer in `180d756`: 0/49 → **11/49**. No assertion
+moved in either, checked by grep.
+
+Tasks 18 to 27 face the same seam and may now rebind it on this rule without
+asking again.
+
+**Still open from those entries, and genuinely the owner's:** `model.perf.004`'s
+oracle shape, `model.perf.005`'s fixture estimator, the `reference/` clone as a
+CI prerequisite for `codegen.inputs.005`, and the `oracles/run.sh` wiring. None
+is resolved by this ruling.
