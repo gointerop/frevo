@@ -16,6 +16,7 @@
 . "$(dirname "${BASH_SOURCE[0]}")/_lib.sh"
 
 INPUT="$(cat)"
+use_input_root "$INPUT"
 require_repo_root
 
 tool="$(json_get "$INPUT" tool_name)"
@@ -169,7 +170,7 @@ EOF
         block <<EOF
 BLOCKED: $p claims to cover scenario id(s) that do not exist:$missing
 
-Searched: $search_roots
+Searched: $search_roots, in the worktree $REPO_ROOT (the one containing the edited file)
 
 A covers: tag naming a nonexistent scenario is worse than no tag -- it reports
 coverage that nobody specified. Either:

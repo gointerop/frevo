@@ -13,6 +13,7 @@
 . "$(dirname "${BASH_SOURCE[0]}")/_lib.sh"
 
 INPUT="$(cat)"
+use_input_root "$INPUT"
 require_repo_root
 
 # Only guard product code. Everything else is handled by protect-paths.sh.

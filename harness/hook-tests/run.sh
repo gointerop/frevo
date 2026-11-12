@@ -216,23 +216,35 @@ expect_allow_at()  { check_at "$1" 0 "${@:2}"; }
 # json_edit builds the file path against $SB. In a worktree case the file has to
 # be inside the worktree, or the hook is being asked about a path in a different
 # tree and correctly finds no rule that applies.
-json_edit_at() { # root, tool, relpath, content
+json_edit_at() { # root, tool, relpath, content, [cwd, default root]
   "$PY" -I -c '
 import json,sys,os
-root,tool,rel,content = sys.argv[1:5]
+root,tool,rel,content,cwd = sys.argv[1:6]
 ti={"file_path": os.path.join(root, rel)}
 if content: ti["content"]=content
-print(json.dumps({"hook_event_name":"PreToolUse","tool_name":tool,"tool_input":ti,"cwd":root}))
-' "$1" "$2" "$3" "${4:-}"
+print(json.dumps({"hook_event_name":"PreToolUse","tool_name":tool,"tool_input":ti,"cwd":cwd or root}))
+' "$1" "$2" "$3" "${4:-}" "${5:-}"
 }
 
-add_worktree() { # id
-  local id="$1"
+add_worktree() { # id [verdict]
+  local id="$1" verdict="${2:-APPROVED}"
   WT="$SB-wt-$id"
   rm -rf "$WT"
   git worktree add -q -b "change/$id" "$WT" >/dev/null 2>&1
-  ( cd "$WT" && make_change "$id" APPROVED open )
+  ( cd "$WT" && make_change "$id" "$verdict" open )
   printf '%s' "$WT"
+}
+
+# json_event with the payload's cwd pointing somewhere other than the hook
+# process's working directory. Claude Code reports the session's current
+# directory in "cwd"; the hook process may have been started elsewhere.
+json_event_at() { # cwd, event, extra_key, extra_val
+  "$PY" -I -c '
+import json,sys
+d={"hook_event_name":sys.argv[2],"cwd":sys.argv[1]}
+if sys.argv[3]: d[sys.argv[3]]=sys.argv[4]
+print(json.dumps(d))
+' "$1" "$2" "${3:-}" "${4:-}"
 }
 
 echo "Frevo hook self-tests"
@@ -543,11 +555,75 @@ fn a() {}
 expect_block_at "$WT" "worktree: H3 still protects settled specs"   protect-paths.sh   "$(json_edit_at "$WT" Write openspec/specs/store/spec.md '# edited')"
 
 # A path inside the PRIMARY tree while the session works in the linked one is
-# outside every rule, and stays that way: see the limitation recorded in
-# ADR 0002. Asserted so that if it ever changes, it changes deliberately.
-expect_allow_at "$WT" "worktree: a path in another worktree matches no rule"   protect-paths.sh   "$(json_edit Write openspec/specs/store/spec.md '# edited')"
+# judged against the primary tree, which contains it. This used to be pinned as
+# "matches no rule" (the limitation in ADR 0002 section 3a); section 3d closed
+# it, so the settled spec is protected whichever tree the session sits in.
+expect_block_at "$WT" "worktree: a path in another worktree is judged in that worktree"   protect-paths.sh   "$(json_edit Write openspec/specs/store/spec.md '# edited')"
 
 expect_block_at "$WT" "worktree: H5 still blocks a push to main"   guard-bash.sh "$(json_bash 'git push origin main')"
+
+# ==========================================================================
+# Session on main, edit in a sibling worktree on a change branch
+# ==========================================================================
+# The layout that actually occurs: the orchestrator's session sits in the
+# primary tree on main, and an agent edits files by absolute path inside a
+# sibling worktree on change/<id>. Every rule has to be evaluated in the tree
+# that CONTAINS the edited file -- its branch, its active change, its delta --
+# not in the session's tree. Before ADR 0002 section 3d the hooks used the
+# session's tree: H4 could not see the delta and blocked a legitimate covers:
+# id (an agent then wrote the file through the shell to get past it), and H2
+# and H3 saw an absolute path outside "the" repository and allowed everything.
+setup_sandbox; on_branch main; commit_all "base"
+add_worktree add-store >/dev/null; WT_OK="$WT"
+add_worktree add-draft CHANGES_REQUESTED >/dev/null; WT_CR="$WT"
+cd "$SB"
+
+# store.create.001 is defined ONLY in the worktree's delta; main's settled spec
+# does not contain it. This is the reported failure.
+expect_allow_at "$SB" "cross-tree: H4 resolves a covers: id defined only in the edited worktree's delta"   test-integrity.sh   "$(json_edit_at "$WT_OK" Write crates/frevo-store/tests/t.rs '// covers: store.create.001
+#[test]
+fn a() {}
+' "$SB")"
+
+expect_block_at "$SB" "cross-tree: H4 still blocks a covers: id that exists nowhere"   test-integrity.sh   "$(json_edit_at "$WT_OK" Write crates/frevo-store/tests/t.rs '// covers: store.create.999
+#[test]
+fn a() {}
+' "$SB")"
+
+expect_block_at "$SB" "cross-tree: H4 still blocks #[ignore] in the edited worktree"   test-integrity.sh   "$(json_edit_at "$WT_OK" Write crates/frevo-store/tests/t.rs '// covers: store.create.001
+#[ignore]
+#[test]
+fn a() {}
+' "$SB")"
+
+expect_allow_at "$SB" "cross-tree: H2 allows crates/ on the edited worktree's APPROVED change"   require-active-change.sh   "$(json_edit_at "$WT_OK" Write crates/frevo-store/src/lib.rs 'fn x() {}' "$SB")"
+
+expect_block_at "$SB" "cross-tree: H2 blocks crates/ on the edited worktree's unapproved change"   require-active-change.sh   "$(json_edit_at "$WT_CR" Write crates/frevo-store/src/lib.rs 'fn x() {}' "$SB")"
+
+expect_block_at "$SB" "cross-tree: H3 protects the edited worktree's settled specs"   protect-paths.sh   "$(json_edit_at "$WT_OK" Write openspec/specs/store/spec.md '# edited' "$SB")"
+
+expect_block_at "$SB" "cross-tree: H3 judges .claude/ by the edited worktree's branch"   protect-paths.sh   "$(json_edit_at "$WT_OK" Write .claude/hooks/x.sh '# edited' "$SB")"
+
+# H8 has no file to go by. It uses the payload's cwd, so a subagent whose
+# session directory is the worktree is judged there even when the hook process
+# started in the primary tree -- including the grep for covers: tags, which
+# must search that worktree's crates/ and harness/.
+expect_block_at "$SB" "cross-tree: H8 judges oracle-builder in the payload cwd's worktree"   subagent-guard.sh   "$(json_event_at "$WT_OK" SubagentStop agent_type oracle-builder)"
+mkdir -p "$WT_OK/crates/frevo-store/tests"
+printf '// covers: store.create.001\n// covers: store.create.002\n#[test]\nfn a() {}\n' \
+  > "$WT_OK/crates/frevo-store/tests/t.rs"
+expect_allow_at "$SB" "cross-tree: H8 finds the covers: tags in that worktree"   subagent-guard.sh   "$(json_event_at "$WT_OK" SubagentStop agent_type oracle-builder)"
+
+# Retargeting is confined to worktrees of THIS repository. A path in an
+# unrelated repository, or in no repository, is still outside every rule:
+# the rules are about this repository, and another repository's hooks are its
+# own business.
+OTHER="$SB-other"; rm -rf "$OTHER"; mkdir -p "$OTHER/openspec/specs/store"
+( cd "$OTHER" && git init -q -b main && echo '# x' > openspec/specs/store/spec.md )
+expect_allow_at "$SB" "cross-tree: a path in an unrelated repository matches no rule"   protect-paths.sh   "$(json_edit_at "$OTHER" Write openspec/specs/store/spec.md '# edited')"
+rm -rf "$OTHER"
+git worktree remove --force "$WT_OK" >/dev/null 2>&1
+git worktree remove --force "$WT_CR" >/dev/null 2>&1
 
 # ==========================================================================
 # Generated code is src/, not the whole crate

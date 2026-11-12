@@ -129,13 +129,62 @@ with the working directory inside the linked one — the actual layout
 — asserting both directions: a `covers:` id from the worktree's
 delta resolves, and an id that exists nowhere is still blocked.
 
-**Known limitation, asserted rather than fixed.** A path inside a *different*
-worktree of the same repository, while the working directory is in another,
-matches no rule. Claude Code hands the hook a path inside the session's own
-tree, so this does not arise in practice; a self-test asserts the current
-behaviour so that if it ever changes, it changes deliberately. Closing it
-properly means resolving each target path to the worktree containing it, which
-is more machinery than a hypothetical warrants.
+**Known limitation, asserted rather than fixed -- since closed (section 3d).**
+A path inside a *different* worktree of the same repository, while the working
+directory is in another, matched no rule. This was judged hypothetical, on the
+belief that Claude Code hands the hook a path inside the session's own tree.
+That belief was wrong; see 3d.
+
+### 3d. The rules are judged in the worktree that contains the edited file
+
+The limitation in 3a was not hypothetical. The orchestrator's session sits in
+the primary tree on `main`, and the agents it launches edit files by absolute
+path inside sibling worktrees (`frevo-change` on `change/<id>`, and so on).
+Claude Code runs the session's hooks with the session's directory, so for every
+such edit:
+
+- `test-integrity.sh` read the branch as `main`, found no active change,
+  searched only `openspec/specs/`, and **blocked** a `covers:` id that sat in
+  the edited worktree's delta. An agent got past it by writing the file through
+  the shell, which is precisely the workaround the hooks exist to make
+  unnecessary.
+- `require-active-change.sh` and `protect-paths.sh` saw an absolute path
+  outside "the" repository and matched no rule, so they **allowed** it. An edit
+  to `crates/` on a change whose review was not `APPROVED`, a settled spec, or
+  `.claude/**` from a product branch all went through silently, as long as the
+  session happened to sit in a different worktree.
+
+The loud half again hid the quiet half: one hook blocking was reported, three
+hooks not applying at all was not.
+
+`_lib.sh` now has `use_input_root`, which every hook that reads a payload calls
+before `require_repo_root`. It re-points `REPO_ROOT` at the worktree the call is
+about: the one containing `tool_input.file_path` (or `notebook_path`/`path`),
+else the one containing the payload's `cwd` (the session's current directory,
+which need not be the directory the hook process started in). Branch, active
+change, change delta, relative paths, and H8's search of `crates/` and
+`harness/` for `covers:` tags all follow from that root.
+
+Two constraints keep it from becoming a way round the rules:
+
+- It only moves to another worktree of the **same** repository, compared by
+  `git rev-parse --git-common-dir`. A path in an unrelated repository, or in
+  none, leaves `REPO_ROOT` alone and matches no repo-relative rule, as before.
+- It never fails open. When nothing qualifies, `REPO_ROOT` is unchanged, and
+  `require_repo_root` still refuses a root it cannot reach (3b).
+
+H8 (`SubagentStop`) has no file path to go by and relies on the payload's
+`cwd`. A subagent whose `cwd` is the primary tree but that edited a sibling by
+absolute path is still judged in the primary tree, where no change is active,
+so H8 allows the stop. That is H8's documented fail-open as a completeness
+check; the per-edit guards above, which now judge the right tree, are the
+primary control.
+
+The self-test that pinned "a path in another worktree matches no rule" now
+asserts the opposite, and a new group runs the hooks with both the process
+directory and the payload `cwd` on `main` while the edited file is in a sibling
+worktree on `change/<id>` whose delta alone defines the `covers:` id. Six of
+those cases fail against the pre-fix hooks.
 
 ### 3b. The hooks no longer fail open on an unreachable root
 
@@ -169,10 +218,11 @@ than allowing an unchecked action.
 
 `harness/hook-tests/run.sh` runs each hook against crafted stdin inside a
 throwaway git repository, with at least one positive and one negative case per
-rule — 87 cases. It runs in CI as part of `openspec-guard`. A hook change that
+rule — 102 cases. It runs in CI as part of `openspec-guard`. A hook change that
 stops blocking fails the build.
 
-The count went from 74 to 87 when the linked-worktree cases were added, and
+The count went from 74 to 87 when the linked-worktree cases were added (and to
+102 with the cross-worktree cases of section 3d), and
 that increase is the lesson of section 3a: a self-test suite is only as good
 as the layouts its fixture can express. These hooks have now twice been green
 while enforcing against the wrong repository. Where a rule depends on
@@ -249,8 +299,8 @@ Bad, and accepted:
 
 - Claude Code exposes the subagent identity in hook payloads reliably, at which
   point H8 can enforce rather than infer.
-- A target path in a different worktree of the same repository becomes something
-  that happens in practice, at which point `rel_path` should resolve each path
-  to its own worktree instead of to the working directory's (section 3a).
+- Claude Code puts the edited paths, or the subagent's own worktree, in the
+  `SubagentStop` payload, at which point H8 can be judged in the tree the
+  subagent actually edited rather than its `cwd` (section 3d).
 - The OpenSpec CLI changes `validate` or `archive` flags — the hooks call them
   directly and would need updating in the same commit.

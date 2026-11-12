@@ -19,6 +19,7 @@
 . "$(dirname "${BASH_SOURCE[0]}")/_lib.sh"
 
 INPUT="$(cat)"
+use_input_root "$INPUT"
 require_repo_root
 
 STATE_DIR="$(git rev-parse --git-dir 2>/dev/null || echo .git)"
