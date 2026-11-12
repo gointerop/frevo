@@ -83,28 +83,37 @@ pub trait CanonicalOracle {
     fn elements_equal(&self, a: &[u8], b: &[u8]) -> Result<bool, CanonicalError>;
 }
 
-/// The codec this oracle grades. Phase C replaces this body with the real one.
+/// The codec this oracle grades: `frevo-model`'s eager decoder, whose
+/// re-encodings are the stored, canonical and indented forms (task 23).
 fn codec_under_test() -> Box<dyn CanonicalOracle> {
-    Box::new(UnboundCodec)
+    Box::new(FrevoCodec)
 }
 
-struct UnboundCodec;
+struct FrevoCodec;
 
-impl CanonicalOracle for UnboundCodec {
-    fn canonicalise(&self, _bytes: &[u8]) -> Result<Vec<u8>, CanonicalError> {
-        Err(CanonicalError::NotImplemented)
+impl FrevoCodec {
+    fn decode(bytes: &[u8]) -> Result<frevo_model::Decoded, CanonicalError> {
+        frevo_model::decode(bytes, frevo_model::DEFAULT_PARSE_MODE)
+            .map_err(|e| CanonicalError::Failed(e.to_string()))
+    }
+}
+
+impl CanonicalOracle for FrevoCodec {
+    fn canonicalise(&self, bytes: &[u8]) -> Result<Vec<u8>, CanonicalError> {
+        Ok(Self::decode(bytes)?.reencoded_canonical)
     }
 
-    fn roundtrip_then_canonicalise(&self, _bytes: &[u8]) -> Result<Vec<u8>, CanonicalError> {
-        Err(CanonicalError::NotImplemented)
+    fn roundtrip_then_canonicalise(&self, bytes: &[u8]) -> Result<Vec<u8>, CanonicalError> {
+        let stored = Self::decode(bytes)?.reencoded;
+        Ok(Self::decode(&stored)?.reencoded_canonical)
     }
 
-    fn pretty(&self, _bytes: &[u8]) -> Result<Vec<u8>, CanonicalError> {
-        Err(CanonicalError::NotImplemented)
+    fn pretty(&self, bytes: &[u8]) -> Result<Vec<u8>, CanonicalError> {
+        Ok(Self::decode(bytes)?.reencoded_pretty())
     }
 
-    fn elements_equal(&self, _a: &[u8], _b: &[u8]) -> Result<bool, CanonicalError> {
-        Err(CanonicalError::NotImplemented)
+    fn elements_equal(&self, a: &[u8], b: &[u8]) -> Result<bool, CanonicalError> {
+        Ok(Self::decode(a)?.elements_equal(&Self::decode(b)?))
     }
 }
 

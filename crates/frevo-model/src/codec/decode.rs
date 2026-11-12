@@ -421,6 +421,40 @@ pub struct Decoded {
     pub reference_diagnostics: Vec<CodedDiagnostic>,
 }
 
+impl Decoded {
+    /// The stored form -- generated element order -- with indentation: two
+    /// spaces per level, one member or item per line. Only whitespace is
+    /// added, so it differs from [`Self::reencoded`] in nothing else and from
+    /// [`Self::reencoded_canonical`] only in whitespace and key order
+    /// (`model.canonical.006`).
+    pub fn reencoded_pretty(&self) -> Vec<u8> {
+        super::pretty::indent(&self.reencoded)
+    }
+
+    /// Whether every element of the two resources is equal: the same
+    /// resource type and the same element occurrences, each with the same
+    /// type, value, element id and extensions, whatever order the two
+    /// documents happened to spell their properties in.
+    ///
+    /// Elements are compared by path rather than in document order, because a
+    /// canonical and a stored document list the same elements in different
+    /// orders and that difference is the one this comparison exists to ignore.
+    /// Values are compared by their lexical form, so `1.50` and `1.5` are
+    /// different elements, which is what `model.canonical.003` requires of the
+    /// codec everywhere else.
+    pub fn elements_equal(&self, other: &Decoded) -> bool {
+        if self.resource_type != other.resource_type || self.elements.len() != other.elements.len()
+        {
+            return false;
+        }
+        let mut left: Vec<&DecodedElement> = self.elements.iter().collect();
+        let mut right: Vec<&DecodedElement> = other.elements.iter().collect();
+        left.sort_by(|a, b| a.path.cmp(&b.path));
+        right.sort_by(|a, b| a.path.cmp(&b.path));
+        left == right
+    }
+}
+
 /// Decode `bytes` in `mode`, using the generated R4 tables.
 ///
 /// This raises every condition a [`ReportKind`] names. The two conditions

@@ -23,6 +23,7 @@ pub mod decode;
 pub mod doc;
 pub mod nav;
 pub mod path;
+pub mod pretty;
 pub mod provisional_r4;
 pub mod scan;
 pub mod stored;

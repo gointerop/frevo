@@ -976,3 +976,37 @@ Baseline measured at `fb3975f` with `cargo test -p frevo-model --no-fail-fast`:
 `model_canonical` 0/6, `model_mutate` 0/7, `model_parser_errors` 3/6 (the three
 `model.canonical.007` tests fail on `NotImplemented`), `model_bytes_lazy_perf`
 12/18 (pre-existing: `bench/micro/` missing, and entries 2 and 3 above).
+
+## 2026-11-12 — `add-fhirpath-and-codegen-r4` — task 23 is green except where its oracle contradicts itself or the spec
+
+Task 23 ran in `C:/gointerop/git/frevo-change` on
+`change/add-fhirpath-and-codegen-r4` (option 1 of the entry above). The
+`model_canonical` seam is bound to `frevo_model::decode`'s re-encodings and
+the file is 5 of 6. Two conflicts were implemented to the test, as instructed,
+and not resolved.
+
+1. **`model.canonical.005` cannot pass in a checkout that has run
+   `oracles/fetch.sh`.** `model_canonical.rs:794` asserts
+   `files.len() >= 100`, counting `*.json` only, over
+   `oracles/fhir-test-cases/fetched/r4/examples/`. That directory holds 103
+   files, of which 72 are `.json`, 10 `.xml` and 21 `.json.out`; "the 103
+   examples" in task 5 and task 56 is the file count, not the JSON count. All
+   72 JSON files canonicalise identically directly and through the round trip
+   (measured with a throwaway driver, not committed). Without the fetched
+   directory, as in CI, which never runs `fetch.sh`, the branch is skipped and
+   the test passes on its embedded fixtures. *Decision needed:* the
+   oracle-builder either counts the JSON files (72) or selects the XML too and
+   reports it `not-applicable-xml` as task 56 says. The test was not edited.
+2. **`model.canonical.003` requires `1.00e3` to survive canonicalisation**
+   (`model_canonical.rs:722`), which the codec does by copying every
+   primitive token's bytes. `specs/model/spec.md:401` requires "the canonical
+   JSON form that `JsonCreatorCanonical` produces", and that class writes
+   `BigDecimal.toString()`, so `1.00e3` would come out `1.00E+3` (finding 1 of
+   the entry above). Implemented to the test. *Decision needed:* the proposer
+   states the decimal rule in the requirement, or the oracle changes; until
+   then the two disagree and no gate can see it, because the oracle compares
+   Frevo with Frevo.
+
+String escaping (finding 2 above) is also as before: the canonical emitter
+copies each string token's input bytes and does not re-escape the way
+`Utilities.escapeJson` does. No scenario covers it, so nothing was changed.

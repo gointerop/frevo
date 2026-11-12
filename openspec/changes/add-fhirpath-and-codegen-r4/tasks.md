@@ -580,6 +580,18 @@ checkpoint because it changes what a gate measures.
   array order preserved in both; presented decimal form preserved;
   idempotence; and the direct-versus-round-trip equality the oracle compares.
   Satisfies `model.canonical.001` through `model.canonical.006`.
+  **Implemented, not ticked.** `model_canonical` is 5 of 6 (it was 0 of 6),
+  measured with `cargo test -p frevo-model --test model_canonical` in a
+  checkout where `oracles/fetch.sh` has run. The red one is
+  `model.canonical.005`, and not on a comparison: its corpus branch asserts
+  `files.len() >= 100` over `*.json` only, and the fetched interim directory
+  holds 103 files of which 72 are `.json` (10 `.xml`, 21 `.json.out`). All
+  72 compare equal direct-versus-round-trip. In a checkout without the fetched
+  directory, as in CI, the branch is skipped and the test passes on its
+  embedded fixtures. `model.canonical.003` passes by keeping `1.00e3` as
+  written, which the test requires and `JsonCreatorCanonical` would not do.
+  Both conflicts are in `tasks/blockers.md`, 2026-11-12, "task 23 is green
+  except where its oracle contradicts itself or the spec".
 
 - [ ] **23a. Implement the encode-side dangling-internal-reference diagnostic.**
   This is the **only** error condition on the encode side, and the round-trip
