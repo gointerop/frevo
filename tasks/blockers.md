@@ -398,8 +398,26 @@ Permitted: replacing the `*_under_test()` body, deleting the now-unconstructed
 `Unbound*` stub (clippy `-D warnings` rejects it otherwise), and adding adapter
 impls. Forbidden, exactly as rule 3 says: any change to an assertion, a fixture,
 a constant, a `#[test]`, or a `covers:` tag. Verify with
-`git diff -- 'crates/*/tests/'` piped through a grep for
-`assert|#\[test\]|covers:` — it must be empty.
+
+    git diff -- 'crates/**/tests/**' | grep -E "assert|#\[test\]|covers:"
+
+and it must be empty.
+
+**The pathspec matters, and my first version of this recipe was wrong.**
+`'crates/*/tests/'` with a trailing slash matches **nothing** in a git
+pathspec, so the check passed vacuously for five agents in a row: every one of
+them reported it empty, and every one was reporting a glob that selected no
+files at all. A check that cannot fail is worse than no check, because it is
+reported as evidence.
+
+Audited retroactively with a working pathspec across every commit on this
+branch that touches a test file: the three seam rebindings (`69b8b74`,
+`acb9de5`, `180d756`) changed **0** assertion, `#[test]` or `covers:` lines;
+`ea936af`'s four are the two self-contradicting assertions corrected against
+upstream and documented as such; and the large counts in `5caabef` and
+`29181c7` are the commits that created the test files, where every assertion is
+an addition. So nothing was weakened — but that was established by
+independent greps with explicit paths, not by the recipe.
 
 **Applied.** `crates/frevo-model/tests/model_bytes_lazy_perf.rs` and
 `model_nav.rs` were rebound in commit `acb9de5`: `model_nav` 0/12 → **12/12**,
