@@ -52,10 +52,10 @@ Fix the generator in crates/frevo-codegen, then regenerate.
 
 Scope, twice corrected. The rule first matched crates/frevo-model/* and refused
 tests/ as generated. Narrowing it to src/* then refused src/lib.rs and
-src/codec/**, which are hand-written -- so the 73,465 generated lines could not
-be declared with `pub mod r4;` and were never compiled or linted in tree at
-all. It now names the generated roots: the per-version model directories and
-the converters'.
+src/codec/**, which are hand-written -- so the module declaration that puts
+the generated model in the build could not be written, and 73,465 lines were
+never compiled or linted in tree at all. It now names the generated roots:
+the per-version model directories and the converters'.
 
 The @generated marker check below still catches an output wherever it sits, but
 only once the file exists -- it cannot judge a new file -- so these paths are
