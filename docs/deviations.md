@@ -45,21 +45,25 @@ decision.
 
 ## Entries
 
-The ten entries below all come from `add-fhirpath-and-codegen-r4` and are the
-same kind of case: the pinned R4 `FHIRPathEngine` does something the FHIRPath
-specification does not describe. In every one the chosen behaviour is **HAPI's**,
-because the point of the port is that an existing deployment can switch without
-changing anything. None is a deviation *from HAPI*; each is a place where
-following HAPI means not following the specification, which is what rule 1 of
-the constitution says to record here.
+All eleven entries below come from `add-fhirpath-and-codegen-r4`.
+`DEV-0001` through `DEV-0010` are the same kind of case: the pinned R4
+`FHIRPathEngine` does something the FHIRPath specification does not describe. In
+every one of those the chosen behaviour is **HAPI's**, because the point of the
+port is that an existing deployment can switch without changing anything. None
+of the ten is a deviation *from HAPI*; each is a place where following HAPI
+means not following the specification, which is what rule 1 of the constitution
+says to record here. `DEV-0011` is the one entry of the other kind — a place
+where Frevo deliberately does **not** match HAPI, because what HAPI does there
+is end the call with an unchecked Java exception.
 
-All ten were reviewed and accepted by the owner on 2026-11-08: **match HAPI,
-no configuration flag.** `DEV-0001` through `DEV-0009` were signed off together;
-`DEV-0010` was raised afterwards by the second revision of this change and
-signed off separately, because a new deviation is a phase-boundary checkpoint
-and does not inherit an earlier decision.
+The first ten were reviewed and accepted by the owner on 2026-11-08: **match
+HAPI, no configuration flag.** `DEV-0001` through `DEV-0009` were signed off
+together; `DEV-0010` was raised afterwards by the second revision of this change
+and signed off separately, because a new deviation is a phase-boundary
+checkpoint and does not inherit an earlier decision. `DEV-0011` was raised on
+2026-11-12 and is **not** signed off.
 
-Six of the ten leave something owed even where the behaviour is settled — a
+Six of the first ten leave something owed even where the behaviour is settled — a
 flag we may need, a bug report we owe upstream, or behaviour we have not
 characterised — and those carry a `Debt:` field pointing at
 `docs/tech-debt.md`. The other four owe nothing beyond parity. Accepting a
@@ -325,6 +329,67 @@ file, so its prose is not redistributable here (see `oracles/PINS.md`).
   flag; the residual hazard is tracked as `DEBT-0010`. Raised after the review
   of DEV-0001..0009 and signed off separately, as a new deviation requires.
 
+### DEV-0011 — the front end diagnoses six inputs on which the pinned lexer crashes, accepts or truncates
+
+- **Area:** path
+- **Scenario IDs:** path.lexer.013, path.lexer.014, path.errors.003,
+  path.errors.004, path.parse.008
+- **HAPI 8.12.0 behaviour:** six truncated or malformed inputs leave the pinned
+  lexer in a state it does not check for. Five end the call with an **unchecked
+  Java exception** rather than a `FHIRLexerException`, so a caller that handles
+  the engine's own exception type still gets a crash; the sixth is accepted:
+  1. `'\u00'` — `processConstantString` takes `s.substring(i, i + 4)` with no
+     bounds check (`FHIRPathEngine.java:1826`, and `FHIRLexer.java:462` for the
+     unit decoder), so a `\u` with fewer than four characters after it raises
+     `StringIndexOutOfBoundsException`;
+  2. `'\u00zz'` — the same `substring` is handed to
+     `Integer.parseInt(.., 16)`, which raises `NumberFormatException`;
+  3. `'\u+041'` — the same `parseInt` **accepts** a leading sign, so this
+     decodes to `A`. The pinned suite records the expression as
+     `invalid="syntax"` (`testLiterals/testLiteralUnicodeInvalid`), so HAPI
+     fails its own test case here;
+  4. `2 -` — `FHIRLexer.java:152` evaluates
+     `source.charAt(cursor) == '>'` outside the bounds check when the token is
+     `-`, raising `StringIndexOutOfBoundsException` for a trailing `-`;
+  5. `{` as the last character — `FHIRLexer.java:205` reads the next character
+     unguarded, same exception;
+  6. an unterminated `` %`… `` run — `FHIRLexer.java:182` steps over the
+     closing backtick unconditionally and the following `substring` is then
+     out of bounds, same exception.
+  Separately, `Utilities.isDecimal` accepts a decimal literal of any width (it
+  returns `RANGE`, which counts as a decimal), and `new DecimalType(String)`
+  carries it as a `BigDecimal`.
+- **Specification requirement:** FHIRPath 2.0.0, Literals — a unicode escape is
+  `\u` followed by four hexadecimal digits; nothing in the grammar admits a
+  sign. The specification says nothing about any of the truncated inputs, and
+  nothing in it licenses a crash.
+- **Chosen behaviour:** neither, in one narrow respect: Frevo returns a parse
+  diagnostic with an offset for all six, and requires a unicode escape to be
+  exactly four digits in the radix with no sign.
+- **Configuration flag:** none
+- **Debt:** none for the six. One residual is **not** registered yet and is
+  reported with this entry: Frevo's decimal carries a 128-bit mantissa
+  (`design.md` section 6's named fallback), so a literal with more than 38
+  significant digits is refused as `Invalid Constant` where HAPI accepts it.
+  `docs/tech-debt.md` does not exist on this branch, so the entry that would
+  hold it cannot be written here without colliding with the branch that
+  introduces the file.
+- **Rationale:** `path.errors.003` forbids a panic anywhere in the suite, and a
+  Java unchecked exception is exactly the failure mode it forbids, so items 1,
+  2, 4, 5 and 6 are not a choice. Item 3 is: HAPI accepts an escape the
+  specification does not describe, and the consequence of matching it would be
+  that Frevo also fails `testLiterals/testLiteralUnicodeInvalid`, a case the
+  pinned suite marks `invalid="syntax"`. Rejecting it makes Frevo pass a case
+  HAPI fails, which the gate permits — "at or above HAPI 8.12.0's own rate" —
+  and the expression it rejects cannot occur in a search parameter or an
+  invariant that works on HAPI today, because a `+` in a unicode escape is a
+  typo in every real case.
+- **Normalizer impact:** none. These are parse-time refusals of malformed
+  expressions; no stored byte and no response body differs.
+- **Reviewed:** not yet. Raised 2026-11-12 by the implementation of tasks
+  28-30 of `add-fhirpath-and-codegen-r4`. A new deviation is a phase-boundary
+  checkpoint and does not inherit the sign-off of DEV-0001..0010.
+
 ## Considered and not recorded as deviations
 
 Recorded so the reasoning is not re-derived:
@@ -355,6 +420,35 @@ Recorded so the reasoning is not re-derived:
 - **Double quotes rejected as string delimiters.** `allowDoubleQuotes` is off by
   default and both HAPI wrappers leave it off; FHIRPath uses single quotes, so
   the default agrees with the specification. No divergence.
+- **An unfinished block comment is not an error.**
+  `FHIRLexer.skipWhitespaceAndComments` is declared without `throws`, so
+  `FHIRLexer.java:315` constructs the "Unfinished comment" exception and
+  **drops** it. The scan then stops one character before the end of the source,
+  and that last character becomes the next token. So `2 + 2 /* not finished`
+  fails as `Premature ExpressionNode termination at unexpected token "d"` —
+  still the syntax error `path.lexer.009` asks for — while `2 + /* c` parses as
+  `2 + c` and `2 + 2 /*abc ` parses as `2 + 2`, because a trailing whitespace
+  character is then consumed as whitespace. Frevo reproduces all three rather
+  than raising on an unterminated comment, so there is nothing to record: an
+  expression HAPI accepts is accepted, and an expression HAPI rejects is
+  rejected. Writing the error upstream forgot to throw would have made Frevo
+  reject two expressions HAPI accepts.
+- **`FHIRLexer.isToken` inspects `charAt(1)` in a loop over `i`.**
+  `FHIRLexer.java:126-129` tests the second character once per iteration
+  instead of the `i`-th, so a name whose second character is `_` is not a token
+  name at all — `a_b` is a syntax error on HAPI, `ab_c` is not. Reproduced, so
+  no divergence. It is reachable only through an element or variable name
+  shaped that way, and no FHIR element name is.
+- **The two escape decoders disagree with each other, and with the engine's.**
+  `FHIRLexer.processConstant` (a quantity literal's unit) omits the advance past
+  the escaped character, so `1 'a\tb'` decodes the unit as `a<TAB>tb` and
+  `1 'a\\b'` is rejected as an unknown escape `\b`; `FHIRLexer.processFixedName`
+  (a backtick-delimited name) reads `\u` in **base 32**
+  (`FHIRLexer.java:511`) and knows no `` \` `` escape; only
+  `FHIRPathEngine.processConstantString`, which is what a string literal goes
+  through, is self-consistent. All three are reproduced as they are. None is
+  reachable from an expression that is not already pathological, and matching
+  them costs nothing.
 - **The `@` prefix on a temporal expectation in the FHIRPath suite.** The
   pinned suite writes `<output type="date">@1974-12-25</output>`, and the pinned
   harness compares against `PrimitiveType.fpValue()`, which prepends `@` for a
