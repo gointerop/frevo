@@ -1,0 +1,79 @@
+# In-process micro-benchmark workloads (design.md section 8 of
+# openspec/changes/add-fhirpath-and-codegen-r4).
+#
+# There is no server yet, so these are the leading indicators for the HTTP
+# targets in bench/targets.md: `model-passthrough` for read-by-id, the others
+# for the ingest path. Each names what it stresses, as bench/workloads.yaml
+# does, plus the budget its scenario states. They are gate conditions.
+#
+# Run them with
+#
+#   cargo bench -p frevo-model --bench model_micro
+#
+# which measures every workload below in the release (bench) profile and
+# writes bench/micro/results.json. bench/micro/baseline.json is the same file
+# recorded for the previous commit on main; model.perf.006 compares the two.
+# See bench/micro/README.md for the method and for how the baseline moves.
+#
+# Fixtures are committed in bench/micro/fixtures/ and checked by the bench
+# against the generator the tests in crates/frevo-model/tests/ use, so the
+# recorded medians and the tests' in-process ratios describe the same bytes.
+
+defaults:
+  crate: frevo-model
+  bench: model_micro
+  warmup_ms: 300
+  samples: 201
+  min_batch_us: 500
+  statistic: median
+
+workloads:
+  - name: model-passthrough
+    scenario: model.perf.001
+    fixture: fixtures/patient-4kib.json
+    stresses: >
+      Load a stored 4 KiB Patient from bytes and serialise it unchanged. The
+      buffer is taken by Arc clone, nothing is scanned, and the output is one
+      copy of the input. This is the model's whole contribution to read-by-id.
+    budget: median <= 1 us, zero tokens scanned
+
+  - name: model-lazy-read
+    scenario: model.perf.002
+    fixture: fixtures/patient-4kib.json
+    stresses: >
+      Load the 4 KiB Patient and read Patient.birthDate, which comes before the
+      address array; nothing after it is scanned.
+    budget: median <= 2 us, and at most 10% of model-full-parse
+
+  - name: model-full-parse
+    scenario: model.perf.003
+    fixture: fixtures/patient-4kib.json
+    stresses: >
+      Load the 4 KiB Patient and materialise every element (the
+      untracked meter: the decode, not the materialised-path log).
+    budget: median <= 20 us
+
+  # model-meta-update is recorded as two rows, one per document size.
+  - name: model-meta-update
+    rows: [model-meta-update-4kib, model-meta-update-64kib]
+    scenario: model.perf.004
+    fixture: [fixtures/patient-4kib.json, fixtures/patient-64kib.json]
+    stresses: >
+      Set meta.versionId and meta.lastUpdated and serialise in the stored form,
+      on a 4 KiB and a 64 KiB Patient. Every byte outside meta is spliced from
+      the input, so the cost should follow meta, not the document.
+    budget: the 4 KiB and 64 KiB medians within 25% of each other
+
+  - name: model-canonical-encode
+    scenario: model.perf.005
+    fixture: constructed in memory (see constructed_properties in the bench)
+    stresses: >
+      Canonically serialise a Patient constructed from properties -- id,
+      active, gender, birthDate and address repetitions of city, district,
+      state, country and postalCode -- with as many repetitions as make the
+      canonical output at least 4 KiB. Construction is set-up and is not
+      timed.
+    budget: median <= 25 us
+
+# model.perf.006: no row in results.json more than 10% slower than the same
+# row in baseline.json (bench/targets.md, regression policy).
