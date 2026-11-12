@@ -2029,7 +2029,8 @@ The engine SHALL implement the utility and FHIR-specific functions `FHIRPathEngi
 The engine SHALL provide a check pass, separate from evaluation, that reports
 the semantic errors `FHIRPathEngine.check` reports — 29 suite cases are
 `invalid="semantic"`, and the `isSemanticChecks` group exists only to exercise
-it.
+it. Like the pinned engine, it SHALL NOT narrow a type on a type guard
+(`path.check.005` to `path.check.012`).
 
 #### Scenario: [path.check.001] the check pass is separate from evaluation
 
@@ -2057,52 +2058,160 @@ it.
 - **WHEN** `Observation.value` is checked against focus type `Observation`
 - **THEN** the inferred type is the declared choice set, not a single type
 
-#### Scenario: [path.check.005] the check narrows the type after an `is` guard in `implies`
+#### Scenario: [path.check.005] an `is` guard in `implies` does not narrow the type the other operand is checked against
 
 - **WHEN** `$this is dateTime implies $this.toString().length() > 10` is checked
   with `Observation.effective` as the context and `Period` as the context type
-- **THEN** the check passes, because the guarded operand is checked assuming the
-  guard is true (`isSemanticChecks/isEffectOnLogic3`)
+- **THEN** the check **fails** with the primitive-only diagnostic for
+  `toString` — message id `FHIRPATH_PRIMITIVE_ONLY`, "The function toString can
+  only be used on primitives" (`Messages.properties:353`) — the same diagnostic
+  the unguarded expression of `path.check.006` produces
+- **AND** this is HAPI 8.12.0's behaviour: `executeType` types every operand of
+  an operator chain against the **same** focus (`ENGINE:1621-1637`); the `is`
+  operator types to `Boolean` and leaves the focus unchanged
+  (`ENGINE:2013-2015`), as does `implies` (`ENGINE:2027`); and `toString`
+  requires the focus to include a primitive type or `Quantity`
+  (`ENGINE:3638-3640`, `:3872-3883`). The pinned R4 engine narrows on no
+  guard anywhere. The group's note (`tests-fhir-r4.xml:1695-1702`) asks for
+  narrowing; Frevo matches HAPI instead (owner ruling of 2026-11-12, recorded
+  in `tasks/blockers.md`, "task 50", finding 3). Here and in `path.check.006`
+  to `.012`, `ENGINE` is
+  `reference/org.hl7.fhir.core/org.hl7.fhir.r4/src/main/java/org/hl7/fhir/r4/fhirpath/FHIRPathEngine.java`,
+  `TypeDetails.java` its sibling in that package, and `Messages.properties`
+  `org.hl7.fhir.utilities/src/main/resources/Messages.properties`, all at
+  `73c432b5f43ddbce979978a760ec4aa81e929094`
+- **AND** so the three `implies`-guard cases the suite expects to pass the
+  check — `isSemanticChecks/isEffectOnLogic3`, `isGuardOrTypesImplies` and
+  `isGuardNotImplies` (`tests-fhir-r4.xml:1690-1693`, `:1717-1720`,
+  `:1781-1784`) — end at the **check** stage and are graded `failed`. HAPI's own
+  run fails all three too (its harness checks against the `Observation` root,
+  which is not a primitive either), so under `path.oracle.012` this is parity,
+  not a gap and not `ahead-of-hapi`
+- **AND** the same guard passes the check when the focus does include a
+  primitive: with `dateTime` as the context type (`isEffectOnLogic2`) and with no
+  context type, where the focus is the whole `effective[x]` choice set
+  (`isEffectOnLogic1`, `isGuardOrTypesImpliesAll`); those cases' graded status
+  is then decided by evaluation
+- **AND** every `implies`-guard case the suite expects to fail the check fails
+  it and is graded `passed`: `isGuardImpliesBad`, `isGuardOrTypesImpliesBad`,
+  `isGuardOrFnTypesImpliesBad`, `isGuardNotImpliesBad`, `isGuardSupertypeBad`
+  and `isGuardOtherExpressionBad`
 
 #### Scenario: [path.check.006] the same expression without the guard fails the check
 
 - **WHEN** `$this.toString().length() > 10` is checked with
   `Observation.effective` as the context and `Period` as the context type
-- **THEN** the check fails as a semantic error
-  (`isSemanticChecks/isEffectOnLogic3Base`)
+- **THEN** the check fails as a semantic error, with the same
+  `FHIRPATH_PRIMITIVE_ONLY` diagnostic for `toString` as `path.check.005`
+  (`isSemanticChecks/isEffectOnLogic3Base`, graded `passed`)
+- **AND** with `dateTime` as the context type (`isEffectOnLogic2Base`) or with no
+  context type (`isEffectOnLogic1Base`) the same expression passes the check
+- **AND** for each of those three context types the guarded expression of
+  `path.check.005` and this unguarded one get the **same** check outcome: the
+  guard changes nothing the check pass observes
 
-#### Scenario: [path.check.007] the `is()` function narrows the type as the `is` operator does
+#### Scenario: [path.check.007] the `is()` function narrows nothing either; only `ofType()` and `as` retype the focus
 
 - **WHEN** `$this.is(dateTime) implies $this.toString().length() >= 10` is
   checked with `Observation.effective` as the context and `Period` as the
   context type
-- **THEN** the check passes (`isSemanticChecks/isGuardFnImplies`)
+- **THEN** the check fails with the `FHIRPATH_PRIMITIVE_ONLY` diagnostic for
+  `toString`, because the `is()` function types to `Boolean` and leaves the
+  focus unchanged (`ENGINE:3401-3404`), exactly as the operator does
+- **AND** so `isSemanticChecks/isGuardFnImplies` ends at the check stage and is
+  graded `failed`, as it is for HAPI; `isGuardFnImpliesBad`
+  (`$this.is(Period) implies ...` with `Period|Timing`) fails the check and is
+  graded `passed`
+- **WHEN** `$this.ofType(dateTime).toString().length() >= 10` or
+  `($this as dateTime).toString().length() >= 10` is checked with the same
+  context and context type
+- **THEN** the check passes, because `ofType()` types its result as the named
+  type whatever the focus (`ENGINE:3377-3384`) and `as` types its result as the
+  named type on its right (`ENGINE:2016-2021`, with the right operand typed by
+  name at `ENGINE:1627-1628`, `:1570-1572`) — `isGuardOfType` and `isGuardAs`
+- **AND** the `ofType(dateTime)` form also yields an of-type-impossible warning,
+  because a `Period` focus can never be a `dateTime` (`ENGINE:3782-3784`); a
+  warning does not fail the check (`path.check.015`)
 
-#### Scenario: [path.check.008] `and` narrows the right operand assuming the left is true
+#### Scenario: [path.check.008] `and` checks its right operand against the unnarrowed focus
 
-- **WHEN** the `isSemanticChecks` group's `and` guard cases are checked
-- **THEN** each yields its stated result
+- **WHEN** `$this is dateTime and $this.toString().length() >= 10` is checked
+  with `Observation.effective` as the context and `Period` as the context type
+- **THEN** the check fails with the `FHIRPATH_PRIMITIVE_ONLY` diagnostic for
+  `toString`: `and` types to `Boolean` (`ENGINE:2025`) and its right operand is
+  typed against the same focus as its left (`ENGINE:1621-1637`)
+- **AND** so the three `and`-guard cases the suite expects to pass the check —
+  `isSemanticChecks/isGuardAnd`, `isGuardAndOtherImplies` and
+  `isGuardOtherAndImplies` — end at the check stage and are graded `failed`, as
+  they are for HAPI; their `%resource.status = 'final'` operand types cleanly
+  and does not change which diagnostic is raised
+- **AND** `isGuardAndBad` (`$this is Period and ...` with `Period|Timing`) fails
+  the check and is graded `passed`
 
-#### Scenario: [path.check.009] `or` narrows the right operand assuming the left is false
+#### Scenario: [path.check.009] `or` and `xor` check their right operand against the unnarrowed focus
 
-- **WHEN** the `isSemanticChecks` group's `or` guard cases are checked
-- **THEN** each yields its stated result
+- **WHEN** `$this is Period or $this.toString().length() >= 10` is checked with
+  `Observation.effective` as the context and `Period` as the context type
+- **THEN** the check fails with the `FHIRPATH_PRIMITIVE_ONLY` diagnostic for
+  `toString`: `or` types to `Boolean` (`ENGINE:2024`) and does not assume its
+  left operand false when typing its right
+- **AND** so the three `or`-guard cases the suite expects to pass the check —
+  `isSemanticChecks/isGuardOr`, `isGuardOrBoth` and `isGuardOrInnerImplies` —
+  end at the check stage and are graded `failed`, as they are for HAPI
+- **AND** the `or` and `xor` cases the suite expects to fail the check fail it
+  and are graded `passed`: `isGuardOrBad`, `isGuardOrOtherImpliesBad`,
+  `isGuardOrOtherImpliesNoParensBad`, `isGuardOrInnerImpliesBad` and
+  `isGuardXorBad`
+- **AND** with `Period|dateTime` as the context type the same `or` expression
+  (`isGuardOr2`) and its `xor` counterpart (`isGuardXorBad2`) pass the check,
+  because the focus then includes a primitive (`path.check.012`); their graded
+  status is then decided by evaluation
 
-#### Scenario: [path.check.010] `iif` narrows its branches by the condition's polarity
+#### Scenario: [path.check.010] `iif` checks both branches against the unnarrowed focus
 
-- **WHEN** the `isSemanticChecks` group's `iif` guard cases are checked
-- **THEN** each yields its stated result
+- **WHEN** `iif($this is dateTime, $this.toString().length() >= 10, true)` or
+  `iif($this is Period, true, $this.toString().length() >= 10)` is checked with
+  `Observation.effective` as the context and `Period` as the context type
+- **THEN** the check fails with the `FHIRPATH_PRIMITIVE_ONLY` diagnostic for
+  `toString`, whichever branch holds it: `iif`'s arguments are not expression
+  parameters (`ENGINE:3804-3816`), so each is typed against the same `$this`
+  (`ENGINE:3261-3271`), and `iif`'s result is the union of its branch types
+  with no reference to the condition (`ENGINE:3441-3449`)
+- **AND** so `isSemanticChecks/isGuardIifTrue` and `isGuardIifElse` end at the
+  check stage and are graded `failed`, as they are for HAPI; `isGuardIifBad`
+  fails the check and is graded `passed`
 
-#### Scenario: [path.check.011] a guard that narrows to the empty type set makes the guarded operand unreachable, not an error
+#### Scenario: [path.check.011] a guard that can never be true leaves the other operand checked as usual
 
-- **WHEN** a guard narrows the focus type set to empty
-- **THEN** the guarded operand is not reported as an error
-  (`isSemanticChecks`, per the group's own note)
+- **WHEN** `$this is dateTime implies $this.toString().length() >= 10` is
+  checked with `Observation.effective` as the context and `Period|Timing` as
+  the context type, so the guard can never be true
+- **THEN** the check fails with the `FHIRPATH_PRIMITIVE_ONLY` diagnostic for
+  `toString`: the pinned engine has no notion of an unreachable operand, and the
+  suite group's note asking for one (`tests-fhir-r4.xml:1695-1702`) describes
+  behaviour HAPI 8.12.0 does not have
+- **AND** so `isSemanticChecks/isGuardImpliesEmpty` and `isGuardNested`
+  (`$this is Period implies ($this is dateTime implies ...)` with
+  `Period|Timing`) end at the check stage and are graded `failed`, as they are
+  for HAPI
+- **AND** the only exemption the pinned engine has is a focus with **no types
+  at all**, which the primitive-only rule does not check
+  (`ENGINE:3873`, `!focus.hasNoTypes()`); a guard never produces one
 
 #### Scenario: [path.check.012] a context type naming several types checks against all of them
 
-- **WHEN** a case whose `contextType` is `Period|Timing` is checked
-- **THEN** the check considers the focus to be either type
+- **WHEN** a case whose `contextType` is `Period|Timing` or `Period|dateTime` is
+  checked
+- **THEN** the focus is the set of all the named types, as `checkOnTypes` builds
+  it from a type list (`ENGINE:477-485`)
+- **AND** a focus rule is satisfied when **any** type in the set satisfies it
+  (`TypeDetails.java:436-448`): `$this.toString()` passes the check with
+  `Period|dateTime` (`isGuardOr2`, `isGuardXorBad2`) and fails it with
+  `Period|Timing`, where neither type is a primitive (`isGuardOrBad`,
+  `isGuardImpliesBad`, `isGuardFnImpliesBad`, `isGuardAndBad`,
+  `isGuardNotImpliesBad`, `isGuardOrInnerImpliesBad`, all graded `passed`, and
+  `isGuardImpliesEmpty`, `isGuardOrBoth`, `isGuardNested`, graded `failed` as
+  for HAPI)
 
 #### Scenario: [path.check.013] the check pass can be skipped
 

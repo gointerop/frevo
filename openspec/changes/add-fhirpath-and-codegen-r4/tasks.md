@@ -970,16 +970,32 @@ checkpoint because it changes what a gate measures.
   nor the HTTP differential can see this channel at all.
   Satisfies `path.check.015` through `path.check.019`, `path.strictness.008`.
 
-- [ ] **51. Implement type-guard narrowing in the check pass.** The `is` operator
-  and `is()` function narrowing the guarded operand under `implies`, `and`, `or`
-  and `iif`; the unreachable-operand rule when the narrowed set is empty; and a
-  multi-type `contextType`. This is the `isSemanticChecks` group.
+- [ ] **51. Confirm the check pass's non-narrowing behaviour on type guards.**
+  **No narrowing is implemented** — the owner ruled on 2026-11-12 to match HAPI
+  (`tasks/blockers.md`, 2026-11-12, "task 50", finding 3), because the pinned R4
+  engine has none (`FHIRPathEngine.java:1621-1637` types every operand of an
+  operator chain, and `:3261-3271` every `iif` argument, against the same
+  focus). The task is to confirm, against the rewritten scenarios, that the
+  task 50 check pass already behaves as HAPI does: an `is` operator or `is()`
+  function guard under `implies`, `and`, `or`, `xor` or `iif` changes nothing
+  the check observes, so the guarded `$this.toString()` fails with
+  `FHIRPATH_PRIMITIVE_ONLY` exactly as the unguarded one does; `ofType()` and
+  `as` are the only constructs that retype the focus; a guard that can never be
+  true makes nothing unreachable; and a multi-type `contextType` satisfies a
+  focus rule when any of its types does. The 14 `isSemanticChecks` cases that
+  expect success — `isEffectOnLogic3`, `isGuardFnImplies`,
+  `isGuardImpliesEmpty`, `isGuardOrTypesImplies`, `isGuardAndOtherImplies`,
+  `isGuardOtherAndImplies`, `isGuardOrInnerImplies`, `isGuardAnd`, `isGuardOr`,
+  `isGuardOrBoth`, `isGuardNotImplies`, `isGuardIifTrue`, `isGuardIifElse`,
+  `isGuardNested` — must end at the **check** stage graded `failed`, which is
+  parity with HAPI, not a gap. If the confirmation finds a divergence, the fix
+  is to the check pass's port of `executeType`, never a narrowing rule.
   Satisfies `path.check.005` through `path.check.012`.
-  **Not started.** The pinned R4 engine has no narrowing at all
-  (`FHIRPathEngine.java:1621-1637` types every operand against the same
-  focus), so these scenarios are ahead of HAPI with no deviation entry; the
-  owner's decision is pending in `tasks/blockers.md`, 2026-11-12, "task 50",
-  finding 3. The multi-type `contextType` half already works (`checkOnTypes`).
+  **Prerequisites:** the spec-reviewer re-reviews the rewritten scenarios; the
+  oracle-builder retargets the eight tests in `tests/path_check.rs` that still
+  assert narrowing; and the `type_check_engine_under_test()` seam is bound
+  (task 50's finding 2). The multi-type `contextType` half already works
+  (`checkOnTypes`).
 
 - [ ] **52. Implement the strictness configuration and the four remaining engine
   settings.** The non-strict default, which comes from the engine's own

@@ -563,6 +563,26 @@ Recorded so the reasoning is not re-derived:
 - **The `documentFunctions` oracle group.** The R4 engine implements none of its
   seven functions, so 115 of the 1,191 cases fail for HAPI too. That is parity —
   not a gap and not a deviation — and belongs in a note on the suite's runner.
+- **No type-guard narrowing in the check pass.** The `isSemanticChecks` group's
+  note (`tests-fhir-r4.xml:1695-1702`) says an `is` test narrows the type the
+  other operand of `implies`, `and`, `or` and `iif` is checked against. The
+  pinned engine narrows nothing: `executeType` types every operand of an
+  operator chain against the same focus (`ENGINE:1621-1637`) and every `iif`
+  argument against the same `$this` (`ENGINE:3261-3271`). So 14 cases that
+  expect the check to pass fail it with `FHIRPATH_PRIMITIVE_ONLY` for
+  `toString`: `isEffectOnLogic3`, `isGuardFnImplies`, `isGuardImpliesEmpty`,
+  `isGuardOrTypesImplies`, `isGuardAndOtherImplies`, `isGuardOtherAndImplies`,
+  `isGuardOrInnerImplies`, `isGuardAnd`, `isGuardOr`, `isGuardOrBoth`,
+  `isGuardNotImplies`, `isGuardIifTrue`, `isGuardIifElse` and `isGuardNested`.
+  HAPI's own run fails all 14 too. Its harness checks against the `Observation`
+  root, which is not a primitive either. Not a deviation, because the
+  FHIRPath specification defines no static check pass and so no narrowing; the
+  requirement exists only in the suite's note. Not a gap, because HAPI fails the
+  same cases (`docs/known-gaps.md`, Rules). Frevo matches HAPI by owner ruling
+  of 2026-11-12 (`tasks/blockers.md`, 2026-11-12, "task 50", finding 3), and
+  `path.check.005` to `path.check.012` specify the non-narrowing behaviour. No
+  flag and no debt: matching HAPI rejects an expression rather than giving it a
+  wrong answer, and `FhirPathR4` never runs the check (`path.check.013`).
 
 Deviations are expected to concentrate in:
 

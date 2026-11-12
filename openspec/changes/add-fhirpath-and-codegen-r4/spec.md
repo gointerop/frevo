@@ -48,6 +48,22 @@ comparison branch, the same constant-evaluation surface, the same `trace`
 function and the same check-pass warning channel it covered before, stated
 correctly.
 
+Revision after the owner's ruling of 2026-11-12 on type-guard narrowing (relayed
+from `tasks/blockers.md`, 2026-11-12, "task 50", finding 3): the pinned R4
+`FHIRPathEngine` narrows on no type guard (`executeType`,
+`FHIRPathEngine.java:1621-1637`, types every operand against the same focus), so
+**8 existing scenarios were rewritten in place** to state HAPI's behaviour
+instead of the `isSemanticChecks` group note's: `path.check.005`, `.007`, `.008`,
+`.009`, `.010` and `.011` now state the opposite of what they first said (the
+guarded expression **fails** the check), and `path.check.006` and `.012` keep
+their intent with HAPI's diagnostics and case lists made exact. None was
+removed, renumbered, reused or repurposed: each still covers the same guard
+construct, now with the pinned engine's answer. The delta changed after
+`review.md` was `APPROVED`, so the spec-reviewer must re-review it. This is not
+a deviation (the FHIRPath specification defines no check pass; only the suite's
+group note asks for narrowing) and not a known gap (HAPI fails the same 14
+cases): see `docs/deviations.md`, "Considered and not recorded as deviations".
+
 | Area | IDs allocated | Range |
 |---|---:|---|
 | `codegen.inputs.*` | 6 | `001`-`006` |
@@ -711,13 +727,13 @@ Every allocated ID, grouped as it is grouped in the delta files.
 - `path.check.002` — the 29 semantic-invalid oracle cases all fail the check
 - `path.check.003` — navigating a non-existent element is a semantic error
 - `path.check.004` — the check infers the type of a choice element as the declared set
-- `path.check.005` — the check narrows the type after an `is` guard in `implies`
+- `path.check.005` — an `is` guard in `implies` does not narrow the type the other operand is checked against
 - `path.check.006` — the same expression without the guard fails the check
-- `path.check.007` — the `is()` function narrows the type as the `is` operator does
-- `path.check.008` — `and` narrows the right operand assuming the left is true
-- `path.check.009` — `or` narrows the right operand assuming the left is false
-- `path.check.010` — `iif` narrows its branches by the condition's polarity
-- `path.check.011` — a guard that narrows to the empty type set makes the guarded operand unreachable, not an error
+- `path.check.007` — the `is()` function narrows nothing either; only `ofType()` and `as` retype the focus
+- `path.check.008` — `and` checks its right operand against the unnarrowed focus
+- `path.check.009` — `or` and `xor` check their right operand against the unnarrowed focus
+- `path.check.010` — `iif` checks both branches against the unnarrowed focus
+- `path.check.011` — a guard that can never be true leaves the other operand checked as usual
 - `path.check.012` — a context type naming several types checks against all of them
 - `path.check.013` — the check pass can be skipped
 - `path.check.015` — the check pass returns a warning list separate from its failure

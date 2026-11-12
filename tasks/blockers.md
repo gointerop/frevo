@@ -1380,6 +1380,34 @@ HAPI's behaviour. **Proposal defect, decision needed:** record the deviation
 (Frevo ahead of HAPI) and keep task 51, or rule for HAPI and drop the
 scenarios. Task 51 was not started.
 
+**Resolution (2026-11-12, proposer).** The orchestrator relayed the owner's
+ruling: **match HAPI and do not implement narrowing.** The proposer verified the
+finding against the pinned source. The R4 operator loop is `:1621-1637`, `is`
+and `is()` type to `Boolean` (`:2013-2015`, `:3401-3404`), and `iif` arguments
+use the same `$this` (`:3261-3271`). The R4B and R5 engines at the same SHA do
+not narrow either. The proposer then rewrote `path.check.005` to `.012` in place
+to state the pinned engine's behaviour. No id was retired. Task 51 is now
+"confirm the non-narrowing behaviour". Nothing went to `docs/known-gaps.md`,
+because HAPI fails the same 14 cases and the register's rules call that parity.
+No `DEV` entry was added either. The specification defines no check pass, and
+the reasoning is recorded under "Considered and not recorded as deviations".
+**Still open:**
+
+- (a) the spec-reviewer must re-review, because the delta changed after
+  `review.md` read `APPROVED`;
+- (b) the oracle-builder must retarget the eight `path_check.rs` tests that
+  still assert narrowing;
+- (c) `design.md` could not be amended. The `protect-paths.sh` hook refuses
+  it as `@generated`, because its section 1 table, within the first 20
+  lines, names the marker. The design rationale (options, ruling,
+  consequences, revisit trigger) was therefore put in `proposal.md`'s
+  out-of-scope table and the deviations note. A `design.md` section "4.6
+  The check pass does not narrow on a type guard", plus a section 10 bullet
+  on a re-pinned narrowing engine, is still owed once the hook is fixed on a
+  `chore/governance-*` branch. **Decision needed (owner):** fix the hook's
+  marker test, for example by matching only a marker comment line, or
+  authorise the `design.md` edit some other way.
+
 ### 4. The `covers:` hook still blocks unit tests in new files
 
 The session's hook is the main checkout's copy, which predates `769b7a5` and
