@@ -1010,3 +1010,29 @@ and not resolved.
 String escaping (finding 2 above) is also as before: the canonical emitter
 copies each string token's input bytes and does not re-escape the way
 `Utilities.escapeJson` does. No scenario covers it, so nothing was changed.
+
+## 2026-11-12 — `add-fhirpath-and-codegen-r4` — the `covers:` hook checks the session's checkout, not the worktree being edited
+
+**What happened.** Tasks 23 to 24 were run from a session whose working
+directory is `C:/gointerop/git/frevo` (on `main`) while editing files in
+`C:/gointerop/git/frevo-change`. `.claude/hooks/test-integrity.sh` takes the
+active change from that working directory, finds none, and resolves `covers:`
+ids against `openspec/specs/**` only. So it refused a new unit test in
+`crates/frevo-model/src/codec/built.rs` tagged `covers: model.canonical.007`
+as naming a scenario that "does not exist", though
+`openspec/changes/add-fhirpath-and-codegen-r4/specs/model/spec.md` defines it.
+
+**What was done.** The `built.rs` tests were not added; the constructed-resource
+encode path was checked with a throwaway driver instead (recorded under task
+23a). One earlier file, `crates/frevo-model/src/codec/pretty.rs` (commit
+`3f1122c`), was first refused by the same hook for having no `covers:` tag,
+was then written through the shell with the tag added
+(`covers: model.canonical.006`, which exists in the delta), and was edited
+through the edit tool afterwards. Its id resolves against the change delta,
+so `openspec-guard` should accept it, but the hook did not check it at the
+time of writing. Flagged so the owner can judge it.
+
+**Decision needed.** Whether the hooks should resolve the repository from the
+edited file's path rather than the session's working directory (a
+`chore/governance-*` change), or implementers must be started with the change
+worktree as their working directory.
