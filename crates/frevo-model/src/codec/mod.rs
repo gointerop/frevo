@@ -19,6 +19,7 @@
 //! JSON token.
 
 pub mod built;
+pub mod decode;
 pub mod doc;
 pub mod nav;
 pub mod path;
@@ -39,12 +40,28 @@ pub use scan::{DecodeError, Meter, Span};
 pub use stored::Stored;
 pub use tables::{ElementDef, JsonForm, Tables, TypeDef, TypeKind};
 
-/// The tables the codec reads.
+/// The tables the codec reads: `frevo-codegen`'s generated R4 output.
 ///
-/// This is the one binding that changes when `frevo-codegen` lands: tasks 7 to
-/// 14 generate `crates/frevo-model/src/r4/` and this `const` points at it
-/// instead. See [`provisional_r4`] for what stands in until then.
-pub const R4: Tables = provisional_r4::TABLES;
+/// Tasks 7 to 14 landed `crates/frevo-model/src/r4/`, so this is now the real
+/// thing -- 685 types and 7,500 elements read from
+/// `hl7.fhir.r4.core#4.0.1` -- rather than the hand-written stand-in that
+/// preceded it. The generated set was compared programmatically against that
+/// stand-in before the switch: it covers all 70 of its types and all 191 of
+/// their elements, and differs in three ways, each of which the stand-in had
+/// wrong. `Extension.value[x]` carries all **50** open types rather than 40,
+/// so a `valueDosage` or a `valueMeta` now decodes at all; `Timing.repeat` is
+/// the named nested type `Timing.repeat` rather than a bare
+/// `BackboneElement`, so `Timing.repeat.frequency` is navigable; and the root
+/// primitives carry `base: Some("Element")`, which is what the
+/// StructureDefinition says.
+///
+/// [`provisional_r4`] is kept as the fixture the codec's own unit tests read,
+/// so a change to the generated table cannot quietly rewrite what those tests
+/// assert, and so the comparison above stays runnable.
+pub const R4: Tables = crate::r4::types::TABLES;
+
+/// The hand-written stand-in the codec was first written against.
+pub const PROVISIONAL_R4: Tables = provisional_r4::TABLES;
 
 /// What a run looked at, as the `model.bytes.*`, `model.lazy.*` and
 /// `model.perf.*` scenarios state it.

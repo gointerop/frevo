@@ -557,3 +557,58 @@ determinism of the escape, the three-distinct-names check, and the
 two entries above: the behaviour the spec describes is present, and what is
 wrong is an example in the scenario. Filing a gap would claim a deficiency
 that does not exist.
+
+## 2026-11-11 — `add-fhirpath-and-codegen-r4` — tasks 18 to 20, the full-decode budget measured on both paths
+
+Recorded because it needs a decision at task 27 and possibly the owner, not
+because it blocks tasks 18 to 20: all three are done and their scenarios are
+green. Finding 5 of the 2026-11-08 entry predicted that `model.perf.003`'s
+20 µs budget "needs the direct decode path of tasks 19 and 20". That prediction
+is now measurable, and it is **half right**.
+
+Measured on the development host — Windows, release profile, median of 200
+iterations after 50 warm-ups, 4 KiB and 64 KiB `Patient` fixtures matching
+`patient_of_size` in `model_bytes_lazy_perf.rs`. This is **not** the reference
+environment `bench/targets.md` names (Docker Desktop, a Linux VM with 12 CPUs),
+so the absolute numbers are indicative and the ratios are the point:
+
+| Path | 4 KiB | 64 KiB |
+|---|---|---|
+| pass-through (`model.perf.001`) | 0 tokens, 0 size-proportional allocations, input `Arc` returned | same |
+| lazy read of `Patient.birthDate`, shared buffer (`model.perf.002`) | 1.6–1.9 µs, 39 tokens | 1.6 µs, 39 tokens |
+| `Resource::materialise_all` — what the oracle's `Op::MaterialiseAll` drives | 43 µs | 731 µs |
+| `codec::decode` — parse and shape only | **24.2 µs** | 609 µs |
+| `codec::decode` — parse, shape and re-encode | 41.8 µs | 855 µs |
+| `codec::decode` — all of the above plus the 232-element observation list | 131 µs | 2,052 µs |
+
+What this says:
+
+1. **The direct decode is the faster full parse, as predicted**: 24.2 µs
+   against `materialise_all`'s 43 µs for the same document, because it does not
+   pay a `Mutex<HashMap>` entry and a member-list clone per object. On an
+   unoptimised comparison it is 1.8× quicker and it scales better.
+2. **It still does not meet 20 µs on this host**, and that is before anyone has
+   measured it on the reference environment. The gap is 20%, so the environment
+   might close it; nobody should assume it will.
+3. **The 131 µs figure is not a decode.** 89 of those microseconds build the
+   `elements` list the `model-decode` oracle asks for — 232 records, each with
+   an owned path, type name and value. No server path builds that; it exists so
+   that `model.json.*` can be asserted per element. Whoever lands
+   `bench/micro/model-full-parse` must benchmark the decode, not the oracle's
+   observation structure, or the workload will report a number four times the
+   real one and the budget will look unreachable when it is not.
+
+**Decision needed at task 27**, in this order: measure both paths on the
+reference environment; if 20 µs is still missed, either optimise (the next
+levers are the per-object `Vec<Prop>` allocation and the `Raw` tree, which
+could be fused into one pass) or re-baseline the budget in `design.md`
+section 8 with the measurement behind it. Re-baselining is a proposal change
+and an owner call. Nothing here should be closed by making the benchmark do
+less work.
+
+One thing was fixed on the way and is worth knowing: formatting an element path
+per element during shaping, for diagnostics that a clean document never emits,
+cost **80 of the original 147 µs**. The paths are now a chain of borrows
+rendered only when a report is actually built. That is constitution rule 6.2
+applied to the decoder's own bookkeeping, and it is the single largest win in
+this change.

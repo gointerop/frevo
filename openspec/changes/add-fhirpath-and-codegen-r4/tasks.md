@@ -431,25 +431,87 @@ checkpoint because it changes what a gate measures.
   rebound. See `tasks/blockers.md`, 2026-11-08, finding 1 — and finding 5, which
   records that the element-order table is provisional until task 14.
 
-- [ ] **18. Implement lazy materialisation and its instrumentation.** Unread
+- [x] **18. Implement lazy materialisation and its instrumentation.** Unread
   siblings, indexed access, counting without materialising, idempotent cached
   reads, contained resources and narrative untouched by unrelated reads — each
   observable through a not-materialised report.
   Satisfies `model.lazy.001` through `model.lazy.006`.
+  Done: all six pass. The implementation landed early, with task 17 — the
+  incremental per-object cursor in `codec/doc.rs` and the deferred `_field`
+  lookup in `codec/stored.rs` are what make all six observable — so what this
+  task did was **verify it against the generated tables rather than the
+  hand-written stand-in**, which is the only way the claim means anything:
+  `codec/mod.rs` now binds `crate::r4::types::TABLES`, 685 types and 7,500
+  elements, and the stand-in survives only as the fixture the codec's own unit
+  tests read. The switch exposed one real defect, now fixed in
+  `codec/built.rs`: an R4 snapshot is **fully expanded**, so concatenating a
+  type's base chain emitted `Patient.id` three times — once from `Resource`,
+  once from `DomainResource`, once from `Patient`. `ordered_elements` now takes
+  each name at its base-chain position and skips a repeat, which reproduces the
+  snapshot order for an expanded table and an inherited one alike; measured
+  over all 685 generated types, 683 carry a fully expanded list and the rule
+  reproduces every one exactly, the other two being `Resource` and `Element`,
+  which have no base.
+  Measured after the switch, so the task 17 properties are shown intact: a
+  pass-through scans **0** tokens, makes **0** size-proportional allocations
+  and hands back the input `Arc`; a lazy read of `Patient.birthDate` scans
+  **39** tokens and takes **1.6 µs at both 4 KiB and 64 KiB** — size
+  independent, which is the property — against **1,570** tokens for a full
+  materialise of the 4 KiB document.
 
-- [ ] **19. Implement JSON decoding: structure.** `resourceType` dispatch and its
+- [x] **19. Implement JSON decoding: structure.** `resourceType` dispatch and its
   three error paths, choice decoding from the typed property name, contained
   resources, Bundle entries of mixed types, and element `id` and `extension` on
   any element. The unknown-property path is task 21's, because its outcome
   depends on the parse mode.
   Satisfies `model.json.001`, `model.json.002`, `model.json.003`,
   `model.json.005`, `model.json.006`, `model.json.007`, `model.json.020`.
+  Done: all seven pass, in the new `codec/decode.rs`. This is the codec's
+  **second** half and not a replacement for the first: `Resource` stays lazy
+  and byte-preserving, and `codec::decode` decodes a whole document into an
+  owned tree that can be re-emitted in generated element order, because
+  `reencoded_in_element_order` is defined as a full materialise-and-re-emit and
+  handing back the input buffer is not an answer to it.
+  The three `resourceType` error paths are a root that is not a JSON object, a
+  missing `resourceType` and a `resourceType` naming no known type; all three
+  are errors in both modes, because there is no resource to return and nothing
+  for a diagnostic to hang on. The same three apply wherever an element
+  declares the abstract `Resource` — a `contained` entry, a
+  `Bundle.entry.resource` — which is what makes `model.json.006` and `.007`
+  one mechanism rather than two.
+  A **value and its `_field` sibling are two independent sides of one
+  element**, never merged, with each side's array length and `null` holes
+  recorded separately. That representation is not task 19's to choose, but the
+  decode cannot be written without it, and writing a stub that could not hold
+  it would have had to be thrown away: `model.primext.001` to `.005`, `.007`
+  and `.008` pass as a consequence. The two primitive-extension **reports**,
+  `.006` and `.009`, are left to task 22.
 
-- [ ] **20. Implement JSON decoding: primitive values.** Opaque `xhtml`,
+- [x] **20. Implement JSON decoding: primitive values.** Opaque `xhtml`,
   lexical-form decimals with no binary-float path, `integer`, `positiveInt` and
   `unsignedInt` bounds, `base64Binary` carried as its encoded text.
   Satisfies `model.json.008`, `model.json.009`, `model.json.010`,
   `model.json.011`, `model.json.012`, `model.json.017`.
+  Done: all six pass. One decision carries four of them: a primitive is held as
+  **the span of the JSON token it was read from**, and re-emitting is a copy of
+  those bytes. Nothing re-renders a value, so `1.58700` keeps its trailing
+  zeros, `1.00e3` keeps its exponent form, a `base64Binary` keeps the input's
+  padding and an `xhtml` div keeps its escaping — not by special-casing any of
+  them but because there is no code that could change them. The lexical form is
+  built on demand rather than stored, so a decode nobody reads a value out of
+  allocates nothing per primitive.
+  `Decimal` carries the lexical form, the exact value rendered positionally and
+  the significant-digit count, and **no `f64` appears anywhere on the path**:
+  `full_precision` is produced by moving the decimal point of the input's own
+  digits, which is why the 40-digit case renders all 40 rather than the 17 a
+  binary double round-trips. No arbitrary-precision crate was added.
+  The bounds are `integer` (−2147483648..2147483647), `positiveInt` (1..) and
+  `unsignedInt` (0..), reported as a lenient diagnostic naming the element path,
+  the declared type and the offending value — which is the delivery the oracle's
+  own fixture table requires, and distinct from `invalidValue`. A value that is
+  not an integer literal at all is `invalidValue` and belongs to task 21, so it
+  is not reported here. `decimal` is deliberately not bounded: it has no
+  declared range.
 
 - [ ] **21. Implement the two parse modes and the diagnostic channel.** Lenient
   by default, matching the handler `FhirContext` installs: an unknown property,

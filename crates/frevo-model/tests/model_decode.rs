@@ -71,6 +71,8 @@
 use std::fmt;
 use std::ops::Range;
 
+use frevo_model::codec::decode as codec;
+
 // ---------------------------------------------------------------------------
 // The seam
 // ---------------------------------------------------------------------------
@@ -270,22 +272,106 @@ pub trait DecodeOracle {
 
 /// The codec this oracle grades. Phase C replaces this body with the real one.
 fn codec_under_test() -> Box<dyn DecodeOracle> {
-    Box::new(UnboundCodec)
+    Box::new(FrevoCodec)
 }
 
-struct UnboundCodec;
+struct FrevoCodec;
 
-impl DecodeOracle for UnboundCodec {
-    fn decode(&self, _bytes: &[u8], _mode: ParseMode) -> Result<Decoded, DecodeError> {
-        Err(DecodeError::NotImplemented)
+impl FrevoCodec {
+    fn mode(mode: ParseMode) -> codec::ParseMode {
+        match mode {
+            ParseMode::Lenient => codec::ParseMode::Lenient,
+            ParseMode::Strict => codec::ParseMode::Strict,
+        }
     }
 
-    fn decode_with_default_mode(&self, _bytes: &[u8]) -> Result<Decoded, DecodeError> {
-        Err(DecodeError::NotImplemented)
+    fn kind(kind: codec::ReportKind) -> ReportKind {
+        match kind {
+            codec::ReportKind::MissingResourceType => ReportKind::MissingResourceType,
+            codec::ReportKind::UnknownResourceType => ReportKind::UnknownResourceType,
+            codec::ReportKind::UnknownProperty => ReportKind::UnknownProperty,
+            codec::ReportKind::IncorrectJsonType => ReportKind::IncorrectJsonType,
+            codec::ReportKind::UnexpectedRepeatingElement => ReportKind::UnexpectedRepeatingElement,
+            codec::ReportKind::DuplicateProperty => ReportKind::DuplicateProperty,
+            codec::ReportKind::NullInNonPrimitiveArray => ReportKind::NullInNonPrimitiveArray,
+            codec::ReportKind::ValueOutOfRange => ReportKind::ValueOutOfRange,
+            codec::ReportKind::InvalidValue => ReportKind::InvalidValue,
+            codec::ReportKind::ExtensionHasValueAndNestedExtensions => {
+                ReportKind::ExtensionHasValueAndNestedExtensions
+            }
+            codec::ReportKind::NotUtf8 => ReportKind::NotUtf8,
+            codec::ReportKind::PrimitiveExtensionLengthMismatch => {
+                ReportKind::PrimitiveExtensionLengthMismatch
+            }
+            codec::ReportKind::UnexpectedUnderscoreProperty => {
+                ReportKind::UnexpectedUnderscoreProperty
+            }
+            codec::ReportKind::DepthLimit => ReportKind::DepthLimit,
+        }
+    }
+
+    fn report(diagnostic: &codec::Diagnostic) -> Report {
+        Report {
+            kind: Self::kind(diagnostic.kind),
+            path: diagnostic.path.clone(),
+            offset: diagnostic.offset,
+            message: diagnostic.message.clone(),
+            expected_type: diagnostic.expected_type.clone(),
+            found_type: diagnostic.found_type.clone(),
+        }
+    }
+
+    fn decimal(decimal: &codec::Decimal) -> Decimal {
+        Decimal {
+            lexical: decimal.lexical.clone(),
+            full_precision: decimal.full_precision.clone(),
+            significant_digits: decimal.significant_digits,
+        }
+    }
+
+    fn decoded(decoded: codec::Decoded) -> Decoded {
+        Decoded {
+            resource_type: decoded.resource_type,
+            diagnostics: decoded.diagnostics.iter().map(Self::report).collect(),
+            elements: decoded
+                .elements
+                .iter()
+                .map(|element| Element {
+                    path: element.path.clone(),
+                    type_name: element.type_name.clone(),
+                    value: element.value.clone(),
+                    element_id: element.element_id.clone(),
+                    extension_urls: element.extension_urls.clone(),
+                    decimal: element.decimal.as_ref().map(Self::decimal),
+                    is_resource: element.is_resource,
+                })
+                .collect(),
+            reencoded_in_element_order: decoded.reencoded,
+        }
+    }
+
+    fn run(result: Result<codec::Decoded, codec::Diagnostic>) -> Result<Decoded, DecodeError> {
+        match result {
+            Ok(decoded) => Ok(Self::decoded(decoded)),
+            Err(diagnostic) => Err(DecodeError::Fatal(Self::report(&diagnostic))),
+        }
+    }
+}
+
+impl DecodeOracle for FrevoCodec {
+    fn decode(&self, bytes: &[u8], mode: ParseMode) -> Result<Decoded, DecodeError> {
+        Self::run(codec::decode(bytes, Self::mode(mode)))
+    }
+
+    fn decode_with_default_mode(&self, bytes: &[u8]) -> Result<Decoded, DecodeError> {
+        Self::run(codec::decode_default(bytes))
     }
 
     fn default_mode(&self) -> Result<ParseMode, DecodeError> {
-        Err(DecodeError::NotImplemented)
+        Ok(match codec::DEFAULT_PARSE_MODE {
+            codec::ParseMode::Lenient => ParseMode::Lenient,
+            codec::ParseMode::Strict => ParseMode::Strict,
+        })
     }
 }
 
