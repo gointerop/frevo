@@ -7,6 +7,7 @@
 //! so the counter is part of the specified surface rather than a debug
 //! convenience.
 
+use std::borrow::Cow;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
@@ -186,10 +187,24 @@ pub fn skip_ws(bytes: &[u8], mut at: usize) -> usize {
 /// text **inside** the quotes and the offset just past the closing quote.
 /// Counts one token.
 pub fn scan_string(bytes: &[u8], at: usize, meter: &Meter) -> Result<(Span, usize), DecodeError> {
+    let mut tokens = 0;
+    let result = scan_string_counted(bytes, at, &mut tokens);
+    meter.tokens(tokens);
+    result
+}
+
+/// [`scan_string`], adding to a local token count instead of the shared
+/// meter, so a scan of many tokens pays for one atomic add rather than one
+/// per token.
+fn scan_string_counted(
+    bytes: &[u8],
+    at: usize,
+    tokens: &mut u64,
+) -> Result<(Span, usize), DecodeError> {
     if bytes.get(at) != Some(&b'"') {
         return Err(DecodeError::new("", at, "expected a JSON string"));
     }
-    meter.tokens(1);
+    *tokens += 1;
     let mut cursor = at + 1;
     loop {
         match bytes.get(cursor) {
@@ -205,33 +220,98 @@ pub fn scan_string(bytes: &[u8], at: usize, meter: &Meter) -> Result<(Span, usiz
 /// whole value and the offset just past it. Counts the tokens it had to look at
 /// to find the end: a scalar is one, an object or array is its own braces plus
 /// whatever is nested inside it.
+///
+/// The count is accumulated locally and added to the meter once, on success
+/// and on failure alike, so the meter reads exactly what a per-token count
+/// would have: a `fetch_add` per token is a locked instruction per token, and
+/// over a 4 KiB document that alone is a measurable share of the decode.
 pub fn skip_value(bytes: &[u8], at: usize, meter: &Meter) -> Result<(Span, usize), DecodeError> {
+    skip_value_recording(bytes, at, meter, &mut NoRecord)
+}
+
+/// What [`skip_value_recording`] tells a recorder about the containers it
+/// steps over: each one's opening, each member or item it holds, and its
+/// closing with the tokens stepping over it cost. Nothing else differs from
+/// [`skip_value`] -- the same tokens are counted and the same errors raised --
+/// so a recorder can learn a subtree's structure from the one scan that had to
+/// happen anyway.
+pub trait Record {
+    /// A container opens at `start`. Returns a handle for [`Record::close`].
+    fn open(&mut self, start: usize, object: bool) -> usize;
+    /// One member (`key` is the property name inside its quotes) or one item
+    /// (`key` is empty) of the innermost open container.
+    fn entry(&mut self, key: Span, value: Span);
+    /// The container `handle` closes at `end`, having cost `tokens`.
+    fn close(&mut self, handle: usize, end: usize, tokens: u64);
+}
+
+/// The recorder that records nothing, so [`skip_value`] compiles to the plain
+/// scan.
+pub struct NoRecord;
+
+impl Record for NoRecord {
+    #[inline(always)]
+    fn open(&mut self, _start: usize, _object: bool) -> usize {
+        0
+    }
+
+    #[inline(always)]
+    fn entry(&mut self, _key: Span, _value: Span) {}
+
+    #[inline(always)]
+    fn close(&mut self, _handle: usize, _end: usize, _tokens: u64) {}
+}
+
+/// [`skip_value`], reporting every container it steps over to `record`.
+pub fn skip_value_recording<R: Record>(
+    bytes: &[u8],
+    at: usize,
+    meter: &Meter,
+    record: &mut R,
+) -> Result<(Span, usize), DecodeError> {
+    let mut tokens = 0;
+    let result = skip_value_counted(bytes, at, &mut tokens, record);
+    meter.tokens(tokens);
+    result
+}
+
+fn skip_value_counted<R: Record>(
+    bytes: &[u8],
+    at: usize,
+    tokens: &mut u64,
+    record: &mut R,
+) -> Result<(Span, usize), DecodeError> {
     let start = skip_ws(bytes, at);
     match bytes.get(start) {
         Some(b'"') => {
-            let (_, next) = scan_string(bytes, start, meter)?;
+            let (_, next) = scan_string_counted(bytes, start, tokens)?;
             Ok((Span::new(start, next), next))
         }
         Some(b'{') => {
-            meter.tokens(1);
+            let before = *tokens;
+            let handle = record.open(start, true);
+            *tokens += 1;
             let mut cursor = skip_ws(bytes, start + 1);
             if bytes.get(cursor) == Some(&b'}') {
-                meter.tokens(1);
+                *tokens += 1;
+                record.close(handle, cursor + 1, *tokens - before);
                 return Ok((Span::new(start, cursor + 1), cursor + 1));
             }
             loop {
                 cursor = skip_ws(bytes, cursor);
-                let (_, next) = scan_string(bytes, cursor, meter)?;
+                let (key, next) = scan_string_counted(bytes, cursor, tokens)?;
                 cursor = skip_ws(bytes, next);
                 if bytes.get(cursor) != Some(&b':') {
                     return Err(DecodeError::new("", cursor, "expected ':'"));
                 }
-                let (_, next) = skip_value(bytes, cursor + 1, meter)?;
+                let (value, next) = skip_value_counted(bytes, cursor + 1, tokens, record)?;
+                record.entry(key, value);
                 cursor = skip_ws(bytes, next);
                 match bytes.get(cursor) {
                     Some(b',') => cursor += 1,
                     Some(b'}') => {
-                        meter.tokens(1);
+                        *tokens += 1;
+                        record.close(handle, cursor + 1, *tokens - before);
                         return Ok((Span::new(start, cursor + 1), cursor + 1));
                     }
                     _ => return Err(DecodeError::new("", cursor, "expected ',' or '}'")),
@@ -239,19 +319,24 @@ pub fn skip_value(bytes: &[u8], at: usize, meter: &Meter) -> Result<(Span, usize
             }
         }
         Some(b'[') => {
-            meter.tokens(1);
+            let before = *tokens;
+            let handle = record.open(start, false);
+            *tokens += 1;
             let mut cursor = skip_ws(bytes, start + 1);
             if bytes.get(cursor) == Some(&b']') {
-                meter.tokens(1);
+                *tokens += 1;
+                record.close(handle, cursor + 1, *tokens - before);
                 return Ok((Span::new(start, cursor + 1), cursor + 1));
             }
             loop {
-                let (_, next) = skip_value(bytes, cursor, meter)?;
+                let (item, next) = skip_value_counted(bytes, cursor, tokens, record)?;
+                record.entry(Span::new(item.start, item.start), item);
                 cursor = skip_ws(bytes, next);
                 match bytes.get(cursor) {
                     Some(b',') => cursor += 1,
                     Some(b']') => {
-                        meter.tokens(1);
+                        *tokens += 1;
+                        record.close(handle, cursor + 1, *tokens - before);
                         return Ok((Span::new(start, cursor + 1), cursor + 1));
                     }
                     _ => return Err(DecodeError::new("", cursor, "expected ',' or ']'")),
@@ -261,7 +346,7 @@ pub fn skip_value(bytes: &[u8], at: usize, meter: &Meter) -> Result<(Span, usize
         Some(_) => {
             // `true`, `false`, `null` or a number: one token, ended by the
             // first structural character.
-            meter.tokens(1);
+            *tokens += 1;
             let mut cursor = start;
             while matches!(bytes.get(cursor), Some(c)
                 if !matches!(c, b',' | b'}' | b']' | b' ' | b'\t' | b'\r' | b'\n'))
@@ -285,11 +370,22 @@ pub fn is_null(bytes: &[u8], span: Span) -> bool {
 /// Decode the text inside a JSON string's quotes. Only called when a value is
 /// actually materialised, which is what keeps `model.lazy.*` honest.
 pub fn unescape(raw: &[u8]) -> Result<String, DecodeError> {
+    unescape_borrowed(raw).map(Cow::into_owned)
+}
+
+/// [`unescape`], borrowing the input when it holds no escape. Almost every
+/// FHIR string value is escape-free, so a full decode that only needs each
+/// value checked and readable allocates nothing for it.
+pub fn unescape_borrowed(raw: &[u8]) -> Result<Cow<'_, str>, DecodeError> {
     if !raw.contains(&b'\\') {
         return std::str::from_utf8(raw)
-            .map(str::to_owned)
+            .map(Cow::Borrowed)
             .map_err(|e| DecodeError::new("", 0, format!("invalid UTF-8: {e}")));
     }
+    unescape_escaped(raw).map(Cow::Owned)
+}
+
+fn unescape_escaped(raw: &[u8]) -> Result<String, DecodeError> {
     let text = std::str::from_utf8(raw)
         .map_err(|e| DecodeError::new("", 0, format!("invalid UTF-8: {e}")))?;
     let mut out = String::with_capacity(text.len());
@@ -347,25 +443,46 @@ pub fn unescape(raw: &[u8]) -> Result<String, DecodeError> {
 }
 
 /// Encode `text` as a JSON string, quotes included.
+///
+/// Every character that needs escaping is ASCII, so the text is scanned as
+/// bytes and copied a run at a time between escapes: a byte of a multi-byte
+/// UTF-8 sequence is never below `0x80` and so is never mistaken for one.
 pub fn escape_into(text: &str, out: &mut Vec<u8>) {
+    let bytes = text.as_bytes();
+    out.reserve(bytes.len() + 2);
     out.push(b'"');
-    for c in text.chars() {
-        match c {
-            '"' => out.extend_from_slice(b"\\\""),
-            '\\' => out.extend_from_slice(b"\\\\"),
-            '\n' => out.extend_from_slice(b"\\n"),
-            '\r' => out.extend_from_slice(b"\\r"),
-            '\t' => out.extend_from_slice(b"\\t"),
-            '\u{8}' => out.extend_from_slice(b"\\b"),
-            '\u{c}' => out.extend_from_slice(b"\\f"),
-            c if (c as u32) < 0x20 => {
-                out.extend_from_slice(format!("\\u{:04x}", c as u32).as_bytes());
-            }
-            c => {
-                let mut buffer = [0u8; 4];
-                out.extend_from_slice(c.encode_utf8(&mut buffer).as_bytes());
-            }
-        }
+    // Nearly every FHIR string needs no escape at all; a branch-free pass
+    // says so and the text goes out in one copy.
+    let clean = bytes.iter().fold(true, |clean, &b| {
+        clean & (b >= 0x20) & (b != b'"') & (b != b'\\')
+    });
+    if clean {
+        out.extend_from_slice(bytes);
+        out.push(b'"');
+        return;
     }
+    let mut copied = 0;
+    for (at, &byte) in bytes.iter().enumerate() {
+        let escape: &[u8] = match byte {
+            b'"' => b"\\\"",
+            b'\\' => b"\\\\",
+            b'\n' => b"\\n",
+            b'\r' => b"\\r",
+            b'\t' => b"\\t",
+            0x08 => b"\\b",
+            0x0c => b"\\f",
+            control if control < 0x20 => {
+                out.extend_from_slice(&bytes[copied..at]);
+                out.extend_from_slice(format!("\\u{control:04x}").as_bytes());
+                copied = at + 1;
+                continue;
+            }
+            _ => continue,
+        };
+        out.extend_from_slice(&bytes[copied..at]);
+        out.extend_from_slice(escape);
+        copied = at + 1;
+    }
+    out.extend_from_slice(&bytes[copied..]);
     out.push(b'"');
 }

@@ -53,9 +53,18 @@ pub fn parse_path(path: &str) -> Result<Vec<PathStep>, DecodeError> {
 }
 
 /// Append one step to a path, with its index when the element repeats.
+///
+/// Built by hand rather than through `format!`, which goes through the
+/// formatting machinery and grows its buffer as it writes: every located step
+/// and every materialised element pays for this.
 pub fn join(prefix: &str, name: &str, index: Option<usize>) -> String {
-    match index {
-        Some(index) => format!("{prefix}.{name}[{index}]"),
-        None => format!("{prefix}.{name}"),
+    let mut out = String::with_capacity(prefix.len() + name.len() + 8);
+    out.push_str(prefix);
+    out.push('.');
+    out.push_str(name);
+    if let Some(index) = index {
+        use std::fmt::Write as _;
+        let _ = write!(out, "[{index}]");
     }
+    out
 }

@@ -300,10 +300,77 @@ fn type_table(model: &Model) -> String {
         ));
     }
     out.push_str("];\n");
+    out.push_str(&hash_index(model));
     out.push_str(
-        "\n/// The type tables the codec reads.\npub const TABLES: Tables = Tables { types: TYPES };\n",
+        "\n/// The type tables the codec reads.\n\
+         pub const TABLES: Tables = Tables {\n\
+         \x20   types: TYPES,\n\
+         \x20   by_hash: TYPES_BY_HASH,\n\
+         };\n",
     );
     out.push_str(ELEMENT_ORDER_LOOKUP);
+    out
+}
+
+/// The hash `crates/frevo-model/src/codec/tables.rs` probes `TYPES_BY_HASH`
+/// with (`Tables::type_name_hash`): 64-bit FNV-1a over the name's bytes,
+/// folded so the low bits a slot is taken from depend on every byte. The two
+/// definitions must agree; the codec's unit tests look every generated type up
+/// through it.
+pub fn type_name_hash(name: &str) -> u64 {
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    for byte in name.bytes() {
+        hash ^= u64::from(byte);
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    hash ^ (hash >> 29)
+}
+
+/// `TYPES_BY_HASH`: an open-addressing table from type name to position in
+/// `TYPES`, so the codec finds a type in about one probe instead of comparing
+/// its name against every entry before it. A decode looks a type up once per
+/// object and once per value, and `Patient` sits about five hundred entries
+/// in, so the linear search was a measurable share of `model.perf.003`; a
+/// binary search over the names was measured slower still for the primitive
+/// types at the front, which are the most frequently looked up.
+///
+/// A slot holds the position plus one, `0` being empty, and a collision probes
+/// the next slot. The table is at least three times the type count, so a
+/// probe sequence is short and always ends at an empty slot. Each name is
+/// inserted at its first position only, which is the entry a linear search
+/// finds; R4 has no repeated name.
+fn hash_index(model: &Model) -> String {
+    let size = (model.types.len() * 3).next_power_of_two().max(2);
+    let mut slots: Vec<Option<(usize, &str)>> = vec![None; size];
+    let mut seen: BTreeSet<&str> = BTreeSet::new();
+    for (index, ty) in model.types.iter().enumerate() {
+        let name = ty.fhir_name.as_str();
+        if !seen.insert(name) {
+            continue;
+        }
+        let mut slot = (type_name_hash(name) as usize) & (size - 1);
+        while slots[slot].is_some() {
+            slot = (slot + 1) & (size - 1);
+        }
+        slots[slot] = Some((index, name));
+    }
+    let mut out = String::from(
+        "\n/// Position plus one in `TYPES` of each type name, by\n\
+         /// `Tables::type_name_hash` with linear probing; `0` is an empty slot.\n\
+         const TYPES_BY_HASH: &[u16] = &[\n",
+    );
+    // Every value is padded to one width, so the trailing comments already sit
+    // in the column rustfmt would align them to and the output is stable
+    // under it.
+    let width = format!("{},", model.types.len()).len();
+    for (slot, entry) in slots.iter().enumerate() {
+        let (value, comment) = match entry {
+            Some((index, name)) => (format!("{},", index + 1), format!("{slot}: {name}")),
+            None => ("0,".to_string(), slot.to_string()),
+        };
+        out.push_str(&format!("{}{value:<width$} // {comment}\n", pad(INDENT)));
+    }
+    out.push_str("];\n");
     out
 }
 

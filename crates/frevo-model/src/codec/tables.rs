@@ -67,11 +67,51 @@ pub struct TypeDef {
 #[derive(Debug, Clone, Copy)]
 pub struct Tables {
     pub types: &'static [TypeDef],
+    /// An open-addressing table over `types`, probed with
+    /// [`Tables::type_name_hash`]: each slot holds a position plus one, `0`
+    /// being empty, and a collision moves to the next slot. `frevo-codegen`
+    /// emits it beside the table. Empty means "search `types` in order",
+    /// which is what a small hand-written table can afford.
+    pub by_hash: &'static [u16],
 }
 
 impl Tables {
+    /// The hash [`Tables::by_hash`] is built with: 64-bit FNV-1a over the
+    /// name's bytes, folded so the low bits a slot is taken from depend on
+    /// every byte. `frevo-codegen`'s `emit_tables::type_name_hash` is the same
+    /// function.
+    pub fn type_name_hash(name: &str) -> u64 {
+        let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+        for byte in name.bytes() {
+            hash ^= u64::from(byte);
+            hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+        }
+        hash ^ (hash >> 29)
+    }
+
+    /// The type named `name`: the first entry of `types` carrying it.
     pub fn type_def(&self, name: &str) -> Option<&'static TypeDef> {
-        self.types.iter().find(|t| t.name == name)
+        let slots = self.by_hash;
+        if slots.is_empty() {
+            return self.types.iter().find(|t| t.name == name);
+        }
+        let mask = slots.len() - 1;
+        let mut slot = (Self::type_name_hash(name) as usize) & mask;
+        // The table is a power of two at least three times the type count, so
+        // a probe meets an empty slot long before it could wrap around; the
+        // bound only guards a malformed table.
+        for _ in 0..slots.len() {
+            let entry = usize::from(slots[slot]);
+            if entry == 0 {
+                return None;
+            }
+            let def = self.types.get(entry - 1)?;
+            if def.name == name {
+                return Some(def);
+            }
+            slot = (slot + 1) & mask;
+        }
+        None
     }
 
     pub fn is_primitive(&self, name: &str) -> bool {
@@ -169,6 +209,18 @@ impl Tables {
         type_name: &str,
         property: &[u8],
     ) -> Option<(&'static ElementDef, &'static str, bool)> {
+        let def = self.type_def(type_name)?;
+        self.resolve_property_in(def, property)
+    }
+
+    /// [`Tables::resolve_property_bytes`] for a type already looked up. A
+    /// decode resolves every property of an object against the same type, so
+    /// it finds the type once per object rather than once per property.
+    pub fn resolve_property_in(
+        &self,
+        type_def: &'static TypeDef,
+        property: &[u8],
+    ) -> Option<(&'static ElementDef, &'static str, bool)> {
         if property == b"resourceType" {
             return None;
         }
@@ -176,9 +228,8 @@ impl Tables {
             Some(rest) => (rest, true),
             None => (property, false),
         };
-        let mut current = Some(type_name);
-        while let Some(owner) = current {
-            let def = self.type_def(owner)?;
+        let mut def = type_def;
+        loop {
             for element in def.elements {
                 if !element.choice {
                     if element.name.as_bytes() == name {
@@ -192,9 +243,8 @@ impl Tables {
                     }
                 }
             }
-            current = def.base;
+            def = self.type_def(def.base?)?;
         }
-        None
     }
 
     /// Every JSON property name `element` can take, in declared order: one for
@@ -223,5 +273,35 @@ impl Tables {
             current = def.base;
         }
         JsonForm::Quoted
+    }
+}
+
+#[cfg(test)]
+mod lookup_tests {
+    use super::Tables;
+
+    /// The generated hash index finds every type at the entry a search in
+    /// order finds, so `frevo-codegen`'s hash and [`Tables::type_name_hash`]
+    /// agree, and a name that is no type is not found.
+    #[test]
+    fn the_hash_index_finds_what_a_linear_search_finds() {
+        let tables = crate::codec::R4;
+        assert!(!tables.by_hash.is_empty(), "the generated table is indexed");
+        let linear = Tables {
+            types: tables.types,
+            by_hash: &[],
+        };
+        for def in tables.types {
+            let found = tables.type_def(def.name).expect("every type is found");
+            let expected = linear.type_def(def.name).expect("and by a linear search");
+            assert!(
+                std::ptr::eq(found, expected),
+                "{} resolves to a different entry",
+                def.name
+            );
+        }
+        for absent in ["", "patient", "Patient.", "NotAType", "Patient.contact.x"] {
+            assert!(tables.type_def(absent).is_none(), "{absent:?} is no type");
+        }
     }
 }

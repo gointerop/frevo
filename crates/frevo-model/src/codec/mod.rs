@@ -342,6 +342,15 @@ impl Resource {
 
     /// The canonical form as bytes.
     pub fn to_canonical_vec(&self) -> io::Result<Vec<u8>> {
+        if let Inner::Built(built) = &self.inner {
+            // Encoded straight into the buffer handed back, rather than into
+            // a scratch buffer [`Self::write_canonical`] then copies out: the
+            // one size-proportional buffer is this one, and it is counted.
+            let mut out = Vec::with_capacity(built.estimated_len());
+            self.meter.size_proportional_allocation();
+            built.write_canonical(&mut out);
+            return Ok(out);
+        }
         let mut out = Vec::with_capacity(self.stored_len().unwrap_or(1024));
         self.write_canonical(&mut out)?;
         Ok(out)

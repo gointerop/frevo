@@ -596,4 +596,7 @@ const TYPES: &[TypeDef] = &[
 ];
 
 /// The tables the codec reads until `src/r4/` is generated.
-pub const TABLES: Tables = Tables { types: TYPES };
+pub const TABLES: Tables = Tables {
+    types: TYPES,
+    by_hash: &[],
+};

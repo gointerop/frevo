@@ -6,13 +6,14 @@
 //! buffer it was loaded with, and nothing on the path to it has looked at a
 //! single JSON token.
 
+use std::borrow::Cow;
 use std::io;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 
-use super::doc::Doc;
+use super::doc::{Doc, Tape};
 use super::path::{PathStep, join, parse_path};
 use super::scan::{DecodeError, Meter, Span, escape_into};
-use super::tables::{ElementDef, JsonForm, Tables, TypeKind};
+use super::tables::{ElementDef, JsonForm, Tables, TypeDef, TypeKind};
 
 /// Where an element's two spans live: its own JSON value and its `_field`
 /// sibling. They are never merged, because a merged struct cannot represent
@@ -225,7 +226,7 @@ fn splice_into(source: &[u8], mut edits: Vec<(Span, &[u8])>, out: &mut Vec<u8>) 
 pub struct Stored {
     doc: Doc,
     tables: Tables,
-    root_type: Mutex<Option<String>>,
+    root_type: OnceLock<&'static TypeDef>,
     edits: Mutex<Vec<Edit>>,
 }
 
@@ -236,7 +237,7 @@ impl Stored {
         Self {
             doc: Doc::new(bytes, meter),
             tables,
-            root_type: Mutex::new(None),
+            root_type: OnceLock::new(),
             edits: Mutex::new(Vec::new()),
         }
     }
@@ -270,10 +271,15 @@ impl Stored {
     /// The resource type, from `resourceType`. Reading it costs the two tokens
     /// of one property, and the answer is cached.
     pub fn root_type(&self) -> Result<String, DecodeError> {
-        if let Ok(cached) = self.root_type.lock() {
-            if let Some(name) = cached.as_ref() {
-                return Ok(name.clone());
-            }
+        self.root_def().map(|def| def.name.to_string())
+    }
+
+    /// The root's type definition, read once from `resourceType` and then
+    /// cached. Its `name` is the resource type, so a caller that only needs to
+    /// compare against it or look things up by it pays for no `String`.
+    fn root_def(&self) -> Result<&'static TypeDef, DecodeError> {
+        if let Some(def) = self.root_type.get() {
+            return Ok(def);
         }
         let root = self.doc.root();
         if !self.doc.is_object(root) {
@@ -287,18 +293,15 @@ impl Stored {
             .doc
             .member(root.start, "resourceType")?
             .ok_or_else(|| DecodeError::new("", root.start, "resourceType is required"))?;
-        let name = self.doc.lexical(span)?;
-        if self.tables.type_def(&name).is_none() {
+        let name = self.doc.lexical_borrowed(span)?;
+        let Some(def) = self.tables.type_def(&name) else {
             return Err(DecodeError::new(
                 "",
                 span.start,
                 format!("unknown resourceType: {name}"),
             ));
-        }
-        if let Ok(mut cached) = self.root_type.lock() {
-            *cached = Some(name.clone());
-        }
-        Ok(name)
+        };
+        Ok(*self.root_type.get_or_init(|| def))
     }
 
     /// Resolve the declared type of a node to its concrete type. For the
@@ -306,21 +309,32 @@ impl Stored {
     /// `Bundle.entry.resource` — that means reading the instance's
     /// `resourceType`.
     fn concrete_type(&self, declared: &str, span: Span) -> Result<String, DecodeError> {
+        self.concrete_type_borrowed(declared, span)
+            .map(Cow::into_owned)
+    }
+
+    /// [`Stored::concrete_type`], borrowing `declared` when it is already
+    /// concrete, which is every step but one into a contained resource.
+    fn concrete_type_borrowed<'d>(
+        &'d self,
+        declared: &'d str,
+        span: Span,
+    ) -> Result<Cow<'d, str>, DecodeError> {
         if self.tables.type_def(declared).map(|def| def.kind) != Some(TypeKind::AnyResource) {
-            return Ok(declared.to_string());
+            return Ok(Cow::Borrowed(declared));
         }
         let span = self
             .doc
             .member(span.start, "resourceType")?
             .ok_or_else(|| DecodeError::new("", span.start, "resourceType is required"))?;
-        self.doc.lexical(span)
+        self.doc.lexical_borrowed(span)
     }
 
     /// Locate the element at `path`. `Ok(None)` is an absent element, which is
     /// not an error (`model.nav.005`).
     pub fn locate(&self, path: &str) -> Result<Option<Located>, DecodeError> {
         let steps = parse_path(path)?;
-        let root_type = self.root_type()?;
+        let root_type = self.root_def()?.name;
         let Some((first, rest)) = steps.split_first() else {
             return Err(DecodeError::new(path, 0, "an element path cannot be empty"));
         };
@@ -336,7 +350,7 @@ impl Stored {
         }
         let root = self.doc.root();
         let mut located = Located {
-            type_name: root_type,
+            type_name: root_type.to_string(),
             value: Some(root),
             sibling: Sibling::Known(None),
             path: first.name.clone(),
@@ -351,7 +365,7 @@ impl Stored {
             if !self.doc.is_object(span) {
                 return Ok(None);
             }
-            let owner = self.concrete_type(&located.type_name, span)?;
+            let owner = self.concrete_type_borrowed(&located.type_name, span)?;
             // The concrete type differs from the declared one exactly when the
             // declared one is the abstract `Resource`: the step is entering a
             // resource below the root.
@@ -983,46 +997,130 @@ impl Stored {
     /// materialises. This is the `model-full-parse` workload.
     pub fn materialise_all(&self) -> Result<(), DecodeError> {
         let root = self.doc.root();
-        let root_type = self.root_type()?;
-        self.materialise_object(&root_type, root, &root_type.clone())
+        let root_type = self.root_def()?.name;
+        // The root's member scan steps over every byte of the document once;
+        // the tape keeps what it learns on the way, so every container below
+        // the root is entered from it rather than scanned again. See
+        // [`super::doc::Tape`] for why no observable changes.
+        let mut tape = Tape::for_document(self.doc.bytes().len());
+        let result = self.materialise_object(root_type, root, root_type, &mut tape, true);
+        self.doc.install_tape(tape);
+        result
     }
 
+    /// The concrete type of a node declared as `declared`, looked up once:
+    /// [`Stored::concrete_type`] and then its definition, without the second
+    /// table search or the `String` a type name would cost. `None` is a type
+    /// the tables do not model.
+    fn concrete_def(
+        &self,
+        declared_def: Option<&'static TypeDef>,
+        span: Span,
+    ) -> Result<Option<&'static TypeDef>, DecodeError> {
+        if declared_def.map(|def| def.kind) != Some(TypeKind::AnyResource) {
+            return Ok(declared_def);
+        }
+        let span = self
+            .doc
+            .member(span.start, "resourceType")?
+            .ok_or_else(|| DecodeError::new("", span.start, "resourceType is required"))?;
+        let concrete = self.doc.lexical_borrowed(span)?;
+        Ok(self.tables.type_def(&concrete))
+    }
+
+    /// Decode the object at `span`. Its members come from the tape when the
+    /// root's scan stepped over it, and from the index otherwise: the root
+    /// itself (`root` records into the tape as it is scanned), and an object
+    /// declared as the abstract `Resource`, whose `resourceType` is looked up
+    /// through the index exactly as before.
     fn materialise_object(
         &self,
         type_name: &str,
         span: Span,
         path: &str,
+        tape: &mut Tape,
+        root: bool,
     ) -> Result<(), DecodeError> {
-        let concrete = self.concrete_type(type_name, span)?;
-        if self.tables.type_def(&concrete).is_none() {
+        let declared = self.tables.type_def(type_name);
+        let Some(concrete) = self.concrete_def(declared, span)? else {
             // An unmodelled subtree is left as bytes rather than guessed at.
             return Ok(());
-        }
-        for (property, value) in self.doc.member_spans(span.start)? {
-            let Some((element, element_type, _sibling)) = self
-                .tables
-                .resolve_property_bytes(&concrete, property.of(self.doc.bytes()))
-            else {
-                continue;
-            };
-            if element.repeating && self.doc.is_array(value) {
-                let count = self.doc.item_count(value.start)?;
-                for index in 0..count {
-                    let Some(item) = self.doc.item(value.start, index)? else {
-                        continue;
-                    };
-                    if self.doc.is_null(item) {
-                        continue;
-                    }
-                    let child = self.child_path(path, element.name, Some(index));
-                    self.materialise_value(element_type, item, &child)?;
+        };
+        let from_tape = match declared.map(|def| def.kind) {
+            _ if root => None,
+            Some(TypeKind::AnyResource) => None,
+            _ => tape.find(span.start).filter(|&node| tape.is_object(node)),
+        };
+        match from_tape {
+            Some(node) => {
+                for at in tape.enter(node, self.doc.meter()) {
+                    let (property, value) = tape.entry_at(at);
+                    self.materialise_member(concrete, property, value, path, tape)?;
                 }
-            } else {
-                let child = self.child_path(path, element.name, element.repeating.then_some(0));
-                self.materialise_value(element_type, value, &child)?;
+            }
+            None => {
+                let members = if root {
+                    self.doc.member_spans_recording(span.start, tape)?
+                } else {
+                    self.doc.member_spans(span.start)?
+                };
+                for (property, value) in members {
+                    self.materialise_member(concrete, property, value, path, tape)?;
+                }
             }
         }
         Ok(())
+    }
+
+    fn materialise_member(
+        &self,
+        concrete: &'static TypeDef,
+        property: Span,
+        value: Span,
+        path: &str,
+        tape: &mut Tape,
+    ) -> Result<(), DecodeError> {
+        let Some((element, element_type, _sibling)) = self
+            .tables
+            .resolve_property_in(concrete, property.of(self.doc.bytes()))
+        else {
+            return Ok(());
+        };
+        if element.repeating && self.doc.is_array(value) {
+            match tape.find(value.start).filter(|&node| !tape.is_object(node)) {
+                Some(node) => {
+                    for (index, at) in tape.enter(node, self.doc.meter()).enumerate() {
+                        let (_, item) = tape.entry_at(at);
+                        self.materialise_item(element, element_type, item, index, path, tape)?;
+                    }
+                }
+                None => {
+                    for (index, item) in self.doc.items(value.start)?.into_iter().enumerate() {
+                        self.materialise_item(element, element_type, item, index, path, tape)?;
+                    }
+                }
+            }
+        } else {
+            let child = self.child_path(path, element.name, element.repeating.then_some(0));
+            self.materialise_value(element_type, value, &child, tape)?;
+        }
+        Ok(())
+    }
+
+    fn materialise_item(
+        &self,
+        element: &ElementDef,
+        element_type: &str,
+        item: Span,
+        index: usize,
+        path: &str,
+        tape: &mut Tape,
+    ) -> Result<(), DecodeError> {
+        if self.doc.is_null(item) {
+            return Ok(());
+        }
+        let child = self.child_path(path, element.name, Some(index));
+        self.materialise_value(element_type, item, &child, tape)
     }
 
     /// The path of a child, or the empty string when nothing is recording
@@ -1042,17 +1140,19 @@ impl Stored {
         type_name: &str,
         span: Span,
         path: &str,
+        tape: &mut Tape,
     ) -> Result<(), DecodeError> {
         self.doc.meter().materialise(path);
         if self.tables.is_primitive(type_name) {
             // The value is decoded, but an `xhtml` div is carried as opaque
             // text: nothing here parses or validates it (`model.lazy.006`,
-            // `model.json.008`).
-            let _ = self.doc.lexical(span)?;
+            // `model.json.008`). It is decoded in place: a value with no
+            // escape is checked and read where it lies, not copied out.
+            let _ = self.doc.lexical_borrowed(span)?;
             return Ok(());
         }
         if self.doc.is_object(span) {
-            self.materialise_object(type_name, span, path)?;
+            self.materialise_object(type_name, span, path, tape, false)?;
         }
         Ok(())
     }

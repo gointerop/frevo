@@ -13,7 +13,9 @@
 use super::decode::{CodedDiagnostic, Encoded, LocalReference, ParseMode, encoded};
 use super::path::{PathStep, join, parse_path};
 use super::scan::{DecodeError, escape_into};
-use super::tables::{ElementDef, JsonForm, Tables, TypeKind};
+use std::borrow::Cow;
+
+use super::tables::{ElementDef, JsonForm, Tables, TypeDef, TypeKind};
 
 /// One node of a constructed resource.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -324,6 +326,15 @@ impl Built {
         write_node(&self.tables, &self.root, out, false);
     }
 
+    /// About how many bytes serialising this resource produces: exact for a
+    /// resource with nothing to escape, an underestimate otherwise. A buffer
+    /// sized by it is filled without reallocating, which matters more than
+    /// it sounds -- growing a 4 KiB output by doubling was measured costing
+    /// as much as the encode itself on a heap other work had fragmented.
+    pub fn estimated_len(&self) -> usize {
+        estimated_len(&self.root)
+    }
+
     /// Serialise canonically: property names sorted lexicographically, no
     /// whitespace, which is what `JsonCreatorCanonical` produces.
     pub fn write_canonical(&self, out: &mut Vec<u8>) {
@@ -464,48 +475,238 @@ fn write_node(tables: &Tables, node: &BuiltNode, out: &mut Vec<u8>, canonical: b
             out.push(b']');
         }
         BuiltNode::Object { type_name, props } => {
-            let mut entries: Vec<(String, Option<&BuiltNode>)> = Vec::new();
-            let is_resource =
-                tables.type_def(type_name).map(|def| def.kind) == Some(TypeKind::Resource);
+            let def = tables.type_def(type_name);
+            let is_resource = def.map(|def| def.kind) == Some(TypeKind::Resource);
+            // The base chain, base-most first, which is the order
+            // [`ordered_elements`] reads it in. A chain deeper than the
+            // buffer falls back to building that list outright.
+            let mut chain: [Option<&'static TypeDef>; CHAIN] = [None; CHAIN];
+            let depth = base_chain(tables, def, &mut chain);
+            let mut entries = Entries::new(props.len() + 1);
             if is_resource {
-                entries.push((String::from("resourceType"), None));
+                entries.push(Entry {
+                    property: Cow::Borrowed("resourceType"),
+                    rank: (0, 0),
+                    value: None,
+                });
             }
-            let mut emitted = Vec::new();
-            for def in ordered_elements(tables, type_name) {
-                if let Some((_, value)) = props.iter().find(|(name, _)| *name == def.name) {
-                    let property = if def.choice {
-                        Tables::choice_property(def.name, value.type_name())
-                    } else {
-                        def.name.to_string()
-                    };
-                    entries.push((property, Some(value)));
-                    emitted.push(def.name);
+            match depth {
+                Some(depth) => {
+                    let chain = &chain[CHAIN - depth..];
+                    for (insertion, (name, value)) in props.iter().enumerate() {
+                        let entry = match generated_position(chain, name) {
+                            // `set` never inserts a name twice; were a known
+                            // one repeated, only its first would be written,
+                            // as the walk over the generated order writes it.
+                            Some(_) if props[..insertion].iter().any(|(seen, _)| seen == name) => {
+                                continue;
+                            }
+                            Some((rank, element)) => Entry {
+                                property: property_of(element, value),
+                                rank: (1, rank),
+                                value: Some(value),
+                            },
+                            // An element the tables do not know cannot be
+                            // ordered, so it goes last rather than being
+                            // dropped: losing an element silently is the
+                            // failure mode constitution rule 4 is about.
+                            None => Entry {
+                                property: Cow::Borrowed(name.as_str()),
+                                rank: (2, insertion),
+                                value: Some(value),
+                            },
+                        };
+                        entries.push(entry);
+                    }
+                    entries.as_mut_slice().sort_by_key(|entry| entry.rank);
                 }
-            }
-            // An element the tables do not know cannot be ordered, so it goes
-            // last rather than being dropped: losing an element silently is
-            // the failure mode constitution rule 4 is about.
-            for (name, value) in props {
-                if !emitted.iter().any(|known| known == name) {
-                    entries.push((name.clone(), Some(value)));
+                None => {
+                    let mut emitted = Vec::new();
+                    for def in ordered_elements(tables, type_name) {
+                        if let Some((_, value)) = props.iter().find(|(name, _)| *name == def.name) {
+                            entries.push(Entry {
+                                property: property_of(def, value),
+                                rank: (1, 0),
+                                value: Some(value),
+                            });
+                            emitted.push(def.name);
+                        }
+                    }
+                    for (name, value) in props {
+                        if !emitted.iter().any(|known| known == name) {
+                            entries.push(Entry {
+                                property: Cow::Borrowed(name.as_str()),
+                                rank: (2, 0),
+                                value: Some(value),
+                            });
+                        }
+                    }
                 }
             }
             if canonical {
-                entries.sort_by(|a, b| a.0.cmp(&b.0));
+                // Stable, so equal names keep the generated order between
+                // them, exactly as before.
+                entries
+                    .as_mut_slice()
+                    .sort_by(|a, b| a.property.cmp(&b.property));
             }
             out.push(b'{');
-            for (position, (property, value)) in entries.iter().enumerate() {
+            for (position, entry) in entries.as_mut_slice().iter().enumerate() {
                 if position > 0 {
                     out.push(b',');
                 }
-                escape_into(property, out);
+                escape_into(&entry.property, out);
                 out.push(b':');
-                match value {
+                match entry.value {
                     None => escape_into(type_name, out),
                     Some(value) => write_node(tables, value, out, canonical),
                 }
             }
             out.push(b'}');
+        }
+    }
+}
+
+/// The deepest base chain [`write_node`] orders by without allocating. R4's
+/// deepest is four (`Element`, `BackboneElement`, a backbone type and its
+/// nested type, or `Resource`, `DomainResource` and a resource).
+const CHAIN: usize = 8;
+
+/// One property of an object being written: its JSON name, where the
+/// generated element order puts it, and its value (`None` is `resourceType`).
+#[derive(Default)]
+struct Entry<'n> {
+    property: Cow<'n, str>,
+    rank: (u8, usize),
+    value: Option<&'n BuiltNode>,
+}
+
+/// How many properties an object may have before [`Entries`] moves them to the
+/// heap. Most FHIR objects written have a handful; an allocation per object
+/// was a measurable share of `model.perf.005` on this host's allocator.
+const INLINE: usize = 12;
+
+/// The properties of one object being written, on the stack while they fit
+/// and on the heap (`spilled`) once they do not.
+struct Entries<'n> {
+    inline: [Entry<'n>; INLINE],
+    len: usize,
+    spilled: Vec<Entry<'n>>,
+}
+
+impl<'n> Entries<'n> {
+    fn new(expected: usize) -> Self {
+        Self {
+            inline: std::array::from_fn(|_| Entry::default()),
+            len: 0,
+            // `Vec::new` does not allocate; only an object too large for the
+            // inline buffer pays for this one.
+            spilled: if expected > INLINE {
+                Vec::with_capacity(expected)
+            } else {
+                Vec::new()
+            },
+        }
+    }
+
+    fn push(&mut self, entry: Entry<'n>) {
+        if self.spilled.capacity() == 0 && self.len < INLINE {
+            self.inline[self.len] = entry;
+            self.len += 1;
+            return;
+        }
+        if self.len > 0 {
+            let moved = self.inline.iter_mut().take(self.len).map(std::mem::take);
+            let mut spilled: Vec<Entry<'n>> = moved.collect();
+            spilled.append(&mut self.spilled);
+            self.spilled = spilled;
+            self.len = 0;
+        }
+        self.spilled.push(entry);
+    }
+
+    fn as_mut_slice(&mut self) -> &mut [Entry<'n>] {
+        if self.len > 0 {
+            &mut self.inline[..self.len]
+        } else {
+            &mut self.spilled
+        }
+    }
+}
+
+fn property_of<'n>(def: &'static ElementDef, value: &BuiltNode) -> Cow<'n, str> {
+    if def.choice {
+        Cow::Owned(Tables::choice_property(def.name, value.type_name()))
+    } else {
+        Cow::Borrowed(def.name)
+    }
+}
+
+/// Fill the tail of `chain` with `def`'s base chain, base-most first, as
+/// [`ordered_elements`] walks it, and return its depth; `None` when it is
+/// deeper than the buffer. A type the tables do not know has an empty chain.
+fn base_chain(
+    tables: &Tables,
+    def: Option<&'static TypeDef>,
+    chain: &mut [Option<&'static TypeDef>; CHAIN],
+) -> Option<usize> {
+    let mut depth = 0;
+    let mut current = def;
+    while let Some(def) = current {
+        if depth == CHAIN {
+            return None;
+        }
+        chain[CHAIN - 1 - depth] = Some(def);
+        depth += 1;
+        current = def.base.and_then(|base| tables.type_def(base));
+    }
+    Some(depth)
+}
+
+/// Where `name` sits in [`ordered_elements`]' list for the chain, without
+/// building the list: the list is each chain type's elements in turn, base-most
+/// first, each name kept at its first occurrence only, so the element that
+/// list holds for `name` is its first occurrence, and its position orders the
+/// same as `(depth of that type, index within it)`. Returns that pair, flattened
+/// to one number, and the element.
+fn generated_position(
+    chain: &[Option<&'static TypeDef>],
+    name: &str,
+) -> Option<(usize, &'static ElementDef)> {
+    for (level, def) in chain.iter().flatten().enumerate() {
+        if let Some(index) = def.elements.iter().position(|e| e.name == name) {
+            return Some((level << 16 | index, &def.elements[index]));
+        }
+    }
+    None
+}
+
+/// [`Built::estimated_len`] for one node: quotes, braces, brackets, colons
+/// and commas, the property names, and the lexical values unescaped.
+fn estimated_len(node: &BuiltNode) -> usize {
+    match node {
+        BuiltNode::Primitive { lexical, .. } => lexical.len() + 2,
+        BuiltNode::Array(items) => {
+            2 + items.len().saturating_sub(1) + items.iter().map(estimated_len).sum::<usize>()
+        }
+        BuiltNode::Object { type_name, props } => {
+            // `"resourceType":"<type>",`, counted whether or not the type is a
+            // resource: the estimate only has to be close.
+            let envelope = 2 + 17 + type_name.len();
+            envelope
+                + props
+                    .iter()
+                    .map(|(name, value)| {
+                        // The name, its quotes, the colon and a comma; a choice
+                        // element's name also carries its type.
+                        let choice = match value {
+                            BuiltNode::Primitive { type_name, .. }
+                            | BuiltNode::Object { type_name, .. } => type_name.len(),
+                            BuiltNode::Array(_) => 0,
+                        };
+                        name.len() + choice + 4 + estimated_len(value)
+                    })
+                    .sum::<usize>()
         }
     }
 }
