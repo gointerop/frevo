@@ -50,6 +50,8 @@
 //!
 //! Scenario coverage: `model.json.024`, `model.json.025`, `model.canonical.007`.
 
+use frevo_model::codec::decode as codec;
+
 // ---------------------------------------------------------------------------
 // HAPI's message codes for the three conditions
 // ---------------------------------------------------------------------------
@@ -175,9 +177,79 @@ pub trait ParserOracle {
 
 /// The codec this oracle grades.
 ///
-/// Tasks 21a and 23a replace this body with the real one.
+/// Task 21a bound the decode side. The encode side is task 23a's and is still
+/// delegated to [`UnboundCodec`], so the three encode cases fail with
+/// [`ParserError::NotImplemented`] rather than appearing to pass.
 fn oracle_under_test() -> Box<dyn ParserOracle> {
-    Box::new(UnboundCodec)
+    Box::new(FrevoCodec)
+}
+
+struct FrevoCodec;
+
+impl FrevoCodec {
+    fn mode(mode: ParseMode) -> codec::ParseMode {
+        match mode {
+            ParseMode::Lenient => codec::ParseMode::Lenient,
+            ParseMode::Strict => codec::ParseMode::Strict,
+        }
+    }
+
+    fn coded(coded: &codec::CodedDiagnostic) -> Diagnostic {
+        Diagnostic {
+            code: coded.code,
+            message: coded.message.clone(),
+            path: coded.path.clone(),
+            offset: coded.offset,
+        }
+    }
+
+    fn failure(failure: codec::DecodeFailure) -> ParserError {
+        ParserError::Fatal(match failure {
+            codec::DecodeFailure::Coded(coded) => Self::coded(&coded),
+            // An element-level condition, which carries HAPI's code only where
+            // HAPI has a callback for it. None of this oracle's fixtures
+            // reaches this arm; the `model-decode` oracle grades those.
+            codec::DecodeFailure::Report(report) => Diagnostic {
+                code: report.code.unwrap_or_default(),
+                message: report.message.clone(),
+                path: report.path.clone(),
+                offset: report.offset,
+            },
+        })
+    }
+}
+
+impl ParserOracle for FrevoCodec {
+    fn decode(&self, json: &str, mode: ParseMode) -> Result<DecodeOutcome, ParserError> {
+        let decoded =
+            codec::decode_document(json.as_bytes(), Self::mode(mode)).map_err(Self::failure)?;
+        Ok(DecodeOutcome {
+            diagnostics: decoded
+                .reference_diagnostics
+                .iter()
+                .map(Self::coded)
+                .collect(),
+            contained_ids: decoded.contained_ids.clone(),
+            referenceable_contained_ids: decoded.referenceable_contained_ids.clone(),
+            local_references: decoded
+                .local_references
+                .iter()
+                .map(|reference| LocalReference {
+                    path: reference.path.clone(),
+                    text: reference.text.clone(),
+                    resolved: reference.resolved,
+                })
+                .collect(),
+            canonical_json: String::from_utf8_lossy(&decoded.reencoded_canonical).into_owned(),
+        })
+    }
+
+    fn encode(&self, json: &str, mode: ParseMode) -> Result<EncodeOutcome, ParserError> {
+        // Task 23a's: the encode-side dangling-internal-reference diagnostic
+        // (2724) is the only error condition on that side, and nothing emits
+        // it yet.
+        UnboundCodec.encode(json, mode)
+    }
 }
 
 struct UnboundCodec;

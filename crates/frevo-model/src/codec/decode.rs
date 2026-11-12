@@ -33,20 +33,24 @@
 //!    rather than returning an error, so the bound is part of the decoder
 //!    rather than a later hardening pass.
 //!
-//! What is **not** here, by task boundary: the unknown-property path, the JSON
-//! type mismatches, the duplicate key, the `null`-in-a-complex-array report,
-//! the invalid-primitive-value rejection and the extension-with-both report
-//! are task 21's, because each one's outcome is what distinguishes the two
-//! parse modes. The two contained-resource diagnostics are task 21a's. This
-//! module reports the conditions tasks 19 and 20 name — a missing or unknown
-//! `resourceType`, and a numeric value outside its declared type's range — and
-//! implements the rule that turns a diagnostic into an error in strict mode,
-//! because a decoder that cannot answer `decode(bytes, Strict)` at all cannot
-//! be called.
+//! Tasks 21, 21a, 22 and 26 added the diagnostic channel over that: every
+//! condition `IParserErrorHandler` enumerates, each one carrying the FHIR
+//! element path and the byte offset it was found at, recorded beside the
+//! resource in lenient mode and raised as an error in strict mode.
+//!
+//! Two of the ten conditions carry a HAPI message code that a [`ReportKind`]
+//! cannot name — `containedResourceWithNoId` (1819) and `unknownReference`
+//! (1826) — because they are not about an element's own JSON at all but about
+//! the document's internal reference graph, which HAPI resolves in a
+//! post-decode pass of its own (`ParserState.weaveContainedResources`). They
+//! are therefore reported through [`CodedDiagnostic`] and raised by
+//! [`decode_document`]; [`decode`] is the narrower surface that raises only the
+//! [`Diagnostic`]-typed conditions. The tenth, `invalidInternalReference`
+//! (2724), is on the **encode** side and is task 23a's.
 
 use super::built::ordered_elements;
 use super::scan::{Span, skip_ws, unescape};
-use super::tables::{ElementDef, Tables, TypeKind};
+use super::tables::{ElementDef, JsonForm, Tables, TypeKind};
 
 /// How deep a document may nest before decoding refuses it.
 ///
@@ -116,6 +120,60 @@ pub enum ReportKind {
     DepthLimit,
 }
 
+impl ReportKind {
+    /// HAPI's `Msg.code` for this condition, where HAPI has a callback for it.
+    ///
+    /// Read from `ca.uhn.fhir.parser.StrictErrorHandler` at pin
+    /// `7ab4c7c7c49281496faa1b3c2498a652457669ae`: `incorrectJsonType` 1820
+    /// (line 52), `invalidValue` 1821 (57), `missingRequiredElement` 1822 (72),
+    /// `unexpectedRepeatingElement` 1823 (77), `unknownAttribute` 1824 (83),
+    /// `unknownElement` 1825 (89), `unknownReference` 1826 (96),
+    /// `invalidInternalReference` 2724 (101) and
+    /// `extensionContainsValueAndNestedExtensions` 1827 (109). The missing
+    /// `resourceType` is not a handler callback at all: `JsonParser` throws it
+    /// directly as 1843 (`JsonParser.java:1483`).
+    ///
+    /// `None` is the honest answer for the rest, and it is not an oversight:
+    /// a duplicate JSON key, a `null` in a non-primitive array, a numeric value
+    /// outside its declared range, unequal `_field` array lengths, a `_field`
+    /// property on a complex element, an unknown `resourceType`, non-UTF-8
+    /// input and the depth bound have no `IParserErrorHandler` callback and so
+    /// no code to match. Inventing one would make a Frevo-only report look like
+    /// a HAPI one in a differential diff.
+    pub fn message_code(self) -> Option<u32> {
+        match self {
+            ReportKind::MissingResourceType => Some(1843),
+            ReportKind::IncorrectJsonType => Some(1820),
+            ReportKind::UnexpectedRepeatingElement => Some(1823),
+            ReportKind::UnknownProperty => Some(1825),
+            ReportKind::InvalidValue => Some(1821),
+            ReportKind::ExtensionHasValueAndNestedExtensions => Some(1827),
+            ReportKind::UnknownResourceType
+            | ReportKind::DuplicateProperty
+            | ReportKind::NullInNonPrimitiveArray
+            | ReportKind::ValueOutOfRange
+            | ReportKind::NotUtf8
+            | ReportKind::PrimitiveExtensionLengthMismatch
+            | ReportKind::UnexpectedUnderscoreProperty
+            | ReportKind::DepthLimit => None,
+        }
+    }
+
+    /// Whether this condition aborts decoding in **both** modes.
+    ///
+    /// `LenientErrorHandler`'s class documentation names exactly two: its
+    /// `invalidValue` delegates to the strict handler unless the value is blank
+    /// (`LenientErrorHandler.java:100-108`) and its
+    /// `extensionContainsValueAndNestedExtensions` delegates unconditionally
+    /// (`:224-229`). Everything else logs a warning and returns.
+    pub fn is_fatal_in_lenient_mode(self) -> bool {
+        matches!(
+            self,
+            ReportKind::InvalidValue | ReportKind::ExtensionHasValueAndNestedExtensions
+        )
+    }
+}
+
 /// One report: a diagnostic in lenient mode, the same thing raised as an error
 /// in strict mode (`model.json.021`).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -126,10 +184,18 @@ pub struct Diagnostic {
     /// The byte offset in the input at which the problem was found.
     pub offset: usize,
     pub message: String,
-    /// The type the element declares, where the condition has one.
+    /// The type the element declares, where the condition has one. For the
+    /// two shape conditions — a repeating element given a bare object, a
+    /// `_field` given as a scalar — the declared *JSON* type is the thing that
+    /// was expected, so this reads `array` or `object` there and the FHIR type
+    /// name everywhere else, which is what `model.json.013` and
+    /// `model.json.014` assert.
     pub expected_type: Option<String>,
     /// The JSON type actually found, where the condition has one.
     pub found_type: Option<String>,
+    /// HAPI's message code, where the condition is one HAPI has a callback
+    /// for. See [`ReportKind::message_code`].
+    pub code: Option<u32>,
 }
 
 impl Diagnostic {
@@ -141,11 +207,17 @@ impl Diagnostic {
             message,
             expected_type: None,
             found_type: None,
+            code: kind.message_code(),
         }
     }
 
     fn expecting(mut self, type_name: &str) -> Self {
         self.expected_type = Some(type_name.to_string());
+        self
+    }
+
+    fn finding(mut self, json_type: &str) -> Self {
+        self.found_type = Some(json_type.to_string());
         self
     }
 }
@@ -161,6 +233,123 @@ impl std::fmt::Display for Diagnostic {
 }
 
 impl std::error::Error for Diagnostic {}
+
+/// One of the two decode conditions about the document's internal reference
+/// graph rather than about an element's own JSON (`model.json.024`,
+/// `model.json.025`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReferenceIssue {
+    /// A `contained` entry carrying no `id`.
+    ///
+    /// `ParserState.ContainedResourcesStateHl7Org.wereBack()` at
+    /// `ParserState.java:433-454`. The comment at lines 442-443 reads "If there
+    /// is no ID, we don't keep the resource because it's useless", and then the
+    /// code appends it to `contained` anyway at line 452 — outside the `else`.
+    /// What the `else` branch actually guards is the `put` into the
+    /// id-to-resource map at lines 446-449. So the resource survives and no
+    /// `#` reference can ever be woven to it, which is the opposite of what the
+    /// comment claims.
+    ContainedResourceWithNoId,
+    /// A `#` reference, of at least one character after the `#`, whose target
+    /// is not in the id-to-resource map.
+    ///
+    /// `ParserState.weaveContainedResources()` at `ParserState.java:1277-1293`.
+    UnknownReference,
+}
+
+impl ReferenceIssue {
+    /// HAPI's `Msg.code`: `StrictErrorHandler.java:38-40` and `:93-97`.
+    pub fn message_code(self) -> u32 {
+        match self {
+            ReferenceIssue::ContainedResourceWithNoId => 1819,
+            ReferenceIssue::UnknownReference => 1826,
+        }
+    }
+}
+
+/// A [`ReferenceIssue`] as reported: HAPI's code, and the element path and
+/// byte offset `model.errors.001` and `model.errors.002` require of every
+/// report.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CodedDiagnostic {
+    pub issue: ReferenceIssue,
+    pub code: u32,
+    pub path: String,
+    pub offset: usize,
+    pub message: String,
+}
+
+impl CodedDiagnostic {
+    fn new(issue: ReferenceIssue, path: &str, offset: usize, message: String) -> Self {
+        Self {
+            issue,
+            code: issue.message_code(),
+            path: path.to_string(),
+            offset,
+            message,
+        }
+    }
+}
+
+impl std::fmt::Display for CodedDiagnostic {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "[{}] {} at {} (byte {})",
+            self.code, self.message, self.path, self.offset
+        )
+    }
+}
+
+impl std::error::Error for CodedDiagnostic {}
+
+/// What a decode can fail with. Strict mode raises whichever report came
+/// first; the two fatal conditions raise in both modes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DecodeFailure {
+    /// One of the conditions a [`ReportKind`] names.
+    Report(Diagnostic),
+    /// One of the two conditions about the internal reference graph.
+    Coded(CodedDiagnostic),
+}
+
+impl std::fmt::Display for DecodeFailure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DecodeFailure::Report(report) => report.fmt(f),
+            DecodeFailure::Coded(coded) => coded.fmt(f),
+        }
+    }
+}
+
+impl std::error::Error for DecodeFailure {}
+
+impl From<Diagnostic> for DecodeFailure {
+    fn from(report: Diagnostic) -> Self {
+        DecodeFailure::Report(report)
+    }
+}
+
+/// A local (`#`) reference the decode collected, and what the weaving pass did
+/// with it.
+///
+/// `ParserState` collects **every** `IBaseReference` it instantiates
+/// (`ParserState.java:214-222` and `:225-233`), not only the `#` ones, and
+/// `weaveContainedResources` then filters. This mirrors that, so that the text
+/// of a non-local reference is recorded too and the filtering rule stays in one
+/// place.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LocalReference {
+    /// The element the reference sits on: `Patient.managingOrganization`.
+    pub path: String,
+    /// The reference's literal text, which survives in both modes — it is what
+    /// `path.utility.017` later resolves against.
+    pub text: String,
+    /// The byte offset of the reference value in the input.
+    pub offset: usize,
+    /// Whether the post-decode weaving pass found a contained resource for it.
+    pub resolved: bool,
+}
 
 /// A decimal read back from the model: the lexical form as it appeared, and
 /// the exact value rendered positionally.
@@ -212,9 +401,34 @@ pub struct Decoded {
     /// The resource fully materialised and re-emitted compact in the generated
     /// element order.
     pub reencoded: Vec<u8>,
+    /// The same tree re-emitted with every object's property names sorted
+    /// lexicographically and no whitespace, which is what
+    /// `org.hl7.fhir.r4.formats.JsonCreatorCanonical` produces. The canonical
+    /// form of a byte-backed resource is [`crate::Resource::write_canonical`];
+    /// this is the eager tree's own, so that what survived a decode is
+    /// assertable rather than described.
+    pub reencoded_canonical: Vec<u8>,
+    /// The `contained` entries in document order, with `None` where the entry
+    /// carried no `id` (`model.json.024`).
+    pub contained_ids: Vec<Option<String>>,
+    /// The ids a `#` reference can be woven to: the keys of the id-to-resource
+    /// map, which is deliberately **not** the same list as [`Self::contained_ids`].
+    pub referenceable_contained_ids: Vec<String>,
+    /// Every reference the decode collected, with the weaving pass's verdict.
+    pub local_references: Vec<LocalReference>,
+    /// The reference-graph diagnostics, in the order HAPI raises them: the
+    /// id-less `contained` entries as they are closed, then the weaving pass.
+    pub reference_diagnostics: Vec<CodedDiagnostic>,
 }
 
 /// Decode `bytes` in `mode`, using the generated R4 tables.
+///
+/// This raises every condition a [`ReportKind`] names. The two conditions
+/// about the document's internal reference graph are recorded in
+/// [`Decoded::reference_diagnostics`] but **not** raised here, because a
+/// [`Diagnostic`] has no `ReportKind` that could name them;
+/// [`decode_document`] is the surface that raises those too, and is what a
+/// caller deciding whether to accept a request body should use.
 pub fn decode(bytes: &[u8], mode: ParseMode) -> Result<Decoded, Diagnostic> {
     decode_with(bytes, mode, super::R4)
 }
@@ -227,6 +441,72 @@ pub fn decode_default(bytes: &[u8]) -> Result<Decoded, Diagnostic> {
 /// [`decode`] against a caller-supplied table, so the codec's own tests can
 /// read a fixture table rather than the generated one.
 pub fn decode_with(bytes: &[u8], mode: ParseMode, tables: Tables) -> Result<Decoded, Diagnostic> {
+    let decoded = run(bytes, tables)?;
+    if mode == ParseMode::Strict {
+        // Strict mode raises the diagnostic lenient mode records -- same kind,
+        // same path, same offset, same message -- and changes nothing else, so
+        // the two modes cannot drift apart. The error is the first problem in
+        // document order (`model.errors.003`).
+        if let Some(first) = decoded.diagnostics.first() {
+            return Err(first.clone());
+        }
+    }
+    Ok(decoded)
+}
+
+/// Decode `bytes` in `mode`, raising **every** condition HAPI's handler
+/// enumerates on the decode side, including the two that carry a message code
+/// (`model.json.024`, `model.json.025`).
+pub fn decode_document(bytes: &[u8], mode: ParseMode) -> Result<Decoded, DecodeFailure> {
+    decode_document_with(bytes, mode, super::R4)
+}
+
+/// [`decode_document`] against a caller-supplied table.
+pub fn decode_document_with(
+    bytes: &[u8],
+    mode: ParseMode,
+    tables: Tables,
+) -> Result<Decoded, DecodeFailure> {
+    let decoded = run(bytes, tables)?;
+    if mode == ParseMode::Strict {
+        if let Some(first) = first_report(&decoded) {
+            return Err(first);
+        }
+    }
+    Ok(decoded)
+}
+
+/// The first problem in the order HAPI's handler would have seen it: the
+/// element-level reports and the id-less `contained` entries interleaved by
+/// byte offset, then the weaving pass, which by construction runs after the
+/// whole document is decoded.
+fn first_report(decoded: &Decoded) -> Option<DecodeFailure> {
+    let report = decoded.diagnostics.first();
+    let coded = decoded
+        .reference_diagnostics
+        .iter()
+        .find(|coded| coded.issue == ReferenceIssue::ContainedResourceWithNoId);
+    let earliest = match (report, coded) {
+        (Some(report), Some(coded)) if coded.offset < report.offset => {
+            Some(DecodeFailure::Coded(coded.clone()))
+        }
+        (Some(report), _) => Some(DecodeFailure::Report(report.clone())),
+        (None, Some(coded)) => Some(DecodeFailure::Coded(coded.clone())),
+        (None, None) => None,
+    };
+    earliest.or_else(|| {
+        decoded
+            .reference_diagnostics
+            .iter()
+            .find(|coded| coded.issue == ReferenceIssue::UnknownReference)
+            .cloned()
+            .map(DecodeFailure::Coded)
+    })
+}
+
+/// Everything both entry points share: the decode itself, which is
+/// mode-independent apart from the two conditions that abort in both modes.
+fn run(bytes: &[u8], tables: Tables) -> Result<Decoded, Diagnostic> {
     // Encoding-strict, up front: every later step may then treat the buffer as
     // text. This is one linear pass and the eager decode is linear anyway, so
     // it costs nothing asymptotically — and it is emphatically not on the lazy
@@ -247,32 +527,46 @@ pub fn decode_with(bytes: &[u8], mode: ParseMode, tables: Tables) -> Result<Deco
         bytes,
         tables,
         diagnostics: Vec::new(),
+        fatal: None,
+        contained_ids: Vec::new(),
+        referenceable_contained_ids: Vec::new(),
+        local_references: Vec::new(),
+        reference_diagnostics: Vec::new(),
     };
     let root = decoder.shape_resource(&raw, None)?;
+    // The two conditions `LenientErrorHandler` treats as fatal abort in both
+    // modes, so they are raised before anything is handed back, and before the
+    // work of re-emitting a resource the caller will not receive.
+    if let Some(fatal) = decoder.fatal.take() {
+        return Err(fatal);
+    }
     let resource_type = root.type_name.to_string();
 
     let mut reencoded = Vec::with_capacity(bytes.len());
     decoder.emit_object(&root, &mut reencoded);
+    let mut reencoded_canonical = Vec::with_capacity(bytes.len());
+    decoder.emit_object_canonical(&root, &mut reencoded_canonical);
 
+    // The element walk also collects the `contained` entries and the
+    // references, so it has to precede the weaving pass.
     let mut elements = Vec::new();
     decoder.flatten_object(&root, &resource_type, true, None, &mut elements);
 
-    let diagnostics = decoder.diagnostics;
-    if mode == ParseMode::Strict {
-        // Strict mode raises the diagnostic lenient mode records -- same kind,
-        // same path, same offset, same message -- and changes nothing else, so
-        // the two modes cannot drift apart. The error is the first problem in
-        // document order (`model.errors.003`).
-        if let Some(first) = diagnostics.first() {
-            return Err(first.clone());
-        }
-    }
+    // The weaving pass runs after the whole document is decoded, which is why
+    // a reference that appears before its target still resolves
+    // (`ParserState.weaveContainedResources`, called from `wereBack`).
+    decoder.weave();
 
     Ok(Decoded {
         resource_type,
-        diagnostics,
+        diagnostics: decoder.diagnostics,
         elements,
         reencoded,
+        reencoded_canonical,
+        contained_ids: decoder.contained_ids,
+        referenceable_contained_ids: decoder.referenceable_contained_ids,
+        local_references: decoder.local_references,
+        reference_diagnostics: decoder.reference_diagnostics,
     })
 }
 
@@ -552,6 +846,9 @@ struct Primitive {
 struct Object {
     type_name: &'static str,
     is_resource: bool,
+    /// The byte offset of the object's own `{`, so that a report about the
+    /// object rather than about one of its properties has somewhere to point.
+    start: usize,
     props: Vec<Prop>,
 }
 
@@ -614,6 +911,13 @@ struct Decoder<'a> {
     bytes: &'a [u8],
     tables: Tables,
     diagnostics: Vec<Diagnostic>,
+    /// The first condition that aborts in both modes, held rather than
+    /// returned so that shaping unwinds through one path.
+    fatal: Option<Diagnostic>,
+    contained_ids: Vec<Option<String>>,
+    referenceable_contained_ids: Vec<String>,
+    local_references: Vec<LocalReference>,
+    reference_diagnostics: Vec<CodedDiagnostic>,
 }
 
 impl Decoder<'_> {
@@ -673,7 +977,7 @@ impl Decoder<'_> {
         // The root's children are pathed from the resource type name; a
         // nested resource's from where it sits (`Patient.contained[0]`).
         let own = Loc::root(def.name);
-        Ok(self.shape_members(def.name, true, members, at.unwrap_or(&own)))
+        Ok(self.shape_members(def.name, true, *start, members, at.unwrap_or(&own)))
     }
 
     /// Decode a complex element or a backbone element.
@@ -693,16 +997,38 @@ impl Decoder<'_> {
                 }
             };
         }
-        let Raw::Object { members, .. } = raw else {
+        let Raw::Object { members, start } = raw else {
+            // A scalar or an array where a complex element belongs. HAPI enters
+            // the element and then reports each of the object's would-be
+            // properties through `attributeValue`
+            // (`ParserState.java:607-623`); the element itself is dropped
+            // either way, and the properties it does not have cannot be
+            // enumerated, so the report is made once about the element.
+            self.report(
+                Diagnostic::new(
+                    ReportKind::IncorrectJsonType,
+                    &at.render(),
+                    raw.start(),
+                    format!(
+                        "{declared} is a complex element, so a JSON object was expected, but a {} was found",
+                        self.json_type_of(raw)
+                    ),
+                )
+                .expecting("object")
+                .finding(self.json_type_of(raw)),
+            );
             return None;
         };
-        Some(self.shape_members(declared, false, members, at))
+        let object = self.shape_members(declared, false, *start, members, at);
+        self.check_extension(&object, at);
+        Some(object)
     }
 
     fn shape_members(
         &mut self,
         type_name: &'static str,
         is_resource: bool,
+        start: usize,
         members: &[(Span, Raw)],
         at: &Loc<'_>,
     ) -> Object {
@@ -712,20 +1038,51 @@ impl Decoder<'_> {
             if key_bytes == b"resourceType" {
                 continue;
             }
+            // The quote-inclusive start of the property name, which is where a
+            // report about the property itself points.
+            let key_offset = key.start.saturating_sub(1);
             let Some((def, concrete, is_sibling)) =
                 self.tables.resolve_property_bytes(type_name, key_bytes)
             else {
-                // The unknown-property path is task 21's: its outcome is what
-                // the two parse modes differ on. The property is dropped,
-                // which is what lenient mode does with it.
+                // `ParserState.enteringNewElement` at `:638-658`: the element
+                // is swallowed whole along with its children, and the handler
+                // is told. `LenientErrorHandler.unknownElement` logs and
+                // returns, so the property is simply dropped
+                // (`model.json.004`).
+                let name = String::from_utf8_lossy(key_bytes).into_owned();
+                let path = at.child(&name).render();
+                self.report(Diagnostic::new(
+                    ReportKind::UnknownProperty,
+                    &path,
+                    key_offset,
+                    format!("unknown property '{name}' on {type_name}"),
+                ));
                 continue;
             };
+            // `_field` is the primitive-extension form and nothing else.
+            // `ElementDef` carries the element's declared type, so a `_name`
+            // on a complex element is reported rather than quietly accepted
+            // (`model.primext.009`).
+            if is_sibling && !self.tables.is_primitive(concrete) {
+                let name = String::from_utf8_lossy(key_bytes).into_owned();
+                let path = at.child(def.name).render();
+                self.report(Diagnostic::new(
+                    ReportKind::UnexpectedUnderscoreProperty,
+                    &path,
+                    key_offset,
+                    format!(
+                        "'{name}' is the primitive-extension form, but {}.{} is a {concrete}",
+                        type_name, def.name
+                    ),
+                ));
+                continue;
+            }
             let choice = def.choice.then_some(concrete);
             // A `_field` sibling carries only the `id` and `extension` of
             // `Element`, whatever the element's own type is.
             let item_type: &'static str = if is_sibling { "Element" } else { concrete };
             let here = at.child(def.name);
-            let shape = self.shape_side(def, item_type, raw, &here);
+            let shape = self.shape_side(def, item_type, raw, &here, is_sibling);
             let position = props
                 .iter()
                 .position(|prop| prop.def.name == def.name && prop.choice == choice);
@@ -742,19 +1099,43 @@ impl Decoder<'_> {
                     props.len() - 1
                 }
             };
+            let side = if is_sibling {
+                &props[index].sibling
+            } else {
+                &props[index].value
+            };
+            if side.is_some() {
+                // A repeated property name silently overwrites, because HAPI
+                // reads JSON through a Jackson `ObjectMapper` built without
+                // `FAIL_ON_READING_DUP_TREE_KEY` and without
+                // `STRICT_DUPLICATE_DETECTION`, so the last occurrence wins.
+                // HAPI has no error-handler callback for this at all, so the
+                // report is a Frevo-only one (`model.json.016`).
+                let name = String::from_utf8_lossy(key_bytes).into_owned();
+                let path = here.render();
+                self.report(Diagnostic::new(
+                    ReportKind::DuplicateProperty,
+                    &path,
+                    key_offset,
+                    format!(
+                        "the property '{name}' appears more than once; the last occurrence wins"
+                    ),
+                ));
+            }
             if is_sibling {
                 props[index].sibling = Some(shape);
             } else {
-                // A repeated property name silently overwrites, because HAPI
-                // reads JSON through a Jackson `ObjectMapper` built without
-                // `STRICT_DUPLICATE_DETECTION`. Reporting it is
-                // `model.json.016`, which is task 21's.
                 props[index].value = Some(shape);
             }
+            // The two sides of one element are index-aligned, so once both are
+            // known their lengths are comparable. Checked here rather than
+            // after the loop so that the report lands in document order.
+            self.check_sibling_lengths(&props[index], &here, key_offset);
         }
         Object {
             type_name,
             is_resource,
+            start,
             props,
         }
     }
@@ -767,20 +1148,105 @@ impl Decoder<'_> {
         item_type: &'static str,
         raw: &Raw,
         at: &Loc<'_>,
+        is_sibling: bool,
     ) -> Shape {
         match raw {
-            Raw::Array { items, .. } => {
+            Raw::Array { items, start } => {
+                // `ParserState.enteringNewElement` at `:662-672` adds the
+                // element name to `myParsedNonRepeatableNames` and reports the
+                // second and later repetitions of a `0..1` element, swallowing
+                // them -- so the first is kept and an array of one is not a
+                // problem at all (`model.json.015`). The `_field` side is
+                // governed by `parseAlternates` instead, whose rule is
+                // different (`JsonParser.java:1283-1293` throws for an array
+                // longer than one), so it is not reported here.
+                if !def.repeating && !is_sibling && items.len() > 1 {
+                    self.report(Diagnostic::new(
+                        ReportKind::UnexpectedRepeatingElement,
+                        &at.render(),
+                        *start,
+                        format!(
+                            "{} is not a repeating element, so only the first of the {} \
+                             repetitions given is kept",
+                            def.name,
+                            items.len()
+                        ),
+                    ));
+                    let first = self.shape_item(item_type, &items[0], &at.at(None));
+                    return Shape::Array(vec![first]);
+                }
                 let mut out = Vec::with_capacity(items.len());
                 for (index, item) in items.iter().enumerate() {
                     let here = at.at(def.repeating.then_some(index));
+                    // `null` is meaningful as a hole in a *primitive* array,
+                    // where it pairs with the `_field` entry at the same index.
+                    // In an array of a complex element it means nothing, and
+                    // HAPI's own null branch (`JsonParser.java:1484-1488`)
+                    // enters the element and ends it, which is what happens
+                    // here too -- the report is Frevo's own, HAPI having no
+                    // callback for it (`model.json.018`).
+                    if !is_sibling && !self.tables.is_primitive(item_type) && self.is_null(item) {
+                        self.report(Diagnostic::new(
+                            ReportKind::NullInNonPrimitiveArray,
+                            &at.render(),
+                            item.start(),
+                            format!(
+                                "null is meaningful only as a hole in a primitive array paired \
+                                 with _{}, and {} is a {item_type}",
+                                def.name, def.name
+                            ),
+                        ));
+                    }
                     out.push(self.shape_item(item_type, item, &here));
                 }
                 Shape::Array(out)
             }
             single => {
+                // `JsonParser.parseChildren` at `:1460-1462`: a bare object
+                // outside an array where a repeating element belongs is
+                // `incorrectJsonType`, expecting an array. The check is on the
+                // object case only, which is HAPI's: a bare *scalar* where a
+                // repeating primitive belongs reaches the scalar branch with no
+                // check at all (`model.json.014`).
+                if def.repeating && !is_sibling && matches!(single, Raw::Object { .. }) {
+                    self.report(
+                        Diagnostic::new(
+                            ReportKind::IncorrectJsonType,
+                            &at.render(),
+                            single.start(),
+                            format!(
+                                "{} may repeat, so a JSON array was expected, but a single \
+                                 object was found",
+                                def.name
+                            ),
+                        )
+                        .expecting("array")
+                        .finding("object"),
+                    );
+                }
                 let here = at.at(def.repeating.then_some(0));
                 Shape::Single(self.shape_item(item_type, single, &here))
             }
+        }
+    }
+
+    fn is_null(&self, raw: &Raw) -> bool {
+        matches!(raw, Raw::Scalar(span) if span.of(self.bytes) == b"null")
+    }
+
+    /// The JSON type name of a raw value, as `BaseJsonLikeValue.ValueType` and
+    /// `ScalarType` together name it: a string, a number and a boolean are
+    /// distinguished, because `model.json.013` asserts the found type.
+    fn json_type_of(&self, raw: &Raw) -> &'static str {
+        match raw {
+            Raw::Object { .. } => "object",
+            Raw::Array { .. } => "array",
+            Raw::Scalar(span) => match span.of(self.bytes) {
+                b"true" | b"false" => "boolean",
+                b"null" => "null",
+                bytes if bytes.first() == Some(&b'"') => "string",
+                _ => "number",
+            },
         }
     }
 
@@ -794,10 +1260,45 @@ impl Decoder<'_> {
         }
         if self.tables.is_primitive(item_type) {
             let Raw::Scalar(span) = raw else {
-                // A JSON object or array where a primitive belongs is
-                // `incorrectJsonType`, task 21's.
+                self.report(
+                    Diagnostic::new(
+                        ReportKind::IncorrectJsonType,
+                        &at.render(),
+                        raw.start(),
+                        format!(
+                            "{item_type} is a primitive, so a JSON scalar was expected, but a {} \
+                             was found",
+                            self.json_type_of(raw)
+                        ),
+                    )
+                    .expecting(item_type)
+                    .finding(self.json_type_of(raw)),
+                );
                 return None;
             };
+            // A primitive's declared JSON form is part of its type. HAPI reads
+            // the scalar's **string** form whatever the JSON type was --
+            // `JsonParser.parseChildren` at `:1489-1492` calls
+            // `attributeValue("value", theJsonVal.getAsString())` -- so the
+            // value survives, which is why `"active": "true"` yields the value
+            // `true` and a diagnostic rather than a dropped element
+            // (`model.json.013`).
+            let found = self.json_type_of(raw);
+            let expected = json_form_name(self.tables.json_form(item_type));
+            if found != expected {
+                self.report(
+                    Diagnostic::new(
+                        ReportKind::IncorrectJsonType,
+                        &at.render(),
+                        span.start,
+                        format!(
+                            "{item_type} is written as a JSON {expected}, but a {found} was found"
+                        ),
+                    )
+                    .expecting(item_type)
+                    .finding(found),
+                );
+            }
             return Some(Value::Primitive(self.shape_primitive(item_type, *span, at)));
         }
         self.shape_object(item_type, raw, at).map(Value::Object)
@@ -808,6 +1309,7 @@ impl Decoder<'_> {
     /// characters.
     fn shape_primitive(&mut self, type_name: &str, span: Span, at: &Loc<'_>) -> Primitive {
         let primitive = Primitive { raw: span };
+        self.check_value_rule(type_name, span, at);
         // `integer`, `positiveInt` and `unsignedInt` carry a declared range,
         // and a value outside it is reported naming the element path and the
         // declared type (`model.json.011`, `model.json.012`). An `xhtml` div
@@ -829,6 +1331,227 @@ impl Decoder<'_> {
             }
         }
         primitive
+    }
+
+    // -----------------------------------------------------------------------
+    // The diagnostic channel
+    // -----------------------------------------------------------------------
+
+    /// Record one report. A condition `LenientErrorHandler` treats as fatal is
+    /// held aside rather than recorded, so that it aborts the decode in both
+    /// modes; only the first is kept, which is the one HAPI would have thrown
+    /// at (`model.errors.003`).
+    fn report(&mut self, diagnostic: Diagnostic) {
+        if diagnostic.kind.is_fatal_in_lenient_mode() {
+            if self.fatal.is_none() {
+                self.fatal = Some(diagnostic);
+            }
+            return;
+        }
+        self.diagnostics.push(diagnostic);
+    }
+
+    /// Check a primitive's value against its type's value rule
+    /// (`model.json.023`).
+    ///
+    /// A **blank** value is not reported. `LenientErrorHandler.invalidValue`
+    /// logs it rather than raising it (`LenientErrorHandler.java:100-108`), so
+    /// it is not fatal; and it is not recorded as a diagnostic either, because
+    /// `StrictErrorHandler.invalidValue` throws unconditionally and the
+    /// `model-parser-errors` oracle requires `{"reference": ""}` to decode
+    /// cleanly in **strict** mode. Reporting it would therefore break
+    /// `model.json.025`'s blank-reference clause, so strict mode is a subset of
+    /// HAPI's here rather than a match. `docs/deviations.md` records that under
+    /// "Lenient request parsing".
+    ///
+    /// `xhtml` and `base64Binary` have no rule applied: the first is opaque
+    /// markup and the second is already its encoded text, so neither is
+    /// parsed, decoded or validated here or anywhere else.
+    fn check_value_rule(&mut self, type_name: &str, span: Span, at: &Loc<'_>) {
+        let Some(rule) = ValueRule::of(type_name) else {
+            return;
+        };
+        let bytes = self.bytes;
+        let raw = token_value(bytes, span);
+        // Resolving escapes would allocate per primitive, and none of the
+        // rules below admits a backslash, so it is done only when there is one
+        // to resolve -- an escape could still spell a legal character.
+        let resolved = raw
+            .contains(&b'\\')
+            .then(|| self.lexical(Primitive { raw: span }));
+        let value = resolved.as_ref().map_or(raw, |text| text.as_bytes());
+        if is_blank(value) || rule.holds(value) {
+            return;
+        }
+        let text = String::from_utf8_lossy(value).into_owned();
+        let path = at.render();
+        self.report(
+            Diagnostic::new(
+                ReportKind::InvalidValue,
+                &path,
+                span.start,
+                format!("\"{text}\" is not a valid {type_name} value"),
+            )
+            .expecting(type_name),
+        );
+    }
+
+    /// The two sides of one element are index-aligned, so their array lengths
+    /// must agree (`model.primext.006`).
+    ///
+    /// CONFLICT WITH THE REFERENCE, implemented as the scenario specifies it.
+    /// HAPI reports nothing: `JsonParser.parseChildren` at `:1451-1458`
+    /// iterates the **value** array and takes an alternate only
+    /// `if (nextAlternateArray.size() >= (i + 1))`, so the entries of an
+    /// over-long `_field` array are never visited and an imbalance in either
+    /// direction is silent. This is therefore a Frevo-only report of the same
+    /// kind as `model.json.016` and `model.json.018`.
+    fn check_sibling_lengths(&mut self, prop: &Prop, at: &Loc<'_>, offset: usize) {
+        let (Some(Shape::Array(value)), Some(Shape::Array(sibling))) = (&prop.value, &prop.sibling)
+        else {
+            return;
+        };
+        if value.len() == sibling.len() {
+            return;
+        }
+        let (value_len, sibling_len) = (value.len(), sibling.len());
+        let path = at.render();
+        let name = prop.def.name;
+        self.report(Diagnostic::new(
+            ReportKind::PrimitiveExtensionLengthMismatch,
+            &path,
+            offset,
+            format!(
+                "{name} has {value_len} entries and _{name} has {sibling_len}; the two sides of \
+                 an element are aligned by index, so the lengths must agree"
+            ),
+        ));
+    }
+
+    /// An `Extension` carrying both a `value[x]` and nested `extension`
+    /// children (`model.json.022`).
+    ///
+    /// CONFLICT WITH THE REFERENCE as to **when**, implemented as the scenario
+    /// specifies it. HAPI raises this only while **composing**:
+    /// `JsonParser.writeUndeclaredExtension` at `:2008-2012` and
+    /// `XmlParser.encodeCompositeElementToStreamWriter` at `:516-519` are its
+    /// only two call sites in `hapi-fhir-base`, and `ParserState` has none. So
+    /// HAPI parses such a body and throws when it serialises it again, while
+    /// Frevo refuses it on the way in. The observable outcome for a request is
+    /// the same `DataFormatException`; the stage differs.
+    fn check_extension(&mut self, object: &Object, at: &Loc<'_>) {
+        if object.type_name != "Extension" {
+            return;
+        }
+        let has_value = object
+            .props
+            .iter()
+            .filter(|prop| prop.def.name == "value")
+            .any(|prop| Self::side_has_an_item(prop.value.as_ref()));
+        let has_nested = object
+            .props
+            .iter()
+            .filter(|prop| prop.def.name == "extension")
+            .any(|prop| Self::side_has_an_item(prop.value.as_ref()));
+        if !has_value || !has_nested {
+            return;
+        }
+        let url = self
+            .primitive_property(object, "url")
+            .unwrap_or_else(|| "an extension with no url".to_string());
+        let path = at.render();
+        self.report(Diagnostic::new(
+            ReportKind::ExtensionHasValueAndNestedExtensions,
+            &path,
+            object.start,
+            format!("the extension {url} carries both a value and nested extensions"),
+        ));
+    }
+
+    fn side_has_an_item(shape: Option<&Shape>) -> bool {
+        shape.is_some_and(|shape| (0..shape.len()).any(|index| shape.at(index).is_some()))
+    }
+
+    /// Record a `Reference` for the weaving pass.
+    ///
+    /// Collected from the finished tree rather than during shaping, so that a
+    /// `Reference` inside a property that a later duplicate overwrote is not
+    /// woven: the tree holds the occurrence that won.
+    fn record_reference(&mut self, object: &Object, path: &str) {
+        if object.type_name != "Reference" {
+            return;
+        }
+        let Some((text, offset)) = self.primitive_property_at(object, "reference") else {
+            return;
+        };
+        self.local_references.push(LocalReference {
+            path: path.to_string(),
+            text,
+            offset,
+            resolved: false,
+        });
+    }
+
+    /// Record one `contained` entry, in the list and — only if it has an `id` —
+    /// in the id-to-resource map (`model.json.024`).
+    ///
+    /// Also collected from the finished tree, which is what makes a nested
+    /// resource's own `contained` entries additive rather than a replacement
+    /// for its parent's: `ParserState` keeps one map per resource state, and
+    /// walking the tree in document order is how one flat list can carry both.
+    fn record_contained(&mut self, object: &Object, path: &str) {
+        let id = self
+            .primitive_property(object, "id")
+            .filter(|id| !is_blank(id.as_bytes()));
+        match &id {
+            // `IdDt`/`IIdElement` reduce a contained resource's id to its id
+            // part before it is mapped (`ParserState.java:446-449`), so `#org1`
+            // and `org1` map alike.
+            Some(id) => self
+                .referenceable_contained_ids
+                .push(id.trim_start_matches('#').to_string()),
+            None => self.reference_diagnostics.push(CodedDiagnostic::new(
+                ReferenceIssue::ContainedResourceWithNoId,
+                path,
+                object.start,
+                "Resource has contained child resource with no ID".to_string(),
+            )),
+        }
+        self.contained_ids.push(id);
+    }
+
+    /// `ParserState.weaveContainedResources()` at `:1277-1293`. A reference is
+    /// looked up only when it is non-blank and is `#` followed by at least one
+    /// character, so a reference of exactly `#` -- a reference to the
+    /// containing resource -- and a blank one are never looked up at all
+    /// (`model.json.025`).
+    fn weave(&mut self) {
+        for reference in &mut self.local_references {
+            let text = reference.text.as_str();
+            if is_blank(text.as_bytes()) {
+                continue;
+            }
+            let Some(id) = text.strip_prefix('#') else {
+                continue;
+            };
+            if id.is_empty() {
+                continue;
+            }
+            if self
+                .referenceable_contained_ids
+                .iter()
+                .any(|contained| contained == id)
+            {
+                reference.resolved = true;
+                continue;
+            }
+            self.reference_diagnostics.push(CodedDiagnostic::new(
+                ReferenceIssue::UnknownReference,
+                &reference.path,
+                reference.offset,
+                format!("Resource has invalid reference: {text}"),
+            ));
+        }
     }
 
     /// A primitive's lexical form: a quoted string's text with its escapes
@@ -935,14 +1658,20 @@ impl Decoder<'_> {
     /// Record `object` and then every element below it, in document order.
     /// `sibling` is the `_field` object when this element is a primitive, so
     /// that the element's `id` and `extension` are read from the right side.
+    ///
+    /// This walk is also where the reference graph is collected, because it is
+    /// the one pass that visits the finished tree in document order with a path
+    /// for every element in hand — so the `contained` entries and the
+    /// references cost no second traversal.
     fn flatten_object(
-        &self,
+        &mut self,
         object: &Object,
         path: &str,
         is_resource: bool,
         sibling: Option<&Object>,
         out: &mut Vec<DecodedElement>,
     ) {
+        self.record_reference(object, path);
         out.push(DecodedElement {
             path: path.to_string(),
             type_name: object.type_name.to_string(),
@@ -955,7 +1684,12 @@ impl Decoder<'_> {
         self.flatten_props(object, path, out);
     }
 
-    fn flatten_props(&self, object: &Object, path: &str, out: &mut Vec<DecodedElement>) {
+    fn flatten_props(&mut self, object: &Object, path: &str, out: &mut Vec<DecodedElement>) {
+        // `contained` is the only element whose entries enter the
+        // id-to-resource map, and only on a resource: a
+        // `Bundle.entry.resource` is a resource in its own right and is not
+        // contained in anything.
+        let is_container = object.is_resource;
         for prop in &object.props {
             let element_path = child_path(path, prop.def.name);
             let occurrences = match (&prop.value, &prop.sibling) {
@@ -980,6 +1714,9 @@ impl Decoder<'_> {
                     Some(Value::Object(child)) => {
                         let is_resource = self.tables.type_def(child.type_name).map(|def| def.kind)
                             == Some(TypeKind::Resource);
+                        if is_container && prop.def.name == "contained" {
+                            self.record_contained(child, &occurrence_path);
+                        }
                         self.flatten_object(child, &occurrence_path, is_resource, sibling, out);
                     }
                     other => {
@@ -1045,6 +1782,13 @@ impl Decoder<'_> {
 
     /// The lexical value of a singleton primitive property of an object.
     fn primitive_property(&self, object: &Object, name: &str) -> Option<String> {
+        self.primitive_property_at(object, name)
+            .map(|(lexical, _)| lexical)
+    }
+
+    /// [`Self::primitive_property`] with the byte offset of the value, for a
+    /// report that has to point at it.
+    fn primitive_property_at(&self, object: &Object, name: &str) -> Option<(String, usize)> {
         object
             .props
             .iter()
@@ -1052,7 +1796,103 @@ impl Decoder<'_> {
             .and_then(|prop| prop.value.as_ref())
             .and_then(|shape| shape.at(0))
             .and_then(Value::primitive)
-            .map(|primitive| self.lexical(primitive))
+            .map(|primitive| (self.lexical(primitive), primitive.raw.start))
+    }
+
+    // -----------------------------------------------------------------------
+    // The canonical form
+    // -----------------------------------------------------------------------
+
+    /// Re-emit with every object's property names sorted lexicographically and
+    /// no whitespace, which is what
+    /// `org.hl7.fhir.r4.formats.JsonCreatorCanonical` produces: it collects
+    /// each object's property names, sorts them, and refuses to pretty-print.
+    fn emit_object_canonical(&self, object: &Object, out: &mut Vec<u8>) {
+        // `None` is `resourceType`, whose value is the type name rather than a
+        // shape. It takes its sorted position like any other property.
+        let mut members: Vec<(String, Option<&Shape>)> = Vec::new();
+        if object.is_resource {
+            members.push(("resourceType".to_string(), None));
+        }
+        for prop in &object.props {
+            let property = prop.property();
+            if let Some(shape) = &prop.value {
+                members.push((property.clone(), Some(shape)));
+            }
+            if let Some(shape) = &prop.sibling {
+                members.push((format!("_{property}"), Some(shape)));
+            }
+        }
+        members.sort_by(|left, right| left.0.cmp(&right.0));
+        out.push(b'{');
+        for (index, (property, shape)) in members.iter().enumerate() {
+            if index > 0 {
+                out.push(b',');
+            }
+            out.push(b'"');
+            out.extend_from_slice(property.as_bytes());
+            out.extend_from_slice(br#"":"#);
+            match shape {
+                None => {
+                    out.push(b'"');
+                    out.extend_from_slice(object.type_name.as_bytes());
+                    out.push(b'"');
+                }
+                Some(shape) => self.emit_shape_canonical(shape, out),
+            }
+        }
+        out.push(b'}');
+    }
+
+    fn emit_shape_canonical(&self, shape: &Shape, out: &mut Vec<u8>) {
+        match shape {
+            Shape::Single(value) => self.emit_value_canonical(value.as_ref(), out),
+            Shape::Array(items) => {
+                out.push(b'[');
+                for (index, item) in items.iter().enumerate() {
+                    if index > 0 {
+                        out.push(b',');
+                    }
+                    self.emit_value_canonical(item.as_ref(), out);
+                }
+                out.push(b']');
+            }
+        }
+    }
+
+    fn emit_value_canonical(&self, value: Option<&Value>, out: &mut Vec<u8>) {
+        match value {
+            None => out.extend_from_slice(b"null"),
+            Some(Value::Primitive(primitive)) => {
+                out.extend_from_slice(primitive.raw.of(self.bytes));
+            }
+            Some(Value::Object(object)) => self.emit_object_canonical(object, out),
+        }
+    }
+}
+
+/// The bytes a value rule is checked against: a quoted string's own text, or a
+/// number's or boolean's token.
+fn token_value(bytes: &[u8], span: Span) -> &[u8] {
+    if bytes.get(span.start) == Some(&b'"') && span.end > span.start + 1 {
+        &bytes[span.start + 1..span.end - 1]
+    } else {
+        span.of(bytes)
+    }
+}
+
+/// `org.apache.commons.lang3.StringUtils.isBlank`, which is what
+/// `LenientErrorHandler.invalidValue` tests: empty, or nothing but whitespace.
+fn is_blank(value: &[u8]) -> bool {
+    value.iter().all(|byte| byte.is_ascii_whitespace())
+}
+
+/// The JSON type name a primitive's declared form takes.
+fn json_form_name(form: JsonForm) -> &'static str {
+    match form {
+        JsonForm::Quoted => "string",
+        JsonForm::Boolean => "boolean",
+        JsonForm::Number => "number",
     }
 }
 
@@ -1076,6 +1916,218 @@ fn indexed(path: &str, index: usize) -> String {
 // ---------------------------------------------------------------------------
 // Primitive values: the integer bounds and the decimal
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// The primitive value rules
+//
+// `invalidValue` is raised when `IPrimitiveType.setValueAsString` refuses the
+// text (`ParserState.java:1481-1514`), so the rule is the one the R4
+// StructureDefinition states for the type. Only the types whose rule is a
+// syntax are checked: a `string` or a `markdown` admits any non-blank text, and
+// an `xhtml` and a `base64Binary` are never inspected at all, so none of them
+// has a rule here. A type with no rule is accepted, which is the safe default:
+// a decoder that invented a rule would reject a document HAPI accepts.
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Copy)]
+enum ValueRule {
+    /// `true|false`.
+    Boolean,
+    /// An integer literal. The declared *range* is [`IntegerBound`]'s, and a
+    /// value inside the syntax but outside the range is `ValueOutOfRange`
+    /// rather than `InvalidValue`, which is what `model.json.011` and
+    /// `model.json.012` require -- so this rule is deliberately looser than
+    /// R4's `integer` regex, which forbids a leading zero and a `+`.
+    IntegerLiteral,
+    /// A decimal literal. HAPI strips a leading `+` and leading zeros before
+    /// parsing (`ParserState.java:1459-1478`), so both are accepted.
+    Decimal,
+    /// `yyyy`, `yyyy-mm` or `yyyy-mm-dd`.
+    Date,
+    /// A [`ValueRule::Date`], or a full date and time, which then needs a
+    /// timezone.
+    DateTime,
+    /// A full date and time with a timezone, always.
+    Instant,
+    /// `hh:mm:ss` with optional fractional seconds.
+    Time,
+    /// `[^\s]+( [^\s]+)*`: no leading, trailing or repeated whitespace.
+    Code,
+    /// `[A-Za-z0-9\-\.]{1,64}`.
+    Id,
+    /// `urn:oid:` and then a dotted decimal.
+    Oid,
+    /// `urn:uuid:` and then a hex-and-dash string.
+    Uuid,
+    /// `\S*`: a URI may not contain whitespace.
+    Uri,
+}
+
+impl ValueRule {
+    fn of(type_name: &str) -> Option<Self> {
+        Some(match type_name {
+            "boolean" => ValueRule::Boolean,
+            "integer" | "positiveInt" | "unsignedInt" => ValueRule::IntegerLiteral,
+            "decimal" => ValueRule::Decimal,
+            "date" => ValueRule::Date,
+            "dateTime" => ValueRule::DateTime,
+            "instant" => ValueRule::Instant,
+            "time" => ValueRule::Time,
+            "code" => ValueRule::Code,
+            "id" => ValueRule::Id,
+            "oid" => ValueRule::Oid,
+            "uuid" => ValueRule::Uuid,
+            "uri" | "url" | "canonical" => ValueRule::Uri,
+            _ => return None,
+        })
+    }
+
+    fn holds(self, value: &[u8]) -> bool {
+        match self {
+            ValueRule::Boolean => value == b"true" || value == b"false",
+            ValueRule::IntegerLiteral => is_integer_literal_bytes(value),
+            ValueRule::Decimal => decimal_holds(value),
+            ValueRule::Date => date_holds(value),
+            ValueRule::DateTime => date_holds(value) || date_time_holds(value),
+            ValueRule::Instant => date_time_holds(value),
+            ValueRule::Time => time_holds(value),
+            ValueRule::Code => code_holds(value),
+            ValueRule::Id => {
+                (1..=64).contains(&value.len())
+                    && value
+                        .iter()
+                        .all(|byte| byte.is_ascii_alphanumeric() || *byte == b'-' || *byte == b'.')
+            }
+            ValueRule::Oid => {
+                value.starts_with(b"urn:oid:")
+                    && value[8..].split(|byte| *byte == b'.').all(is_digits)
+            }
+            ValueRule::Uuid => {
+                value.starts_with(b"urn:uuid:")
+                    && value[9..]
+                        .iter()
+                        .all(|byte| byte.is_ascii_hexdigit() || *byte == b'-')
+            }
+            ValueRule::Uri => !value.iter().any(|byte| byte.is_ascii_whitespace()),
+        }
+    }
+}
+
+fn is_digits(value: &[u8]) -> bool {
+    !value.is_empty() && value.iter().all(|byte| byte.is_ascii_digit())
+}
+
+fn is_integer_literal_bytes(value: &[u8]) -> bool {
+    let digits = match value.first() {
+        Some(b'-' | b'+') => &value[1..],
+        _ => value,
+    };
+    is_digits(digits)
+}
+
+fn decimal_holds(value: &[u8]) -> bool {
+    let mut at = usize::from(matches!(value.first(), Some(b'-' | b'+')));
+    let digits = |value: &[u8], at: &mut usize| {
+        let start = *at;
+        while matches!(value.get(*at), Some(byte) if byte.is_ascii_digit()) {
+            *at += 1;
+        }
+        *at > start
+    };
+    if !digits(value, &mut at) {
+        return false;
+    }
+    if value.get(at) == Some(&b'.') {
+        at += 1;
+        if !digits(value, &mut at) {
+            return false;
+        }
+    }
+    if matches!(value.get(at), Some(b'e' | b'E')) {
+        at += 1;
+        if matches!(value.get(at), Some(b'-' | b'+')) {
+            at += 1;
+        }
+        if !digits(value, &mut at) {
+            return false;
+        }
+    }
+    at == value.len()
+}
+
+fn date_holds(value: &[u8]) -> bool {
+    match value.len() {
+        4 => is_digits(value),
+        7 => is_digits(&value[..4]) && value[4] == b'-' && is_digits(&value[5..]),
+        10 => {
+            is_digits(&value[..4])
+                && value[4] == b'-'
+                && is_digits(&value[5..7])
+                && value[7] == b'-'
+                && is_digits(&value[8..])
+        }
+        _ => false,
+    }
+}
+
+fn time_holds(value: &[u8]) -> bool {
+    if value.len() < 8
+        || !is_digits(&value[..2])
+        || value[2] != b':'
+        || !is_digits(&value[3..5])
+        || value[5] != b':'
+        || !is_digits(&value[6..8])
+    {
+        return false;
+    }
+    value.len() == 8 || (value[8] == b'.' && is_digits(&value[9..]))
+}
+
+/// A full date and time with a timezone, which is `instant` exactly and
+/// `dateTime`'s longest form.
+fn date_time_holds(value: &[u8]) -> bool {
+    if value.len() < 11 || value[10] != b'T' || !date_holds(&value[..10]) {
+        return false;
+    }
+    let rest = &value[11..];
+    let (time, zone): (&[u8], &[u8]) = if rest.last() == Some(&b'Z') {
+        (&rest[..rest.len() - 1], b"Z")
+    } else if rest.len() >= 6 && matches!(rest[rest.len() - 6], b'+' | b'-') {
+        rest.split_at(rest.len() - 6)
+    } else {
+        return false;
+    };
+    time_holds(time) && zone_holds(zone)
+}
+
+fn zone_holds(zone: &[u8]) -> bool {
+    zone == b"Z"
+        || (zone.len() == 6
+            && matches!(zone[0], b'+' | b'-')
+            && is_digits(&zone[1..3])
+            && zone[3] == b':'
+            && is_digits(&zone[4..]))
+}
+
+fn code_holds(value: &[u8]) -> bool {
+    if value.is_empty() || value[0] == b' ' || value[value.len() - 1] == b' ' {
+        return false;
+    }
+    let mut previous_was_space = false;
+    for byte in value {
+        if *byte == b' ' {
+            if previous_was_space {
+                return false;
+            }
+            previous_was_space = true;
+        } else if byte.is_ascii_whitespace() || *byte < 0x20 {
+            return false;
+        } else {
+            previous_was_space = false;
+        }
+    }
+    true
+}
 
 /// The declared range of one of R4's three integer primitives.
 #[derive(Debug, Clone, Copy)]

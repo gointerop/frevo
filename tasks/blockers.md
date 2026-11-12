@@ -671,3 +671,100 @@ stays broken because each instance looks like a one-off.
 
 Not a `docs/known-gaps.md` entry: nothing is failing that should pass. The
 behaviour is reproducible and the tests assert it.
+
+---
+
+## 2026-11-12 — `add-fhirpath-and-codegen-r4` — two tests of `model_decode` contradict each other over `model.json.023`
+
+**Raised by** `implementer`, during tasks 21 / 21a / 22 / 26.
+
+**What happens.** `crates/frevo-model/tests/model_decode.rs` asserts both of the
+following over the **same** fixture, `INVALID_PRIMITIVE_VALUE`
+(`{"resourceType":"Patient","id":"p","birthDate":"not-a-date"}`), in the **same**
+mode:
+
+- `an_invalid_primitive_value_is_fatal_in_both_modes_but_a_blank_one_is_not`
+  (`:1528`) calls `must_reject(INVALID_PRIMITIVE_VALUE, Lenient, ...)`, which
+  panics unless the lenient decode **fails**;
+- `the_parse_mode_is_selectable_and_lenient_is_the_default` (`:1443`) iterates
+  `SINGLE_PROBLEM_FIXTURES` — whose eleventh entry, at `:804-811`, is that same
+  fixture — and calls `must_decode(f.json, Lenient, f.what)`, which panics
+  unless the lenient decode **succeeds**.
+
+No implementation can satisfy both: `decode` is a pure function of (bytes, mode).
+
+**Which one is right.** The first. `model.json.023` says "decoding **fails**,
+because an invalid value is the other condition `LenientErrorHandler` treats as
+fatal by default", and the pinned source agrees:
+`reference/hapi-fhir/hapi-fhir-base/src/main/java/ca/uhn/fhir/parser/LenientErrorHandler.java:100-108`
+delegates `invalidValue` to `STRICT_ERROR_HANDLER` for any non-blank value. The
+oracle author knew it: `every_decode_error_carries_an_element_path` lists
+`INVALID_PRIMITIVE_VALUE` at `:1893` in its *separate* "the two conditions that
+are fatal in both modes" loop, alongside `EXTENSION_WITH_VALUE_AND_NESTED` —
+which is correctly **absent** from `SINGLE_PROBLEM_FIXTURES`. The
+`INVALID_PRIMITIVE_VALUE` entry in that table is the slip.
+
+**What was tried.** The condition is implemented as the spec states it: fatal in
+both modes, path `Patient.birthDate`, offset at the offending token, message
+naming `not-a-date`. 36 of `model_decode`'s 37 tests pass, including
+`every_decode_error_carries_an_element_path` and
+`every_decode_error_carries_a_byte_offset`, which both grade that fixture
+through `must_reject(..., Strict, ...)` and are satisfied.
+`the_parse_mode_is_selectable_and_lenient_is_the_default` is the only one left
+red, and it is red on this clause alone.
+
+**What was NOT done.** The fixture was not removed from the table, the
+assertion was not relaxed, and lenient mode was not made to accept an invalid
+primitive value. Removing the entry would also drop `model.errors.001` and
+`model.errors.002` coverage of `InvalidValue`, which is coverage worth keeping.
+
+**Decision needed.** `oracle-builder` to amend `model_decode.rs` so that
+`the_parse_mode_is_selectable_and_lenient_is_the_default` does not require a
+lenient success for a condition the spec makes fatal — the obvious shape being a
+`fatal_in_both_modes: bool` on `Fixture`, so that the strict-equals-lenient
+check of `model.json.021` still runs over the other eleven and the two fatal
+fixtures keep their path-and-offset coverage. Task 21's box is left unticked
+until then.
+
+---
+
+## 2026-11-12 — `add-fhirpath-and-codegen-r4` — `extensionContainsValueAndNestedExtensions` is an encode-side condition in HAPI, not a decode-side one
+
+**Raised by** `implementer`, during task 21.
+
+**What the pinned source says.** `design.md` section 3 lists
+`extensionContainsValueAndNestedExtensions` in the "`IParserErrorHandler`
+callback | Side" table as **decode**, and `model.json.022` is written as a
+decode-side rejection. In HAPI 8.12.0 at pin
+`7ab4c7c7c49281496faa1b3c2498a652457669ae` the callback has exactly two call
+sites in `hapi-fhir-base`, and both are on the **compose** path:
+
+- `ca/uhn/fhir/parser/JsonParser.java:2011`, inside
+  `writeUndeclaredExtension(..., BaseJsonLikeWriter theEventWriter, ...)`;
+- `ca/uhn/fhir/parser/XmlParser.java:518`, inside
+  `encodeCompositeElementToStreamWriter`.
+
+`ParserState.java` has none: `grep -rn extensionContainsValueAndNestedExtensions`
+over `hapi-fhir-base/src/main/java` returns only those two, the interface
+declaration, the two handlers and `ErrorHandlerAdapter`. So HAPI **parses** such
+a body and throws when it serialises it again; Frevo refuses it on the way in.
+
+**Why it is not nothing.** For a `POST` the outcome is the same
+`DataFormatException`, because the starter re-serialises what it stores, so the
+differential cannot see it. It is visible wherever a document is parsed and not
+re-encoded — a `$validate` that reports instead of throwing, or a read path that
+hands back stored bytes — and it means an extension of this shape can never be
+stored by Frevo while HAPI can hold one in memory.
+
+**What was done.** Implemented as the approved scenario states it: fatal on
+decode in both modes, naming `Patient.extension[0]` and the extension's URL.
+`model.json.022`'s test passes.
+
+**Decision needed.** Either (a) confirm the decode-side rejection and record it
+as a `DEV-nnnn` with the stage difference stated, or (b) move the condition to
+the encode side to match HAPI, which would make `model.json.022` an encode
+scenario and put it with task 23a. A `DEV-nnnn` was not written here because an
+entry asserts a chosen behaviour and a reviewer, and neither exists yet; the
+same reason applies to `docs/tech-debt.md`, which does not exist at this commit
+(`harness/scripts/check-registries.sh` does not either, so the cross-reference
+check named in the task could not be run).

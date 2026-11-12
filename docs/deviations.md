@@ -352,6 +352,41 @@ Recorded so the reasoning is not re-derived:
   the encode-side counterpart of that reference is diagnosed rather than
   rejected (`model.canonical.007`). All three are HAPI behaviour in both of the
   handlers HAPI ships, so none is a deviation.
+  Implementing tasks 21, 21a, 22 and 26 found **three more strict-mode supersets
+  of the same shape** and **one subset**, all four recorded here rather than as
+  `DEV-nnnn` entries for the reason above -- the starter never selects strict
+  mode, so the differential cannot reach any of them:
+  - `model.json.013` where the element is a **primitive** given the wrong JSON
+    scalar form (`"active": "true"` for a `boolean`). HAPI has no callback for
+    that case: `JsonParser.parseChildren` at `:1489-1492` passes the scalar's
+    string form to `attributeValue("value", ...)` whatever the JSON type was,
+    and `"true"` then parses as a `boolean`, so nothing is reported.
+    `incorrectJsonType` *is* HAPI's for the other three shapes --- a scalar
+    where an object belongs (`ParserState.java:617`), a bare object where an
+    array belongs (`JsonParser.java:1461`) and a non-object `_field`
+    (`JsonParser.java:1298`, `:1409`) --- which is what the design's table row
+    for `.013` was describing.
+  - `model.primext.006`, unequal `_field` array lengths.
+    `JsonParser.parseChildren` at `:1451-1458` iterates the **value** array and
+    takes an alternate only `if (nextAlternateArray.size() >= (i + 1))`, so an
+    imbalance in either direction is silent and the extra entries of an
+    over-long `_field` array are never visited. Reporting it also means strict
+    mode rejects `patient-name-extensions.json`, whose `given` has two entries
+    and `_given` one; lenient mode accepts it and decodes it exactly as HAPI
+    does, which is what `model.primext.002` grades.
+  - `model.primext.009`, a `_field` property on a complex element.
+    `JsonParser.java:1369` passes the `_name` value through for any element and
+    `parseAlternates` (`:1274-1332`) handles `extension`, `modifierExtension`,
+    `id` and `fhir_comments` without ever consulting whether the element is
+    primitive. `design.md` section 3 states the Frevo behaviour deliberately.
+  - `model.json.023`'s **blank** clause, which is a subset rather than a
+    superset: Frevo does not report a blank primitive value at all, where
+    `StrictErrorHandler.invalidValue` would throw `1821`. It cannot, because
+    `model.json.025` requires `{"reference": ""}` to decode cleanly in strict
+    mode, and a blank value is reached by the same callback. Lenient mode
+    matches HAPI either way --- `LenientErrorHandler.java:100-108` logs a blank
+    value and continues --- which is the mode that decides observable
+    behaviour.
 - **Double quotes rejected as string delimiters.** `allowDoubleQuotes` is off by
   default and both HAPI wrappers leave it off; FHIRPath uses single quotes, so
   the default agrees with the specification. No divergence.

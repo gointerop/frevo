@@ -533,8 +533,24 @@ checkpoint because it changes what a gate measures.
   `model.json.021`, `model.json.022`, `model.json.023`, `model.errors.003`,
   `codegen.cardinality.002`, `codegen.cardinality.004`,
   `codegen.cardinality.005`.
+  **Not ticked, and not because the work is undone.** Every condition above is
+  implemented and 36 of `model_decode`'s 37 tests pass. Two things remain, both
+  recorded in `tasks/blockers.md` on 2026-11-12:
+  (a) `model.json.021`'s test cannot pass as written —
+  `the_parse_mode_is_selectable_and_lenient_is_the_default` requires a *lenient
+  success* for `INVALID_PRIMITIVE_VALUE`, which
+  `an_invalid_primitive_value_is_fatal_in_both_modes_but_a_blank_one_is_not` and
+  `model.json.023` require to *fail*; `oracle-builder` has to amend the fixture
+  table, and neither test was weakened to get past it;
+  (b) `codegen.cardinality.002`, `.004` and `.005` are graded by
+  `codegen_r4.rs`, whose own `generator_under_test` seam is still unbound, and
+  the missing-required-element diagnostic cannot travel through
+  `decode::ReportKind` in any case — adding a variant breaks `model_decode.rs`'s
+  exhaustive match, and reporting the condition would give several
+  `SINGLE_PROBLEM_FIXTURES` a second diagnostic (`Media.content` is `1..1`).
+  It needs the same separate channel the two coded conditions of task 21a use.
 
-- [ ] **21a. Implement the two contained-resource decode diagnostics.** A
+- [x] **21a. Implement the two contained-resource decode diagnostics.** A
   contained resource with no `id` is **still appended** to the parent's
   `contained` list in lenient mode — HAPI's code comment at the call site says
   the opposite of what the code does — but is **not** entered into the
@@ -550,7 +566,7 @@ checkpoint because it changes what a gate measures.
   against.
   Satisfies `model.json.024`, `model.json.025`.
 
-- [ ] **22. Implement the `_field` primitive-extension representation.** Two
+- [x] **22. Implement the `_field` primitive-extension representation.** Two
   independent spans per node; singleton and index-aligned array forms; `null`
   holes in either array; `hasValue` as the presence of a value span; a
   value-less element that still exists; unequal-length arrays reported; in-place
@@ -592,7 +608,7 @@ checkpoint because it changes what a gate measures.
   running the same expression over a `frevo-model` node and over the harness's
   XML-backed test node and requiring equal results.
 
-- [ ] **26. Implement decode error reporting.** Element path and byte offset on
+- [x] **26. Implement decode error reporting.** Element path and byte offset on
   every error and on every lenient-mode diagnostic; no panic on any truncation
   prefix; a depth limit instead of a stack overflow.
   Satisfies `model.errors.001`, `model.errors.002`, `model.errors.004`,
