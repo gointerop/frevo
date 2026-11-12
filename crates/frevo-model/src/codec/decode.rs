@@ -234,9 +234,10 @@ impl std::fmt::Display for Diagnostic {
 
 impl std::error::Error for Diagnostic {}
 
-/// One of the two decode conditions about the document's internal reference
-/// graph rather than about an element's own JSON (`model.json.024`,
-/// `model.json.025`).
+/// One of the three conditions about the document's internal reference graph
+/// rather than about an element's own JSON: two on the decode side
+/// (`model.json.024`, `model.json.025`) and the one on the encode side
+/// (`model.canonical.007`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ReferenceIssue {
     /// A `contained` entry carrying no `id`.
@@ -255,14 +256,25 @@ pub enum ReferenceIssue {
     ///
     /// `ParserState.weaveContainedResources()` at `ParserState.java:1277-1293`.
     UnknownReference,
+    /// **Encoding** a `#` reference whose id part is not blank, which is not
+    /// exactly `#`, and which matches no resource contained in the resource
+    /// being written. The only error condition on the encode side.
+    ///
+    /// `BaseParser.determineReferenceText` and `isValidInternalReference` at
+    /// `BaseParser.java:245-268`, matched through
+    /// `FhirTerser.ContainedResources.referenceMatchesAContainedResource` at
+    /// `FhirTerser.java:1910-1916`. Never raised by a decode.
+    InvalidInternalReference,
 }
 
 impl ReferenceIssue {
-    /// HAPI's `Msg.code`: `StrictErrorHandler.java:38-40` and `:93-97`.
+    /// HAPI's `Msg.code`: `StrictErrorHandler.java:38-40`, `:93-97` and
+    /// `:99-105`.
     pub fn message_code(self) -> u32 {
         match self {
             ReferenceIssue::ContainedResourceWithNoId => 1819,
             ReferenceIssue::UnknownReference => 1826,
+            ReferenceIssue::InvalidInternalReference => 2724,
         }
     }
 }
@@ -289,6 +301,65 @@ impl CodedDiagnostic {
             message,
         }
     }
+}
+
+impl CodedDiagnostic {
+    /// The encode-side condition for `reference`, worded as the handler in
+    /// `mode` words it: `LenientErrorHandler.invalidInternalReference` logs
+    /// one text and `StrictErrorHandler.invalidInternalReference` raises
+    /// another (`LenientErrorHandler.java:214-221`,
+    /// `StrictErrorHandler.java:99-105`).
+    fn invalid_internal_reference(reference: &LocalReference, mode: ParseMode) -> Self {
+        let text = &reference.text;
+        let message = match mode {
+            ParseMode::Lenient => format!(
+                "Resource has a reference that begins with '#', but no resource with this ID \
+                 is contained. [Reference=\"{text}\"]"
+            ),
+            ParseMode::Strict => format!(
+                "There is a reference that begins with #, but no resource with this ID is \
+                 contained. [reference={text}]"
+            ),
+        };
+        Self::new(
+            ReferenceIssue::InvalidInternalReference,
+            &reference.path,
+            reference.offset,
+            message,
+        )
+    }
+}
+
+/// Hand `bytes` back through the encode-side check: in strict mode the first
+/// dangling reference is raised, in lenient mode every one is returned beside
+/// the bytes, which are the same bytes either way.
+pub(crate) fn encoded(
+    bytes: Vec<u8>,
+    dangling: &[LocalReference],
+    mode: ParseMode,
+) -> Result<Encoded, CodedDiagnostic> {
+    if mode == ParseMode::Strict {
+        if let Some(first) = dangling.first() {
+            return Err(CodedDiagnostic::invalid_internal_reference(first, mode));
+        }
+    }
+    Ok(Encoded {
+        bytes,
+        diagnostics: dangling
+            .iter()
+            .map(|reference| CodedDiagnostic::invalid_internal_reference(reference, mode))
+            .collect(),
+    })
+}
+
+/// A resource serialised through the encode-side check: the bytes, and the
+/// diagnostics lenient mode returns beside them.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Encoded {
+    pub bytes: Vec<u8>,
+    /// Every `invalidInternalReference` condition, in document order. Empty
+    /// in strict mode, which raises the first instead.
+    pub diagnostics: Vec<CodedDiagnostic>,
 }
 
 impl std::fmt::Display for CodedDiagnostic {
@@ -419,9 +490,39 @@ pub struct Decoded {
     /// The reference-graph diagnostics, in the order HAPI raises them: the
     /// id-less `contained` entries as they are closed, then the weaving pass.
     pub reference_diagnostics: Vec<CodedDiagnostic>,
+    /// The `#` references that serialising this tree finds no contained
+    /// resource for, in document order (`model.canonical.007`). Each is
+    /// checked against the `contained` list of the nearest enclosing resource
+    /// that is not itself contained, which is the set HAPI's encoder holds
+    /// when it writes that reference. [`Decoded::encode_canonical`] and
+    /// [`Decoded::encode_stored`] turn these into diagnostics or an error.
+    pub dangling_internal_references: Vec<LocalReference>,
 }
 
 impl Decoded {
+    /// Serialise canonically through the encode-side check. Lenient mode
+    /// returns the bytes with one diagnostic per dangling `#` reference;
+    /// strict mode fails on the first with HAPI's code `2724`. The reference
+    /// is emitted unchanged either way (`model.canonical.007`).
+    pub fn encode_canonical(&self, mode: ParseMode) -> Result<Encoded, CodedDiagnostic> {
+        encoded(
+            self.reencoded_canonical.clone(),
+            &self.dangling_internal_references,
+            mode,
+        )
+    }
+
+    /// [`Self::encode_canonical`] for the stored form, generated element
+    /// order. The same references are written either way, so the same
+    /// condition is raised.
+    pub fn encode_stored(&self, mode: ParseMode) -> Result<Encoded, CodedDiagnostic> {
+        encoded(
+            self.reencoded.clone(),
+            &self.dangling_internal_references,
+            mode,
+        )
+    }
+
     /// The stored form -- generated element order -- with indentation: two
     /// spaces per level, one member or item per line. Only whitespace is
     /// added, so it differs from [`Self::reencoded`] in nothing else and from
@@ -591,6 +692,11 @@ fn run(bytes: &[u8], tables: Tables) -> Result<Decoded, Diagnostic> {
     // (`ParserState.weaveContainedResources`, called from `wereBack`).
     decoder.weave();
 
+    // What the encoder will find when it writes this tree back out. Computed
+    // here, once, because both re-encodings above write the same references.
+    let mut dangling_internal_references = Vec::new();
+    decoder.check_resource(&root, &resource_type, &mut dangling_internal_references);
+
     Ok(Decoded {
         resource_type,
         diagnostics: decoder.diagnostics,
@@ -601,6 +707,7 @@ fn run(bytes: &[u8], tables: Tables) -> Result<Decoded, Diagnostic> {
         referenceable_contained_ids: decoder.referenceable_contained_ids,
         local_references: decoder.local_references,
         reference_diagnostics: decoder.reference_diagnostics,
+        dangling_internal_references,
     })
 }
 
@@ -1586,6 +1693,110 @@ impl Decoder<'_> {
                 format!("Resource has invalid reference: {text}"),
             ));
         }
+    }
+
+    // -----------------------------------------------------------------------
+    // The encode-side check (`model.canonical.007`)
+    // -----------------------------------------------------------------------
+
+    /// Check every reference under `resource`, a resource that is **not**
+    /// itself contained, against that resource's own `contained` entries.
+    ///
+    /// `JsonParser.encodeResourceToJsonStreamWriter` calls
+    /// `containResourcesInReferences` only for a resource that is not
+    /// contained (`JsonParser.java:924-926`), so a reference inside a
+    /// contained resource is checked against its container's list. A resource
+    /// that is not contained but is not the root either -- a
+    /// `Bundle.entry.resource`, a `Parameters.parameter.resource` -- starts a
+    /// list of its own.
+    fn check_resource(&self, resource: &Object, path: &str, out: &mut Vec<LocalReference>) {
+        let mut contained = Vec::new();
+        for prop in resource
+            .props
+            .iter()
+            .filter(|prop| prop.def.name == "contained")
+        {
+            let Some(shape) = &prop.value else { continue };
+            for index in 0..shape.len() {
+                let Some(entry) = shape.at(index).and_then(Value::as_object) else {
+                    continue;
+                };
+                // `FhirTerser.containResources` strips a leading `#` from a
+                // contained resource's id before matching.
+                if let Some(id) = self.primitive_property(entry, "id") {
+                    contained.push(id.trim_start_matches('#').to_string());
+                }
+            }
+        }
+        self.check_props(resource, path, &contained, out);
+    }
+
+    fn check_props(
+        &self,
+        object: &Object,
+        path: &str,
+        contained: &[String],
+        out: &mut Vec<LocalReference>,
+    ) {
+        for prop in &object.props {
+            let element_path = child_path(path, prop.def.name);
+            // A primitive's `_field` side carries extensions, and an extension
+            // can carry a `valueReference`, so both sides are walked.
+            for shape in [&prop.value, &prop.sibling].into_iter().flatten() {
+                for index in 0..shape.len() {
+                    let Some(child) = shape.at(index).and_then(Value::as_object) else {
+                        continue;
+                    };
+                    let occurrence = if prop.def.repeating {
+                        indexed(&element_path, index)
+                    } else {
+                        element_path.clone()
+                    };
+                    let is_contained = object.is_resource && prop.def.name == "contained";
+                    if child.is_resource && !is_contained {
+                        self.check_resource(child, &occurrence, out);
+                        continue;
+                    }
+                    self.check_reference(child, &occurrence, contained, out);
+                    self.check_props(child, &occurrence, contained, out);
+                }
+            }
+        }
+    }
+
+    /// `BaseParser.determineReferenceText`: a reference with a blank id part
+    /// takes the contained-resource-naming branch and is not checked; then
+    /// `isValidInternalReference` accepts a non-local reference, a reference
+    /// of exactly `#` -- the containing resource -- and one whose text after
+    /// the `#` is the id of a contained resource.
+    fn check_reference(
+        &self,
+        object: &Object,
+        path: &str,
+        contained: &[String],
+        out: &mut Vec<LocalReference>,
+    ) {
+        if object.type_name != "Reference" {
+            return;
+        }
+        let Some((text, offset)) = self.primitive_property_at(object, "reference") else {
+            return;
+        };
+        if is_blank(text.as_bytes()) {
+            return;
+        }
+        let Some(id) = text.strip_prefix('#') else {
+            return;
+        };
+        if id.is_empty() || contained.iter().any(|candidate| candidate == id) {
+            return;
+        }
+        out.push(LocalReference {
+            path: path.to_string(),
+            text,
+            offset,
+            resolved: false,
+        });
     }
 
     /// A primitive's lexical form: a quoted string's text with its escapes

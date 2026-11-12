@@ -177,9 +177,7 @@ pub trait ParserOracle {
 
 /// The codec this oracle grades.
 ///
-/// Task 21a bound the decode side. The encode side is task 23a's and is still
-/// delegated to [`UnboundCodec`], so the three encode cases fail with
-/// [`ParserError::NotImplemented`] rather than appearing to pass.
+/// Task 21a bound the decode side and task 23a the encode side.
 fn oracle_under_test() -> Box<dyn ParserOracle> {
     Box::new(FrevoCodec)
 }
@@ -245,22 +243,17 @@ impl ParserOracle for FrevoCodec {
     }
 
     fn encode(&self, json: &str, mode: ParseMode) -> Result<EncodeOutcome, ParserError> {
-        // Task 23a's: the encode-side dangling-internal-reference diagnostic
-        // (2724) is the only error condition on that side, and nothing emits
-        // it yet.
-        UnboundCodec.encode(json, mode)
-    }
-}
-
-struct UnboundCodec;
-
-impl ParserOracle for UnboundCodec {
-    fn decode(&self, _json: &str, _mode: ParseMode) -> Result<DecodeOutcome, ParserError> {
-        Err(ParserError::NotImplemented)
-    }
-
-    fn encode(&self, _json: &str, _mode: ParseMode) -> Result<EncodeOutcome, ParserError> {
-        Err(ParserError::NotImplemented)
+        // Task 23a: the decode is always lenient, as the trait states, and the
+        // encode-side check runs in the requested mode.
+        let decoded = codec::decode_document(json.as_bytes(), codec::ParseMode::Lenient)
+            .map_err(Self::failure)?;
+        let encoded = decoded
+            .encode_canonical(Self::mode(mode))
+            .map_err(|coded| ParserError::Fatal(Self::coded(&coded)))?;
+        Ok(EncodeOutcome {
+            diagnostics: encoded.diagnostics.iter().map(Self::coded).collect(),
+            canonical_json: String::from_utf8_lossy(&encoded.bytes).into_owned(),
+        })
     }
 }
 

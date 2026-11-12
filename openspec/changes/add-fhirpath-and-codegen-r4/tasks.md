@@ -593,7 +593,7 @@ checkpoint because it changes what a gate measures.
   Both conflicts are in `tasks/blockers.md`, 2026-11-12, "task 23 is green
   except where its oracle contradicts itself or the spec".
 
-- [ ] **23a. Implement the encode-side dangling-internal-reference diagnostic.**
+- [x] **23a. Implement the encode-side dangling-internal-reference diagnostic.**
   This is the **only** error condition on the encode side, and the round-trip
   oracle cannot reach it. When serialising a reference whose id part is
   non-blank and whose text begins `#`, check it against the resources actually
@@ -604,6 +604,19 @@ checkpoint because it changes what a gate measures.
   non-local reference is not checked on this path at all; a reference with a
   blank id part takes the contained-resource-naming branch instead.
   Satisfies `model.canonical.007`.
+  Done: `model_parser_errors` is 6 of 6 (it was 3 of 6), all three
+  `model.canonical.007` tests included. `Decoded::encode_canonical`,
+  `Built::encode_canonical` and `Resource::encode_canonical` carry the
+  check; each reference is checked against the `contained` list of the
+  nearest enclosing resource that is not itself contained. The constructed
+  (`Built`) path was exercised with a throwaway driver -- `#org1` diagnosed
+  with 2724 in both modes, `#`, `Organization/org1` and a blank reference
+  not -- but has no committed test: the `covers:` hook resolves ids from the
+  session's checkout rather than this worktree, found no active change, and
+  refused `model.canonical.007` as nonexistent. Two upstream behaviours stay
+  out of scope as recorded in `tasks/blockers.md` (findings 3 and 4 of
+  2026-11-12): HAPI's encoder giving an id-less contained resource a UUID,
+  and its encode context not being restored after a `Bundle` entry.
 
 - [ ] **24. Implement copy-on-write mutation and byte splicing.** Untouched
   subtrees keeping their original bytes on element change, append and remove;

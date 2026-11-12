@@ -80,6 +80,29 @@ pub struct Report {
     pub xhtml_validated: bool,
 }
 
+/// Why [`Resource::encode_canonical`] produced no bytes.
+#[derive(Debug)]
+pub enum EncodeError {
+    /// The encode-side condition, raised in strict mode: HAPI's code `2724`.
+    InvalidInternalReference(decode::CodedDiagnostic),
+    /// A byte-backed resource's bytes did not decode.
+    Decode(decode::DecodeFailure),
+    /// The recorded writes could not be applied to the stored bytes.
+    Write(io::Error),
+}
+
+impl std::fmt::Display for EncodeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            EncodeError::InvalidInternalReference(coded) => coded.fmt(f),
+            EncodeError::Decode(failure) => failure.fmt(f),
+            EncodeError::Write(error) => write!(f, "the recorded writes failed: {error}"),
+        }
+    }
+}
+
+impl std::error::Error for EncodeError {}
+
 #[derive(Debug)]
 enum Inner {
     Stored(Arc<Stored>),
@@ -226,6 +249,35 @@ impl Resource {
                 built.write_canonical(&mut buffer);
                 out.write_all(&buffer)
             }
+        }
+    }
+
+    /// Serialise canonically through the encode-side check
+    /// (`model.canonical.007`): every `#` reference is checked against the
+    /// resources contained in the resource being written. Lenient mode
+    /// returns the bytes with one diagnostic per dangling reference; strict
+    /// mode fails with HAPI's code `2724`. The reference is emitted unchanged
+    /// either way.
+    ///
+    /// A byte-backed resource has to be decoded to be checked, so this is the
+    /// eager path: it is what a caller that needs the diagnostic asks for, and
+    /// [`Self::write_canonical`] stays the path that does not look.
+    pub fn encode_canonical(
+        &self,
+        mode: decode::ParseMode,
+    ) -> Result<decode::Encoded, EncodeError> {
+        match &self.inner {
+            Inner::Stored(_) => {
+                let bytes = self.to_stored_vec().map_err(EncodeError::Write)?;
+                let decoded = decode::decode_document(&bytes, decode::ParseMode::Lenient)
+                    .map_err(EncodeError::Decode)?;
+                decoded
+                    .encode_canonical(mode)
+                    .map_err(EncodeError::InvalidInternalReference)
+            }
+            Inner::Built(built) => built
+                .encode_canonical(mode)
+                .map_err(EncodeError::InvalidInternalReference),
         }
     }
 

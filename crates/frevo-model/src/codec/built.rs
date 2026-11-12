@@ -10,7 +10,8 @@
 //! `model.bytes.006` is the other half: a reader cannot tell this form from the
 //! stored one.
 
-use super::path::{PathStep, parse_path};
+use super::decode::{CodedDiagnostic, Encoded, LocalReference, ParseMode, encoded};
+use super::path::{PathStep, join, parse_path};
 use super::scan::{DecodeError, escape_into};
 use super::tables::{ElementDef, JsonForm, Tables, TypeKind};
 
@@ -327,6 +328,122 @@ impl Built {
     /// whitespace, which is what `JsonCreatorCanonical` produces.
     pub fn write_canonical(&self, out: &mut Vec<u8>) {
         write_node(&self.tables, &self.root, out, true);
+    }
+
+    /// The `#` references that serialising this resource finds no contained
+    /// resource for (`model.canonical.007`), by the rule
+    /// [`crate::codec::decode::Decoded::dangling_internal_references`]
+    /// states. A constructed resource has no input bytes, so each offset is
+    /// `0`; the element path is what locates it.
+    pub fn dangling_internal_references(&self) -> Vec<LocalReference> {
+        let mut out = Vec::new();
+        check_resource(&self.tables, &self.root, self.root.type_name(), &mut out);
+        out
+    }
+
+    /// Serialise canonically through the encode-side check: lenient mode
+    /// returns the bytes with a diagnostic per dangling `#` reference, strict
+    /// mode raises the first with HAPI's code `2724`.
+    pub fn encode_canonical(&self, mode: ParseMode) -> Result<Encoded, CodedDiagnostic> {
+        let mut bytes = Vec::new();
+        self.write_canonical(&mut bytes);
+        encoded(bytes, &self.dangling_internal_references(), mode)
+    }
+}
+
+/// A `contained` entry's id, `#` stripped, as `FhirTerser.containResources`
+/// strips it.
+fn contained_ids(node: &BuiltNode) -> Vec<String> {
+    let BuiltNode::Object { props, .. } = node else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    for (_, value) in props.iter().filter(|(name, _)| name == "contained") {
+        let entries: &[BuiltNode] = match value {
+            BuiltNode::Array(items) => items,
+            single => std::slice::from_ref(single),
+        };
+        for entry in entries {
+            if let Some(id) = primitive_child(entry, "id") {
+                out.push(id.trim_start_matches('#').to_string());
+            }
+        }
+    }
+    out
+}
+
+fn primitive_child<'n>(node: &'n BuiltNode, name: &str) -> Option<&'n str> {
+    let BuiltNode::Object { props, .. } = node else {
+        return None;
+    };
+    props
+        .iter()
+        .find(|(prop, _)| prop == name)
+        .and_then(|(_, value)| match value {
+            BuiltNode::Primitive { lexical, .. } => Some(lexical.as_str()),
+            _ => None,
+        })
+}
+
+fn check_resource(tables: &Tables, node: &BuiltNode, path: &str, out: &mut Vec<LocalReference>) {
+    let contained = contained_ids(node);
+    check_children(tables, node, path, true, &contained, out);
+}
+
+fn check_children(
+    tables: &Tables,
+    node: &BuiltNode,
+    path: &str,
+    is_resource: bool,
+    contained: &[String],
+    out: &mut Vec<LocalReference>,
+) {
+    let BuiltNode::Object { props, .. } = node else {
+        return;
+    };
+    for (name, value) in props {
+        let items: Vec<(Option<usize>, &BuiltNode)> = match value {
+            BuiltNode::Array(items) => items
+                .iter()
+                .enumerate()
+                .map(|(i, n)| (Some(i), n))
+                .collect(),
+            single => vec![(None, single)],
+        };
+        for (index, child) in items {
+            let BuiltNode::Object { type_name, .. } = child else {
+                continue;
+            };
+            let child_path = join(path, name, index);
+            let child_is_resource =
+                tables.type_def(type_name).map(|def| def.kind) == Some(TypeKind::Resource);
+            if child_is_resource && !(is_resource && name == "contained") {
+                check_resource(tables, child, &child_path, out);
+                continue;
+            }
+            if type_name == "Reference" {
+                if let Some(text) = primitive_child(child, "reference") {
+                    if let Some(id) = text.strip_prefix('#') {
+                        if !id.is_empty() && !contained.iter().any(|candidate| candidate == id) {
+                            out.push(LocalReference {
+                                path: child_path.clone(),
+                                text: text.to_string(),
+                                offset: 0,
+                                resolved: false,
+                            });
+                        }
+                    }
+                }
+            }
+            check_children(
+                tables,
+                child,
+                &child_path,
+                child_is_resource,
+                contained,
+                out,
+            );
+        }
     }
 }
 

@@ -29,9 +29,10 @@ pub mod codec;
 pub mod r4;
 
 pub use codec::decode::{
-    DEFAULT_PARSE_MODE, Decimal, Decoded, DecodedElement, Diagnostic, ParseMode, ReportKind, decode,
+    DEFAULT_PARSE_MODE, Decimal, Decoded, DecodedElement, Diagnostic, Encoded, ParseMode,
+    ReportKind, decode,
 };
-pub use codec::{DecodeError, R4, R4Model, Report, Resource, ResourceNode};
+pub use codec::{DecodeError, EncodeError, R4, R4Model, Report, Resource, ResourceNode};
 
 /// Crate identity, used by the server to report which capabilities are linked in.
 pub const CRATE_NAME: &str = "frevo-model";
