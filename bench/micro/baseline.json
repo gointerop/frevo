@@ -1,0 +1,17 @@
+{
+  "label": "frevo-model bench/micro (crates/frevo-model/benches/model_micro.rs)",
+  "profile": "release",
+  "commit": "40ffd161997f1728c577a117814591e8ea4b7b4f",
+  "worktree_dirty": false,
+  "generated_at": "2026-11-12T17:45:05Z",
+  "environment": { "os": "windows", "arch": "x86_64", "cpus": 12 },
+  "method": "median of 201 samples, each a batch of at least 500 us, after 300 ms warmup; per-operation figures in microseconds",
+  "workloads": [
+    { "name": "model-passthrough", "scenario": "model.perf.001", "budget": "median <= 1 us, zero tokens scanned", "fixture_bytes": 4124, "median_us": 0.179, "p10_us": 0.171, "p90_us": 0.228, "min_us": 0.168, "batch": 4096, "samples": 201, "tokens_scanned": 0 },
+    { "name": "model-lazy-read", "scenario": "model.perf.002", "budget": "median <= 2 us and <= 10% of model-full-parse", "fixture_bytes": 4124, "median_us": 1.783, "p10_us": 1.563, "p90_us": 2.762, "min_us": 1.523, "batch": 512, "samples": 201, "tokens_scanned": 39 },
+    { "name": "model-full-parse", "scenario": "model.perf.003", "budget": "median <= 20 us", "fixture_bytes": 4124, "median_us": 47.231, "p10_us": 41.381, "p90_us": 80.044, "min_us": 40.694, "batch": 16, "samples": 201, "tokens_scanned": 1570 },
+    { "name": "model-meta-update-4kib", "scenario": "model.perf.004", "budget": "the 4 KiB and 64 KiB medians within 25%", "fixture_bytes": 4124, "median_us": 3.326, "p10_us": 3.111, "p90_us": 5.323, "min_us": 3.043, "batch": 256, "samples": 201, "tokens_scanned": 18 },
+    { "name": "model-meta-update-64kib", "scenario": "model.perf.004", "budget": "the 4 KiB and 64 KiB medians within 25%", "fixture_bytes": 65611, "median_us": 7.511, "p10_us": 7.017, "p90_us": 13.323, "min_us": 6.812, "batch": 128, "samples": 201, "tokens_scanned": 18 },
+    { "name": "model-canonical-encode", "scenario": "model.perf.005", "budget": "median <= 25 us", "fixture_bytes": 4145, "median_us": 40.694, "p10_us": 38.806, "p90_us": 61.738, "min_us": 38.000, "batch": 16, "samples": 201 }
+  ]
+}

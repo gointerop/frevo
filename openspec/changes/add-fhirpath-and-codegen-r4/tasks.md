@@ -670,6 +670,23 @@ checkpoint because it changes what a gate measures.
   `bench/micro/` model workloads with their budgets and the first baseline for
   the regression policy.
   Satisfies `model.perf.001` through `model.perf.006`.
+  **Implemented, not ticked.** `model_bytes_lazy_perf` is 14 of 18 (it was 12
+  of 18) and `model_mutate` 7 of 7 (it was 6 of 7: `model.mutate.007` now
+  finds `model-meta-update` declared in `bench/micro/workloads.yaml`). The
+  workloads are `crates/frevo-model/benches/model_micro.rs` (`harness = false`,
+  `std::time` only, no dependency), run with `cargo bench -p frevo-model
+  --bench model_micro`; it wrote `bench/micro/baseline.json` and then
+  `bench/micro/results.json` at `40ffd16` on a Windows host, not the reference
+  environment. `model.perf.001` (0.197 us, 0 tokens) and `model.perf.002`
+  (1.709 us, 4% of the full parse) are green. Red: `model.perf.003` (full
+  parse 42.6 us against 20), `model.perf.005` (canonical encode 49.0 us
+  against 25, and the test's own constructed fixture is 2,125 bytes, not the
+  4 KiB it asserts), `model.perf.004` (3.34 against 7.43 us, the 64 KiB
+  surcharge being the output buffer; the in-process half also times the test
+  adapter's two input copies) and `model.perf.006` (baseline and results are
+  the same commit, yet two rows moved more than 10%: noise). All four are in
+  `tasks/blockers.md` (2026-11-12, task 27), with an A/B showing task 24 did
+  not regress the metadata update.
 
 ---
 

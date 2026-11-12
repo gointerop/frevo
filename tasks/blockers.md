@@ -1036,3 +1036,88 @@ time of writing. Flagged so the owner can judge it.
 edited file's path rather than the session's working directory (a
 `chore/governance-*` change), or implementers must be started with the change
 worktree as their working directory.
+
+## 2026-11-12 — `add-fhirpath-and-codegen-r4` — task 27: three model budgets missed, and two `model.perf.*` tests cannot pass as written
+
+**Raised by** `implementer`, task 27.
+
+**What was done.** The five `bench/micro/` workloads landed
+(`crates/frevo-model/benches/model_micro.rs`, declared in
+`bench/micro/workloads.yaml`, fixtures in `bench/micro/fixtures/`), and
+`bench/micro/baseline.json` and `bench/micro/results.json` were recorded by
+running them: `cargo bench -p frevo-model --bench model_micro` (release/bench
+profile), two separate runs at commit `40ffd16`, Windows 11 host with 12 logical
+CPUs -- **not** the reference environment of `bench/targets.md`. Medians, us:
+
+| Workload | Budget | baseline.json | results.json |
+|---|---|---|---|
+| `model-passthrough` (0 tokens) | <= 1 | 0.179 | 0.197 |
+| `model-lazy-read` | <= 2, <= 10% of full parse | 1.783 | 1.709 |
+| `model-full-parse` | <= 20 | 47.231 | 42.631 |
+| `model-meta-update-4kib` | within 25% of 64 KiB | 3.326 | 3.338 |
+| `model-meta-update-64kib` | within 25% of 4 KiB | 7.511 | 7.427 |
+| `model-canonical-encode` | <= 25 | 40.694 | 48.950 |
+
+`model.perf.001` and `model.perf.002` are green. Four are red, for four
+different reasons, none of which was worked around:
+
+1. **`model.perf.003` -- the implementation misses the budget.** A complete
+   decode of the 4 KiB `Patient` (1,570 tokens, untracked meter)
+   takes about 42-47 us against 20. Not profiled; candidates from reading
+   `stored.rs`/`doc.rs`: a `String` per object for `concrete_type`, a `String`
+   per primitive in `lexical`, `member_spans` cloning the member list, a
+   `Mutex` lock and a SipHash `HashMap` probe per object and per array item.
+   *Decision needed:* optimise the decode to the budget (a task of its own), or
+   revise the budget with this measurement attached.
+2. **`model.perf.005` -- the implementation misses the budget, and the test
+   cannot pass as written.** Canonically serialising a constructed 4,145-byte
+   `Patient` takes about 40-49 us against 25. Likely cost: `write_node` calls
+   `built::ordered_elements` per object, which walks the type chain and dedups
+   by a quadratic name scan into a fresh `Vec`, then allocates a `String` per
+   property. Separately, the test's in-process half
+   (`model_bytes_lazy_perf.rs:1319`) requires its own property list to
+   canonicalise to at least 4 KiB, but that list (20 addresses of five short
+   elements, sized by `path.len() + value.len() + 8`) canonicalises to 2,125
+   bytes with every property present: the estimate counts each path's length,
+   which the output does not contain. No correct encoder can produce 4 KiB from
+   it. The bench uses the same element set with about twice as many repetitions,
+   enough to reach 4 KiB, which is what the scenario names. *Decision needed:* the oracle-builder
+   fixes the fixture size in the test; and the budget question as in 1.
+3. **`model.perf.004` -- the design's premise does not hold, and the in-process
+   half measures the test's own copies.** The recorded spread is 122%
+   (3.34 vs 7.43 us). The fixed cost is the two `set`s (about 1.5 us each: each
+   one locates its path afresh); the 64 KiB surcharge, about 4 us, is
+   `to_stored_vec` allocating and filling a 64 KiB output buffer -- the "two
+   memcpys" `design.md` section 3 treats as negligible are not negligible next
+   to a 3 us edit on this host's allocator (a bare `Vec::from` of 64 KiB
+   measured 2.5-6.7 us, `--diagnose`). The in-process half is worse by
+   construction: the test adapter's `FrevoCodec::owned` copies the input twice
+   (`to_vec`, then `Arc::from(Box<[u8]>)`, which reallocates) inside the timed
+   closure, so the 64 KiB case pays three whole-document copies the codec never
+   makes (release: 6.4 vs 43.9 us; debug: 22.5 vs 67.8 us). No codec change
+   can bring that within 25%. *Decision needed:* whether `model-meta-update`
+   should serialise through a chunked/vectored writer (the server writes to a
+   socket, so the splice runs can be `writev`'d without a contiguous copy --
+   a spec change to what "serialise" means here), or the scenario's 25% is
+   restated; and the in-process half must stop timing the adapter's copies.
+4. **`model.perf.006` -- the 10% threshold is below this host's noise floor.**
+   `baseline.json` and `results.json` measure the *same* commit, yet
+   `model-canonical-encode` moved 20.3% and `model-passthrough` 10.1%. Three
+   back-to-back runs of one binary earlier moved `model-meta-update-4kib`
+   between 3.19 and 3.67 us (15%). The comparison as recorded is therefore
+   failing on noise, not on a regression. The numbers were not re-run to find
+   a passing pair. *Decision needed:* measure on the reference environment
+   (or CI) only, and/or grade on a more robust statistic (for example the
+   median of several runs, or p10).
+
+**The 3.8 -> 4.1 us "regression" of task 24 is not a regression.** The bench
+was built from `git archive` exports of `688f437` (before task 24) and
+`c5efc8b` (task 24) with the same bench file, alternating runs:
+`model-meta-update-4kib` 3.256 / 3.131 / 3.092 us before against 3.170 /
+3.175 / 3.213 us after, and the 64 KiB row 6.875 / 6.954 / 7.232 against
+6.998 / 7.108 / 7.437. The difference (under 3%) is inside run-to-run noise;
+the earlier 3.8 and 4.1 were single in-process test runs, which include the
+adapter copies of finding 3.
+
+**Not deferred to `docs/tech-debt.md`:** these are gate conditions, and
+deciding to defer a missed budget is the owner's call, not the implementer's.
