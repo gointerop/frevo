@@ -635,17 +635,43 @@ checkpoint because it changes what a gate measures.
   operators, backtick-delimited identifiers, the string escape set, and the
   rejection paths.
   Satisfies `path.lexer.001` through `path.lexer.014`.
+  **Implemented, not ticked.** `path_lexer` is 6 of 16; the other ten
+  assert that a pinned suite case is graded `passed`, which needs the
+  evaluator, and `path.lexer.016` needs the local
+  `double_quote_oracle_under_test` binding that task 52 owns. The six that
+  pass are the rejection paths, which are observable at the parse stage.
+  See `tasks/blockers.md`, 2026-11-12, "tasks 28-30 cannot turn their own
+  tests green": the decomposition implies an independence Phase D does not
+  have. Three upstream defects are reproduced deliberately -- an unfinished
+  block comment is swallowed because `FHIRLexer.error` *returns* the
+  exception and `skipWhitespaceAndComments` discards it at `:314`;
+  `isToken` tests `charAt(1)` inside a loop over `i` at `:125-129`; and
+  `processFixedName` reads a `\\u` escape in base **32** at `:511`.
 
 - [ ] **29. Implement literals.** Booleans, strings, integers including the
   negative-literal and max cases, precision-preserving decimals, dates,
   dateTimes and times at every precision and offset, quantity literals with
   UCUM codes and with calendar-duration keywords, and the empty collection.
   Satisfies `path.literal.001` through `path.literal.015`.
+  **Implemented, not ticked.** `path_literals` is 0 of 15: every test in
+  the file goes through a helper that calls `check` then `evaluate`, so
+  none can pass before task 31. The literal forms themselves are covered
+  by the 36 in-crate unit tests, which can see what a literal *is*.
+  `DEBT-0011` records the one gap: a decimal literal above 38 significant
+  digits is refused, because the mantissa is 128-bit.
 
 - [ ] **30. Implement the parser and precedence.** The reusable parsed form, the
   precedence table, parentheses, and the parse-time rejections — unbalanced
   parentheses, unknown function, wrong arity — each with an offset, and all seven
   `invalid="syntax"` oracle cases failing.
+  **Implemented, not ticked.** `path_parse_errors` is 5 of 13 -- the four
+  parse-time rejections with their offsets, and the stated deliverable:
+  all seven `invalid="syntax"` cases fail at the parse stage and are
+  graded `passed`. The rest evaluate, or belong to task 53. With the
+  parser bound, 118 of the 1,191 cases reach a verdict and 1,073 report
+  did-not-run; 118 is exactly the 7 syntax-invalid cases plus the 115
+  `documentFunctions` cases, so the parser rejects what HAPI rejects and
+  accepts everything else.
   Satisfies `path.parse.001` through `path.parse.008`.
 
 - [ ] **31. Implement navigation.** Leading type name matched, omitted or

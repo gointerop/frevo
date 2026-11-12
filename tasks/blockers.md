@@ -869,3 +869,27 @@ evaluator exists.
 
 Not a `docs/known-gaps.md` entry: every one of those tests passes once the
 stages they call exist. Nothing here needs an exception.
+
+**RULED 2026-11-12 by the orchestrator. Reading 2 of question 1 is correct;
+tasks 28-30 stay unticked.** Constitution rule 2 allows no partial credit: a
+change is done when its gates are green, and three tasks whose integration
+tests are red are not done however complete the code behind them is. "Satisfies"
+in `tasks.md` therefore means "is implemented by", not "is demonstrated by this
+task alone", and the task graph's decomposition of Phase D implies a false
+independence: the front end is not separately gradeable, because the
+oracle-builder wrote every `path.*` test against the engine's public behaviour
+-- which is the right place to write it.
+
+No later task owns a restatement. Instead each of the three carries a note with
+the measured counts, so a gate report can tell "still red because the evaluator
+does not exist" from "regressed". The 36 in-crate unit tests are the front end's
+own evidence until then.
+
+**The contradiction was in the brief, and it was mine.** The brief said all 44
+tests must go green and, two paragraphs later, that `check`, `evaluate` and
+`convert_to_boolean` must keep returning `NotImplemented`. Those cannot both
+hold: 33 of the 44 call the stages it forbade. The implementer followed the
+instruction that protects the oracle and reported the conflict instead of
+resolving it quietly, which is the correct order of precedence. Recorded here
+because the alternative record -- three tasks that "only got 11 of 44" -- would
+blame the work for a defect in the instruction.

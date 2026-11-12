@@ -50,7 +50,8 @@ impl std::fmt::Display for EngineError {
                 write!(f, "requires licensed terminology: {system}")
             }
             EngineError::NotImplemented => f.write_str(
-                "no FHIRPath engine is bound to the oracle harness yet \
+                "the stage this case needs is not bound to the oracle harness yet \
+                 -- parse is bound, check and evaluate are not \
                  (crates/frevo-path/tests/oracle/engine.rs::engine_under_test)",
             ),
         }
