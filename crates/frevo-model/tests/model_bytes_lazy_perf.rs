@@ -185,6 +185,16 @@ pub trait LazyOracle {
         resource_type: &str,
         properties: &[(&str, &str)],
     ) -> Result<Vec<u8>, CodecError>;
+
+    /// Load a resource from an **already owned** stored buffer, run the script,
+    /// then serialise in the stored form, returning only the output bytes.
+    ///
+    /// This is the `model-meta-update` workload exactly as the server runs it:
+    /// the buffer arrives owned (from the database driver), so loading it is an
+    /// `Arc` clone, and every call starts from the same unmodified stored
+    /// resource. No copy of the input and no report is made, so a timed call
+    /// measures the codec and not this adapter (`model.perf.004`).
+    fn run_owned(&self, bytes: &std::sync::Arc<[u8]>, ops: &[Op]) -> Result<Vec<u8>, CodecError>;
 }
 
 /// The codec this oracle grades. Phase C replaces this body with the real one.
@@ -298,6 +308,14 @@ impl LazyOracle for FrevoCodec {
         }
         resource
             .to_canonical_vec()
+            .map_err(|e| CodecError::Failed(e.to_string()))
+    }
+
+    fn run_owned(&self, bytes: &std::sync::Arc<[u8]>, ops: &[Op]) -> Result<Vec<u8>, CodecError> {
+        let mut resource = frevo_model::Resource::from_stored(std::sync::Arc::clone(bytes));
+        Self::drive(&mut resource, ops)?;
+        resource
+            .to_stored_vec()
             .map_err(|e| CodecError::Failed(e.to_string()))
     }
 }
@@ -1226,19 +1244,62 @@ fn a_metadata_update_is_proportional_to_meta_not_to_the_document() {
     // The in-process half: the 4 KiB and 64 KiB medians within 25% of each
     // other. This is a ratio between two measurements taken the same way, so it
     // holds whatever the build profile.
-    let small = median_of(|| {
-        must_run(
-            &input_4k,
+    //
+    // The stored buffers are made owned once, outside the timed region: in the
+    // server the buffer arrives owned from the database driver, and copying it
+    // per iteration would time this adapter's copies, which grow with the
+    // document, instead of the update. Each timed iteration still loads a fresh,
+    // unmodified resource from its own `Arc` clone of the same bytes.
+    let owned_4k: std::sync::Arc<[u8]> = std::sync::Arc::from(input_4k.as_slice());
+    let owned_64k: std::sync::Arc<[u8]> = std::sync::Arc::from(input_64k.as_slice());
+    let codec = codec_under_test();
+
+    // What is timed is the real update: the untimed call produces exactly what
+    // the fully reported run does, a modified resource carrying the new meta.
+    for (owned, input, size) in [
+        (&owned_4k, &input_4k, "4 KiB"),
+        (&owned_64k, &input_64k, "64 KiB"),
+    ] {
+        let reported = must_run(
+            input,
             &meta_update,
-            "the model-meta-update workload at 4 KiB",
-        )
+            &format!("the model-meta-update workload at {size}"),
+        );
+        assert!(
+            reported.modified,
+            "the model-meta-update workload at {size} must modify the resource"
+        );
+        let timed = codec.run_owned(owned, &meta_update).unwrap_or_else(|e| {
+            panic!("the model-meta-update workload at {size} must succeed: {e}")
+        });
+        assert_eq!(
+            as_text(&timed),
+            as_text(&reported.output),
+            "the timed model-meta-update at {size} must serialise exactly what \
+             the reported run does"
+        );
+        let text = as_text(&timed);
+        assert!(
+            text.contains("2026-11-08T12:00:00.000Z") && text.contains(r#""versionId":"2""#),
+            "the model-meta-update output at {size} must carry the new meta: {text}"
+        );
+        assert!(
+            owned.as_ref() == input.as_slice(),
+            "the stored buffer at {size} must be unchanged by the update"
+        );
+    }
+
+    let small = median_of(|| {
+        codec
+            .run_owned(&owned_4k, &meta_update)
+            .unwrap_or_else(|e| panic!("the model-meta-update workload at 4 KiB must succeed: {e}"))
     });
     let large = median_of(|| {
-        must_run(
-            &input_64k,
-            &meta_update,
-            "the model-meta-update workload at 64 KiB",
-        )
+        codec
+            .run_owned(&owned_64k, &meta_update)
+            .unwrap_or_else(|e| {
+                panic!("the model-meta-update workload at 64 KiB must succeed: {e}")
+            })
     });
     assert!(
         micros(small) > 0.0 && micros(large) > 0.0,
@@ -1287,19 +1348,40 @@ fn canonical_serialisation_of_a_constructed_resource_stays_within_budget() {
         ("Patient.gender".to_string(), "male".to_string()),
         ("Patient.birthDate".to_string(), "1974-12-25".to_string()),
     ];
+    // Sized by what the canonical form emits, not by the element paths the
+    // oracle supplies: a path never appears in the output, only its leaf
+    // property name does. Canonical JSON is compact, so the document is the
+    // envelope below plus, per address, `{` `}`, one `"name":"value"` member per
+    // element (name + value + 5 bytes of quotes and colon), the commas between
+    // members, and a comma before every address after the first. This estimate
+    // is computed independently of the codec, so the 4 KiB assertion below
+    // still checks the codec's output rather than restating it.
+    let mut approximate = concat!(
+        r#"{"resourceType":"Patient","id":"perf","active":true,"#,
+        r#""gender":"male","birthDate":"1974-12-25","address":[]}"#
+    )
+    .len();
     let mut i = 0usize;
-    let mut approximate = 100usize;
     while approximate < 4 * 1024 {
-        for (element, value) in [
+        if i > 0 {
+            approximate += 1;
+        }
+        approximate += 2;
+        for (n, (element, value)) in [
             ("city", "Townsville".to_string()),
             ("district", "Example District".to_string()),
             ("state", "NSW".to_string()),
             ("country", "AU".to_string()),
             ("postalCode", format!("{:04}", 2000 + i % 8000)),
-        ] {
-            let path = format!("Patient.address[{i}].{element}");
-            approximate += path.len() + value.len() + 8;
-            properties.push((path, value));
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            if n > 0 {
+                approximate += 1;
+            }
+            approximate += element.len() + value.len() + 5;
+            properties.push((format!("Patient.address[{i}].{element}"), value));
         }
         i += 1;
     }
@@ -1320,6 +1402,12 @@ fn canonical_serialisation_of_a_constructed_resource_stays_within_budget() {
         out.len() >= 4 * 1024,
         "the constructed Patient must canonicalise to at least 4 KiB, not {} \
          bytes",
+        out.len()
+    );
+    assert!(
+        out.len() < 5 * 1024,
+        "the constructed Patient must be about 4 KiB, as the scenario names, \
+         not {} bytes",
         out.len()
     );
     let median = median_of(|| {
