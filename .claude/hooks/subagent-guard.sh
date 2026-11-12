@@ -21,6 +21,7 @@
 . "$(dirname "${BASH_SOURCE[0]}")/_lib.sh"
 
 INPUT="$(cat)"
+use_input_root "$INPUT"
 cd "$REPO_ROOT" 2>/dev/null || exit 0
 
 stop_hook_active="$(json_get "$INPUT" stop_hook_active false)"
@@ -140,9 +141,11 @@ EOF
     fi
 
     missing=""
+    # Search the worktree the subagent worked in (see use_input_root), not
+    # whichever tree the hook process happened to start in.
     for id in $ids; do
-      if ! grep -rqF "covers: $id" crates harness 2>/dev/null \
-         && ! grep -rqE "covers:.*\b${id//./\\.}\b" crates harness 2>/dev/null; then
+      if ! grep -rqF "covers: $id" "$REPO_ROOT/crates" "$REPO_ROOT/harness" 2>/dev/null \
+         && ! grep -rqE "covers:.*\b${id//./\\.}\b" "$REPO_ROOT/crates" "$REPO_ROOT/harness" 2>/dev/null; then
         missing="$missing $id"
       fi
     done

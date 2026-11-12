@@ -12,6 +12,7 @@
 . "$(dirname "${BASH_SOURCE[0]}")/_lib.sh"
 
 INPUT="$(cat)"
+use_input_root "$INPUT"
 cd "$REPO_ROOT" 2>/dev/null || exit 0
 
 # Bound the work: these run after every edit, so they must stay fast.
