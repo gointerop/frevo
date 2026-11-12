@@ -599,7 +599,7 @@ checkpoint because it changes what a gate measures.
   contained resource's boundary; the `meta` update path.
   Satisfies `model.mutate.001` through `model.mutate.007`.
 
-- [ ] **25. Implement `Node` and `Model` over `frevo-model`.** Type names at
+- [x] **25. Implement `Node` and `Model` over `frevo-model`.** Type names at
   resource, backbone and primitive level; children by element name in document
   order; a choice element by base name and nothing for the typed spelling;
   absent elements as an empty list; `all_children` with names; owned values that
@@ -608,6 +608,13 @@ checkpoint because it changes what a gate measures.
   Satisfies `model.nav.001` through `model.nav.011`, and `model.nav.012` by
   running the same expression over a `frevo-model` node and over the harness's
   XML-backed test node and requiring equal results.
+  Delivered by tasks 16 and 17 rather than by work of its own, and finished
+  when `codec::R4` was bound to the generated tables: `model_nav` is 12 of 12
+  with all twelve `model.nav.*` scenarios tagged, and its seam at
+  `model_nav.rs:163` is the real `frevo_model::ResourceNode`, not a stand-in.
+  `model.nav.012` runs the same navigation over a frevo-model node and over
+  the harness's XML-backed node and asserts equal results, with its own check
+  that the XML node is "a working node, not a stub".
 
 - [x] **26. Implement decode error reporting.** Element path and byte offset on
   every error and on every lenient-mode diagnostic; no panic on any truncation
