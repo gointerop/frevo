@@ -1,130 +1,150 @@
 CHANGES_REQUESTED
 
-Fourth review of `add-fhirpath-and-codegen-r4`. It is scoped to the revision in
-commit `e6f57cd`: `path.check.005` to `path.check.012` in `specs/path/spec.md`,
-task 51 in `tasks.md`, and the new out-of-scope row in `proposal.md`. Everything
-else stays as the third pass approved it (`8f3aca9`; that pass's text is
-recoverable with `git show 8f3aca9:openspec/changes/add-fhirpath-and-codegen-r4/review.md`).
-
-The revision gets the substance right. The pinned engine does not narrow, the 38
-cases are classified correctly, and none of them is lost. Two findings remain.
-Both are small, but each would give an oracle-builder a test that contradicts
-another scenario or HAPI's actual output.
+Fifth review of `add-fhirpath-and-codegen-r4`. It covers the revision in commit
+`f1ccbfb`, which touches only `specs/path/spec.md` (`path.check.005` and
+`path.check.009`). I checked it against `path.oracle.016` and
+`tasks.md:92-98`. The earlier passes' text is recoverable with
+`git show 6863598:openspec/changes/add-fhirpath-and-codegen-r4/review.md`
+(fourth pass) and `git show 8f3aca9:...` (third pass).
 
 Reviewed against `reference/org.hl7.fhir.core` at
 `73c432b5f43ddbce979978a760ec4aa81e929094` and `oracles/fhirpath/tests-fhir-r4.xml`
 at `c95adbee099c875de97d25ed7616aae7d66dd85b`. `ENGINE` means
-`org.hl7.fhir.r4/src/main/java/org/hl7/fhir/r4/fhirpath/FHIRPathEngine.java`.
+`org.hl7.fhir.r4/src/main/java/org/hl7/fhir/r4/fhirpath/FHIRPathEngine.java`, and
+`SUITE` means `oracles/fhirpath/tests-fhir-r4.xml`.
+
+Both findings from the fourth pass are resolved. Checking the case lists
+against the suite turned up one new finding. Its root cause is in
+`path.oracle.016` and task 4, and `path.check.005` and `path.check.009` inherit
+it.
 
 ## Findings
 
-1. **`path.check.009` gives HAPI's status for `isGuardOr` and
-   `isGuardOrInnerImplies` as `failed`. `path.oracle.016` records it as
-   `hapi-cannot-pass`.** `path.check.009` says `isGuardOr`, `isGuardOrBoth` and
-   `isGuardOrInnerImplies` "end at the check stage and are graded `failed`, as
-   they are for HAPI". But `path.oracle.016` and task 4's text
-   (`tasks.md:92-98`) require HAPI's status for both halves of the
-   `isGuardOr`/`isGuardOrBad` and
-   `isGuardOrInnerImplies`/`isGuardOrInnerImpliesBad` pairs to be recorded as
-   `hapi-cannot-pass`, "a status distinct from `failed`". `path.oracle.011`
-   says the report carries that HAPI status per case, so two scenarios give the
-   same report field different values. An oracle-builder who asserts the HAPI
-   column from `path.check.009` writes a test that `path.oracle.016` makes fail.
+1. **`path.oracle.016` lists four pairs, but its own rule picks out more cases.
+   So `path.check.005` and `path.check.009` give some cases a HAPI status that
+   the rule contradicts.** `path.oracle.016` (and task 4, `tasks.md:92-98`)
+   defines `hapi-cannot-pass` as a status for cases "whose expressions are
+   byte-identical and which differ only by their `context` and `contextType`
+   attributes". The reason given is that the pinned harness ignores both
+   attributes and "necessarily fails one of each pair". The harness confirms
+   that reasoning. `FHIRPathTests.java:222` always calls
+   `fp.check(res, "Resource", "Observation", "Observation", node)`, and the
+   pass/fail assertion depends only on the expected `invalid` attribute
+   (`:224`, `:228`). So any identical expressions with opposite `invalid`
+   expectations get the same HAPI check outcome, and HAPI fails exactly one of
+   them.
 
-   Frevo's own status (`failed`) is correct: the pinned R4 harness checks
-   against the `Observation` root (`FHIRPathTests.java:222`), and Frevo's
-   context-aware check with `Period` fails both cases on `toString`. The other
-   "as for HAPI" claims in `005`, `007`, `008`, `010` and `011` name no case in
-   a `path.oracle.016` pair, so they are consistent. **Fix:** in
-   `path.check.009`, say that HAPI's recorded status for `isGuardOr` and
-   `isGuardOrInnerImplies` is `hapi-cannot-pass` (`path.oracle.016`), and that
-   it is `failed` for `isGuardOrBoth`. Then the case-level oracle has one
-   answer.
+   The suite has three such groups that the enumeration leaves out:
 
-2. **The quoted `FHIRPATH_PRIMITIVE_ONLY` text is not the message HAPI
-   produces.** `path.check.005` quotes the diagnostic as "The function toString
-   can only be used on primitives" and cites `Messages.properties:353`. That
-   line reads
-   `FHIRPATH_PRIMITIVE_ONLY = Error evaluating FHIRPath expression: The function {0} can only be used on primitives`.
-   `ENGINE:584-594` (`makeException`) passes it through `formatMessage`
-   unchanged, adding only a location suffix when `location` is set (the harness
-   sets none). So HAPI's message is "Error evaluating FHIRPath expression: The
-   function toString can only be used on primitives". The `006` to `011`
-   scenarios refer back to "the same `FHIRPATH_PRIMITIVE_ONLY` diagnostic". A
-   test that asserts equality with the quoted text therefore fails against a
-   faithful port, and one that passes against the quote reports a different
-   message from HAPI. **Fix:** quote the full formatted message, or state that
-   the message id `FHIRPATH_PRIMITIVE_ONLY` is what is asserted and the text is
-   not.
+   - **`isGuardOrTypesImpliesBad` and `isGuardOrTypesImpliesAll`.** Both have
+     the expression `($this is dateTime or $this is Period) implies $this.toString().length() >= 10`
+     (`SUITE:1721-1722`, `:1724-1725`). The first has `contextType="Period"`
+     and expects `invalid="semantic"`. The second has no `contextType` and
+     expects success.
+   - **`isGuardNotImplies` and `isGuardNotImpliesBad`.** Both have the
+     expression `($this is Period).not() implies $this.toString().length() >= 10`
+     (`SUITE:1781-1782`, `:1785-1786`). The first has `Period` and expects
+     success. The second has `Period|Timing` and expects `invalid="semantic"`.
+   - **`isGuardOr2`.** It has the same expression as `isGuardOr` and
+     `isGuardOrBad` (`$this is Period or $this.toString().length() >= 10`,
+     `SUITE:1759-1768`), with `Period|dateTime`, and it expects success. That
+     makes three cases, not a pair. `isGuardOr2` is identical to `isGuardOrBad`
+     except for `contextType`, and their `invalid` expectations are opposite.
+
+   The rule and the list now give different HAPI statuses, and the revised
+   scenarios follow the list:
+
+   - `path.check.005` says of `isGuardNotImplies` that "HAPI's own run fails all
+     three too ... this is parity". By the rule, its recorded status is
+     `hapi-cannot-pass`.
+   - `path.check.009` records `isGuardXorBad2` as `hapi-cannot-pass`. It gives
+     no HAPI status for `isGuardOr2`, which is in exactly the same position.
+   - The `isGuardOrTypesImpliesAll`/`isGuardOrTypesImpliesBad` and
+     `isGuardNotImpliesBad` mentions in `005` and `012` give Frevo's grade only.
+     They are not wrong, but under the rule their HAPI column is
+     `hapi-cannot-pass`. An oracle-builder reading the list would instead
+     record `failed`/`passed`.
+
+   This matters for the gate. Under `path.oracle.012` and `path.oracle.011`,
+   `isGuardOr2` and `isGuardOrTypesImpliesAll` pass for Frevo (the check passes,
+   and evaluation gives `true`). If HAPI's status is `failed`, they are
+   `ahead-of-hapi`. If it is `hapi-cannot-pass`, they are not. So the per-case
+   report depends on which text the oracle-builder follows. The existing
+   `crates/frevo-path/tests/path_oracle.rs` asserts the pair property (`:538-549`)
+   only for the four pairs it lists at `:143-148`.
+
+   **Fix:** extend the enumeration in `path.oracle.016` and in task 4
+   (`tasks.md:92-98`) to cover every group the rule selects. The full list is:
+   `isEffectOnLogic2Base`/`isEffectOnLogic3Base`,
+   `isGuardOrTypesImpliesBad`/`isGuardOrTypesImpliesAll`,
+   `isGuardOrInnerImplies`/`isGuardOrInnerImpliesBad`,
+   `isGuardOr`/`isGuardOr2`/`isGuardOrBad`, `isGuardXorBad`/`isGuardXorBad2`, and
+   `isGuardNotImplies`/`isGuardNotImpliesBad`. Then make `path.check.005` give
+   HAPI's recorded status for `isGuardNotImplies` (and, if it states one, for
+   `isGuardOrTypesImpliesAll`/`Bad` and `isGuardNotImpliesBad`) as
+   `hapi-cannot-pass`. Make `path.check.009` give it for `isGuardOr2`. The
+   alternative is to narrow the rule's wording so that it selects only the
+   listed pairs, and to say why the other groups are excluded. That needs a
+   reason grounded in HAPI's harness, and I found none: those groups behave
+   exactly like the listed pairs. Either way, the rule and the list must agree.
 
 ## Verified, no finding
 
-**(a) There is no narrowing in the pinned engine.** I checked each mechanism:
+**(1) `path.check.009`'s statuses, given `path.oracle.016` as enumerated.**
 
-- **Operator chains:** `ENGINE:1621-1637` types every operand against the same
-  `focus` and a fresh `contextForParameter(inContext)`. That context copies
-  `thisItem` unchanged (`ENGINE:4761-4770`). `$this` resolves to
-  `context.getThisItem()` (`ENGINE:1579-1580`).
-- **`is`, the logical operators and `iif`:** the `is` operator and the `is()`
-  function type to `Boolean` and leave the focus alone (`ENGINE:2013-2015`,
-  `:3401-3404`). The same holds for `or`, `and`, `xor` and `implies`
-  (`:2024-2027`). The `iif` arguments are not expression parameters
-  (`:3804-3816`), so they are typed against `context.thisItem` (`:3261-3271`).
-  `iif`'s result is the union of its branches (`:3441-3449`).
-- **What does retype:** only the `ofType()` function, the `as()` function and
-  the `as` operator retype (`:3368-3384`, `:2016-2021`). `where` narrows only
-  `Reference` targets (`:3329-3352`), and no case uses that.
-- **R4B and R5:** the same chain loop appears at R4B `:1535-1538` and R5
-  `:1740-1743`. Neither file has narrowing logic (the only `narrow` identifier
-  is `asBool`'s evaluation-time flag). So the proposal row's R4B/R5 claim
-  holds.
-
-**(b) My own classification of the 38 `isSemanticChecks` cases**
-(`tests-fhir-r4.xml:1664-1817`). I assumed a non-narrowing check with the case's
-`context`/`contextType`. `toString` passes only if the focus includes a
-primitive type, per `checkContextPrimitive` at `:3872-3883` with
-`TypeDetails.hasType(Set)` at `:436-448`:
-
-- **Check fails, suite expects success, graded `failed` (14).** These are
-  exactly the scenarios' 14: `isEffectOnLogic3`, `isGuardFnImplies`,
-  `isGuardImpliesEmpty`, `isGuardOrTypesImplies`, `isGuardAndOtherImplies`,
-  `isGuardOtherAndImplies`, `isGuardOrInnerImplies`, `isGuardAnd`, `isGuardOr`,
-  `isGuardOrBoth`, `isGuardNotImplies`, `isGuardIifTrue`, `isGuardIifElse`,
-  `isGuardNested`.
-- **Check fails, suite expects failure, graded `passed` (15).**
-  `isEffectOnLogic3Base`, `isGuardFnImpliesBad`, `isGuardImpliesBad`,
-  `isGuardOrTypesImpliesBad`, `isGuardOrFnTypesImpliesBad`,
+- **Frevo's statuses are correct.** Frevo grades `isGuardOr`, `isGuardOrBoth`
+  and `isGuardOrInnerImplies` `failed`. It grades `isGuardOrBad`,
   `isGuardOrOtherImpliesBad`, `isGuardOrOtherImpliesNoParensBad`,
-  `isGuardOrInnerImpliesBad`, `isGuardAndBad`, `isGuardOrBad`, `isGuardXorBad`,
-  `isGuardNotImpliesBad`, `isGuardIifBad`, `isGuardSupertypeBad`,
-  `isGuardOtherExpressionBad`.
-- **Check passes, so evaluation decides (9).**
-  - `isEffectOnLogic1Base`, `isEffectOnLogic1`, `isGuardOrTypesImpliesAll`:
-    there is no `contextType`, so the focus is the `effective[x]` set, which
-    includes `dateTime`.
-  - `isEffectOnLogic2Base`, `isEffectOnLogic2`: the context type is `dateTime`.
-  - `isGuardOr2`, `isGuardXorBad2`: the context type is `Period|dateTime`.
-  - `isGuardOfType`, `isGuardAs`: these retype the focus to `dateTime`.
+  `isGuardOrInnerImpliesBad` and `isGuardXorBad` `passed`. These follow from
+  non-narrowing typing with the case's context type.
+- **HAPI's statuses match the listed pairs.** HAPI's recorded status is
+  `failed` for `isGuardOrBoth` (its expression, `SUITE:1770-1771`, is unique).
+  It is `hapi-cannot-pass` for both halves of the `isGuardOr`/`isGuardOrBad`,
+  `isGuardOrInnerImplies`/`isGuardOrInnerImpliesBad` and
+  `isGuardXorBad`/`isGuardXorBad2` pairs. That is three of the four listed
+  pairs. The fourth, `isEffectOnLogic2Base`/`isEffectOnLogic3Base`, is outside
+  `009`, and `006` states no HAPI status for it, so there is no conflict.
+- **What remains open** is only finding 1, about `isGuardOr2`.
 
-  The data is `effectiveDateTime value="2016-03-28"`, whose length is 10, so
-  `>= 10` is true and `> 10` is false, consistent with the expected outputs.
+**(2) `path.check.005`'s quoted message.** `Messages.properties:353` reads
+`FHIRPATH_PRIMITIVE_ONLY = Error evaluating FHIRPath expression: The function {0} can only be used on primitives`.
+Both throw sites (`ENGINE:3876`, `:3879`) pass `name` as `{0}`. The extra
+arguments have no placeholder.
 
-Each scenario's case list matches this classification. Together the lists
-assign every one of the 38 cases to a scenario. `%resource.status = 'final'`
-types without error, because `Equals` only adds warnings (`:1989-1991`). The
-`ofType(dateTime)` of-type-impossible warning is real (`:3781-3784`), and the
-`as` operator emits none. All cited line ranges resolve to the code described.
+`makeException` (`ENGINE:584-594`) formats the template and adds a
+`FHIRPATH_LOCATION` suffix only when `location != null`. The only way to set
+`location` is `setLocation` (`ENGINE:236-237`), and `FHIRPathTests.java` never
+calls it. So the quoted
+`Error evaluating FHIRPath expression: The function toString can only be used on primitives`
+is exact.
 
-**(c) Nothing HAPI-observable was lost.** The 361 `path` scenario ids are the
-same before and after `e6f57cd`, and only the six headings of `005` and
-`007`-`011` changed. The previous `011` stated behaviour HAPI does not have.
-The multi-type `contextType` rule survives in `012` with HAPI's any-type
-semantics. `design.md` contains no narrowing text that contradicts the
-revision.
+`006`, `007`, `008`, `009`, `010` and `011` each refer to "the
+`FHIRPATH_PRIMITIVE_ONLY` diagnostic for `toString`". The new sentence in `005`
+binds every one of them to that exact message. None of them quotes divergent
+text.
 
-**(d) Task 51 is coherent.** It satisfies the same `005`-`012` range, and its
-prose matches the scenarios. It does not reach into task 50's scope, and its
-prerequisites are stated. Those prerequisites are the eight `path_check.rs`
-tests that still assert narrowing, and the `type_check_engine_under_test()`
-seam. The tests are the oracle-builder's to retarget. No other task still
-describes narrowing.
+**(3) No other slip in `005` to `012`.** I re-checked every "as for HAPI" and
+"graded" claim against my 38-case classification (fourth pass, section (b)) and
+against the suite's expressions.
+
+- **`007`.** `isGuardFnImplies` and `isGuardFnImpliesBad` have different
+  expressions (`is(dateTime)` against `is(Period)`), so `failed` for HAPI is
+  correct.
+- **`008`.** `isGuardAnd` and `isGuardAndBad` differ (`dateTime` against
+  `Period`). `isGuardAndOtherImplies` and `isGuardOtherAndImplies` are unique.
+- **`010`.** The three `iif` expressions are distinct.
+- **`011`.** `isGuardImpliesEmpty`'s expression is shared only with
+  `isEffectOnLogic1`, which also expects success. `isGuardNested` is unique.
+  Both are correctly `failed` for HAPI.
+- **`012`.** `isGuardImpliesEmpty`, `isGuardOrBoth` and `isGuardNested`
+  `failed` for HAPI is correct. The `passed` list gives Frevo's grade only.
+- **`005`.** `isEffectOnLogic3` and `isGuardOrTypesImplies` are `failed` for
+  HAPI, which is correct. `isEffectOnLogic3` shares its expression with
+  `isEffectOnLogic2`, but both expect success, so the rule does not select them.
+  The exception is `isGuardNotImplies` (finding 1).
+- **Case lists.** Every case list still matches the classification. The 14, 15
+  and 9 split is intact, and no case is lost or duplicated.
+
+**(4) Scenario ids.** The 361 `path` scenario headings are identical to the
+ones at `6863598`, with no duplicates. `f1ccbfb` changes bullet text in `005`
+and `009` only.
