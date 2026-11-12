@@ -2174,8 +2174,10 @@ it. Like the pinned engine, it SHALL NOT narrow a type on a type guard
   end at the check stage, and Frevo grades all three `failed`
 - **AND** HAPI's recorded status for `isGuardOrBoth` is `failed`. For
   `isGuardOr` and `isGuardOrInnerImplies` it is `hapi-cannot-pass`, because
-  each is one half of a `path.oracle.016` pair whose expressions are
-  byte-identical and differ only by `contextType`
+  each belongs to a `path.oracle.016` group of cases whose expressions are
+  byte-identical and differ only by `contextType`. `isGuardOr` is in a
+  three-case group with `isGuardOr2` and `isGuardOrBad`, and
+  `isGuardOrInnerImplies` is in a pair with `isGuardOrInnerImpliesBad`
 - **AND** the `or` and `xor` cases the suite expects to fail the check fail it,
   and Frevo grades them `passed`: `isGuardOrBad`, `isGuardOrOtherImpliesBad`,
   `isGuardOrOtherImpliesNoParensBad`, `isGuardOrInnerImpliesBad` and
@@ -2718,12 +2720,18 @@ The oracle harness SHALL run every case in the vendored suite without modifying 
   - `isEffectOnLogic2` and `isEffectOnLogic3`
 - **AND** Frevo's status for those cases comes from its own context-aware run,
   which honours all four attributes (`path.oracle.002`). It is **not** `passed`
-  for every member: `isGuardOr`, `isGuardOrInnerImplies` and `isGuardNotImplies`
-  end at the check stage graded `failed`, because the check pass does not
-  narrow (`path.check.005`, `path.check.009`). The six "Bad" cases and
-  `isEffectOnLogic3Base` fail the check and are graded `passed`. Evaluation
-  decides `isEffectOnLogic2Base`, `isGuardOr2`, `isGuardXorBad2` and
-  `isGuardOrTypesImpliesAll`
+  for every member. Of the 13:
+  - 3 expect success but end at the check stage graded `failed`, because the
+    check pass does not narrow (`path.check.005`, `path.check.009`):
+    `isGuardOr`, `isGuardOrInnerImplies` and `isGuardNotImplies`
+  - 6 are `invalid="semantic"`, fail the check and are graded `passed`:
+    `isEffectOnLogic3Base`, `isGuardOrBad`, `isGuardXorBad`,
+    `isGuardOrInnerImpliesBad`, `isGuardOrTypesImpliesBad` and
+    `isGuardNotImpliesBad`
+  - 4 expect success, pass the check, and are graded by evaluation:
+    `isEffectOnLogic2Base`, `isGuardOr2`, `isGuardOrTypesImpliesAll` and
+    `isGuardXorBad2`. Despite its name, `isGuardXorBad2` carries no `invalid`
+    attribute and expects `false` (`tests-fhir-r4.xml:1777-1779`)
 - **AND** `path.check.002` is graded against that context-aware run, not against
   HAPI's status, so requiring all 29 semantic-invalid cases to fail the check is
   consistent with the aggregate gate rather than stricter than it
