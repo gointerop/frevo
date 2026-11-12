@@ -1121,3 +1121,87 @@ adapter copies of finding 3.
 
 **Not deferred to `docs/tech-debt.md`:** these are gate conditions, and
 deciding to defer a missed budget is the owner's call, not the implementer's.
+
+## 2026-11-12 — `add-fhirpath-and-codegen-r4` — task 27 follow-up: `model.perf.003` and `.005` now met; `.004` and `.006` remain the owner's
+
+**Raised by** `implementer`, task 27 (budget work). Updates findings 1 and 2 of
+the entry above; findings 3 and 4 still stand and still need the owner.
+
+**What changed** (commit `8e50594`, `perf(frevo-model): ...`). Profiled first
+with a throwaway release harness (not committed): a walk of the 4 KiB fixture
+through the index alone cost 28.6 us against 2.4 us for one scan of the whole
+document, so the decode's cost was structural, not the tables. Causes, in the
+order they mattered:
+
+1. **Rescanning.** Entering a container through the index scans it, so a full
+   decode scanned the `address` array and every `Address` three and four times.
+   The root's member scan now records, on the way past, every nested
+   container's members/items and the tokens stepping over it cost
+   (`doc::Tape`); the decode enters each container from it. Entering from the
+   tape charges the meter exactly what the index would have (still 1,570
+   tokens), and a container entered from it answers later index lookups as its
+   cursor would have.
+2. **`Tables::type_def` was a linear search** of 685 names (`Patient` ~500 in,
+   about 160 ns a lookup). `frevo-codegen` now emits `TYPES_BY_HASH`
+   (open addressing, FNV-1a), about 15 ns; `types.rs` regenerated, drift check
+   clean. A sorted index with binary search was measured *slower* (60-70 ns)
+   than the linear search for the primitives at the front of the table, which
+   is why an earlier quick experiment looked like a regression.
+3. A `String` per primitive the decode then discarded (now validated and
+   unescaped in place), the type looked up per property instead of per object,
+   a lock per array item, SipHash on offset keys, and the root type re-cloned.
+4. Encode: `ordered_elements` (quadratic name check into a fresh `Vec`) per
+   object, a heap `Vec` of entries per object, a per-char escape loop, and a
+   scratch buffer copied into the returned one.
+
+Every observable was checked identical to `02f309e` with a throwaway harness:
+1,500 `hl7.fhir.r4.core` examples, truncation/corruption prefixes of both
+fixtures and hand cases -- tokens, allocation counts, materialised paths,
+errors, post-decode reads -- and the canonical, stored-order and
+`encode_canonical` output of 3,268 resources constructed from the examples'
+paths (and 4,998 again at `8e50594`): no diff.
+
+**Recorded** (`bench/micro/baseline.json` then `results.json`, two runs of the
+same binary at `8e50594`, worktree clean, same Windows host; medians, us):
+
+| Workload | Budget | before (`40ffd16` results) | baseline.json | results.json |
+|---|---|---|---|---|
+| `model-passthrough` | <= 1 | 0.197 | 0.170 | 0.193 |
+| `model-lazy-read` | <= 2, <= 10% of full | 1.709 | 0.875 | 0.880 |
+| `model-full-parse` | <= 20 | 42.631 | 12.831 | 12.791 |
+| `model-meta-update-4kib` | 25% of 64 KiB | 3.338 | 1.650 | 1.621 |
+| `model-meta-update-64kib` | 25% of 4 KiB | 7.427 | 5.531 | 5.559 |
+| `model-canonical-encode` | <= 25 | 48.950 | 11.495 | 11.845 |
+
+`model_bytes_lazy_perf` is 16 of 18 (was 14). Green now: `model.perf.003` and
+`model.perf.005` (and `.001`, `.002`, whose lazy read also had to get faster:
+a faster full parse alone would have pushed the 10% ratio to 9.8%; it is now
+6.9%).
+
+**Still red, and still the owner's:**
+
+- `model.perf.004`: 1.62 against 5.56 us (3.4x). Unchanged in kind from
+  finding 3 above: the 64 KiB surcharge, about 3.9 us, is producing a
+  contiguous 64 KiB output. Not touched.
+- `model.perf.006`: `model-passthrough` 0.193 against 0.170 us, 13.5%, between
+  two runs of the **same binary** a minute apart. Not re-run to find a passing
+  pair. Measured instead how noisy single runs are: ten further back-to-back
+  runs of that binary (scratch output, not committed) gave, as the worst
+  ordered pair of runs per workload:
+
+  | Workload | single-run median | single-run p10 | median of 3 runs | p10, median of 3 |
+  |---|---|---|---|---|
+  | passthrough | 1.7% | 2.3% | 0.6% | 0.6% |
+  | lazy-read | 3.2% | 3.8% | 0.5% | 0.1% |
+  | full-parse | 2.1% | 1.2% | 0.7% | 0.5% |
+  | meta-update-4kib | 6.8% | 7.0% | 2.6% | 2.9% |
+  | meta-update-64kib | 6.0% | 2.9% | 3.1% | 1.4% |
+  | canonical-encode | 2.3% | 1.0% | 0.8% | 0.4% |
+
+  So the host's steady-state spread is under 10% even for single runs, but it
+  has episodes (this 13.5%; task 27's first pair moved 20.3%) that a single
+  run cannot tell from a regression. *Proposal for the owner, no test edited:*
+  record `baseline.json` and `results.json` each as the median of three runs
+  of the per-run medians (worst pair 3.1% here, leaving the 10% threshold
+  three times the noise), or grade on that statistic of p10; and/or grade on
+  CI's reference environment only.

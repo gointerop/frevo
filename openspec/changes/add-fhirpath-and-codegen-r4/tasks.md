@@ -687,6 +687,17 @@ checkpoint because it changes what a gate measures.
   the same commit, yet two rows moved more than 10%: noise). All four are in
   `tasks/blockers.md` (2026-11-12, task 27), with an A/B showing task 24 did
   not regress the metadata update.
+  **Update (`8e50594`).** The decode and the canonical encode were profiled
+  and fixed (a one-pass structure tape instead of rescanning each container,
+  a generated hash index for `Tables::type_def`, no per-value `String`, no
+  per-object `ordered_elements`), every observable checked identical to
+  `02f309e`, and both records re-run twice at `8e50594`: full parse
+  12.83/12.79 us, canonical encode 11.50/11.85 us, lazy read 0.88 us.
+  `model_bytes_lazy_perf` is 16 of 18: `model.perf.003` and `model.perf.005`
+  are green. Still red, both the owner's: `model.perf.004` (1.62 against
+  5.56 us) and `model.perf.006` (pass-through 13.5% apart between two runs of
+  the same binary; a noise measurement and a proposal are in
+  `tasks/blockers.md`, 2026-11-12, task 27 follow-up). Not ticked.
 
 ---
 
