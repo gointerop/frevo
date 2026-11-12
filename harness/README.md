@@ -123,7 +123,8 @@ the very thing being built. `CapabilityStatement` behaviour is specified in
 
 ```bash
 bash harness/scripts/synthea.sh generate small           # 100 patients
-bash harness/scripts/synthea.sh generate medium          # 10 000 patients
+bash harness/scripts/synthea.sh generate medium          # 1 000 patients
+bash harness/scripts/synthea.sh generate large           # 10 000 patients (needs ~150 GB)
 bash harness/scripts/synthea.sh load small http://localhost:8090/fhir
 ```
 

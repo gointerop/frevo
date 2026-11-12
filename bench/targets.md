@@ -1,7 +1,15 @@
-# Proposed performance targets
+# Performance targets
 
-**Status: proposed, awaiting owner approval.** These become gate conditions once
-approved, so they are deliberately stated as numbers rather than aspirations.
+**Status: accepted by the owner, 2026-11-08.** These are gate conditions: a
+change on a read, search or ingest path must meet the budget for its workload
+before it can be archived.
+
+They remain open to revision on evidence. The ratios were derived from a
+baseline on the small dataset, and the first real implementation
+(`add-fhirpath-and-codegen-r4`, then `add-store-crud`) is what will show
+whether they are too soft or too hard. Revising one is a normal decision with
+the measurement attached, not an admission of failure -- what is not
+acceptable is quietly missing one.
 
 Derived from [`baseline-hapi-8.12.md`](baseline-hapi-8.12.md), measured on the
 same machine, the same dataset and the same database tuning.
@@ -17,10 +25,18 @@ Everything below is relative to a baseline measured on:
 
 Two caveats that limit how far these numbers can be pushed:
 
-1. **The baseline is the small dataset.** The 10k-patient medium set is being
-   generated; index selectivity and buffer-cache hit rates change materially at
-   that size, so the ratios below will need re-checking. Targets are expressed
-   as ratios partly for that reason.
+1. **The baseline is the small dataset.** A 1,000-patient medium set is being
+   measured separately; index selectivity and buffer-cache hit rates change
+   materially once the working set stops fitting in cache, so the ratios below
+   will need re-checking against it. Targets are expressed as ratios partly for
+   that reason.
+
+   The medium set was originally specified as 10,000 patients. Generating that
+   produced 31 GB of bundles before any of it reached a database, and loading
+   it into HAPI's PostgreSQL needs several times that again -- more than the
+   measurement machine has. A baseline nobody can reproduce is not a baseline,
+   so **medium is 1,000 patients** (about 400k resources) and 10,000 is kept as
+   `large` for a machine or CI runner with the disk to host it.
 2. **`search-name` recorded 6 transport errors in 500 requests (1.2%)** and
    `search-chained` 2 in 200. Those are client-side connection failures under
    concurrency, not HTTP errors. Their latency figures are usable; their
@@ -123,16 +139,59 @@ design decision in the constitution:
   the database tuning changes — all three are pinned precisely so this stays a
   deliberate act.
 
-## Decisions I need from the owner
+## Open questions
 
-1. **Are these the right ratios?** The footprint targets I would defend
-   strongly. The throughput ratios are informed estimates, not measurements of
-   anything that exists yet, and the first real implementation
-   (`add-fhirpath-and-codegen-r4` and then `add-store-crud`) is what will show
-   whether they are too soft or too hard.
+1. **Are these the right ratios?** Accepted as written, with the footprint
+   targets the strongest and the throughput ratios still informed estimates
+   rather than measurements of anything that exists. Re-check them against the
+   medium baseline.
 2. **Should the gate use the small or the medium dataset?** The medium set is
-   more representative but makes every gate run far slower. My suggestion: the
+   more representative but makes every gate run far slower. Current plan: the
    small set per pull request, the medium set nightly and at phase boundaries.
 3. **Is 8 GiB of VM RAM the reference environment?** HAPI was given `-Xmx3g` on
    a 12-CPU, 8 GiB VM. A larger reference machine would favour HAPI
    (more heap, more cache) and compress these ratios.
+
+## Re-checked against the medium baseline (1,128 patients)
+
+The ratios above were derived from the small set. The medium baseline is now
+measured, and it is the better reference: it ran long enough for the JVM to
+settle, and it is the dataset the nightly gate uses. **The absolute ceilings
+are unchanged** -- they are what a deployment can be promised, and they do not
+depend on which baseline we compare against. Only the implied ratio moves.
+
+| Workload | HAPI p99 (medium) | Frevo p99 target | HAPI rps | Frevo rps target | ratio |
+|---|---:|---:|---:|---:|---:|
+| `read-by-id` | 116.2 ms | **5 ms** | 393 | 5000 | 12.7x |
+| `vread` | 38.85 ms | **6 ms** | 416 | 4000 | 9.6x |
+| `search-token` | 32.16 ms | **8 ms** | 404 | 3000 | 7.4x |
+| `search-name` | 71.87 ms | **10 ms** | 205 | 2000 | 9.8x |
+| `search-date-range` | 70.9 ms | **15 ms** | 194 | 1200 | 6.2x |
+| `search-patient-observations` | 127.53 ms | **25 ms** | 114 | 700 | 6.2x |
+| `search-sorted` | 151.37 ms | **25 ms** | 115 | 800 | 7.0x |
+| `search-total-accurate` | 34.85 ms | **10 ms** | 411 | 2000 | 4.9x |
+| `search-chained` | 91.46 ms | **30 ms** | 150 | 800 | 5.3x |
+| `search-include` | 178.71 ms | **30 ms** | 109 | 700 | 6.4x |
+| `search-revinclude` | 818.48 ms | **60 ms** | 34 | 400 | 11.8x |
+| `everything` | 201.63 ms | **80 ms** | 28 | 200 | 7.2x |
+| `transaction-ingest` | 41.91 ms | **40 ms** | 290 | 1000 | 3.5x |
+| `create-single` | 33.34 ms | **20 ms** | 367 | 1500 | 4.1x |
+
+Bulk ingest: the medium set loaded 1,128 bundles (about 900k resources) in
+885 s -- roughly **1,020 resources/s**. The 5,000 resources/s target is a 4.9x
+ratio against that.
+
+Two things the medium baseline changed about how to read these:
+
+1. **`read-by-id` at 12.7x is not a claim about data handling.** HAPI answers
+   it in 36.9 ms p50 whether the table holds 40k rows or 484k, so that figure
+   is fixed per-request cost, not work. The target is a claim that request
+   handling without a JVM, an ORM session and a re-serialization step is an
+   order of magnitude cheaper. If it is missed, the premise is wrong.
+
+2. **`search-revinclude` is the most informative workload in the set.** It is
+   the only one that degrades close to linearly with data (p95 1.93x for 12x
+   the rows) while the rest stay flat. Whatever index layout `add-search-core`
+   and `add-search-includes` choose, this is the number that will say whether
+   it was the right one.
+

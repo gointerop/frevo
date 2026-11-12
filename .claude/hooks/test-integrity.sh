@@ -16,7 +16,7 @@
 . "$(dirname "${BASH_SOURCE[0]}")/_lib.sh"
 
 INPUT="$(cat)"
-cd "$REPO_ROOT" 2>/dev/null || exit 0
+require_repo_root
 
 tool="$(json_get "$INPUT" tool_name)"
 content="$(json_get "$INPUT" tool_input.content)"

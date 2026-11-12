@@ -15,8 +15,61 @@
 
 set -uo pipefail
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# The hook scripts live in exactly one place, but a session may be working in a
+# linked git worktree. Deriving the root from the script's own location
+# therefore resolved to the MAIN worktree for every worktree session:
+# current_branch() reported main's branch, active_change() came back empty, and
+# every path rule compared the edited file against a tree nobody was editing.
+# The hooks were enforcing, carefully, against the wrong repository.
+#
+# The self-tests could not see it. They copy .claude into a throwaway repo and
+# run the hooks from its root, so there the script location IS the repo root and
+# the two derivations coincide. That is the second time these hooks have passed
+# their own tests while enforcing nothing -- the first was the Windows path
+# normalisation in ADR 0002 section 3 -- and both times the cause was a fixture
+# that could not reproduce the real layout. The worktree cases at the end of
+# harness/hook-tests/run.sh exist so this one cannot come back invisibly.
+#
+# Derive it from the working directory, which Claude Code sets to the session's
+# project directory, and fall back to the script location only when the working
+# directory is not inside a work tree at all.
+_repo_root() {
+  local r
+  r="$(git rev-parse --show-toplevel 2>/dev/null)"
+  if [ -n "${r:-}" ] && [ -d "$r" ]; then
+    ( cd "$r" && pwd )
+    return 0
+  fi
+  ( cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd )
+}
+REPO_ROOT="$(_repo_root)"
 export REPO_ROOT
+
+# Every hook begins by entering REPO_ROOT, and every one of them used to do it
+# as `cd "$REPO_ROOT" 2>/dev/null || exit 0`. Exit 0 ALLOWS the action, so a
+# guard that could not reach the repository waved the edit through -- the same
+# fail-open the jq resolution below was written to avoid.
+#
+# require_repo_root is for the four PreToolUse guards and the Stop guard. The
+# informational hooks (SessionStart, PostToolUse, SubagentStop) keep the lenient
+# behaviour on purpose: blocking a session start or a post-edit report buys
+# nothing, and H8 is a completeness check that is documented to fail open.
+require_repo_root() {
+  cd "$REPO_ROOT" 2>/dev/null && return 0
+  cat >&2 <<EOF
+BLOCKED: the enforcement hooks cannot locate the repository root.
+
+REPO_ROOT resolved to: ${REPO_ROOT:-<empty>}
+
+That directory is not reachable, so no path rule, branch rule or coverage check
+can be evaluated. The action is refused rather than allowed, because a guard
+that cannot check anything must not pretend that it did.
+
+  - run this from inside the repository or one of its worktrees
+  - in a worktree, check that \`git rev-parse --show-toplevel\` works there
+EOF
+  exit 2
+}
 
 # --------------------------------------------------------------------------
 # JSON

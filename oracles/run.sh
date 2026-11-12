@@ -23,12 +23,35 @@
 set -uo pipefail
 cd "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-SUITES="fhirpath cql-tests fhir-test-cases inferno-us-core inferno-bulk-data inferno-smart"
+SUITES="fhirpath cql-tests fhir-test-cases r4-example-roundtrip inferno-us-core inferno-bulk-data inferno-smart"
 
 usage() { sed -n '2,25p' "$0"; exit 2; }
 
 note()  { printf '  %s\n' "$*"; }
 head2() { printf '\n== %s ==\n' "$*"; }
+
+# Count <test> elements by PARSING the XML, never by matching text.
+# tests-fhir-r4.xml wraps the whole testDollarResource group in an XML comment
+# whose bodies still contain <test ...> text, so grep reports 104 groups and
+# 1193 cases while the real suite is 103 and 1191. A harness that asserts the
+# textual figure fails on its first run against the very suite it grades.
+count_cases() {
+  local f="$1" p
+  for p in python3 python py; do
+    if command -v "$p" >/dev/null 2>&1; then
+      "$p" - "$f" <<'PYEOF'
+import sys, xml.etree.ElementTree as ET
+try:
+    r = ET.parse(sys.argv[1]).getroot()
+    print(f"{len(r.findall('.//test'))} in {len(r.findall('.//group'))} groups")
+except Exception:
+    print("unparseable")
+PYEOF
+      return
+    fi
+  done
+  echo "unknown (no python available)"
+}
 
 run_one() { # suite
   local suite="$1" dir="oracles/$1" rc=2
@@ -42,11 +65,8 @@ run_one() { # suite
         note "MISSING: $f -- run: bash oracles/fetch.sh"
         return 2
       fi
-      local n
-      n="$(grep -oc '<test ' "$f" 2>/dev/null || true)"
-      [ -z "${n:-}" ] && n=0
       note "source      : FHIR/fhir-test-cases r4/fhirpath (Apache-2.0), pinned"
-      note "cases       : $(grep -o '<test ' "$f" | wc -l | tr -d ' ') <test> elements"
+      note "cases       : $(count_cases "$f")"
       note "graded crate: frevo-path"
       note "reference   : HAPI 8.12.0 via org.hl7.fhir.core FHIRPathEngine"
       note ""
@@ -85,6 +105,33 @@ run_one() { # suite
       note "NOT IMPLEMENTED: no validator yet (phase 4)."
       note "Note: cases requiring SNOMED CT or LOINC content will report"
       note "skipped-for-licence, which is NOT a pass."
+      rc=2
+      ;;
+
+    r4-example-roundtrip)
+      if [ ! -f "$dir/fetched/.pin" ]; then
+        note "NOT FETCHED (19.6 MB package, never committed)"
+        note "run: bash oracles/fetch.sh"
+        return 2
+      fi
+      local pkg="$dir/fetched/package"
+      note "source      : hl7.fhir.r4.examples#4.0.1 from packages.fhir.org,"
+      note "              pinned by SHA-256, fetched, never vendored"
+      note "licence     : CC0-1.0, declared in the package manifest. Fetched"
+      note "              rather than vendored on size alone; see oracles/PINS.md"
+      note "resources   : $(find "$pkg" -name '*.json' 2>/dev/null | wc -l | tr -d ' ') JSON files"
+      note "graded crate: frevo-model"
+      note "reference   : a parse and re-serialise round trip must return the"
+      note "              input bytes unchanged. This is the gate on performance"
+      note "              principle 1 -- a read that returns a resource"
+      note "              unchanged must not parse or re-serialize it -- so it"
+      note "              grades correctness and the storage design together."
+      note ""
+      note "NOT IMPLEMENTED: frevo-model has no codec yet. This runner is wired"
+      note "up by the change add-fhirpath-and-codegen-r4."
+      note "Note: examples embedding SNOMED CT or LOINC codes round-trip as"
+      note "bytes without any terminology lookup, so none is skipped for"
+      note "licence here. Cases needing an expansion live in fhir-test-cases."
       rc=2
       ;;
 

@@ -35,7 +35,11 @@ Makefile        text eol=lf
 
 # Generated code: keep it out of pull-request diffs by default. It is still
 # reviewed by regenerating it, which is the only legitimate way to change it.
-crates/frevo-model/src/generated/**  linguist-generated=true
+crates/frevo-model/src/r4/**         linguist-generated=true
+crates/frevo-model/src/r4b/**        linguist-generated=true
+crates/frevo-model/src/r5/**         linguist-generated=true
+crates/frevo-model/src/dstu3/**      linguist-generated=true
+crates/frevo-model/src/dstu2/**      linguist-generated=true
 crates/frevo-convert/src/generated/** linguist-generated=true
 
 # Vendored oracle suites are not this project's code and should not count

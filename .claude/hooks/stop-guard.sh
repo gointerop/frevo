@@ -19,7 +19,7 @@
 . "$(dirname "${BASH_SOURCE[0]}")/_lib.sh"
 
 INPUT="$(cat)"
-cd "$REPO_ROOT" 2>/dev/null || exit 0
+require_repo_root
 
 STATE_DIR="$(git rev-parse --git-dir 2>/dev/null || echo .git)"
 COUNTER="$STATE_DIR/frevo-stop-blocks"

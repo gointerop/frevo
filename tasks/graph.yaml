@@ -19,6 +19,12 @@ meta:
   reference: HAPI FHIR JPA Server Starter 8.12.0 (see reference/PINS.md)
   inventory: docs/inventory.md
   total_parity_rows: 454
+  # Confirmed by the owner, 2026-11-08: R4 first (phases 1-8), then R4B and R5,
+  # then DSTU3 and DSTU2 (phase 9). This is why every phase before 9 names only
+  # R4 artifacts, and why add-converters gates add-r4b-r5, which gates
+  # add-dstu3-dstu2 -- each later version reuses the generator and the
+  # conversion layer rather than re-porting the stack.
+  fhir_version_order: [R4, R4B, R5, DSTU3, DSTU2]
 
 phases:
   0: Bootstrap, oracles, harness, baseline
@@ -46,7 +52,13 @@ nodes:
   # ------------------------------------------------------------------ phase 1
   - id: add-fhirpath-and-codegen-r4
     phase: 1
-    status: pending
+    # In flight on change/add-fhirpath-and-codegen-r4: proposal APPROVED on the
+    # third review, 493 scenarios, and the three oracle harnesses written and
+    # failing. Left as `pending` it was reported as READY by tasks/next.sh and
+    # by the SessionStart hook, which is the one output a reset context relies
+    # on -- so a fresh session would have been told to start work already half
+    # done.
+    status: in_progress
     summary: >
       frevo-codegen generates R4 models from StructureDefinitions with a lazy,
       byte-preserving JSON codec; frevo-path implements the FHIRPath engine.

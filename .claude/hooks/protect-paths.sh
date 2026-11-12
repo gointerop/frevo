@@ -5,7 +5,9 @@
 # that makes the rest of the rules mean anything:
 #
 #   openspec/specs/**     settled requirements; change only via openspec archive
-#   crates/frevo-model/** generated; fix the generator instead
+#   crates/frevo-model/src/<ver>/** and crates/frevo-convert/src/generated/**
+#                         generated; fix the generator instead. The rest of
+#                         those crates' src/ is hand-written and editable.
 #   any @generated file   same
 #   reference/**          read-only pinned upstream source
 #   oracles/**            vendored suites; only on chore/oracles-*
@@ -17,7 +19,7 @@
 . "$(dirname "${BASH_SOURCE[0]}")/_lib.sh"
 
 INPUT="$(cat)"
-cd "$REPO_ROOT" 2>/dev/null || exit 0
+require_repo_root
 
 change="$(active_change)"
 
@@ -37,15 +39,27 @@ That is what keeps the spec and the implementation from drifting apart.
 EOF
       ;;
 
-    crates/frevo-model/*)
+    crates/frevo-model/src/r4/*|crates/frevo-model/src/r4b/*|crates/frevo-model/src/r5/*|crates/frevo-model/src/dstu3/*|crates/frevo-model/src/dstu2/*|crates/frevo-convert/src/generated/*)
       block <<EOF
 BLOCKED: $p is generated code.
 
-crates/frevo-model is produced by frevo-codegen from FHIR StructureDefinitions.
-FHIR models are regenerated from the specification artifacts, never translated
-or hand-corrected -- a hand edit is silently lost on the next regeneration.
+crates/frevo-model/src/<version>/ and crates/frevo-convert/src/generated/ are
+produced by frevo-codegen from FHIR StructureDefinitions. FHIR models are
+regenerated from the specification artifacts, never translated or
+hand-corrected -- a hand edit is silently lost on the next regeneration.
 
 Fix the generator in crates/frevo-codegen, then regenerate.
+
+Scope, twice corrected. The rule first matched crates/frevo-model/* and refused
+tests/ as generated. Narrowing it to src/* then refused src/lib.rs and
+src/codec/**, which are hand-written -- so the module declaration that puts
+the generated model in the build could not be written, and 73,465 lines were
+never compiled or linted in tree at all. It now names the generated roots:
+the per-version model directories and the converters'.
+
+The @generated marker check below still catches an output wherever it sits, but
+only once the file exists -- it cannot judge a new file -- so these paths are
+what stops a hand-written file being created inside a generated tree.
 EOF
       ;;
 
