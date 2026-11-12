@@ -768,3 +768,43 @@ entry asserts a chosen behaviour and a reviewer, and neither exists yet; the
 same reason applies to `docs/tech-debt.md`, which does not exist at this commit
 (`harness/scripts/check-registries.sh` does not either, so the cross-reference
 check named in the task could not be run).
+
+---
+
+## 2026-11-12 — `add-fhirpath-and-codegen-r4` — HAPI's JSON parser has no general missing-required-element check on decode
+
+**Raised by** `implementer`, during task 21, while establishing why
+`codegen.cardinality.002`, `.004` and `.005` could not be delivered from the
+decode path.
+
+**What the pinned source says.** `design.md` section 3 maps the
+`missingRequiredElement` callback to `codegen.cardinality.002` and `.004`, and
+the table row reads "`Observation` with no `status` | accepted, warning logged".
+At pin `7ab4c7c7c49281496faa1b3c2498a652457669ae` the callback has these call
+sites in `hapi-fhir-base`:
+
+- `JsonParser.java:1503` and `:1514` — **decode**, but only for an
+  `Extension` with a missing or non-scalar `url`, inside `parseExtension`;
+- `JsonParser.java:1995` and `:2004` — **encode**, inside
+  `writeUndeclaredExtension`, for an extension's `url` and `value`;
+- `XmlParser.java:205`, `:217`, `:514`, `:597` — the same two cases in XML.
+
+`ParserState.java` has none, and nothing anywhere consults a child
+definition's `getMin()` while parsing. So HAPI does not warn about an
+`Observation` with no `status`; it accepts it silently. The "accepted" half of
+that table row is right and the "warning logged" half is not.
+
+**Why it matters.** Whoever implements `codegen.cardinality.002`/`.004`/`.005`
+should know that (a) there is no HAPI warning to match, so any report is a
+Frevo-only one of the same class as `model.json.016` and `.018`, and (b) it
+cannot be delivered through `decode::ReportKind` — adding a variant breaks
+`model_decode.rs`'s exhaustive match over the fourteen, and reporting the
+condition at all would give several of `SINGLE_PROBLEM_FIXTURES` a second
+diagnostic and so fail `model.json.021`'s test (`Media.content` is `1..1` and
+`POSITIVE_INT_ZERO` has no `content`; `MolecularSequence` and `Bundle` have
+required elements the other fixtures omit too). The separate channel that task
+21a's two coded conditions use is the shape that works.
+
+**Decision needed.** Whether the three cardinality scenarios want a Frevo-only
+diagnostic at all, and if so on which channel; and a correction to the design's
+callback table.
