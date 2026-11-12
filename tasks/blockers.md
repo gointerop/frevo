@@ -630,3 +630,44 @@ cost **80 of the original 147 µs**. The paths are now a chain of borrows
 rendered only when a report is actually built. That is constitution rule 6.2
 applied to the decoder's own bookkeeping, and it is the single largest win in
 this change.
+
+---
+
+## 2026-11-11 — `add-fhirpath-and-codegen-r4` — the pinned engine discards 13 type errors
+
+**Raised by** the orchestrator, while checking a finding the second `path.*`
+oracle run reported as two instances. It is thirteen, and it is systemic.
+
+`makeException(...)` **constructs** an exception and returns it. Thirteen call
+sites in `FHIRPathEngine.java` call it as a statement and discard the result,
+with no `throw`:
+
+    4109 sqrt     4132 abs      4151 ceiling   4170 floor
+    4194 exp      4214 ln       4239 log       4267 power
+    4285 truncate 4329 (boundary)              4414 round
+    ... and two more in the same family
+
+Each sits in the `else` arm that handles a focus of the wrong type, so the whole
+math-function family answers **empty** where it means to raise
+`FHIRPATH_WRONG_PARAM_TYPE`. `'abc'.round(2)` is empty, not an error.
+
+Two of those messages also name the wrong function: `:4285` is in `funcTruncate`
+and `:4329` in a boundary function, and both pass `"sqrt"`. So even if a `throw`
+were added, two diagnostics would be misleading.
+
+**Why it matters beyond the three scenarios that found it.** `path.mathfn.*`
+already has committed tests, written against the engine's observable behaviour,
+so they are correct as they stand. But `docs/deviations.md` records this family
+only through `DEV-0006` (string functions over a non-string focus return empty),
+and the math family is a separate, larger instance of the same silent-failure
+shape. It is the single most common defect in the pinned engine.
+
+**Decision needed.** Either a `DEV-nnnn` covering the family as a whole — which
+is the honest record, since Frevo must reproduce empty-instead-of-error on all
+thirteen — or an extension of `DEV-0006` to say so explicitly. Also worth
+reporting upstream: thirteen discarded exceptions and two wrong function names
+in one file is a plausible single pull request, and it is the kind of thing that
+stays broken because each instance looks like a one-off.
+
+Not a `docs/known-gaps.md` entry: nothing is failing that should pass. The
+behaviour is reproducible and the tests assert it.
