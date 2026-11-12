@@ -237,3 +237,73 @@ target_paths() {
 # openspec CLI, if installed. Hooks degrade to a clear message rather than
 # blocking work when the CLI is absent, except where validation is the point.
 openspec_bin() { command -v openspec >/dev/null 2>&1 && echo openspec || echo ""; }
+
+# --------------------------------------------------------------------------
+# Which worktree is this call about?
+# --------------------------------------------------------------------------
+# _repo_root above answers "which worktree is the hook PROCESS in". That is the
+# wrong question whenever a session sits in one worktree and edits a file in
+# another by absolute path -- the orchestrator on main in the primary tree,
+# say, while an agent writes into a sibling worktree on change/<id>. Every rule
+# then ran against the session's tree:
+#
+#   - test-integrity.sh saw no active change, searched only openspec/specs,
+#     and BLOCKED a covers: id that sat in the edited worktree's delta (an
+#     agent then wrote the file through the shell to get past it);
+#   - require-active-change.sh and protect-paths.sh saw an absolute path
+#     outside "the" repository, matched no rule, and ALLOWED it -- a settled
+#     spec or an unapproved crates/ edit in the sibling went through silently.
+#
+# use_input_root re-points REPO_ROOT at the worktree the call is actually
+# about: the worktree containing the target file, else the worktree of the
+# payload's cwd (the session's current directory, which can differ from the
+# directory the hook process was started in). Call it BEFORE require_repo_root
+# and before anything that reads the branch or a repo-relative path.
+#
+# It only ever moves to another worktree of the SAME repository, compared by
+# git common dir. A path in an unrelated repository, or in none, leaves
+# REPO_ROOT alone and so matches no repo-relative rule, exactly as before. It
+# never makes a hook fail open: when nothing qualifies, REPO_ROOT is what it
+# was, and require_repo_root still refuses an unreachable root.
+
+# Physical path of the git common dir for a directory, or nothing.
+_git_common_of() {
+  local d="$1" c
+  c="$(git -C "$d" rev-parse --git-common-dir 2>/dev/null)" || return 1
+  [ -n "$c" ] || return 1
+  ( cd "$d" 2>/dev/null && cd "$c" 2>/dev/null && { pwd -W 2>/dev/null || pwd; } )
+}
+
+# Physical toplevel of the worktree containing a (possibly nonexistent) path.
+_toplevel_for() {
+  local p="${1//\\//}" parent t
+  [ -n "$p" ] || return 1
+  while [ ! -d "$p" ]; do
+    parent="${p%/*}"
+    [ "$parent" = "$p" ] && return 1
+    [ -n "$parent" ] || parent="/"
+    p="$parent"
+  done
+  t="$(git -C "$p" rev-parse --show-toplevel 2>/dev/null)" || return 1
+  [ -n "$t" ] && [ -d "$t" ] || return 1
+  _phys_dir "$t"
+}
+
+use_input_root() {
+  local json="$1" base key raw top cand
+  base="$(_git_common_of "$REPO_ROOT")"
+  [ -n "$base" ] || return 0
+  base="$(_lower "$base")"
+  for key in tool_input.file_path tool_input.notebook_path tool_input.path cwd; do
+    raw="$(json_get "$json" "$key")"
+    [ -n "$raw" ] || continue
+    top="$(_toplevel_for "$raw")" || continue
+    cand="$(_git_common_of "$top")" || continue
+    if [ "$(_lower "$cand")" = "$base" ]; then
+      REPO_ROOT="$top"
+      export REPO_ROOT
+      return 0
+    fi
+  done
+  return 0
+}
