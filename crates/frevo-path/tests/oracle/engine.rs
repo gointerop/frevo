@@ -16,7 +16,11 @@
 use std::collections::HashMap;
 use std::sync::{Arc, OnceLock};
 
-use frevo_path::{EvalError, Evaluator, Model, Node, NodeError, Primitive, Value};
+use frevo_path::{
+    CheckError, CheckFocus, CheckOptions, CheckRequest, Checker, ConstantMode, ElementInfo,
+    EvalError, Evaluator, FunctionDetails, HostError, HostServices, Model, Node, NodeError,
+    Primitive, TypeSet, Value,
+};
 
 use super::input::{self, Document, SuiteInput};
 use super::value::{QuantityValue, ResultItem};
@@ -57,8 +61,8 @@ impl std::fmt::Display for EngineError {
             }
             EngineError::NotImplemented => f.write_str(
                 "the stage or feature this case needs is not bound to the oracle harness yet \
-                 -- parse is bound, evaluate is bound for navigation only, check and \
-                 convert_to_boolean are not \
+                 -- parse and check are bound, evaluate is bound for navigation only, \
+                 convert_to_boolean is not \
                  (crates/frevo-path/tests/oracle/engine.rs::engine_under_test)",
             ),
         }
@@ -200,15 +204,17 @@ pub trait SuiteEngine {
 /// the evaluator implements and nothing else: every function, operator and
 /// environment variable it does not implement yet comes back as
 /// [`frevo_path::EvalError::Unsupported`], which this seam turns into
-/// [`EngineError::NotImplemented`]. `check` and `convert_to_boolean` still
-/// answer `NotImplemented`.
+/// [`EngineError::NotImplemented`]. Task 50 built the static check pass, so
+/// `check` is bound too, over the same type model, with anything the pass
+/// cannot type yet -- a host-supplied function, an extension definition's
+/// element model -- answered as [`frevo_path::CheckError::NotImplemented`]
+/// and so as `NotImplemented` here. `convert_to_boolean` still answers
+/// `NotImplemented`.
 ///
 /// All of that is `did-not-run` and never a pass. Returning an empty result or
 /// a default from a stage or a feature that does not exist would turn a
 /// thousand unrun cases into graded passes and failures that mean nothing,
-/// which is the one thing this seam exists to prevent. Because the harness
-/// runs `check` before `evaluate` for every case, no case reaches the bound
-/// evaluation until the check pass (task 50) is bound too.
+/// which is the one thing this seam exists to prevent.
 pub fn engine_under_test() -> Box<dyn SuiteEngine> {
     Box::new(FrontEndEngine {
         config: None,
@@ -285,9 +291,59 @@ impl SuiteEngine for FrontEndEngine {
         &mut self,
         parsed: ParsedHandle,
         context: &CaseContext<'_>,
-        flags: StrictnessFlags,
+        _flags: StrictnessFlags,
     ) -> Result<(), EngineError> {
-        self.unbound.check(parsed, context, flags)
+        // The strictness flags are read by evaluation's `as` and by nothing
+        // in the check pass. The type information is the same pinned R4
+        // package evaluation is typed from; without it nothing can be
+        // checked, which is a missing prerequisite and not a verdict.
+        let model = sd_model().ok_or(EngineError::NotImplemented)?;
+        let expr = self
+            .parsed
+            .get(parsed.0)
+            .ok_or_else(|| EngineError::Diagnostic {
+                message: format!("no expression was parsed under handle {}", parsed.0),
+                offset: None,
+            })?;
+        let config = self.config.unwrap_or_default();
+
+        // `FHIRPathTests.test` checks with `fp.check(null, null, null, node)`
+        // when the case has no input, and otherwise with
+        // `fp.check(res, "Resource", type, type, node)`: the root resource
+        // type is the literal `Resource`, and the resource type is both the
+        // `%resource` type and the context. Frevo's run also honours the
+        // case's `context` and `contextType` (`path.oracle.016`):
+        // a `contextType` list is `checkOnTypes`, a `context` path is
+        // `check(..., context, ...)`.
+        let context_types: Vec<&str> = context.context_types.iter().map(String::as_str).collect();
+        let focus = if !context_types.is_empty() {
+            CheckFocus::Types(&context_types)
+        } else if let Some(c) = context.context {
+            CheckFocus::Context(c)
+        } else if let Some(rt) = context.resource_type {
+            CheckFocus::Context(rt)
+        } else {
+            CheckFocus::None
+        };
+        let request = CheckRequest {
+            root_resource_type: context.resource_type.map(|_| "Resource"),
+            resource_type: context.resource_type,
+            focus,
+        };
+        let mut checker = Checker::new(model).with_options(CheckOptions {
+            allow_polymorphic_names: false,
+            emit_sql_on_fhir_warning: config.emit_sql_on_fhir_warning,
+        });
+        if config.install_test_host_services {
+            checker = checker.with_host_services(&SuiteHostServices);
+        }
+        match checker.check(expr, &request) {
+            Ok(_) => Ok(()),
+            Err(CheckError::NotImplemented { .. }) => Err(EngineError::NotImplemented),
+            Err(CheckError::Failed {
+                message, offset, ..
+            }) => Err(EngineError::Diagnostic { message, offset }),
+        }
     }
 
     fn evaluate(
@@ -341,6 +397,95 @@ impl SuiteEngine for FrontEndEngine {
 
     fn take_log(&mut self) -> String {
         self.unbound.take_log()
+    }
+}
+
+/// `FHIRPathTests.FHIRPathTestEvaluationServices`
+/// (`FHIRPathTests.java:51-117`), for the methods the **check pass** calls:
+/// `resolve_constant_type` raises, as upstream's does, so an unknown `%name`
+/// fails the check; `check_function` raises; `param_is_type` is `false`.
+///
+/// The evaluation-side methods answer as upstream's where upstream's answer
+/// needs nothing the harness lacks — `conforms_to_profile`, `log` — and
+/// otherwise raise as upstream raises. `resolve_value_set` is the exception:
+/// upstream answers from its worker context, which the harness does not have,
+/// so this one is not a faithful answer and must not be relied on. The seam's
+/// `evaluate` installs no host service, so nothing calls it today; the task
+/// that binds host services into evaluation (49) replaces it.
+struct SuiteHostServices;
+
+impl SuiteHostServices {
+    fn not_done(what: &str) -> HostError {
+        HostError::new(format!(
+            "Not done yet (FHIRPathTestEvaluationServices.{what}), when item is element"
+        ))
+    }
+}
+
+impl HostServices for SuiteHostServices {
+    fn resolve_constant(&self, _name: &str, _mode: ConstantMode) -> Result<Vec<Value>, HostError> {
+        Err(Self::not_done("resolveConstant"))
+    }
+
+    fn resolve_constant_type(
+        &self,
+        _name: &str,
+        _mode: ConstantMode,
+    ) -> Result<Option<TypeSet>, HostError> {
+        Err(Self::not_done("resolveConstantType"))
+    }
+
+    fn resolve_reference(
+        &self,
+        _url: &str,
+        _identifier: Option<&Value>,
+        _context: Option<&Value>,
+    ) -> Result<Option<Value>, HostError> {
+        Err(Self::not_done("resolveReference"))
+    }
+
+    fn conforms_to_profile(&self, _item: &Value, url: &str) -> Result<bool, HostError> {
+        match url {
+            "http://hl7.org/fhir/StructureDefinition/Patient" => Ok(true),
+            "http://hl7.org/fhir/StructureDefinition/Person" => Ok(false),
+            _ => Err(HostError::new(format!("unknown profile {url}"))),
+        }
+    }
+
+    fn resolve_value_set(&self, url: &str) -> Result<Option<Value>, HostError> {
+        Err(HostError::new(format!(
+            "the harness has no worker context to resolve {url} from"
+        )))
+    }
+
+    fn resolve_function(&self, _name: &str) -> Option<FunctionDetails> {
+        None
+    }
+
+    fn check_function(
+        &self,
+        _name: &str,
+        _focus: &TypeSet,
+        _params: &[TypeSet],
+    ) -> Result<TypeSet, HostError> {
+        Err(Self::not_done("checkFunction"))
+    }
+
+    fn execute_function(
+        &self,
+        _name: &str,
+        _focus: &[Value],
+        _params: &[Vec<Value>],
+    ) -> Result<Vec<Value>, HostError> {
+        Err(Self::not_done("executeFunction"))
+    }
+
+    fn param_is_type(&self, _name: &str, _index: usize) -> bool {
+        false
+    }
+
+    fn log(&self, _name: &str, _focus: &[Value]) -> bool {
+        false
     }
 }
 
@@ -419,7 +564,14 @@ struct ElementDef {
     /// The element name, `[x]` removed.
     name: String,
     choice: bool,
+    /// Each type's working code: the `structuredefinition-fhir-type`
+    /// extension's value for a System type code, else the code.
     types: Vec<String>,
+    /// Each type's code as declared, a System type URL shortened to
+    /// `System.String`.
+    codes: Vec<String>,
+    /// `ElementDefinition.unbounded()`: `max` is `*` or above 1.
+    repeating: bool,
     /// The referenced element path, `#` removed.
     content_reference: Option<String>,
 }
@@ -428,6 +580,10 @@ struct ElementDef {
 struct TypeDef {
     kind: String,
     base: Option<String>,
+    /// Whether `derivation` is `specialization`. `Resource` and `Element`
+    /// have no derivation at all.
+    specialization: bool,
+    is_abstract: bool,
     elements: Vec<ElementDef>,
 }
 
@@ -435,6 +591,9 @@ struct TypeDef {
 #[derive(Debug)]
 struct SdModel {
     types: HashMap<String, TypeDef>,
+    /// The canonical URL of every StructureDefinition in the package,
+    /// profiles and extensions included, for `extension(url)`.
+    urls: std::collections::HashSet<String>,
 }
 
 /// The model, loaded once per test binary; `None` when the package is not
@@ -447,11 +606,20 @@ fn sd_model() -> Option<&'static SdModel> {
 fn load_sd_model() -> Option<SdModel> {
     let dir = input::repo_path(R4_PACKAGE_DIR);
     let mut types = HashMap::new();
+    let mut urls = std::collections::HashSet::new();
     for entry in std::fs::read_dir(&dir).ok()?.flatten() {
         let file = entry.file_name().to_string_lossy().into_owned();
-        if !file.starts_with("StructureDefinition-") || !file.ends_with(".json") {
+        let Some(id) = file
+            .strip_prefix("StructureDefinition-")
+            .and_then(|f| f.strip_suffix(".json"))
+        else {
             continue;
-        }
+        };
+        // Every StructureDefinition in the core package has the canonical
+        // URL `http://hl7.org/fhir/StructureDefinition/<id>`, and the package
+        // names each file by its id, so the URL is known without parsing the
+        // 400-odd profiles the pre-filter below skips.
+        urls.insert(format!("http://hl7.org/fhir/StructureDefinition/{id}"));
         let text = std::fs::read_to_string(entry.path()).ok()?;
         // A cheap pre-filter for the 400-odd profiles and extensions; the
         // parsed check below is the one that decides.
@@ -482,6 +650,8 @@ fn load_sd_model() -> Option<SdModel> {
             TypeDef {
                 kind: kind.to_string(),
                 base,
+                specialization: derivation == Some("specialization"),
+                is_abstract: matches!(sd.get("abstract"), Some(json::Value::Bool(true))),
                 elements,
             },
         );
@@ -489,7 +659,7 @@ fn load_sd_model() -> Option<SdModel> {
     if types.is_empty() {
         None
     } else {
-        Some(SdModel { types })
+        Some(SdModel { types, urls })
     }
 }
 
@@ -502,19 +672,31 @@ fn element_def(e: &json::Value) -> Option<ElementDef> {
         None => (last, false),
     };
     let mut types = Vec::new();
+    let mut codes = Vec::new();
     if let Some(json::Value::Array(entries)) = e.get("type") {
         for t in entries {
             if let Some(code) = t.get("code").and_then(json::Value::as_str) {
                 types.push(fhir_type_code(t, code));
+                codes.push(match code.strip_prefix("http://hl7.org/fhirpath/") {
+                    Some(system) => system.to_string(),
+                    None => code.to_string(),
+                });
             }
         }
     }
+    let repeating = match e.get("max").and_then(json::Value::as_str) {
+        Some("*") => true,
+        Some(n) => n.parse::<u64>().is_ok_and(|n| n > 1),
+        None => false,
+    };
     Some(ElementDef {
         path: path.to_string(),
         parent: path[..dot].to_string(),
         name: name.to_string(),
         choice,
         types,
+        codes,
+        repeating,
         content_reference: e
             .get("contentReference")
             .and_then(json::Value::as_str)
@@ -569,6 +751,33 @@ impl SdModel {
         self.children_of(sd, path).next().is_some()
     }
 
+    /// The types navigating to `e` by name yields, named as `frevo-model`'s
+    /// tables name them: a content reference as the referenced element's
+    /// path, an `Element`, `BackboneElement` or other abstract non-resource
+    /// type as the element's own path (upstream's `sd#path`), `Resource` as
+    /// itself, and everything else by its working code
+    /// (`getChildTypesByName`, `FHIRPathEngine.java:6483`-`:6507`).
+    fn navigation_types(&self, e: &ElementDef) -> Vec<String> {
+        if let Some(r) = &e.content_reference {
+            return vec![r.clone()];
+        }
+        e.types
+            .iter()
+            .zip(&e.codes)
+            .map(|(working, code)| {
+                let abstract_data_type = self
+                    .types
+                    .get(code)
+                    .is_some_and(|t| t.is_abstract && t.kind != "resource");
+                if code == "Element" || code == "BackboneElement" || abstract_data_type {
+                    e.path.clone()
+                } else {
+                    working.clone()
+                }
+            })
+            .collect()
+    }
+
     /// A backbone type is named by its path (`Patient.contact`), which is how
     /// `Base.fhirType()` names it upstream; its definitions live in the
     /// StructureDefinition the path starts with.
@@ -593,7 +802,65 @@ impl Model for SdModel {
         let (sd, path) = SdModel::context_of(type_name);
         self.children_of(sd, path)
             .find(|e| e.name == element)
-            .map(|e| e.types.clone())
+            .map(|e| self.navigation_types(e))
+    }
+
+    fn elements(&self, type_name: &str) -> Option<Vec<ElementInfo>> {
+        let (sd, path) = SdModel::context_of(type_name);
+        Some(
+            self.children_of(sd, path)
+                .map(|e| ElementInfo {
+                    name: e.name.clone(),
+                    path: e.path.clone(),
+                    types: self.navigation_types(e),
+                    codes: if e.content_reference.is_some() {
+                        Vec::new()
+                    } else {
+                        e.codes.clone()
+                    },
+                    choice: e.choice,
+                    repeating: e.repeating,
+                    content_reference: e.content_reference.clone(),
+                })
+                .collect(),
+        )
+    }
+
+    fn specializations(&self, type_name: &str) -> Option<Vec<String>> {
+        let mut out: Vec<String> = self
+            .types
+            .iter()
+            .filter(|(_, t)| t.specialization && t.base.as_deref() == Some(type_name))
+            .map(|(n, _)| n.clone())
+            .collect();
+        out.sort();
+        Some(out)
+    }
+
+    fn resource_type_names(&self) -> Option<Vec<String>> {
+        let mut out: Vec<String> = self
+            .types
+            .iter()
+            .filter(|(_, t)| t.specialization && t.kind == "resource")
+            .map(|(n, _)| n.clone())
+            .collect();
+        out.sort();
+        Some(out)
+    }
+
+    fn type_names(&self) -> Option<Vec<String>> {
+        let mut out: Vec<String> = self
+            .types
+            .iter()
+            .filter(|(_, t)| t.specialization)
+            .map(|(n, _)| n.clone())
+            .collect();
+        out.sort();
+        Some(out)
+    }
+
+    fn has_definition_url(&self, url: &str) -> Option<bool> {
+        Some(self.urls.contains(url))
     }
 
     fn is_primitive(&self, type_name: &str) -> bool {

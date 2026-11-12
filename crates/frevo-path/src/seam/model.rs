@@ -61,9 +61,49 @@ impl fmt::Display for TypeSet {
     }
 }
 
+/// One child element of a type, described the way the static check pass reads
+/// a StructureDefinition snapshot (`getChildTypesByName`,
+/// `FHIRPathEngine.java:6322`).
+///
+/// Two type lists are carried because upstream reads two different things in
+/// two different places, and they disagree for the elements that matter most:
+/// navigation by name reads `TypeRefComponent.getWorkingCode()` — `Element.id`
+/// is a `string` — while `children()` and `descendants()` read the declared
+/// `getCode()` — `Element.id` is a `System.String`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ElementInfo {
+    /// The element name, `[x]` removed.
+    pub name: String,
+    /// The element's path in the definition that declares it, as
+    /// `Patient.contact`. A backbone element's type is named by this path.
+    pub path: String,
+    /// The types navigation by name yields, in declared order: the working
+    /// code of each type; a backbone or `Element`-typed element with children
+    /// as its own path; a content reference as the referenced element's path;
+    /// a `Resource`-typed element as `Resource`.
+    pub types: Vec<String>,
+    /// The declared type codes, unmapped: `BackboneElement`, `Element` and
+    /// `Resource` as written, and a FHIRPath System type as `System.String`.
+    /// Empty for a content reference, which declares no type.
+    pub codes: Vec<String>,
+    /// Whether the element is a choice (`value[x]`).
+    pub choice: bool,
+    /// Whether the element repeats (`ElementDefinition.unbounded()`: a `max`
+    /// of `*` or above 1).
+    pub repeating: bool,
+    /// For a content reference, the referenced element's type name.
+    pub content_reference: Option<String>,
+}
+
 /// The type information the check pass and the `is`/`as`/`ofType` operators
 /// need. It is the whole input to the static check pass, which is why the check
 /// pass can be tested with a stub `Model` and no resource at all.
+///
+/// The methods after [`Model::derives_from`] are what the check pass needs
+/// beyond evaluation, and each defaults to `None`, meaning **this model cannot
+/// say**. The check pass answers a question it needs one of them for with
+/// `CheckError::NotImplemented`, never with a guess: a model that cannot list
+/// its elements does not get every name rejected, or every name accepted.
 pub trait Model: Send + Sync {
     /// Whether `type_name` is a type this model knows.
     fn is_type(&self, type_name: &str) -> bool;
@@ -100,5 +140,41 @@ pub trait Model: Send + Sync {
             }
         }
         false
+    }
+
+    /// The direct child elements of `type_name`, in snapshot order.
+    /// `type_name` may be a backbone type named by its path
+    /// (`Patient.contact`). `None` when the model cannot describe them.
+    fn elements(&self, _type_name: &str) -> Option<Vec<ElementInfo>> {
+        None
+    }
+
+    /// The types whose definition specialises `type_name` directly — a base
+    /// definition of `type_name` and a derivation of `specialization`; a
+    /// constraint profile is not one. Upstream's `addTypeAndDescendents`
+    /// walks these, so `resolve().name` looks for `name` in every resource.
+    /// `None` when the model cannot enumerate them.
+    fn specializations(&self, _type_name: &str) -> Option<Vec<String>> {
+        None
+    }
+
+    /// `IWorkerContext.getResourceNames()`: every resource type whose
+    /// derivation is `specialization`, sorted — which excludes `Resource`
+    /// itself, whose definition has no derivation. A `Resource`-typed element
+    /// is checked as all of them.
+    fn resource_type_names(&self) -> Option<Vec<String>> {
+        None
+    }
+
+    /// Every non-logical type whose derivation is `specialization`: what
+    /// upstream's `anything()` answers for `$total` and `aggregate()`.
+    fn type_names(&self) -> Option<Vec<String>> {
+        None
+    }
+
+    /// Whether a StructureDefinition with canonical URL `url` exists, for
+    /// `extension(url)`. `None` when the model cannot say.
+    fn has_definition_url(&self, _url: &str) -> Option<bool> {
+        None
     }
 }

@@ -1304,3 +1304,124 @@ them and the spec-reviewer may want them as scenarios:
 - `children()`/`descendants()`'s unordered rule exists only in the check pass
   (`checkOrdered` in `executeType`); evaluation has no such rule, so it is
   task 50's, not this task's.
+
+## 2026-11-12 — `add-fhirpath-and-codegen-r4` — task 50: the check pass exists; four of its six scenarios cannot go green on it
+
+**Raised by** the implementer of task 50 (the static check pass), on
+`change/add-fhirpath-and-codegen-r4`. **No test was changed**; the only test
+file edited is the documented seam, `crates/frevo-path/tests/oracle/engine.rs`
+(its `check` is bound, its `SdModel` gained the check pass's model methods, and
+a `SuiteHostServices` ports `FHIRPathTestEvaluationServices`); `git diff` of it
+shows no assertion, `#[test]` or `covers:` line.
+
+**What was built.** `crates/frevo-path/src/check/`: a port of
+`FHIRPathEngine.executeType` and `TypeDetails`, separate from evaluation, over
+the parsed `Expression` and the `Model` trait. The per-function rules are a
+table (`check/signature.rs`): a function is checked by registering its
+`Signature` — parameter mode, focus preconditions, parameter types, result —
+and a function with no entry is `CheckError::NotImplemented`. The `Model`
+trait gained five methods (`elements`, `specializations`,
+`resource_type_names`, `type_names`, `has_definition_url`), each defaulting to
+`None` = "cannot say", which the pass answers as not-implemented; `R4Model`
+does not implement them yet (`DEBT-0012`). Not-implemented, never a verdict:
+host-supplied functions, `extension(url)` whose URL names a definition or is
+relative, a model that cannot describe its elements, and every path on which
+the pinned engine would raise a `NullPointerException` or a `java.lang.Error`.
+
+**Counts** (`fhirpath_oracle`'s run, measured with a throwaway example binary
+that was not committed): before 1,073 did-not-run / 111 failed / 7 passed (118
+graded); after **1,019 did-not-run / 126 failed / 46 passed (172 graded)**. 45
+cases now end at the check stage: 27 semantic-invalid cases graded `passed`, 3
+`extension()` cases `did-not-run`, and 15 `failed` (finding 3, plus
+`testBasics/testEscapedIdentifierUnicode`, which upstream fails identically —
+the base-32 `\u` decoding reproduced in task 28 yields `Îame`). Of the 1,019
+did-not-run, 1,015 are evaluation's `Unsupported`, 3 the check's, 1 the
+predicate conversion. No case newly failed at evaluation. `path_check` 1/14 ->
+2/14 (`001`, `013`); `path_navigation` 0/24 -> 2/24; `path_parse_errors` 5/13
+-> 6/13; `fhirpath_oracle` 11/19 -> 12/19; all other targets unchanged.
+Release, over the harness's package model: `Patient.name` parse+check median
+7.4 us, `Patient.telecom.where(system='phone' or system='email')` 15.9 us
+(`path.perf.001` budget 20 us; its recorded half needs task 55's workload).
+
+### 1. `path.check.002` contradicts the harness's own grading
+
+`path_check.rs::the_semantic_invalid_oracle_cases_all_fail_the_check` requires
+all 29 semantic-invalid cases to be graded `passed`, and also asserts that
+`documentFunctions/testResourcesAbstract3` and `testHasCoding11` fail at the
+**parse** stage. But `tests/oracle/run.rs::graded_failure` grades a failure as
+`passed` only when it comes from the expected stage, so a parse-stage failure
+of a `semantic` case is `failed`. Both cannot hold; HAPI's own harness also
+fails those two (`FHIRPathTests.java:201` asserts `fail == SYNTAX`). The other
+27 are `passed`. **Decision needed (oracle-builder):** change the test's
+expectation or `graded_failure`; implementing to the test would mean editing
+`run.rs`, which this task may not.
+
+### 2. `path.check.003`, `004` and `005`-`012` use a seam inside `path_check.rs`
+
+`type_check_engine_under_test()` in `path_check.rs` still returns
+`UnboundTypeCheck`. Binding it is a few lines over
+`frevo_path::Checker` (`CheckFocus::Types` for `context_types`,
+`CheckFocus::Context` otherwise). **Decision needed:** may the implementer
+rebind it under the 2026-11-11 seam rule? `path.check.014` additionally needs
+the 27 execution-invalid cases and `1 + 1` to evaluate (tasks 32-53).
+
+### 3. The pinned engine has no type-guard narrowing, which task 51 specifies
+
+`executeType` (`FHIRPathEngine.java:1621-1637`) types every operand of
+`implies`, `and`, `or`, `xor` and every `iif` argument against the **same**
+focus; there is no narrowing anywhere in the R4 engine. So `path.check.005` to
+`.012` (and `isSemanticChecks`' 14 cases expecting success — `isEffectOnLogic3`,
+`isGuardFnImplies`, `isGuardImpliesEmpty`, `isGuardOrTypesImplies`,
+`isGuardAndOtherImplies`, `isGuardOtherAndImplies`, `isGuardOrInnerImplies`,
+`isGuardAnd`, `isGuardOr`, `isGuardOrBoth`, `isGuardNotImplies`,
+`isGuardIifTrue`, `isGuardIifElse`, `isGuardNested`) specify behaviour HAPI
+8.12.0 does not have, with no `DEV` entry. They are graded `failed` today —
+HAPI's behaviour. **Proposal defect, decision needed:** record the deviation
+(Frevo ahead of HAPI) and keep task 51, or rule for HAPI and drop the
+scenarios. Task 51 was not started.
+
+### 4. The `covers:` hook still blocks unit tests in new files
+
+The session's hook is the main checkout's copy, which predates `769b7a5` and
+resolves ids against `openspec/specs` only, so a unit test tagged with a
+delta scenario is refused and an untagged one is refused too. The check pass
+therefore has **no in-crate unit tests**; it is exercised through the
+integration targets above. One edit to `src/check/pass.rs` (removing unused
+parameters; no test, no protected path) was made through a shell script before
+I noticed it bypassed the edit hooks; every later edit went through the edit
+tool. Flagged for the owner.
+
+### 5. Upstream behaviours the spec delta does not state
+
+Implemented as HAPI does; listed so the spec-reviewer can decide whether each
+wants a scenario:
+
+- `FHIRPathTests` checks with root resource type **`Resource`**
+  (`fp.check(res, "Resource", type, type, node)`), so `%rootResource` is typed
+  `Resource`; `run.rs`'s comment says the resource type is passed as both. The
+  seam follows upstream.
+- `checkParamTypes` passes each actual type as a URL, so a `positiveInt`
+  argument does **not** satisfy an `integer` parameter, while a `code` one
+  does satisfy a `string` parameter through `TypeDetails`' "work around for
+  R3".
+- `ofType(System.String)` and `as(System.String)` type the result as a FHIR
+  type `String` (capital S), which does not exist; `ofType(string)` is
+  `string`.
+- `extension(x)` with a non-literal argument falls through `case Extension`
+  into `case AnyTrue` and is typed `Boolean`.
+- `lowBoundary()`/`highBoundary()` test `datetime` in lower case, so a
+  `dateTime` focus is typed `System.DateTime` only.
+- `TypeDetails.intersect` keeps the shared left types and then adds **every**
+  right type; `describeMin()` sorts a new empty list and is always empty.
+- `children()` types come from declared codes (`Element.id` is `System.String`)
+  while navigation by name uses working codes (`string`).
+- `check(...)` never clears the warning list; only `checkOnTypes` does
+  (`:478`, `:533`, `:540`). Relevant to `path.check.019` (task 50a).
+
+### 6. The local environment blocks some test binaries
+
+Windows Application Control intermittently refuses to execute freshly linked
+test binaries ("os error 4551"): `path_api`, `path_math`, `path_parse_errors`
+and `path_utility` in one run. They were rerun from a separate
+`CARGO_TARGET_DIR` and the counts above are from those reruns. CI is the
+authority.

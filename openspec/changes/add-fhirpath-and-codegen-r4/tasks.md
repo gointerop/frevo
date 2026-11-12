@@ -945,6 +945,18 @@ checkpoint because it changes what a gate measures.
   skippable as `FhirPathR4` skips it.
   Satisfies `path.check.001`, `path.check.002`, `path.check.003`,
   `path.check.004`, `path.check.013`, `path.check.014`.
+  **Implemented, not ticked.** `path_check` is 2 of 14 (`001`, `013`). The
+  pass is `crates/frevo-path/src/check/`, a port of `executeType` and
+  `TypeDetails` whose per-function rules are a signature table
+  (`check/signature.rs`); anything it cannot type is
+  `CheckError::NotImplemented`. The oracle seam's `check` is bound: the run
+  goes from 1,073 did-not-run / 111 failed / 7 passed to 1,019 / 126 / 46,
+  with 27 of the 29 semantic-invalid cases failing at the check. `002`
+  contradicts the harness's grading of the two parse-stage cases; `003`, `004`
+  and `005`-`012` drive a seam inside `path_check.rs` that was not rebound;
+  `014` needs evaluation. The `Model` trait gained five check-pass methods,
+  which `R4Model` does not implement yet (`DEBT-0012`). See
+  `tasks/blockers.md`, 2026-11-12, "task 50".
 
 - [ ] **50a. Implement the check pass's warning channel.** The surface that
   returns a warning list beside the inferred type; a warning never failing the
@@ -963,6 +975,11 @@ checkpoint because it changes what a gate measures.
   and `iif`; the unreachable-operand rule when the narrowed set is empty; and a
   multi-type `contextType`. This is the `isSemanticChecks` group.
   Satisfies `path.check.005` through `path.check.012`.
+  **Not started.** The pinned R4 engine has no narrowing at all
+  (`FHIRPathEngine.java:1621-1637` types every operand against the same
+  focus), so these scenarios are ahead of HAPI with no deviation entry; the
+  owner's decision is pending in `tasks/blockers.md`, 2026-11-12, "task 50",
+  finding 3. The multi-type `contextType` half already works (`checkOnTypes`).
 
 - [ ] **52. Implement the strictness configuration and the four remaining engine
   settings.** The non-strict default, which comes from the engine's own

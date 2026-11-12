@@ -36,7 +36,7 @@ against the specification and the oracles, not from upstream source), `empty`
 |---|---|---|---|---|
 | `frevo-codegen` | empty | — | — | — |
 | `frevo-model` | empty | — | (will be `generated` from R4 StructureDefinitions) | — |
-| `frevo-path` | derived | `org.hl7.fhir.core` | `org.hl7.fhir.r4/.../r4/fhirpath/{FHIRLexer,ExpressionNode,FHIRPathEngine,FHIRPathConstant}.java`, `org.hl7.fhir.r4/.../r4/model/IdType.java`, `org.hl7.fhir.utilities/.../Utilities.java` | `73c432b5f43ddbce979978a760ec4aa81e929094` |
+| `frevo-path` | derived | `org.hl7.fhir.core` | `org.hl7.fhir.r4/.../r4/fhirpath/{FHIRLexer,ExpressionNode,FHIRPathEngine,FHIRPathConstant,TypeDetails}.java`, `org.hl7.fhir.r4/.../r4/model/IdType.java`, `org.hl7.fhir.utilities/.../Utilities.java` | `73c432b5f43ddbce979978a760ec4aa81e929094` |
 | `frevo-convert` | empty | — | — | — |
 | `frevo-package` | empty | — | — | — |
 | `frevo-validator` | empty | — | — | — |
@@ -61,7 +61,12 @@ against the specification and the oracles, not from upstream source), `empty`
 — is the first derived code in the repository, and its evaluator core —
 `src/eval/{mod,navigate}.rs`, from `FHIRPathEngine.java`'s `execute`,
 `getChildrenByName`, `filterIdType`, `funcItem`, `funcChildren` and
-`funcDescendants` and from `IdType.java`'s `setValue` — the second. Each file
+`funcDescendants` and from `IdType.java`'s `setValue` — the second. Its static
+check pass — `src/check/{mod,pass,signature,types}.rs`, from
+`FHIRPathEngine.java`'s `check`, `checkOnTypes`, `executeType`,
+`operateTypes`, `resolveConstantType`, `evaluateFunctionType`,
+`checkParamTypes`, the `checkContext*` family and `getChildTypesByName`, and
+from `TypeDetails.java` — the third. Each file
 carries the required header naming the upstream path, the pinned SHA and what
 was modified. Every
 other row is updated by the change that first ports into that crate;

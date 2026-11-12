@@ -315,3 +315,30 @@ them is the whole reason that decision is safe to make.
 - **Reviewed:** not yet. Raised 2026-11-12 with `DEV-0011`, which is itself
   awaiting the owner at the next phase boundary. Recorded now rather than at
   sign-off because the obligation exists the moment the fallback ships.
+
+### DEBT-0012 — the check pass cannot run over `frevo-model`'s `R4Model`
+
+- **Area:** path
+- **Origin:** change `add-fhirpath-and-codegen-r4`, task 50
+  (`crates/frevo-path/src/check/`, `crates/frevo-path/src/seam/model.rs`)
+- **Owed:** implement the five `Model` methods the check pass added —
+  `elements`, `specializations`, `resource_type_names`, `type_names` and
+  `has_definition_url` — on `R4Model` in `crates/frevo-model/src/codec/nav.rs`,
+  from the generated tables (which already carry each element's cardinality and
+  types), producing backbone types named by path and both type lists
+  (`ElementInfo::types` and `::codes`) as the harness's StructureDefinition
+  model does in `crates/frevo-path/tests/oracle/engine.rs`.
+- **Why deferred:** the task-50 implementer may not edit `crates/frevo-model`.
+  The methods default to `None`, so `frevo-model` compiles unchanged and the
+  check pass answers `CheckError::NotImplemented` over it — never a verdict.
+- **Cost if unpaid:** nothing can type-check an expression over the generated
+  model: every check over `R4Model` is not-implemented, so a consumer that
+  validates a search parameter or an invariant before evaluating it gets no
+  check at all. The oracle is unaffected; it checks over the pinned package.
+- **Trigger:** the first caller that checks over `R4Model` — task 57, if it
+  checks the generated search-parameter expressions as well as parsing them,
+  or the server's search-parameter registration, whichever comes first.
+- **Size:** small. The tables hold the data; the work is the five accessors and
+  a differential test that `R4Model` and the package model answer the same.
+- **Status:** open
+- **Reviewed:** not yet. Raised 2026-11-12 by the task-50 implementer.
