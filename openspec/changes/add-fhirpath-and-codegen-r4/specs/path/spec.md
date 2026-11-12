@@ -2090,18 +2090,24 @@ it. Like the pinned engine, it SHALL NOT narrow a type on a type guard
   check — `isSemanticChecks/isEffectOnLogic3`, `isGuardOrTypesImplies` and
   `isGuardNotImplies` (`tests-fhir-r4.xml:1690-1693`, `:1717-1720`,
   `:1781-1784`) — end at the **check** stage and are graded `failed`. HAPI's own
-  run fails all three too (its harness checks against the `Observation` root,
-  which is not a primitive either), so under `path.oracle.012` this is parity,
-  not a gap and not `ahead-of-hapi`
+  run fails all three too, because its harness checks against the `Observation`
+  root, which is not a primitive either. Under `path.oracle.012` this is parity,
+  not a gap and not `ahead-of-hapi`. HAPI's recorded status is `failed` for
+  `isEffectOnLogic3` and `isGuardOrTypesImplies`, and `hapi-cannot-pass` for
+  `isGuardNotImplies`, which shares its expression with `isGuardNotImpliesBad`
+  (`path.oracle.016`)
 - **AND** the same guard passes the check when the focus does include a
   primitive: with `dateTime` as the context type (`isEffectOnLogic2`) and with no
   context type, where the focus is the whole `effective[x]` choice set
   (`isEffectOnLogic1`, `isGuardOrTypesImpliesAll`); those cases' graded status
-  is then decided by evaluation
+  is then decided by evaluation. HAPI's recorded status for
+  `isGuardOrTypesImpliesAll` is `hapi-cannot-pass` (`path.oracle.016`)
 - **AND** every `implies`-guard case the suite expects to fail the check fails
   it and is graded `passed`: `isGuardImpliesBad`, `isGuardOrTypesImpliesBad`,
   `isGuardOrFnTypesImpliesBad`, `isGuardNotImpliesBad`, `isGuardSupertypeBad`
-  and `isGuardOtherExpressionBad`
+  and `isGuardOtherExpressionBad`. HAPI's recorded status for
+  `isGuardOrTypesImpliesBad` and `isGuardNotImpliesBad` is `hapi-cannot-pass`
+  (`path.oracle.016`)
 
 #### Scenario: [path.check.006] the same expression without the guard fails the check
 
@@ -2112,6 +2118,8 @@ it. Like the pinned engine, it SHALL NOT narrow a type on a type guard
   (`isSemanticChecks/isEffectOnLogic3Base`, graded `passed`)
 - **AND** with `dateTime` as the context type (`isEffectOnLogic2Base`) or with no
   context type (`isEffectOnLogic1Base`) the same expression passes the check
+- **AND** HAPI's recorded status for `isEffectOnLogic2Base` and
+  `isEffectOnLogic3Base` is `hapi-cannot-pass` (`path.oracle.016`)
 - **AND** for each of those three context types the guarded expression of
   `path.check.005` and this unguarded one get the **same** check outcome: the
   guard changes nothing the check pass observes
@@ -2177,8 +2185,9 @@ it. Like the pinned engine, it SHALL NOT narrow a type on a type guard
 - **AND** with `Period|dateTime` as the context type the same `or` expression
   (`isGuardOr2`) and its `xor` counterpart (`isGuardXorBad2`) pass the check,
   because the focus then includes a primitive (`path.check.012`); their graded
-  status is then decided by evaluation. HAPI's recorded status for
-  `isGuardXorBad2` is `hapi-cannot-pass` (`path.oracle.016`)
+  status is then decided by evaluation. HAPI's recorded status for both
+  `isGuardOr2` and `isGuardXorBad2` is `hapi-cannot-pass`. `isGuardOr2` shares
+  its expression with `isGuardOr` and `isGuardOrBad` (`path.oracle.016`)
 
 #### Scenario: [path.check.010] `iif` checks both branches against the unnarrowed focus
 
@@ -2683,17 +2692,38 @@ The oracle harness SHALL run every case in the vendored suite without modifying 
 
 #### Scenario: [path.oracle.016] a case HAPI structurally cannot pass is recorded as such, and Frevo is graded on its own run
 
-- **WHEN** the harness runs a pair of cases whose expressions are byte-identical
-  and which differ only by their `context` and `contextType` attributes —
-  `isSemanticChecks/isEffectOnLogic2Base` and `isEffectOnLogic3Base`,
-  `isGuardOr` and `isGuardOrBad`, `isGuardXorBad` and `isGuardXorBad2`,
-  `isGuardOrInnerImplies` and `isGuardOrInnerImpliesBad`
-- **THEN** each case's HAPI status is recorded as `hapi-cannot-pass`, a status
-  distinct from `failed`, because the pinned R4 harness reads none of `mode`,
-  `context`, `contextType` or `version` and always checks against the resource
-  root, so it necessarily fails one of each pair
+- **WHEN** the harness runs a group of two or more cases that have a
+  byte-identical expression and the same `inputfile`, that differ only by their
+  `context` and `contextType` attributes, and whose expected outcomes differ
+  (an `invalid` value, or a different output)
+- **THEN** each case in the group has its HAPI status recorded as
+  `hapi-cannot-pass`, a status distinct from `failed`. The pinned R4 harness
+  reads none of `mode`, `context`, `contextType` or `version` and always checks
+  against the resource root (`FHIRPathTests.java:219-224`), so it gives every
+  case in the group the same outcome and necessarily fails at least one
+- **AND** in the pinned suite that rule selects exactly six groups, 13 cases, all
+  in `isSemanticChecks`. They were computed mechanically by grouping every
+  `<test>` in `tests-fhir-r4.xml` on expression text and `inputfile`:
+  - `isEffectOnLogic2Base`, `isEffectOnLogic3Base`
+  - `isGuardOr`, `isGuardOr2`, `isGuardOrBad`
+  - `isGuardXorBad`, `isGuardXorBad2`
+  - `isGuardOrInnerImplies`, `isGuardOrInnerImpliesBad`
+  - `isGuardOrTypesImpliesBad`, `isGuardOrTypesImpliesAll`
+  - `isGuardNotImplies`, `isGuardNotImpliesBad`
+- **AND** the only other groups sharing an expression but differing in
+  `context`/`contextType` are excluded, because their expected outcomes are
+  identical, so HAPI is not forced to fail any of them. Their HAPI status is
+  whatever HAPI's run measures:
+  - `isEffectOnLogic1` and `isGuardImpliesEmpty`
+  - `isEffectOnLogic2` and `isEffectOnLogic3`
 - **AND** Frevo's status for those cases comes from its own context-aware run,
-  which honours all four attributes (`path.oracle.002`)
+  which honours all four attributes (`path.oracle.002`). It is **not** `passed`
+  for every member: `isGuardOr`, `isGuardOrInnerImplies` and `isGuardNotImplies`
+  end at the check stage graded `failed`, because the check pass does not
+  narrow (`path.check.005`, `path.check.009`). The six "Bad" cases and
+  `isEffectOnLogic3Base` fail the check and are graded `passed`. Evaluation
+  decides `isEffectOnLogic2Base`, `isGuardOr2`, `isGuardXorBad2` and
+  `isGuardOrTypesImpliesAll`
 - **AND** `path.check.002` is graded against that context-aware run, not against
   HAPI's status, so requiring all 29 semantic-invalid cases to fail the check is
   consistent with the aggregate gate rather than stricter than it

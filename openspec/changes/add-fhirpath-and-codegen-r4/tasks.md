@@ -90,12 +90,23 @@ checkpoint because it changes what a gate measures.
   aggregate. Confirm and record that all 115 `documentFunctions` cases fail for
   HAPI too, with the reason that the R4 `ExpressionNode.Function` enum
   implements none of the seven functions. Record a status of `hapi-cannot-pass`,
-  distinct from `failed`, for the `isSemanticChecks` pairs whose expressions are
-  byte-identical and differ only by `context`/`contextType` —
-  `isEffectOnLogic2Base`/`isEffectOnLogic3Base`, `isGuardOr`/`isGuardOrBad`,
-  `isGuardXorBad`/`isGuardXorBad2`,
-  `isGuardOrInnerImplies`/`isGuardOrInnerImpliesBad` — because the pinned R4
-  harness reads neither attribute and so necessarily fails one of each pair.
+  distinct from `failed`, for every case in a group whose expressions are
+  byte-identical, which share an `inputfile`, which differ only by
+  `context`/`contextType`, and whose expected outcomes differ. The pinned R4
+  harness reads neither attribute and so necessarily fails at least one case of
+  each group. Computed mechanically over the pinned suite, that is six groups
+  and 13 cases, all in `isSemanticChecks`:
+  `isEffectOnLogic2Base`/`isEffectOnLogic3Base`,
+  `isGuardOr`/`isGuardOr2`/`isGuardOrBad`, `isGuardXorBad`/`isGuardXorBad2`,
+  `isGuardOrInnerImplies`/`isGuardOrInnerImpliesBad`,
+  `isGuardOrTypesImpliesBad`/`isGuardOrTypesImpliesAll` and
+  `isGuardNotImplies`/`isGuardNotImpliesBad`. Two groups share an expression
+  but have identical expected outcomes, so they are not `hapi-cannot-pass`:
+  `isEffectOnLogic1`/`isGuardImpliesEmpty` and
+  `isEffectOnLogic2`/`isEffectOnLogic3`. A group is not always `passed` on
+  Frevo's run either: `isGuardOr`, `isGuardOrInnerImplies` and
+  `isGuardNotImplies` fail the check, because the check pass does not narrow
+  (`path.oracle.016`).
   Satisfies `path.oracle.011`, `path.oracle.012`, `path.oracle.014`,
   `path.oracle.016`.
 
