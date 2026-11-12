@@ -585,6 +585,63 @@ for h in require-active-change protect-paths test-integrity guard-bash stop-guar
   fi
 done
 
+
+# ==========================================================================
+# Block messages must not execute anything
+# ==========================================================================
+# `block` bodies are unquoted heredocs, so a backtick in a message is command
+# substitution: the shell runs whatever is between them, prints its error to
+# the same stream as the block message, and replaces the text with the output.
+# One such line shipped -- "declared with `pub mod r4;`" -- which emitted
+# "pub: command not found" and silently dropped the words from the remedy.
+#
+# Exit codes cannot see this: the hook still blocked, so all 90 cases passed.
+# This scans the sources instead.
+_run "protect-paths.sh" "$(json_edit Write crates/frevo-model/src/r4/t.rs 'x')"
+if printf '%s' "$OUT" | grep -q 'command not found'; then
+  FAIL=$((FAIL+1)); FAILED_NAMES="$FAILED_NAMES
+    - a block message executed a command (see its output)"
+  printf '  FAIL a block message executed a command
+'
+else
+  PASS=$((PASS+1))
+  [ "$VERBOSE" -eq 1 ] && printf '  ok   no block message executes a command
+'
+fi
+
+if "$PY" -I - "$SRC_ROOT" <<'PYLINT'
+import glob, io, os, re, sys
+BT = chr(96)
+root = sys.argv[1]
+bad = []
+for f in sorted(glob.glob(os.path.join(root, ".claude", "hooks", "*.sh"))):
+    inside = False
+    for i, l in enumerate(io.open(f, encoding="utf-8").read().splitlines(), 1):
+        if re.search(r"<<EOF\s*$", l):
+            inside = True; continue
+        if inside and l.strip() == "EOF":
+            inside = False; continue
+        if inside:
+            prev = ""
+            for ch in l:
+                if ch == BT and prev != "\\":
+                    bad.append("%s:%d" % (os.path.basename(f), i)); break
+                prev = ch
+for b in bad:
+    print("  unescaped backtick in an unquoted heredoc: %s" % b)
+sys.exit(1 if bad else 0)
+PYLINT
+then
+  PASS=$((PASS+1))
+  [ "$VERBOSE" -eq 1 ] && printf '  ok   no unescaped backtick in any block message
+'
+else
+  FAIL=$((FAIL+1)); FAILED_NAMES="$FAILED_NAMES
+    - an unescaped backtick inside an unquoted heredoc (it would be executed)"
+  printf '  FAIL an unescaped backtick inside an unquoted heredoc
+'
+fi
+
 # ==========================================================================
 echo
 echo "=============================================="
