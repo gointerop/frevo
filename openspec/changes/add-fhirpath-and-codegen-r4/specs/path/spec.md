@@ -2063,9 +2063,15 @@ it. Like the pinned engine, it SHALL NOT narrow a type on a type guard
 - **WHEN** `$this is dateTime implies $this.toString().length() > 10` is checked
   with `Observation.effective` as the context and `Period` as the context type
 - **THEN** the check **fails** with the primitive-only diagnostic for
-  `toString` — message id `FHIRPATH_PRIMITIVE_ONLY`, "The function toString can
-  only be used on primitives" (`Messages.properties:353`) — the same diagnostic
-  the unguarded expression of `path.check.006` produces
+  `toString`. Its message id is `FHIRPATH_PRIMITIVE_ONLY` and its message is
+  exactly `Error evaluating FHIRPath expression: The function toString can only
+  be used on primitives`: the template at `Messages.properties:353` with `{0}`
+  bound to `toString`, which `makeException` passes through unchanged
+  (`ENGINE:584-594`). It appends a location suffix only when the engine's
+  `location` is set, and neither `FHIRPathTests` nor the oracle harness sets it. This is the same
+  diagnostic the unguarded expression of `path.check.006` produces. Wherever
+  `path.check.006` to `.012` name "the `FHIRPATH_PRIMITIVE_ONLY` diagnostic for
+  `toString`", they mean this exact message
 - **AND** this is HAPI 8.12.0's behaviour: `executeType` types every operand of
   an operator chain against the **same** focus (`ENGINE:1621-1637`); the `is`
   operator types to `Boolean` and leaves the focus unchanged
@@ -2157,15 +2163,22 @@ it. Like the pinned engine, it SHALL NOT narrow a type on a type guard
   left operand false when typing its right
 - **AND** so the three `or`-guard cases the suite expects to pass the check —
   `isSemanticChecks/isGuardOr`, `isGuardOrBoth` and `isGuardOrInnerImplies` —
-  end at the check stage and are graded `failed`, as they are for HAPI
-- **AND** the `or` and `xor` cases the suite expects to fail the check fail it
-  and are graded `passed`: `isGuardOrBad`, `isGuardOrOtherImpliesBad`,
+  end at the check stage, and Frevo grades all three `failed`
+- **AND** HAPI's recorded status for `isGuardOrBoth` is `failed`. For
+  `isGuardOr` and `isGuardOrInnerImplies` it is `hapi-cannot-pass`, because
+  each is one half of a `path.oracle.016` pair whose expressions are
+  byte-identical and differ only by `contextType`
+- **AND** the `or` and `xor` cases the suite expects to fail the check fail it,
+  and Frevo grades them `passed`: `isGuardOrBad`, `isGuardOrOtherImpliesBad`,
   `isGuardOrOtherImpliesNoParensBad`, `isGuardOrInnerImpliesBad` and
-  `isGuardXorBad`
+  `isGuardXorBad`. HAPI's recorded status for `isGuardOrBad`,
+  `isGuardOrInnerImpliesBad` and `isGuardXorBad` is likewise
+  `hapi-cannot-pass` (`path.oracle.016`)
 - **AND** with `Period|dateTime` as the context type the same `or` expression
   (`isGuardOr2`) and its `xor` counterpart (`isGuardXorBad2`) pass the check,
   because the focus then includes a primitive (`path.check.012`); their graded
-  status is then decided by evaluation
+  status is then decided by evaluation. HAPI's recorded status for
+  `isGuardXorBad2` is `hapi-cannot-pass` (`path.oracle.016`)
 
 #### Scenario: [path.check.010] `iif` checks both branches against the unnarrowed focus
 
