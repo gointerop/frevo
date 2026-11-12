@@ -282,3 +282,36 @@ them is the whole reason that decision is safe to make.
   HAPI's with no configuration flag, so this entry is what carries the
   obligation forward: it was recorded before the sign-off rather than after,
   because the obligation exists the moment the behaviour is matched.
+
+### DEBT-0011 — a decimal literal above 38 significant digits is refused, not carried
+
+- **Area:** path
+- **Origin:** `DEV-0011`, change `add-fhirpath-and-codegen-r4`
+- **Owed:** an arbitrary-precision decimal behind `frevo-path`'s literal and
+  arithmetic paths, so that a literal HAPI carries as a `BigDecimal` is carried
+  rather than refused. `design.md` section 6 names the 128-bit mantissa as a
+  fallback, and this is the obligation that fallback incurs.
+- **Why deferred:** the fallback was chosen so that tasks 28-30 could land
+  without an arbitrary-precision type, which `frevo-model`'s codec also needs
+  (`model.json.010` asserts that a 40-digit decimal survives a round trip
+  without passing through an `f64`). Building one type for both, once, is
+  cheaper and less likely to disagree with itself than building two.
+- **Cost if unpaid:** `Utilities.isDecimal` accepts a decimal literal of any
+  width and `new DecimalType(String)` holds it as a `BigDecimal`, so HAPI
+  evaluates an expression Frevo refuses to parse. An invariant or a search
+  parameter carrying such a literal fails at parse time on Frevo and works on
+  HAPI — a differential diff on an expression that is valid FHIRPath, which is
+  the kind of gap that is found by a customer rather than by the gate, because
+  no case in the pinned suite has one.
+- **Trigger:** whichever comes first — the arbitrary-precision decimal
+  `frevo-model` needs for `model.json.010`, since the same type serves both; or
+  the first differential diff, pinned-suite case or consumer expression
+  carrying a decimal literal above 38 significant digits.
+- **Size:** medium. The type is the work, not the wiring: the literal path, the
+  arithmetic operators and the comparison operators all have to take it, and
+  `path.literal.004`'s precision-preservation requirement means the presented
+  form has to survive alongside the value.
+- **Status:** open
+- **Reviewed:** not yet. Raised 2026-11-12 with `DEV-0011`, which is itself
+  awaiting the owner at the next phase boundary. Recorded now rather than at
+  sign-off because the obligation exists the moment the fallback ships.

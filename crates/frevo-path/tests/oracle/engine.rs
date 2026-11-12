@@ -187,11 +187,96 @@ pub trait SuiteEngine {
 
 /// The engine the oracle grades.
 ///
-/// Phase D (tasks 28-54) replaces this body with the real engine. Until then
-/// every case reports `did-not-run`: the suite is wired up and grading, and it
-/// is grading nothing yet, which is exactly the state the project is in.
+/// Tasks 28, 29 and 30 built the front end, so `configure` and `parse` are
+/// real and the remaining three stages are not. `check`, `evaluate` and
+/// `convert_to_boolean` answer [`EngineError::NotImplemented`], which is
+/// `did-not-run` and never a pass: of the 1,191 cases, the ones whose
+/// expression the parser rejects are graded against their `invalid` attribute
+/// and every other case is reported as having not run. Returning an empty
+/// result or a default from a stage that does not exist would turn a thousand
+/// unrun cases into graded passes and failures that mean nothing, which is the
+/// one thing this seam exists to prevent.
 pub fn engine_under_test() -> Box<dyn SuiteEngine> {
-    Box::new(UnboundEngine)
+    Box::new(FrontEndEngine {
+        config: None,
+        parsed: Vec::new(),
+        unbound: UnboundEngine,
+    })
+}
+
+/// The binding for the front end: the lexer, the literal forms and the parser.
+struct FrontEndEngine {
+    config: Option<EngineConfig>,
+    /// Every expression this engine has parsed, kept so a [`ParsedHandle`]
+    /// resolves and an expression is parsed once however often it is used
+    /// (`path.parse.001`).
+    parsed: Vec<frevo_path::Expression>,
+    /// The three stages that do not exist yet, answered by the binding below
+    /// rather than by a second copy of the same `NotImplemented`, so there is
+    /// one place in this file that says "not built yet".
+    unbound: UnboundEngine,
+}
+
+impl SuiteEngine for FrontEndEngine {
+    fn configure(&mut self, config: &EngineConfig) -> Result<(), EngineError> {
+        // Nothing the front end does depends on the configuration: the
+        // evaluation time zone, the host services and the SQL-on-FHIR warning
+        // are all read by stages that do not exist yet. It is recorded rather
+        // than ignored so that the stage which starts reading it finds it
+        // here.
+        self.config = Some(*config);
+        Ok(())
+    }
+
+    fn parse(&mut self, expression: &str) -> Result<ParsedHandle, EngineError> {
+        // No host services are passed, and that is not a shortcut: the suite
+        // installs `FHIRPathTestEvaluationServices`, whose `resolveFunction`
+        // **raises** for every name (`FHIRPathTests.java:72-76`), so no name
+        // the R4 `Function` table lacks ever resolves as a custom function.
+        // Upstream's raise and this parser's "not a valid function name" are
+        // the same outcome at the same stage.
+        match frevo_path::Expression::parse(expression) {
+            Ok(parsed) => {
+                self.parsed.push(parsed);
+                Ok(ParsedHandle(self.parsed.len() - 1))
+            }
+            Err(e) => Err(EngineError::Diagnostic {
+                message: e.message().to_string(),
+                offset: Some(e.offset()),
+            }),
+        }
+    }
+
+    fn check(
+        &mut self,
+        parsed: ParsedHandle,
+        context: &CaseContext<'_>,
+        flags: StrictnessFlags,
+    ) -> Result<(), EngineError> {
+        self.unbound.check(parsed, context, flags)
+    }
+
+    fn evaluate(
+        &mut self,
+        parsed: ParsedHandle,
+        input: Option<&SuiteInput>,
+        context: &CaseContext<'_>,
+        flags: StrictnessFlags,
+    ) -> Result<Vec<ResultItem>, EngineError> {
+        self.unbound.evaluate(parsed, input, context, flags)
+    }
+
+    fn convert_to_boolean(&mut self, items: &[ResultItem]) -> Result<bool, EngineError> {
+        self.unbound.convert_to_boolean(items)
+    }
+
+    fn has_log(&self) -> bool {
+        self.unbound.has_log()
+    }
+
+    fn take_log(&mut self) -> String {
+        self.unbound.take_log()
+    }
 }
 
 /// The binding used while `frevo-path` has no engine.

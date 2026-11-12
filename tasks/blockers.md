@@ -829,3 +829,43 @@ required elements the other fixtures omit too). The separate channel that task
 **Decision needed.** Whether the three cardinality scenarios want a Frevo-only
 diagnostic at all, and if so on which channel; and a correction to the design's
 callback table.
+## 2026-11-12 — `add-fhirpath-and-codegen-r4` — tasks 28-30 cannot turn their own tests green
+
+**Raised by** the implementer of tasks 28, 29 and 30 (the `frevo-path` front
+end: lexer, literals, parser and precedence), on
+`change/add-fhirpath-and-codegen-r4-path-frontend`.
+
+The three tasks are complete as specified, and 30 of the 37 scenarios they
+"satisfy" still have red tests — not because the behaviour is missing, but
+because the tests reach it through the whole engine. With the fetched oracle
+input tree present:
+
+| target | before | after | why the rest stay red |
+|---|---|---|---|
+| `path_lexer` | 0 of 16 | **6** of 16 | nine tests assert a suite case is `passed`, which needs evaluation; `path.lexer.016` needs the local `double_quote_oracle_under_test` binding, which task 52 owns |
+| `path_literals` | 0 of 15 | **0** of 15 | every test calls `eval()` or `expect_case()`, so all 15 need `check` and `evaluate` |
+| `path_parse_errors` | 0 of 13 | **5** of 13 | `path.parse.001`, `.002` and `.003` evaluate; `path.errors.001`, `.002`, `.005` are task 53's |
+
+Nothing is weakened to compensate: `check`, `evaluate` and `convert_to_boolean`
+still answer `EngineError::NotImplemented`, so 1,073 of the 1,191 oracle cases
+report `did-not-run`, and the 118 that now reach a verdict are exactly the ones
+expected to fail at the parse stage (7 `invalid="syntax"` plus the 115
+`documentFunctions` cases). The front end's own behaviour is covered by 36
+in-crate unit tests, which can observe what a literal **is** and what shape the
+parser gave an expression — things the suite harness cannot see until the
+evaluator exists.
+
+**Decision needed.** Two, and both are about bookkeeping rather than code:
+
+1. whether tasks 28-30 may be ticked while their integration tests are red, or
+   whether the task graph should say that `path.lexer.001`-`.011`,
+   `path.literal.*` and `path.parse.001`-`.003` only go green with the
+   evaluator (tasks 31 onward). The second reading is the accurate one: the
+   oracle-builder wrote each scenario's test against the engine's public
+   behaviour, which is right, and it makes "satisfies" mean "is implemented by"
+   rather than "is demonstrated by this task alone";
+2. whether a later task should own the restatement, so the gate report does not
+   read as 30 regressions.
+
+Not a `docs/known-gaps.md` entry: every one of those tests passes once the
+stages they call exist. Nothing here needs an exception.

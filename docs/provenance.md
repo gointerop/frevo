@@ -36,7 +36,7 @@ against the specification and the oracles, not from upstream source), `empty`
 |---|---|---|---|---|
 | `frevo-codegen` | empty | — | — | — |
 | `frevo-model` | empty | — | (will be `generated` from R4 StructureDefinitions) | — |
-| `frevo-path` | empty | — | — | — |
+| `frevo-path` | derived | `org.hl7.fhir.core` | `org.hl7.fhir.r4/.../r4/fhirpath/{FHIRLexer,ExpressionNode,FHIRPathEngine,FHIRPathConstant}.java`, `org.hl7.fhir.utilities/.../Utilities.java` | `73c432b5f43ddbce979978a760ec4aa81e929094` |
 | `frevo-convert` | empty | — | — | — |
 | `frevo-package` | empty | — | — | — |
 | `frevo-validator` | empty | — | — | — |
@@ -57,6 +57,9 @@ against the specification and the oracles, not from upstream source), `empty`
 | `frevo-config` | empty | — | — | — |
 | `frevo-server` | independent | — | — | — |
 
-No crate contains derived upstream logic yet. Each row is updated by the change
-that first ports into that crate; `openspec-guard` checks that a crate whose
-sources gained a provenance header also gained a row here.
+`frevo-path`'s front end — `src/syntax/{lexer,literal,parser,ast,error,source}.rs`
+— is the first derived code in the repository. Each file carries the required
+header naming the upstream path, the pinned SHA and what was modified. Every
+other row is updated by the change that first ports into that crate;
+`openspec-guard` checks that a crate whose sources gained a provenance header
+also gained a row here.
