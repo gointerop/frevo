@@ -623,6 +623,25 @@ checkpoint because it changes what a gate measures.
   the modified flag; a same-value write still marking modified; splicing at a
   contained resource's boundary; the `meta` update path.
   Satisfies `model.mutate.001` through `model.mutate.007`.
+  **Implemented, not ticked.** `model_mutate` is 6 of 7 (it was 0 of 7).
+  `Stored` records each write as a replaced input span (an insertion for an
+  append, an empty replacement for a removal) and `write_traced` reports
+  every output run as spliced from the input or newly encoded; a write inside
+  a resource below the root re-encodes that resource whole. The red one is
+  `model.mutate.007`, and only on its last assertion (`model_mutate.rs:578`):
+  every byte outside `meta` is spliced, but the test also requires a file
+  under `bench/micro/` naming the `model-meta-update` workload, which is task
+  27's deliverable and was not created here. It goes green when task 27
+  lands. Measured with the `model.perf.004` workload in
+  `model_bytes_lazy_perf.rs`, release build, median of five runs each: the
+  4 KiB metadata update went from 3.8 us to 4.1 us and the 64 KiB one stayed
+  at about 49 us (noise 48-75 us on both sides). That test was already red
+  before this task on its 25% spread, and still is: the 64 KiB cost is the
+  harness's own two whole-buffer copies, not the splice. Paths address the
+  document as loaded, so a write below an element an earlier write removed
+  is refused rather than applied to shifted indices. Append and remove are
+  not implemented on a constructed (`Built`) resource and return an error
+  saying so.
 
 - [x] **25. Implement `Node` and `Model` over `frevo-model`.** Type names at
   resource, backbone and primitive level; children by element name in document

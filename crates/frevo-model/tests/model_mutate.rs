@@ -114,20 +114,61 @@ pub trait MutateOracle {
     fn decodes_equal(&self, a: &[u8], b: &[u8]) -> Result<bool, CodecError>;
 }
 
-/// The codec this oracle grades. Phase C replaces this body with the real one.
+/// The codec this oracle grades: `frevo_model::Resource` loaded from stored
+/// bytes, mutated in place and serialised with its provenance trace (task 24).
 fn codec_under_test() -> Box<dyn MutateOracle> {
-    Box::new(UnboundCodec)
+    Box::new(FrevoCodec)
 }
 
-struct UnboundCodec;
+struct FrevoCodec;
 
-impl MutateOracle for UnboundCodec {
-    fn mutate(&self, _bytes: &[u8], _ops: &[Op]) -> Result<MutateResult, CodecError> {
-        Err(CodecError::NotImplemented)
+impl FrevoCodec {
+    fn failed(e: impl fmt::Display) -> CodecError {
+        CodecError::Failed(e.to_string())
+    }
+}
+
+impl MutateOracle for FrevoCodec {
+    fn mutate(&self, bytes: &[u8], ops: &[Op]) -> Result<MutateResult, CodecError> {
+        let mut resource = frevo_model::Resource::from_stored(std::sync::Arc::from(bytes.to_vec()));
+        for op in ops {
+            match *op {
+                Op::Set(path, lexical) => resource.set(path, lexical),
+                Op::Append(path, values) => resource.append(path, values),
+                Op::Remove(path) => resource.remove(path),
+            }
+            .map_err(Self::failed)?;
+        }
+        let mut output = Vec::new();
+        let trace = resource.write_traced(&mut output).map_err(Self::failed)?;
+        let mut spliced = Vec::new();
+        let mut newly_encoded = Vec::new();
+        for piece in trace {
+            match piece {
+                frevo_model::codec::Provenance::Spliced { input, output_at } => {
+                    spliced.push(Splice {
+                        input: input.start..input.end,
+                        output_at,
+                    });
+                }
+                frevo_model::codec::Provenance::Encoded { output } => {
+                    newly_encoded.push(output.start..output.end);
+                }
+            }
+        }
+        Ok(MutateResult {
+            output,
+            modified: resource.is_modified(),
+            spliced,
+            newly_encoded,
+        })
     }
 
-    fn decodes_equal(&self, _a: &[u8], _b: &[u8]) -> Result<bool, CodecError> {
-        Err(CodecError::NotImplemented)
+    fn decodes_equal(&self, a: &[u8], b: &[u8]) -> Result<bool, CodecError> {
+        let decode = |bytes: &[u8]| {
+            frevo_model::decode(bytes, frevo_model::DEFAULT_PARSE_MODE).map_err(Self::failed)
+        };
+        Ok(decode(a)?.elements_equal(&decode(b)?))
     }
 }
 

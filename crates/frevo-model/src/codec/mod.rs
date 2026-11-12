@@ -38,7 +38,7 @@ use std::sync::Arc;
 pub use built::Built;
 pub use nav::{R4Model, ResourceNode};
 pub use scan::{DecodeError, Meter, Span};
-pub use stored::Stored;
+pub use stored::{Provenance, Stored};
 pub use tables::{ElementDef, JsonForm, Tables, TypeDef, TypeKind};
 
 /// The tables the codec reads: `frevo-codegen`'s generated R4 output.
@@ -213,6 +213,48 @@ impl Resource {
         match &mut self.inner {
             Inner::Stored(stored) => stored.set(path, lexical),
             Inner::Built(built) => built.set(path, lexical),
+        }
+    }
+
+    /// Append one repetition to the repeating element at `path`, with the
+    /// given primitive sub-element values (see [`Stored::append`]).
+    pub fn append(&mut self, path: &str, values: &[(&str, &str)]) -> Result<(), DecodeError> {
+        match &mut self.inner {
+            Inner::Stored(stored) => stored.append(path, values),
+            Inner::Built(_) => Err(DecodeError::new(
+                path,
+                0,
+                "append is not implemented for a constructed resource yet",
+            )),
+        }
+    }
+
+    /// Remove the element, or the one repetition, at `path` (see
+    /// [`Stored::remove`]).
+    pub fn remove(&mut self, path: &str) -> Result<(), DecodeError> {
+        match &mut self.inner {
+            Inner::Stored(stored) => stored.remove(path),
+            Inner::Built(_) => Err(DecodeError::new(
+                path,
+                0,
+                "remove is not implemented for a constructed resource yet",
+            )),
+        }
+    }
+
+    /// Serialise in the stored form and report where every byte came from.
+    /// A constructed resource has no input, so its whole output is newly
+    /// encoded.
+    pub fn write_traced(&self, out: &mut Vec<u8>) -> io::Result<Vec<Provenance>> {
+        match &self.inner {
+            Inner::Stored(stored) => stored.write_traced(out),
+            Inner::Built(built) => {
+                let at = out.len();
+                built.write(out);
+                Ok(vec![Provenance::Encoded {
+                    output: Span::new(at, out.len()),
+                }])
+            }
         }
     }
 

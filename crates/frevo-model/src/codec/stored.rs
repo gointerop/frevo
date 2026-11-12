@@ -10,9 +10,9 @@ use std::io;
 use std::sync::{Arc, Mutex};
 
 use super::doc::Doc;
-use super::path::{join, parse_path};
+use super::path::{PathStep, join, parse_path};
 use super::scan::{DecodeError, Meter, Span, escape_into};
-use super::tables::{JsonForm, Tables, TypeKind};
+use super::tables::{ElementDef, JsonForm, Tables, TypeKind};
 
 /// Where an element's two spans live: its own JSON value and its `_field`
 /// sibling. They are never merged, because a merged struct cannot represent
@@ -33,6 +33,11 @@ pub struct Located {
     pub array: Option<Span>,
     /// Whether the element repeats.
     pub repeating: bool,
+    /// The span of the innermost resource below the root that the element
+    /// sits inside, not counting the element itself: a `contained` entry or a
+    /// `Bundle.entry.resource`. A write there re-encodes that resource
+    /// (`model.mutate.006`).
+    pub boundary: Option<Span>,
 }
 
 /// The `_field` sibling, which is **not** looked up until something asks for
@@ -74,6 +79,146 @@ impl Sibling {
     }
 }
 
+/// One recorded write: the input range it replaces and what replaces it.
+///
+/// `design.md` section 3, "Mutation and splicing": a write replaces the
+/// written subtree with an owned value and records the span it replaced, and
+/// serialisation emits the new encoding at that span and copies everything
+/// else.
+#[derive(Debug, Clone)]
+struct Edit {
+    /// The input range replaced. Empty for an insertion, whose position is
+    /// `span.start`.
+    span: Span,
+    /// The bytes written in its place. Empty for a removal.
+    bytes: Vec<u8>,
+    /// The innermost resource below the root that the edit falls inside: a
+    /// `contained` entry or a `Bundle.entry.resource`. Such a resource is
+    /// re-encoded whole, so the splice is at its boundary
+    /// (`model.mutate.006`); `None` for an edit of the root resource's own
+    /// elements, which splices at the edit itself.
+    boundary: Option<Span>,
+    /// Set when the edit creates a repeating element that was absent, so a
+    /// second append to the same element extends this array rather than
+    /// creating a second property of the same name.
+    created: Option<Created>,
+    /// Set when the edit removes items of an array: the array's offset and
+    /// the indices removed, so a later removal from the same array is
+    /// computed against every index removed so far rather than overlapping
+    /// this one.
+    removed: Option<(usize, Vec<usize>)>,
+}
+
+impl Edit {
+    fn new(span: Span, bytes: Vec<u8>, boundary: Option<Span>) -> Self {
+        Self {
+            span,
+            bytes,
+            boundary,
+            created: None,
+            removed: None,
+        }
+    }
+}
+
+/// A repeating element an append created: the owning object's offset, the
+/// property name and the items appended so far.
+#[derive(Debug, Clone)]
+struct Created {
+    owner: usize,
+    property: String,
+    items: Vec<Vec<u8>>,
+    comma_before: bool,
+    comma_after: bool,
+}
+
+impl Created {
+    fn render(&self) -> Vec<u8> {
+        let mut out = Vec::new();
+        if self.comma_before {
+            out.push(b',');
+        }
+        escape_into(&self.property, &mut out);
+        out.extend_from_slice(b":[");
+        for (index, item) in self.items.iter().enumerate() {
+            if index > 0 {
+                out.push(b',');
+            }
+            out.extend_from_slice(item);
+        }
+        out.push(b']');
+        if self.comma_after {
+            out.push(b',');
+        }
+        out
+    }
+}
+
+/// Where one run of serialised output came from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Provenance {
+    /// Copied verbatim from the input buffer: the input range, and the offset
+    /// in the output at which the copy begins.
+    Spliced { input: Span, output_at: usize },
+    /// Newly encoded: the range of the output it occupies.
+    Encoded { output: Span },
+}
+
+/// One run of output, as the serialiser produces it.
+enum Chunk<'a> {
+    Original(Span),
+    New(&'a [u8]),
+}
+
+/// What [`Stored::owner_of`] answers: the owning object's span, its concrete
+/// type, the element's definition, the path's last step and the re-encoding
+/// boundary.
+type Owner<'s> = (
+    Span,
+    String,
+    &'static ElementDef,
+    &'s PathStep,
+    Option<Span>,
+);
+
+fn contains(outer: Span, inner: Span) -> bool {
+    outer.start <= inner.start && inner.end <= outer.end
+}
+
+/// An element path from its steps: `Patient.contained[0]`.
+fn render_path(steps: &[PathStep]) -> String {
+    let mut out = String::new();
+    for (position, step) in steps.iter().enumerate() {
+        if position > 0 {
+            out.push('.');
+        }
+        out.push_str(&step.name);
+        if let Some(index) = step.index {
+            out.push_str(&format!("[{index}]"));
+        }
+    }
+    out
+}
+
+/// Apply `edits`, given as ranges of `source`, into `out`.
+fn splice_into(source: &[u8], mut edits: Vec<(Span, &[u8])>, out: &mut Vec<u8>) -> io::Result<()> {
+    edits.sort_by_key(|(span, _)| (span.start, span.end));
+    let mut cursor = 0usize;
+    for (span, replacement) in edits {
+        if span.start < cursor || span.end > source.len() {
+            return Err(io::Error::other(format!(
+                "two writes overlap at byte {}",
+                span.start
+            )));
+        }
+        out.extend_from_slice(&source[cursor..span.start]);
+        out.extend_from_slice(replacement);
+        cursor = span.end;
+    }
+    out.extend_from_slice(&source[cursor..]);
+    Ok(())
+}
+
 /// A resource backed by stored bytes, with a lazily built index and a list of
 /// the spans a write has replaced.
 #[derive(Debug)]
@@ -81,7 +226,7 @@ pub struct Stored {
     doc: Doc,
     tables: Tables,
     root_type: Mutex<Option<String>>,
-    edits: Mutex<Vec<(Span, Vec<u8>)>>,
+    edits: Mutex<Vec<Edit>>,
 }
 
 impl Stored {
@@ -197,6 +342,7 @@ impl Stored {
             path: first.name.clone(),
             array: None,
             repeating: false,
+            boundary: None,
         };
         for step in rest {
             let Some(span) = located.value else {
@@ -206,6 +352,14 @@ impl Stored {
                 return Ok(None);
             }
             let owner = self.concrete_type(&located.type_name, span)?;
+            // The concrete type differs from the declared one exactly when the
+            // declared one is the abstract `Resource`: the step is entering a
+            // resource below the root.
+            let boundary = if owner != located.type_name {
+                Some(span)
+            } else {
+                located.boundary
+            };
             let def = self.tables.element(&owner, &step.name).ok_or_else(|| {
                 DecodeError::new(
                     path,
@@ -265,6 +419,7 @@ impl Stored {
                 path: join(&located.path, def.name, index),
                 array,
                 repeating: def.repeating,
+                boundary,
             };
         }
         Ok(Some(located))
@@ -369,17 +524,458 @@ impl Stored {
         let span = located
             .value
             .ok_or_else(|| DecodeError::new(path, 0, "the element has no value span to replace"))?;
-        let mut encoded = Vec::new();
-        match self.tables.json_form(&located.type_name) {
-            JsonForm::Quoted => escape_into(lexical, &mut encoded),
-            JsonForm::Boolean | JsonForm::Number => encoded.extend_from_slice(lexical.as_bytes()),
+        if !self.tables.is_primitive(&located.type_name) {
+            return Err(DecodeError::new(
+                path,
+                span.start,
+                format!(
+                    "{} is a complex element; only a primitive takes a lexical value",
+                    located.type_name
+                ),
+            ));
         }
-        let mut edits = self
-            .edits
+        let mut encoded = Vec::new();
+        self.encode_primitive(&located.type_name, lexical, &mut encoded);
+        self.record(Edit::new(span, encoded, located.boundary), path)
+    }
+
+    fn encode_primitive(&self, type_name: &str, lexical: &str, out: &mut Vec<u8>) {
+        match self.tables.json_form(type_name) {
+            JsonForm::Quoted => escape_into(lexical, out),
+            JsonForm::Boolean | JsonForm::Number => out.extend_from_slice(lexical.as_bytes()),
+        }
+    }
+
+    /// Append one repetition to the repeating element at `path`, which names
+    /// the element and not a repetition: `Patient.name`. `values` are the new
+    /// repetition's primitive sub-elements, by path relative to it
+    /// (`("family", "Delta")`); a repetition of a primitive takes exactly one
+    /// value, at the empty path.
+    ///
+    /// The new repetition is inserted after the array's last item, so every
+    /// existing entry keeps its bytes (`model.mutate.002`). An absent element
+    /// is created at its position in the generated element order.
+    pub fn append(&self, path: &str, values: &[(&str, &str)]) -> Result<(), DecodeError> {
+        let steps = parse_path(path)?;
+        let (owner, owner_type, def, last, boundary) = self.owner_of(&steps, path)?;
+        if last.index.is_some() {
+            return Err(DecodeError::new(
+                path,
+                0,
+                "an append names the repeating element, not one of its repetitions",
+            ));
+        }
+        if !def.repeating {
+            return Err(DecodeError::new(
+                path,
+                owner.start,
+                format!("{owner_type}.{} does not repeat", def.name),
+            ));
+        }
+        let item_type = def.types[0];
+        let item = self.encode_item(item_type, values, path)?;
+        match self.doc.member_bytes(owner.start, def.name.as_bytes())? {
+            Some(array) if self.doc.is_array(array) => {
+                self.insert_item(array, item, boundary, path)?;
+                if self.tables.is_primitive(item_type) {
+                    // Keep an index-aligned `_field` array aligned, rather
+                    // than leaving it one shorter than its values.
+                    let sibling = format!("_{}", def.name);
+                    if let Some(side) = self.doc.member(owner.start, &sibling)? {
+                        if self.doc.is_array(side) {
+                            self.insert_item(side, b"null".to_vec(), boundary, path)?;
+                        }
+                    }
+                }
+                Ok(())
+            }
+            Some(other) => Err(DecodeError::new(
+                path,
+                other.start,
+                "the element repeats but its JSON value is not an array",
+            )),
+            None => self.create_element(owner, &owner_type, def.name, item, boundary, path),
+        }
+    }
+
+    /// Insert one item at the end of `array`: just after its last item, or
+    /// just inside the bracket of an empty one.
+    fn insert_item(
+        &self,
+        array: Span,
+        item: Vec<u8>,
+        boundary: Option<Span>,
+        path: &str,
+    ) -> Result<(), DecodeError> {
+        let count = self.doc.item_count(array.start)?;
+        let at = match count.checked_sub(1) {
+            Some(last) => {
+                self.doc
+                    .item(array.start, last)?
+                    .ok_or_else(|| DecodeError::new(path, array.start, "an array item vanished"))?
+                    .end
+            }
+            None => array.start + 1,
+        };
+        let pending = self
+            .lock_edits(path)?
+            .iter()
+            .any(|edit| edit.span.is_empty() && edit.span.start == at);
+        let mut bytes = Vec::with_capacity(item.len() + 1);
+        if count > 0 || pending {
+            bytes.push(b',');
+        }
+        bytes.extend_from_slice(&item);
+        self.record(Edit::new(Span::new(at, at), bytes, boundary), path)
+    }
+
+    /// Create an absent repeating element holding `item`, positioned among
+    /// the owner's members by the generated element order.
+    fn create_element(
+        &self,
+        owner: Span,
+        owner_type: &str,
+        name: &'static str,
+        item: Vec<u8>,
+        boundary: Option<Span>,
+        path: &str,
+    ) -> Result<(), DecodeError> {
+        {
+            let mut edits = self.lock_edits(path)?;
+            if let Some(edit) = edits.iter_mut().find(|edit| {
+                edit.created
+                    .as_ref()
+                    .is_some_and(|created| created.owner == owner.start && created.property == name)
+            }) {
+                if let Some(created) = edit.created.as_mut() {
+                    created.items.push(item);
+                    edit.bytes = created.render();
+                }
+                return Ok(());
+            }
+        }
+        let order = super::built::ordered_elements(&self.tables, owner_type);
+        let position = |element: &str| order.iter().position(|def| def.name == element);
+        let mine = position(name);
+        let members = self.doc.member_spans(owner.start)?;
+        let mut before = None;
+        for (key, _) in &members {
+            let Some((def, _, _)) = self
+                .tables
+                .resolve_property_bytes(owner_type, key.of(self.doc.bytes()))
+            else {
+                continue;
+            };
+            if let (Some(theirs), Some(mine)) = (position(def.name), mine) {
+                if theirs > mine {
+                    before = Some(*key);
+                    break;
+                }
+            }
+        }
+        let (at, comma_before, comma_after) = match (before, members.last()) {
+            // Before the first member that comes later: at its opening quote.
+            (Some(key), _) => (key.start - 1, false, true),
+            (None, Some((_, value))) => (value.end, true, false),
+            (None, None) => (owner.start + 1, false, false),
+        };
+        let created = Created {
+            owner: owner.start,
+            property: name.to_string(),
+            items: vec![item],
+            comma_before,
+            comma_after,
+        };
+        let mut edit = Edit::new(Span::new(at, at), created.render(), boundary);
+        edit.created = Some(created);
+        self.record(edit, path)
+    }
+
+    /// Encode a new repetition of `item_type` from its sub-element values, in
+    /// the generated element order.
+    fn encode_item(
+        &self,
+        item_type: &str,
+        values: &[(&str, &str)],
+        path: &str,
+    ) -> Result<Vec<u8>, DecodeError> {
+        let mut out = Vec::new();
+        if self.tables.is_primitive(item_type) {
+            let [("", lexical)] = values else {
+                return Err(DecodeError::new(
+                    path,
+                    0,
+                    "a repetition of a primitive takes exactly one value, at the empty path",
+                ));
+            };
+            self.encode_primitive(item_type, lexical, &mut out);
+            return Ok(out);
+        }
+        if self.tables.type_def(item_type).map(|def| def.kind) == Some(TypeKind::AnyResource) {
+            return Err(DecodeError::new(
+                path,
+                0,
+                "appending a resource is not implemented: the element declares the abstract \
+                 Resource, so the new entry's type cannot be taken from the tables",
+            ));
+        }
+        let mut item = super::built::Built::new(item_type, self.tables);
+        for (relative, lexical) in values {
+            item.set(&format!("{item_type}.{relative}"), lexical)?;
+        }
+        item.write(&mut out);
+        Ok(out)
+    }
+
+    /// Remove the element at `path`: one repetition when the path is indexed
+    /// (`Patient.name[1]`), the whole element otherwise. Only the removed
+    /// bytes and one separating comma are dropped, so every other entry keeps
+    /// its bytes and its order (`model.mutate.003`). An index-aligned
+    /// `_field` array loses the same index, and an array left empty is
+    /// removed with its property.
+    pub fn remove(&self, path: &str) -> Result<(), DecodeError> {
+        let steps = parse_path(path)?;
+        let (owner, _owner_type, def, last, boundary) = self.owner_of(&steps, path)?;
+        let property = if def.choice {
+            let located = self
+                .locate(path)?
+                .ok_or_else(|| DecodeError::new(path, owner.start, "no such element to remove"))?;
+            Tables::choice_property(def.name, &located.type_name)
+        } else {
+            def.name.to_string()
+        };
+        let sibling = format!("_{property}");
+        let members = self.doc.member_spans(owner.start)?;
+        let member_index = |name: &str| -> Result<Option<usize>, DecodeError> {
+            for (position, (key, _)) in members.iter().enumerate() {
+                if self.doc.property_name(*key)? == name {
+                    return Ok(Some(position));
+                }
+            }
+            Ok(None)
+        };
+        let sides = [member_index(&property)?, member_index(&sibling)?];
+        if sides.iter().all(Option::is_none) {
+            return Err(DecodeError::new(
+                path,
+                owner.start,
+                "no such element to remove",
+            ));
+        }
+
+        let mut whole_members = Vec::new();
+        let mut found = false;
+        for position in sides.into_iter().flatten() {
+            let value = members[position].1;
+            match (def.repeating, last.index) {
+                (true, Some(index)) if self.doc.is_array(value) => {
+                    let count = self.doc.item_count(value.start)?;
+                    if index >= count {
+                        continue;
+                    }
+                    found = true;
+                    let mut items = Vec::with_capacity(count);
+                    for at in 0..count {
+                        items.push(self.doc.item(value.start, at)?.ok_or_else(|| {
+                            DecodeError::new(path, value.start, "an array item vanished")
+                        })?);
+                    }
+                    let emptied =
+                        self.remove_indices(value.start, &items, index, false, boundary, path)?;
+                    if emptied {
+                        whole_members.push(position);
+                    }
+                }
+                (true, Some(index)) if index > 0 => {}
+                _ => {
+                    found = true;
+                    whole_members.push(position);
+                }
+            }
+        }
+        if !found {
+            return Err(DecodeError::new(
+                path,
+                owner.start,
+                "no such repetition to remove",
+            ));
+        }
+        let entries: Vec<Span> = members
+            .iter()
+            .map(|(key, value)| Span::new(key.start - 1, value.end))
+            .collect();
+        for position in whole_members {
+            self.remove_indices(owner.start, &entries, position, true, boundary, path)?;
+        }
+        Ok(())
+    }
+
+    /// Remove entry `index` of a container -- an array's items or an
+    /// object's members, given as `entries` -- together with every entry of
+    /// the same container removed before, as non-overlapping removals that
+    /// each take one separating comma. Paths address the document as it was
+    /// loaded, so removing `name[0]` and then `name[1]` removes both.
+    ///
+    /// Returns `true`, recording nothing, when an **array** would be left
+    /// empty: the caller removes the element's property instead. An object
+    /// left empty is written as `{}`.
+    fn remove_indices(
+        &self,
+        container: usize,
+        entries: &[Span],
+        index: usize,
+        is_object: bool,
+        boundary: Option<Span>,
+        path: &str,
+    ) -> Result<bool, DecodeError> {
+        let mut removed = vec![index];
+        {
+            let mut edits = self.lock_edits(path)?;
+            for edit in edits.iter() {
+                if let Some((owner, indices)) = &edit.removed {
+                    if *owner == container {
+                        removed.extend_from_slice(indices);
+                    }
+                }
+            }
+            removed.sort_unstable();
+            removed.dedup();
+            if !is_object && removed.len() == entries.len() {
+                return Ok(true);
+            }
+            edits.retain(|edit| {
+                edit.removed
+                    .as_ref()
+                    .is_none_or(|(owner, _)| *owner != container)
+            });
+        }
+        let mut at = 0;
+        while at < removed.len() {
+            let first = removed[at];
+            let mut last = first;
+            while at + 1 < removed.len() && removed[at + 1] == last + 1 {
+                at += 1;
+                last = removed[at];
+            }
+            at += 1;
+            let span = if first > 0 {
+                // From the end of the entry before the run.
+                Span::new(entries[first - 1].end, entries[last].end)
+            } else if let Some(next) = entries.get(last + 1) {
+                // A leading run: up to the start of the next entry.
+                Span::new(entries[first].start, next.start)
+            } else {
+                Span::new(entries[first].start, entries[last].end)
+            };
+            let mut edit = Edit::new(span, Vec::new(), boundary);
+            edit.removed = Some((container, removed.clone()));
+            self.record(edit, path)?;
+        }
+        Ok(false)
+    }
+
+    /// The object an element path's last step is a member of, its concrete
+    /// type, the element's definition, the last step itself, and the
+    /// innermost resource below the root that the element sits inside -- the
+    /// owner itself when the owner is such a resource (`model.mutate.006`).
+    fn owner_of<'s>(&self, steps: &'s [PathStep], path: &str) -> Result<Owner<'s>, DecodeError> {
+        let Some((last, parents)) = steps.split_last() else {
+            return Err(DecodeError::new(path, 0, "an element path cannot be empty"));
+        };
+        if parents.is_empty() {
+            return Err(DecodeError::new(
+                path,
+                0,
+                "a path with no element steps names the resource, not an element",
+            ));
+        }
+        let parent_path = render_path(parents);
+        let parent = self
+            .locate(&parent_path)?
+            .ok_or_else(|| DecodeError::new(path, 0, "the element's parent does not exist"))?;
+        let owner = parent
+            .value
+            .filter(|span| self.doc.is_object(*span))
+            .ok_or_else(|| DecodeError::new(path, 0, "the element's parent is not an object"))?;
+        let owner_type = self.concrete_type(&parent.type_name, owner)?;
+        let def = self
+            .tables
+            .element(&owner_type, &last.name)
+            .ok_or_else(|| {
+                DecodeError::new(
+                    path,
+                    owner.start,
+                    format!("{owner_type} has no element named {:?}", last.name),
+                )
+            })?;
+        let boundary = if owner_type != parent.type_name {
+            Some(owner)
+        } else {
+            parent.boundary
+        };
+        Ok((owner, owner_type, def, last, boundary))
+    }
+
+    fn lock_edits(&self, path: &str) -> Result<std::sync::MutexGuard<'_, Vec<Edit>>, DecodeError> {
+        self.edits
             .lock()
-            .map_err(|_| DecodeError::new(path, 0, "the write log lock was poisoned"))?;
-        edits.retain(|(existing, _)| existing.start != span.start);
-        edits.push((span, encoded));
+            .map_err(|_| DecodeError::new(path, 0, "the write log lock was poisoned"))
+    }
+
+    /// Record one edit. A second write to the same span replaces the first; a
+    /// write that encloses earlier ones supersedes them; a write inside a span
+    /// an earlier write already replaced or removed is refused, because the
+    /// bytes it addresses are no longer in the output.
+    fn record(&self, edit: Edit, path: &str) -> Result<(), DecodeError> {
+        let mut edits = self.lock_edits(path)?;
+        let reach = |edit: &Edit| edit.boundary.unwrap_or(edit.span);
+        for existing in edits.iter() {
+            if existing.span.is_empty() {
+                continue;
+            }
+            let target = if existing.boundary == edit.boundary {
+                edit.span
+            } else if existing.boundary.is_none() {
+                reach(&edit)
+            } else {
+                continue;
+            };
+            let inside = if target.is_empty() {
+                existing.span.start < target.start && target.start < existing.span.end
+            } else {
+                existing.span != target && contains(existing.span, target)
+            };
+            if inside {
+                return Err(DecodeError::new(
+                    path,
+                    edit.span.start,
+                    "an earlier write already replaced or removed the bytes this one addresses",
+                ));
+            }
+        }
+        if !edit.span.is_empty() {
+            edits.retain(|existing| {
+                let (own, theirs) = if existing.boundary == edit.boundary {
+                    (edit.span, existing.span)
+                } else if edit.boundary.is_none() {
+                    // A write of the root's own elements that encloses a
+                    // re-encoded resource supersedes every write inside it.
+                    (edit.span, reach(existing))
+                } else {
+                    return true;
+                };
+                if own == theirs {
+                    return false;
+                }
+                let interior = if theirs.is_empty() {
+                    own.start < theirs.start && theirs.start < own.end
+                } else {
+                    contains(own, theirs)
+                };
+                !interior
+            });
+        }
+        edits.push(edit);
         Ok(())
     }
 
@@ -469,27 +1065,121 @@ impl Stored {
         let Ok(edits) = self.edits.lock() else {
             return base;
         };
-        edits.iter().fold(base, |total, (span, replacement)| {
-            total + replacement.len() - span.len()
-        })
+        if edits.iter().all(|edit| edit.boundary.is_none()) {
+            return edits.iter().fold(base, |total, edit| {
+                total + edit.bytes.len() - edit.span.len()
+            });
+        }
+        drop(edits);
+        // A re-encoded resource's length is known only once it is encoded.
+        let mut total = 0usize;
+        let counted = self.render(&mut |chunk| {
+            total += match chunk {
+                Chunk::Original(span) => span.len(),
+                Chunk::New(bytes) => bytes.len(),
+            };
+            Ok(())
+        });
+        if counted.is_ok() { total } else { base }
     }
 
     /// Serialise in the stored form. With no write, this is the input buffer
     /// verbatim; with writes, it is the original bytes with each replaced span
     /// swapped out.
     pub fn write_to(&self, out: &mut dyn io::Write) -> io::Result<()> {
+        let unedited = self
+            .edits
+            .lock()
+            .map_err(|_| io::Error::other("the write log lock was poisoned"))?
+            .is_empty();
+        if unedited {
+            return out.write_all(self.doc.bytes());
+        }
+        let bytes = self.doc.bytes();
+        self.render(&mut |chunk| match chunk {
+            Chunk::Original(span) => out.write_all(span.of(bytes)),
+            Chunk::New(new) => out.write_all(new),
+        })
+    }
+
+    /// Serialise in the stored form into `out`, and report where every byte
+    /// of it came from: the runs copied verbatim from the input, with their
+    /// input ranges, and the runs newly encoded. Together they account for
+    /// the whole output, in order (`model.mutate.001` .. `.007`).
+    pub fn write_traced(&self, out: &mut Vec<u8>) -> io::Result<Vec<Provenance>> {
+        let bytes = self.doc.bytes();
+        let mut trace = Vec::new();
+        self.render(&mut |chunk| {
+            let at = out.len();
+            match chunk {
+                Chunk::Original(span) => {
+                    out.extend_from_slice(span.of(bytes));
+                    trace.push(Provenance::Spliced {
+                        input: span,
+                        output_at: at,
+                    });
+                }
+                Chunk::New(new) => {
+                    out.extend_from_slice(new);
+                    trace.push(Provenance::Encoded {
+                        output: Span::new(at, at + new.len()),
+                    });
+                }
+            }
+            Ok(())
+        })?;
+        Ok(trace)
+    }
+
+    /// Walk the output as runs of original bytes and new encodings. Edits
+    /// inside a resource below the root are first collapsed into one
+    /// re-encoding of that resource, so the splice is at its boundary.
+    fn render(&self, sink: &mut dyn FnMut(Chunk<'_>) -> io::Result<()>) -> io::Result<()> {
         let bytes = self.doc.bytes();
         let edits = self
             .edits
             .lock()
             .map_err(|_| io::Error::other("the write log lock was poisoned"))?;
-        if edits.is_empty() {
-            return out.write_all(bytes);
+
+        // Group by boundary, keeping first-recorded order within a group.
+        let mut groups: Vec<(Span, Vec<&Edit>)> = Vec::new();
+        let mut plan: Vec<(Span, std::borrow::Cow<'_, [u8]>)> = Vec::new();
+        for edit in edits.iter() {
+            match edit.boundary {
+                None => plan.push((edit.span, std::borrow::Cow::Borrowed(&edit.bytes))),
+                Some(boundary) => match groups.iter_mut().find(|(span, _)| *span == boundary) {
+                    Some((_, members)) => members.push(edit),
+                    None => groups.push((boundary, vec![edit])),
+                },
+            }
         }
-        let mut ordered: Vec<&(Span, Vec<u8>)> = edits.iter().collect();
-        ordered.sort_by_key(|(span, _)| span.start);
+        for (boundary, members) in groups {
+            let mut local = Vec::with_capacity(boundary.len());
+            let shifted: Vec<(Span, &[u8])> = members
+                .iter()
+                .map(|edit| {
+                    (
+                        Span::new(
+                            edit.span.start - boundary.start,
+                            edit.span.end - boundary.start,
+                        ),
+                        edit.bytes.as_slice(),
+                    )
+                })
+                .collect();
+            splice_into(boundary.of(bytes), shifted, &mut local)?;
+            let reencoded =
+                super::decode::decode_with(&local, super::decode::ParseMode::Lenient, self.tables)
+                    .map_err(|e| io::Error::other(e.to_string()))?
+                    .reencoded;
+            plan.push((boundary, std::borrow::Cow::Owned(reencoded)));
+        }
+        // Stable, so insertions at one point keep the order they were made
+        // in, and an insertion sorts before a replacement starting there.
+        plan.sort_by_key(|(span, _)| (span.start, span.end));
+
         let mut cursor = 0usize;
-        for (span, replacement) in ordered {
+        for (span, replacement) in &plan {
             if span.start < cursor {
                 // Overlapping writes would make the output order-dependent;
                 // refusing is better than emitting something plausible.
@@ -498,17 +1188,37 @@ impl Stored {
                     span.start
                 )));
             }
-            out.write_all(&bytes[cursor..span.start])?;
-            out.write_all(replacement)?;
+            if span.start > cursor {
+                sink(Chunk::Original(Span::new(cursor, span.start)))?;
+            }
+            if !replacement.is_empty() {
+                sink(Chunk::New(replacement))?;
+            }
             cursor = span.end;
         }
-        out.write_all(&bytes[cursor..])
+        if cursor < bytes.len() {
+            sink(Chunk::Original(Span::new(cursor, bytes.len())))?;
+        }
+        Ok(())
     }
 
     /// Serialise canonically: every object's property names sorted
     /// lexicographically, no whitespace. Unlike the stored form this cannot be
     /// a byte copy, because the stored order is the generated element order.
     pub fn write_canonical(&self, out: &mut dyn io::Write) -> io::Result<()> {
+        if self.is_modified() {
+            // The recorded writes live beside the original bytes, so the
+            // canonical form of an edited resource is the canonical form of
+            // its stored form, not of the bytes it was loaded with.
+            let mut stored = Vec::with_capacity(self.stored_len());
+            self.write_to(&mut stored)?;
+            let edited = Stored::new(
+                Arc::from(stored.into_boxed_slice()),
+                self.tables,
+                Arc::clone(self.meter()),
+            );
+            return edited.write_canonical(out);
+        }
         let mut buffer = Vec::new();
         let root = self.doc.root();
         self.canonicalise(root, &mut buffer)
