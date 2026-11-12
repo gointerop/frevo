@@ -61,7 +61,8 @@ HAPI, no configuration flag.** `DEV-0001` through `DEV-0009` were signed off
 together; `DEV-0010` was raised afterwards by the second revision of this change
 and signed off separately, because a new deviation is a phase-boundary
 checkpoint and does not inherit an earlier decision. `DEV-0011` was raised on
-2026-11-12 and is **not** signed off.
+2026-11-12 by the implementation of tasks 28-30 and signed off by the owner the
+same day: **match HAPI where it has a defined result, diagnose the six inputs.**
 
 Six of the first ten leave something owed even where the behaviour is settled — a
 flag we may need, a bug report we owe upstream, or behaviour we have not
@@ -384,9 +385,9 @@ file, so its prose is not redistributable here (see `oracles/PINS.md`).
   typo in every real case.
 - **Normalizer impact:** none. These are parse-time refusals of malformed
   expressions; no stored byte and no response body differs.
-- **Reviewed:** not yet. Raised 2026-11-12 by the implementation of tasks
-  28-30 of `add-fhirpath-and-codegen-r4`. A new deviation is a phase-boundary
-  checkpoint and does not inherit the sign-off of DEV-0001..0010.
+- **Reviewed:** owner, 2026-11-12. Raised the same day by the implementation of
+  tasks 28-30 of `add-fhirpath-and-codegen-r4`; accepted as a new-deviation
+  checkpoint, separately from DEV-0001..0010.
 
 ## Considered and not recorded as deviations
 
