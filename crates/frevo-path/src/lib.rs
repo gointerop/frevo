@@ -4,18 +4,20 @@
 //!
 //! Capability spec: `openspec/specs/path/spec.md`
 //!
-//! Two things live here today:
+//! Three things live here today:
 //!
 //! - the **evaluation seam** — the `Value`, `Node`, `Model` and `HostServices`
-//!   definitions of `design.md` section 4, with no implementation behind them;
+//!   definitions of `design.md` section 4;
 //! - the **front end** — the lexer, the literal forms and the parser, which
 //!   turn an expression into a reusable [`Expression`] and reject what
-//!   `FHIRPathEngine` rejects at parse time.
+//!   `FHIRPathEngine` rejects at parse time;
+//! - the **evaluator core** — [`Evaluator`], which walks a parsed expression
+//!   over a [`Node`]: navigation, the leading type name, the indexer,
+//!   `$this`/`$index`/`$total`, `children()` and `descendants()`.
 //!
-//! The check pass and the evaluator arrive in the tasks after those, so a
-//! parsed expression cannot yet be evaluated: parsing an expression and
-//! finding no way to run it is the honest state of the crate, not an
-//! oversight.
+//! Every function and operator the evaluator does not implement yet answers
+//! [`EvalError::Unsupported`], never an empty collection, and the static
+//! check pass does not exist yet.
 //!
 //! The seam lives here rather than in `frevo-model` because the dependency
 //! edge runs the other way: `frevo-model` implements `Node` and `Model` over
@@ -23,8 +25,11 @@
 //! manifest and sources never name `frevo-model`.
 #![forbid(unsafe_code)]
 
+mod eval;
 mod seam;
 mod syntax;
+
+pub use eval::{EvalError, Evaluator};
 
 pub use seam::host::{ConstantMode, FunctionDetails, HostError, HostServices};
 pub use seam::model::{Model, TypeSet};

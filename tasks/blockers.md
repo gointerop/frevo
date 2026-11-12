@@ -1205,3 +1205,102 @@ a faster full parse alone would have pushed the 10% ratio to 9.8%; it is now
   of the per-run medians (worst pair 3.1% here, leaving the 10% threshold
   three times the noise), or grade on that statistic of p10; and/or grade on
   CI's reference environment only.
+
+## 2026-11-12 — `add-fhirpath-and-codegen-r4` — task 31: the evaluator core exists, and no `path.navigation.*` test can go green on it alone
+
+**Raised by** the implementer of task 31 (navigation), on
+`change/add-fhirpath-and-codegen-r4`. **No test was changed**; the only test
+file edited is the documented seam, `crates/frevo-path/tests/oracle/engine.rs`,
+and `git diff` of it shows no assertion, `#[test]` or `covers:` line.
+
+**What was built.** `crates/frevo-path/src/eval/`: `Evaluator` walks a parsed
+`Expression` over a `Node` -- names, the leading type name (matched against the
+focus type and its bases, omitted, mismatched), flattening, absent = empty,
+choice elements by base name, the indexer, contained resources, the
+`Resource.id` logical-id rule (`filterIdType`), primitive extensions, `$this`,
+`$index`, `$total`, `children()`, `descendants()`, groups, literals and the
+unary sign. Every other function, every binary operator and every `%`
+variable is `EvalError::Unsupported`, which the seam maps to
+`EngineError::NotImplemented` (did-not-run) -- never an empty collection. 36
+in-crate unit tests state the rules over in-memory nodes, including that
+property. The seam's `evaluate` is bound, with an adapter that types the
+suite's XML and JSON inputs from the pinned R4 definition package.
+
+**Counts.** `path_navigation` 0/24 before and **0/24** after. The lib unit
+tests 36 → 72. `path_check` 0/14 → 1/14 (see finding 3). Every other
+`frevo-path` target is unchanged. `fhirpath_oracle`'s run: 1,073 did-not-run,
+111 failed, 7 passed (118 graded) before and after -- unchanged, because the
+harness runs `check` before `evaluate` for every case and `check` is still
+`NotImplemented`. Measured from a throwaway crate outside the repository that
+calls the bound `evaluate` directly, the adapter gives `Patient.name.given` =
+the five names in order, `Resource.id` = `id:example`, `contained.id` = `id:1`,
+`Patient.birthDate.extension.url` = the `uri`, `Observation.value` = the
+Quantity, `Patient.children()` = 17 (the XML has 17 child elements),
+`Questionnaire.descendants().linkId` = 10 and `.code` = 23, and `$total` an
+execution error. Release-mode, pre-parsed, over that in-memory tree:
+`Patient.name.given` 1.3 us, `Patient.birthDate` 0.37 us.
+
+### 1. Every `path.navigation.*` test needs the check pass, and most need other tasks' functions
+
+Every helper in `path_navigation.rs` calls `check` first, and the check pass is
+task 50. Beyond that, the tests reach for `first`, `exists`, `empty`, `where`,
+`select`, `iif`, `substring`, `length`, `count`, `skip`, `ofType`,
+`distinct`, `isDistinct`, `combine`, `aggregate`, `join`, `extension(url)`,
+`=`, `<`, `>`, `+`, `-` and `|` (tasks 32-37, 40, 46, 48), and `.007` and
+`.022` are check-pass rejections. Only `.008` and `.010` look reachable with
+navigation plus a check pass. This is the same shape as the tasks 28-30 entry
+above, and the same ruling presumably applies: task 31 stays **unticked**.
+
+### 2. `path.navigation.013`'s seam is inside the test file and was not rebound
+
+`node_engine_under_test()` lives in `path_navigation.rs` itself ("Phase D binds
+the real engine here"). The brief for this task limited test edits to
+`tests/oracle/engine.rs`, so it still returns `NotImplemented`. Binding it is a
+few lines -- `Evaluator::new(&model).evaluate(&Expression::parse(expr)?,
+Some(&Value::Node(root)))` with any `Model`; upstream's logical-model branch
+matches `Patient` by name when the model does not know the type -- and the
+evaluator already answers `id:123` for that input (unit test
+`resource_id_yields_the_logical_id`). **Decision needed:** may the implementer
+rebind that seam under the 2026-11-11 seam rule?
+
+### 3. `path.check.013` now passes, and one of its three assertions is vacuous
+
+`path_check.rs::the_check_pass_can_be_skipped` is green: its two evaluation
+assertions are genuinely satisfied by the bound evaluator. Its third,
+`engine.check(..).is_err()` for `Patient.nosuchelement`, is satisfied by the
+unbound check's `NotImplemented`, not by a semantic diagnostic, so it will keep
+passing for the wrong reason until task 50. No test was changed. **For the
+oracle-builder:** asserting `EngineError::Diagnostic` there, as the other
+check-failure helpers do, would make it fail until the check pass exists.
+
+### 4. Two approved scenarios contradict the pinned engine
+
+Implemented to the tests, and recorded as `DEV-0012` and `DEV-0013` in
+`docs/deviations.md`, both **pending owner review**:
+
+- `path.navigation.010` -- a negative index is empty; upstream raises
+  `IndexOutOfBoundsException` (`funcItem` guards only the upper bound). Frevo
+  passing `testIndexer3` is `ahead-of-hapi`.
+- `path.navigation.011` -- a non-integer index is an execution error; upstream
+  returns **empty** for `['x']`, a decimal and a multi-item index, and
+  **selects** for `['1']`. This one departs from a defined HAPI result, against
+  the rule recorded with DEV-0011. **Decision needed:** keep the scenario, or
+  rule for HAPI (then the scenario, the test and `func_item` change together).
+
+### 5. Upstream behaviours the spec delta does not state
+
+Implemented as HAPI does, so not deviations, but the proposal does not cover
+them and the spec-reviewer may want them as scenarios:
+
+- `filterIdType` applies to **every** `id`-typed element, not only
+  `Resource.id`, and the replacement `IdType` carries no `id` or extensions of
+  its own, so `Patient.id.extension` is always empty.
+- `$index` outside `select()` is the integer `0`, not an error
+  (`ExecutionContext.index` starts at 0).
+- `isAllowPolymorphicNames()` is off by default, so `valueQuantity` navigates
+  nothing at runtime as well as failing the check.
+- `children()` lists children in **definition** order (`Base.listChildren`),
+  not document order; for XML input the two coincide.
+- `children()`/`descendants()`'s unordered rule exists only in the check pass
+  (`checkOrdered` in `executeType`); evaluation has no such rule, so it is
+  task 50's, not this task's.

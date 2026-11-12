@@ -753,6 +753,18 @@ checkpoint because it changes what a gate measures.
   `Resource.id`; primitive extensions; `$this` and `$index`; `children()` and
   `descendants()` with the unordered-collection rule; document order preserved.
   Satisfies `path.navigation.001` through `path.navigation.024`.
+  **Implemented, not ticked.** `path_navigation` is 0 of 24: every test calls
+  the check pass (task 50) before evaluating, and most also use functions and
+  operators of tasks 32-37, 40, 46 and 48. The evaluator core is
+  `crates/frevo-path/src/eval/`, with 36 in-crate unit tests; every function,
+  operator and `%` variable it does not implement is `EvalError::Unsupported`,
+  which the oracle seam reports as did-not-run. The seam's `evaluate` is bound
+  over inputs typed from the pinned R4 package; the oracle still reports 1,073
+  did-not-run and 118 graded, because `check` runs first. The unordered rule is
+  a check-pass rule (`checkOrdered`) and is task 50's. `path.navigation.010`
+  and `.011` contradict the pinned engine (`DEV-0012`, `DEV-0013`, pending the
+  owner); `.013`'s seam is inside `path_navigation.rs` and was not rebound. See
+  `tasks/blockers.md`, 2026-11-12, "task 31".
 
 - [ ] **32. Implement collection predicates.** `empty`, `exists` with and without
   criteria, `not`, `all`, the four boolean folds and their non-boolean execution

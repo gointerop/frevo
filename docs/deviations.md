@@ -45,7 +45,8 @@ decision.
 
 ## Entries
 
-All eleven entries below come from `add-fhirpath-and-codegen-r4`.
+All thirteen entries below come from `add-fhirpath-and-codegen-r4`;
+`DEV-0012` and `DEV-0013` are pending the owner's review (see their entries).
 `DEV-0001` through `DEV-0010` are the same kind of case: the pinned R4
 `FHIRPathEngine` does something the FHIRPath specification does not describe. In
 every one of those the chosen behaviour is **HAPI's**, because the point of the
@@ -388,6 +389,72 @@ file, so its prose is not redistributable here (see `oracles/PINS.md`).
 - **Reviewed:** owner, 2026-11-12. Raised the same day by the implementation of
   tasks 28-30 of `add-fhirpath-and-codegen-r4`; accepted as a new-deviation
   checkpoint, separately from DEV-0001..0010.
+
+### DEV-0012 — a negative index selects nothing instead of raising
+
+- **Area:** path
+- **Scenario IDs:** path.navigation.010
+- **HAPI 8.12.0 behaviour:** `Patient.name[-1]` over `patient-example.xml`
+  ends the call with an unchecked `IndexOutOfBoundsException`. `funcItem`
+  (`ENGINE:6277-6283`) guards only the upper bound —
+  `Utilities.isInteger(s) && Integer.parseInt(s) < focus.size()` — and
+  `Utilities.isInteger` accepts a leading `-`, so `-1 < 3` holds and
+  `focus.get(-1)` is reached. The pinned suite's `testIndexer/testIndexer3`
+  expects empty and carries no `invalid` attribute, so HAPI fails its own
+  case.
+- **Specification requirement:** FHIRPath 2.0.0, Indexer — an index outside
+  the collection yields an empty collection; the approved scenario
+  `path.navigation.010` states empty for a negative index.
+- **Chosen behaviour:** specification — the scenario as approved: empty.
+- **Configuration flag:** none
+- **Debt:** none
+- **Rationale:** `path.errors.003` forbids ending a call with a panic, which is
+  what matching the Java exception would mean, and the only non-crashing answer
+  the suite grades is empty. Frevo passing `testIndexer3` is `ahead-of-hapi`
+  under `path.oracle.012`. No expression that works on HAPI today can rely on
+  the crash.
+- **Normalizer impact:** none on stored bytes. An expression using a negative
+  index fails on HAPI and evaluates on Frevo, so a differential case built on
+  one differs by design.
+- **Reviewed:** pending owner review. Raised 2026-11-12 by the implementation
+  of task 31 of `add-fhirpath-and-codegen-r4`, which implemented the approved
+  scenario and its test; recorded in `tasks/blockers.md` the same day. A new
+  deviation is a checkpoint and does not inherit an earlier decision.
+
+### DEV-0013 — a non-integer index is an execution error instead of empty
+
+- **Area:** path
+- **Scenario IDs:** path.navigation.011
+- **HAPI 8.12.0 behaviour:** `funcItem` (`ENGINE:6277-6283`) converts the index
+  to text with `convertToString` and selects only when `Utilities.isInteger`
+  accepts that text; otherwise it returns the empty result it started with. So
+  `Patient.name['x']` is **empty**, not an error; `Patient.name['1']` converts
+  to `1` and **selects the second name**; a decimal `[1.0]` is empty; and a
+  multi-item index is joined with `,` (`ENGINE:872`), fails `isInteger`, and is
+  empty. No suite case grades any of these.
+- **Specification requirement:** FHIRPath 2.0.0, Indexer — the index is an
+  `Integer`; the approved scenario `path.navigation.011` states that evaluation
+  fails for `Patient.name['x']`, and its test adds `'1'`.
+- **Chosen behaviour:** specification — the scenario as approved: an index that
+  is not a single integer (an integer literal, or a FHIR `integer`,
+  `positiveInt` or `unsignedInt`) is an execution error. An empty index still
+  selects nothing, as upstream.
+- **Configuration flag:** none
+- **Debt:** none
+- **Rationale:** this is the one place task 31 departs from a *defined* HAPI
+  result, which is against the owner's standing rule recorded with DEV-0011
+  ("match HAPI where it has a defined result"). It was implemented anyway
+  because the approved scenario and its committed test require it, and an
+  implementer may change neither; the conflict is raised here and in
+  `tasks/blockers.md` for the owner. If the owner rules for HAPI, the scenario,
+  the test in `crates/frevo-path/tests/path_navigation.rs` and `func_item` in
+  `crates/frevo-path/src/eval/mod.rs` change together and this entry closes.
+- **Normalizer impact:** an expression indexing by a string or a decimal
+  evaluates on HAPI and fails on Frevo. No R4 search-parameter expression does
+  so (checked against the generated table, 2026-11-12); the core invariants
+  have not been checked.
+- **Reviewed:** pending owner review. Raised 2026-11-12 by the implementation
+  of task 31 of `add-fhirpath-and-codegen-r4`.
 
 ## Considered and not recorded as deviations
 

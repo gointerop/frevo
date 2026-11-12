@@ -13,8 +13,14 @@
 //! panicking placeholder, because a panic there would abort the run and report
 //! nothing at all.
 
-use super::input::SuiteInput;
-use super::value::ResultItem;
+use std::collections::HashMap;
+use std::sync::{Arc, OnceLock};
+
+use frevo_path::{EvalError, Evaluator, Model, Node, NodeError, Primitive, Value};
+
+use super::input::{self, Document, SuiteInput};
+use super::value::{QuantityValue, ResultItem};
+use super::{json, xml};
 
 /// A handle to an expression the engine parsed and retained, so that a parsed
 /// expression can be evaluated repeatedly without re-parsing
@@ -50,8 +56,9 @@ impl std::fmt::Display for EngineError {
                 write!(f, "requires licensed terminology: {system}")
             }
             EngineError::NotImplemented => f.write_str(
-                "the stage this case needs is not bound to the oracle harness yet \
-                 -- parse is bound, check and evaluate are not \
+                "the stage or feature this case needs is not bound to the oracle harness yet \
+                 -- parse is bound, evaluate is bound for navigation only, check and \
+                 convert_to_boolean are not \
                  (crates/frevo-path/tests/oracle/engine.rs::engine_under_test)",
             ),
         }
@@ -189,33 +196,59 @@ pub trait SuiteEngine {
 /// The engine the oracle grades.
 ///
 /// Tasks 28, 29 and 30 built the front end, so `configure` and `parse` are
-/// real and the remaining three stages are not. `check`, `evaluate` and
-/// `convert_to_boolean` answer [`EngineError::NotImplemented`], which is
-/// `did-not-run` and never a pass: of the 1,191 cases, the ones whose
-/// expression the parser rejects are graded against their `invalid` attribute
-/// and every other case is reported as having not run. Returning an empty
-/// result or a default from a stage that does not exist would turn a thousand
-/// unrun cases into graded passes and failures that mean nothing, which is the
-/// one thing this seam exists to prevent.
+/// real. Task 31 built the evaluator core, so `evaluate` is bound -- for what
+/// the evaluator implements and nothing else: every function, operator and
+/// environment variable it does not implement yet comes back as
+/// [`frevo_path::EvalError::Unsupported`], which this seam turns into
+/// [`EngineError::NotImplemented`]. `check` and `convert_to_boolean` still
+/// answer `NotImplemented`.
+///
+/// All of that is `did-not-run` and never a pass. Returning an empty result or
+/// a default from a stage or a feature that does not exist would turn a
+/// thousand unrun cases into graded passes and failures that mean nothing,
+/// which is the one thing this seam exists to prevent. Because the harness
+/// runs `check` before `evaluate` for every case, no case reaches the bound
+/// evaluation until the check pass (task 50) is bound too.
 pub fn engine_under_test() -> Box<dyn SuiteEngine> {
     Box::new(FrontEndEngine {
         config: None,
         parsed: Vec::new(),
+        trees: HashMap::new(),
         unbound: UnboundEngine,
     })
 }
 
-/// The binding for the front end: the lexer, the literal forms and the parser.
+/// The binding for the front end and the evaluator core.
 struct FrontEndEngine {
     config: Option<EngineConfig>,
     /// Every expression this engine has parsed, kept so a [`ParsedHandle`]
     /// resolves and an expression is parsed once however often it is used
     /// (`path.parse.001`).
     parsed: Vec<frevo_path::Expression>,
-    /// The three stages that do not exist yet, answered by the binding below
-    /// rather than by a second copy of the same `NotImplemented`, so there is
-    /// one place in this file that says "not built yet".
+    /// Each input file as a typed node tree, built once on first use and
+    /// shared by every case that names the file, as `FHIRPathTests` caches
+    /// its parsed resources.
+    trees: HashMap<String, Value>,
+    /// The stages that do not exist yet, answered by the binding below rather
+    /// than by a second copy of the same `NotImplemented`, so there is one
+    /// place in this file that says "not built yet".
     unbound: UnboundEngine,
+}
+
+impl FrontEndEngine {
+    /// The typed tree for `input`, built on first use.
+    fn tree_for(&mut self, model: &'static SdModel, input: &SuiteInput) -> Option<Value> {
+        if let Some(tree) = self.trees.get(&input.file) {
+            return Some(tree.clone());
+        }
+        let builder = TreeBuilder { model };
+        let tree = match &input.document {
+            Document::Xml(d) => Some(builder.xml_resource(&d.root)),
+            Document::Json(v) => builder.json_resource(v),
+        }?;
+        self.trees.insert(input.file.clone(), tree.clone());
+        Some(tree)
+    }
 }
 
 impl SuiteEngine for FrontEndEngine {
@@ -261,10 +294,41 @@ impl SuiteEngine for FrontEndEngine {
         &mut self,
         parsed: ParsedHandle,
         input: Option<&SuiteInput>,
-        context: &CaseContext<'_>,
-        flags: StrictnessFlags,
+        _context: &CaseContext<'_>,
+        _flags: StrictnessFlags,
     ) -> Result<Vec<ResultItem>, EngineError> {
-        self.unbound.evaluate(parsed, input, context, flags)
+        // The case context and the strictness flags are read by the check
+        // pass and by the type operators, neither of which is bound yet; the
+        // evaluator core reads neither. `FHIRPathTests.test` evaluates with
+        // `fp.evaluate(res, node)`: the input resource is the focus and
+        // `$this`, and there is no application context.
+        //
+        // The type information comes from the pinned R4 definition package.
+        // Without it no input can be typed, and that is a missing
+        // prerequisite, reported `did-not-run` like a missing input tree
+        // (`path.oracle.003`) rather than as a graded answer.
+        let model = sd_model().ok_or(EngineError::NotImplemented)?;
+        let root = match input {
+            None => None,
+            Some(i) => Some(
+                self.tree_for(model, i)
+                    .ok_or_else(|| EngineError::Diagnostic {
+                        message: format!("{} has no resourceType to build a resource from", i.file),
+                        offset: None,
+                    })?,
+            ),
+        };
+        let expr = self
+            .parsed
+            .get(parsed.0)
+            .ok_or_else(|| EngineError::Diagnostic {
+                message: format!("no expression was parsed under handle {}", parsed.0),
+                offset: None,
+            })?;
+        let values = Evaluator::new(model)
+            .evaluate(expr, root.as_ref())
+            .map_err(engine_error)?;
+        Ok(values.iter().map(|v| result_item(model, v)).collect())
     }
 
     fn convert_to_boolean(&mut self, items: &[ResultItem]) -> Result<bool, EngineError> {
@@ -321,5 +385,666 @@ impl SuiteEngine for UnboundEngine {
 
     fn take_log(&mut self) -> String {
         String::new()
+    }
+}
+
+// ---------------------------------------------------------------------------
+// The evaluation adapter: suite inputs as typed nodes
+//
+// `frevo-path` evaluates over the `Node` and `Model` traits and may not name
+// the generated model crate (`path.api.008`), so the harness supplies both
+// itself. The type information is read from the same pinned R4 definition
+// package `frevo-codegen` generates from -- the base StructureDefinitions only,
+// profiles and logical models excluded -- and each input file, XML or JSON, is
+// turned into a tree of typed nodes once.
+//
+// Children are listed in definition order, which is the order
+// `Base.listChildren` gives `children()` upstream, and within one element in
+// document order. An element the definitions do not name is not a child.
+// ---------------------------------------------------------------------------
+
+/// The pinned R4 definition package, extracted
+/// (`crates/frevo-codegen/packages/PINS.md`).
+const R4_PACKAGE_DIR: &str = "crates/frevo-codegen/packages/fetched/hl7.fhir.r4.core-4.0.1/package";
+
+const FHIR_TYPE_EXTENSION: &str =
+    "http://hl7.org/fhir/StructureDefinition/structuredefinition-fhir-type";
+const SYSTEM_TYPE_PREFIX: &str = "http://hl7.org/fhirpath/System.";
+
+/// One element of a StructureDefinition snapshot.
+#[derive(Debug)]
+struct ElementDef {
+    path: String,
+    parent: String,
+    /// The element name, `[x]` removed.
+    name: String,
+    choice: bool,
+    types: Vec<String>,
+    /// The referenced element path, `#` removed.
+    content_reference: Option<String>,
+}
+
+#[derive(Debug)]
+struct TypeDef {
+    kind: String,
+    base: Option<String>,
+    elements: Vec<ElementDef>,
+}
+
+/// The R4 type model, from the base StructureDefinitions.
+#[derive(Debug)]
+struct SdModel {
+    types: HashMap<String, TypeDef>,
+}
+
+/// The model, loaded once per test binary; `None` when the package is not
+/// present or cannot be read.
+fn sd_model() -> Option<&'static SdModel> {
+    static MODEL: OnceLock<Option<SdModel>> = OnceLock::new();
+    MODEL.get_or_init(load_sd_model).as_ref()
+}
+
+fn load_sd_model() -> Option<SdModel> {
+    let dir = input::repo_path(R4_PACKAGE_DIR);
+    let mut types = HashMap::new();
+    for entry in std::fs::read_dir(&dir).ok()?.flatten() {
+        let file = entry.file_name().to_string_lossy().into_owned();
+        if !file.starts_with("StructureDefinition-") || !file.ends_with(".json") {
+            continue;
+        }
+        let text = std::fs::read_to_string(entry.path()).ok()?;
+        // A cheap pre-filter for the 400-odd profiles and extensions; the
+        // parsed check below is the one that decides.
+        if text.contains("\"derivation\":\"constraint\"") || text.contains("\"kind\":\"logical\"") {
+            continue;
+        }
+        let sd = json::parse(&text).ok()?;
+        let kind = sd.get("kind").and_then(json::Value::as_str).unwrap_or("");
+        let derivation = sd.get("derivation").and_then(json::Value::as_str);
+        if kind == "logical" || derivation == Some("constraint") {
+            continue;
+        }
+        let Some(type_name) = sd.get("type").and_then(json::Value::as_str) else {
+            continue;
+        };
+        let base = sd
+            .get("baseDefinition")
+            .and_then(json::Value::as_str)
+            .map(|b| b.rsplit('/').next().unwrap_or(b).to_string());
+        let mut elements = Vec::new();
+        if let Some(json::Value::Array(snapshot)) =
+            sd.get("snapshot").and_then(|s| s.get("element"))
+        {
+            elements.extend(snapshot.iter().filter_map(element_def));
+        }
+        types.insert(
+            type_name.to_string(),
+            TypeDef {
+                kind: kind.to_string(),
+                base,
+                elements,
+            },
+        );
+    }
+    if types.is_empty() {
+        None
+    } else {
+        Some(SdModel { types })
+    }
+}
+
+fn element_def(e: &json::Value) -> Option<ElementDef> {
+    let path = e.get("path")?.as_str()?;
+    let dot = path.rfind('.')?;
+    let last = &path[dot + 1..];
+    let (name, choice) = match last.strip_suffix("[x]") {
+        Some(base) => (base, true),
+        None => (last, false),
+    };
+    let mut types = Vec::new();
+    if let Some(json::Value::Array(entries)) = e.get("type") {
+        for t in entries {
+            if let Some(code) = t.get("code").and_then(json::Value::as_str) {
+                types.push(fhir_type_code(t, code));
+            }
+        }
+    }
+    Some(ElementDef {
+        path: path.to_string(),
+        parent: path[..dot].to_string(),
+        name: name.to_string(),
+        choice,
+        types,
+        content_reference: e
+            .get("contentReference")
+            .and_then(json::Value::as_str)
+            .map(|r| r.trim_start_matches('#').to_string()),
+    })
+}
+
+/// A `System.*` type code names its FHIR type in the
+/// `structuredefinition-fhir-type` extension beside it: `Extension.url` is a
+/// `uri`, `Element.id` a `string`.
+fn fhir_type_code(t: &json::Value, code: &str) -> String {
+    let Some(system) = code.strip_prefix(SYSTEM_TYPE_PREFIX) else {
+        return code.to_string();
+    };
+    if let Some(json::Value::Array(exts)) = t.get("extension") {
+        for x in exts {
+            if x.get("url").and_then(json::Value::as_str) != Some(FHIR_TYPE_EXTENSION) {
+                continue;
+            }
+            if let Some(v) = x
+                .get("valueUrl")
+                .or_else(|| x.get("valueUri"))
+                .and_then(json::Value::as_str)
+            {
+                return v.to_string();
+            }
+        }
+    }
+    let mut chars = system.chars();
+    match chars.next() {
+        Some(c) => c.to_lowercase().chain(chars).collect(),
+        None => String::new(),
+    }
+}
+
+impl SdModel {
+    /// The direct child definitions of `path` in StructureDefinition `sd`.
+    fn children_of<'a>(
+        &'a self,
+        sd: &str,
+        path: &'a str,
+    ) -> impl Iterator<Item = &'a ElementDef> + 'a {
+        self.types
+            .get(sd)
+            .map(|t| t.elements.as_slice())
+            .unwrap_or(&[])
+            .iter()
+            .filter(move |e| e.parent == path)
+    }
+
+    fn has_children(&self, sd: &str, path: &str) -> bool {
+        self.children_of(sd, path).next().is_some()
+    }
+
+    /// A backbone type is named by its path (`Patient.contact`), which is how
+    /// `Base.fhirType()` names it upstream; its definitions live in the
+    /// StructureDefinition the path starts with.
+    fn context_of(type_name: &str) -> (&str, &str) {
+        match type_name.find('.') {
+            Some(dot) => (&type_name[..dot], type_name),
+            None => (type_name, type_name),
+        }
+    }
+}
+
+impl Model for SdModel {
+    fn is_type(&self, type_name: &str) -> bool {
+        self.types.contains_key(type_name)
+    }
+
+    fn base_type(&self, type_name: &str) -> Option<&str> {
+        self.types.get(type_name)?.base.as_deref()
+    }
+
+    fn element_types(&self, type_name: &str, element: &str) -> Option<Vec<String>> {
+        let (sd, path) = SdModel::context_of(type_name);
+        self.children_of(sd, path)
+            .find(|e| e.name == element)
+            .map(|e| e.types.clone())
+    }
+
+    fn is_primitive(&self, type_name: &str) -> bool {
+        self.types
+            .get(type_name)
+            .is_some_and(|t| t.kind == "primitive-type")
+    }
+
+    fn is_resource_type(&self, type_name: &str) -> bool {
+        self.types
+            .get(type_name)
+            .is_some_and(|t| t.kind == "resource")
+    }
+}
+
+/// A node of a typed input tree.
+#[derive(Debug)]
+struct TreeNode {
+    type_name: String,
+    is_resource: bool,
+    children: Vec<(String, Value)>,
+    primitive: Option<Primitive>,
+}
+
+impl Node for TreeNode {
+    fn type_name(&self) -> &str {
+        &self.type_name
+    }
+
+    fn is_resource(&self) -> bool {
+        self.is_resource
+    }
+
+    fn children(&self, name: &str) -> Result<Vec<Value>, NodeError> {
+        Ok(self
+            .children
+            .iter()
+            .filter(|(n, _)| n == name)
+            .map(|(_, v)| v.clone())
+            .collect())
+    }
+
+    fn all_children(&self) -> Result<Vec<(String, Value)>, NodeError> {
+        Ok(self.children.clone())
+    }
+
+    fn primitive(&self) -> Option<Primitive> {
+        self.primitive.clone()
+    }
+}
+
+fn tree_node(
+    type_name: &str,
+    is_resource: bool,
+    children: Vec<(String, Value)>,
+    primitive: Option<Primitive>,
+) -> Value {
+    Value::Node(Arc::new(TreeNode {
+        type_name: type_name.to_string(),
+        is_resource,
+        children,
+        primitive,
+    }))
+}
+
+/// A primitive element: its value, and its `id` and extensions both as
+/// children and on the [`Primitive`].
+fn primitive_node(
+    type_name: &str,
+    lexical: Option<String>,
+    id: Option<String>,
+    extensions: Vec<Value>,
+) -> Value {
+    let mut children = Vec::new();
+    if let Some(id) = &id {
+        children.push((
+            "id".to_string(),
+            primitive_node("string", Some(id.clone()), None, Vec::new()),
+        ));
+    }
+    for x in &extensions {
+        children.push(("extension".to_string(), x.clone()));
+    }
+    let primitive = lexical.map(|lexical| Primitive {
+        type_name: type_name.to_string(),
+        lexical,
+        id,
+        extensions,
+    });
+    tree_node(type_name, false, children, primitive)
+}
+
+/// What a child element is, once its type is chosen.
+enum Shape {
+    Primitive(String),
+    Complex {
+        type_name: String,
+        sd: String,
+        path: String,
+    },
+    /// `Resource`-typed -- `contained`, `Bundle.entry.resource` -- whose
+    /// actual type is in the content.
+    Resource,
+}
+
+/// The type a typed choice name selects: `valueQuantity` -> `Quantity`.
+fn choice_type<'e>(e: &'e ElementDef, key: &str) -> Option<&'e str> {
+    let rest = key.strip_prefix(e.name.as_str())?;
+    e.types.iter().map(String::as_str).find(|t| {
+        let mut chars = t.chars();
+        chars.next().is_some_and(|c| {
+            let capitalised: String = c.to_uppercase().chain(chars).collect();
+            capitalised == rest
+        })
+    })
+}
+
+struct TreeBuilder {
+    model: &'static SdModel,
+}
+
+impl TreeBuilder {
+    fn shape(&self, sd: &str, e: &ElementDef, chosen: &str) -> Shape {
+        if let Some(r) = &e.content_reference {
+            let (ref_sd, _) = SdModel::context_of(r);
+            return Shape::Complex {
+                type_name: r.clone(),
+                sd: ref_sd.to_string(),
+                path: r.clone(),
+            };
+        }
+        if chosen == "Resource" {
+            return Shape::Resource;
+        }
+        if matches!(chosen, "BackboneElement" | "Element") && self.model.has_children(sd, &e.path) {
+            return Shape::Complex {
+                type_name: e.path.clone(),
+                sd: sd.to_string(),
+                path: e.path.clone(),
+            };
+        }
+        if self.model.is_primitive(chosen) {
+            return Shape::Primitive(chosen.to_string());
+        }
+        Shape::Complex {
+            type_name: chosen.to_string(),
+            sd: chosen.to_string(),
+            path: chosen.to_string(),
+        }
+    }
+
+    fn extension(&self, children: Vec<(String, Value)>) -> Value {
+        tree_node("Extension", false, children, None)
+    }
+
+    // -- XML --------------------------------------------------------------
+
+    fn xml_resource(&self, el: &xml::Element) -> Value {
+        let type_name = el.name.as_str();
+        let children = self.xml_children(el, type_name, type_name, true);
+        tree_node(type_name, true, children, None)
+    }
+
+    fn xml_children(
+        &self,
+        el: &xml::Element,
+        sd: &str,
+        path: &str,
+        at_resource_root: bool,
+    ) -> Vec<(String, Value)> {
+        let mut out = Vec::new();
+        for e in self.model.children_of(sd, path) {
+            // Two elements are attributes in the XML form: `Element.id` (but
+            // not `Resource.id`) and `Extension.url`.
+            let is_attribute =
+                (e.name == "id" && !at_resource_root) || (e.name == "url" && path == "Extension");
+            if is_attribute {
+                if el.has_attr(&e.name) {
+                    let t = e.types.first().map(String::as_str).unwrap_or("string");
+                    let lexical = Some(el.attr(&e.name).to_string());
+                    out.push((e.name.clone(), primitive_node(t, lexical, None, Vec::new())));
+                }
+                continue;
+            }
+            for child in el.child_elements() {
+                let chosen = if e.choice {
+                    match choice_type(e, &child.name) {
+                        Some(t) => t,
+                        None => continue,
+                    }
+                } else if child.name == e.name {
+                    e.types.first().map(String::as_str).unwrap_or("")
+                } else {
+                    continue;
+                };
+                if let Some(v) = self.xml_value(sd, e, chosen, child) {
+                    out.push((e.name.clone(), v));
+                }
+            }
+        }
+        out
+    }
+
+    fn xml_value(
+        &self,
+        sd: &str,
+        e: &ElementDef,
+        chosen: &str,
+        el: &xml::Element,
+    ) -> Option<Value> {
+        match self.shape(sd, e, chosen) {
+            Shape::Resource => el.child_elements().first().map(|r| self.xml_resource(r)),
+            Shape::Primitive(t) if t == "xhtml" => Some(primitive_node(
+                &t,
+                Some(el.text_content()),
+                None,
+                Vec::new(),
+            )),
+            Shape::Primitive(t) => {
+                let lexical = el.has_attr("value").then(|| el.attr("value").to_string());
+                let id = el.has_attr("id").then(|| el.attr("id").to_string());
+                let extensions = el
+                    .children_named("extension")
+                    .into_iter()
+                    .map(|x| self.extension(self.xml_children(x, "Extension", "Extension", false)))
+                    .collect();
+                Some(primitive_node(&t, lexical, id, extensions))
+            }
+            Shape::Complex {
+                type_name,
+                sd,
+                path,
+            } => Some(tree_node(
+                &type_name,
+                false,
+                self.xml_children(el, &sd, &path, false),
+                None,
+            )),
+        }
+    }
+
+    // -- JSON -------------------------------------------------------------
+
+    fn json_resource(&self, obj: &json::Value) -> Option<Value> {
+        let type_name = obj.get("resourceType")?.as_str()?;
+        let children = self.json_children(obj, type_name, type_name);
+        Some(tree_node(type_name, true, children, None))
+    }
+
+    fn json_children(&self, obj: &json::Value, sd: &str, path: &str) -> Vec<(String, Value)> {
+        let json::Value::Object(members) = obj else {
+            return Vec::new();
+        };
+        let mut out = Vec::new();
+        for e in self.model.children_of(sd, path) {
+            for (key, value) in members {
+                // A `_field` with no `field` beside it is a primitive that
+                // carries only an id or extensions.
+                let (base_key, is_sibling) = match key.strip_prefix('_') {
+                    Some(k) => (k, true),
+                    None => (key.as_str(), false),
+                };
+                let chosen = if e.choice {
+                    match choice_type(e, base_key) {
+                        Some(t) => t,
+                        None => continue,
+                    }
+                } else if base_key == e.name {
+                    e.types.first().map(String::as_str).unwrap_or("")
+                } else {
+                    continue;
+                };
+                if is_sibling {
+                    if obj.get(base_key).is_none() {
+                        self.json_push(sd, e, chosen, None, Some(value), &mut out);
+                    }
+                } else {
+                    let sibling = obj.get(&format!("_{key}"));
+                    self.json_push(sd, e, chosen, Some(value), sibling, &mut out);
+                }
+            }
+        }
+        out
+    }
+
+    fn json_push(
+        &self,
+        sd: &str,
+        e: &ElementDef,
+        chosen: &str,
+        main: Option<&json::Value>,
+        sibling: Option<&json::Value>,
+        out: &mut Vec<(String, Value)>,
+    ) {
+        let sibling_at = |i: usize| match sibling {
+            Some(json::Value::Array(items)) => items.get(i),
+            _ => None,
+        };
+        match (main, sibling) {
+            (Some(json::Value::Array(items)), _) => {
+                for (i, item) in items.iter().enumerate() {
+                    if let Some(v) = self.json_value(sd, e, chosen, Some(item), sibling_at(i)) {
+                        out.push((e.name.clone(), v));
+                    }
+                }
+            }
+            (None, Some(json::Value::Array(items))) => {
+                for s in items {
+                    if let Some(v) = self.json_value(sd, e, chosen, None, Some(s)) {
+                        out.push((e.name.clone(), v));
+                    }
+                }
+            }
+            _ => {
+                if let Some(v) = self.json_value(sd, e, chosen, main, sibling) {
+                    out.push((e.name.clone(), v));
+                }
+            }
+        }
+    }
+
+    fn json_value(
+        &self,
+        sd: &str,
+        e: &ElementDef,
+        chosen: &str,
+        main: Option<&json::Value>,
+        sibling: Option<&json::Value>,
+    ) -> Option<Value> {
+        match self.shape(sd, e, chosen) {
+            Shape::Resource => main.and_then(|v| self.json_resource(v)),
+            Shape::Primitive(t) => {
+                let lexical = match main {
+                    Some(json::Value::String(s)) => Some(s.clone()),
+                    Some(json::Value::Number(n)) => Some(n.clone()),
+                    Some(json::Value::Bool(b)) => Some(b.to_string()),
+                    _ => None,
+                };
+                let sibling = sibling.filter(|s| matches!(s, json::Value::Object(_)));
+                if lexical.is_none() && sibling.is_none() {
+                    return None;
+                }
+                let id = sibling
+                    .and_then(|s| s.get("id"))
+                    .and_then(json::Value::as_str)
+                    .map(str::to_string);
+                let extensions = match sibling.and_then(|s| s.get("extension")) {
+                    Some(json::Value::Array(xs)) => xs
+                        .iter()
+                        .map(|x| self.extension(self.json_children(x, "Extension", "Extension")))
+                        .collect(),
+                    _ => Vec::new(),
+                };
+                Some(primitive_node(&t, lexical, id, extensions))
+            }
+            Shape::Complex {
+                type_name,
+                sd,
+                path,
+            } => {
+                let v = main.filter(|v| matches!(v, json::Value::Object(_)))?;
+                Some(tree_node(
+                    &type_name,
+                    false,
+                    self.json_children(v, &sd, &path),
+                    None,
+                ))
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Results and failures, as the harness compares them
+// ---------------------------------------------------------------------------
+
+/// An evaluation failure as the harness grades it. A feature the evaluator
+/// does not implement is `did-not-run`, never a graded answer.
+fn engine_error(e: EvalError) -> EngineError {
+    match e {
+        EvalError::Unsupported { .. } => EngineError::NotImplemented,
+        EvalError::Execution { message, offset } => EngineError::Diagnostic {
+            message,
+            offset: Some(offset),
+        },
+        EvalError::Node(e) => EngineError::Diagnostic {
+            message: e.to_string(),
+            offset: None,
+        },
+    }
+}
+
+fn child_lexical(node: &dyn Node, name: &str) -> Option<String> {
+    node.children(name)
+        .ok()?
+        .first()?
+        .as_node()?
+        .primitive()
+        .map(|p| p.lexical)
+}
+
+/// One evaluation result as the harness compares it: a literal by its FHIR
+/// type, as upstream's literal objects are typed, and a node by the type the
+/// model gave it.
+fn result_item(model: &SdModel, value: &Value) -> ResultItem {
+    let primitive = |fhir_type: &str, value: String| ResultItem::Primitive {
+        fhir_type: fhir_type.to_string(),
+        value,
+    };
+    match value {
+        Value::Boolean(b) => primitive("boolean", b.to_string()),
+        Value::Integer(i) => primitive("integer", i.to_string()),
+        Value::Decimal(d) => primitive("decimal", d.lexical().to_string()),
+        Value::String(s) => primitive("string", s.clone()),
+        Value::Date(d) => primitive("date", d.lexical.clone()),
+        Value::DateTime(d) => primitive("dateTime", d.lexical.clone()),
+        Value::Time(t) => primitive("time", t.lexical.clone()),
+        Value::Quantity(q) => ResultItem::Quantity(QuantityValue {
+            value: q.value.lexical().to_string(),
+            comparator: None,
+            unit: q.unit.clone(),
+            system: q.system.clone(),
+            code: q.code.clone(),
+            has_element_id: false,
+            has_extensions: false,
+        }),
+        Value::Node(node) => {
+            let type_name = node.type_name();
+            if let Some(p) = node.primitive() {
+                return primitive(type_name, p.lexical);
+            }
+            if type_name == "Quantity" || model.derives_from(type_name, "Quantity") {
+                let node = node.as_ref();
+                return ResultItem::Quantity(QuantityValue {
+                    value: child_lexical(node, "value").unwrap_or_default(),
+                    comparator: child_lexical(node, "comparator"),
+                    unit: child_lexical(node, "unit"),
+                    system: child_lexical(node, "system"),
+                    code: child_lexical(node, "code"),
+                    has_element_id: node.children("id").is_ok_and(|c| !c.is_empty()),
+                    has_extensions: node.children("extension").is_ok_and(|c| !c.is_empty()),
+                });
+            }
+            if model.is_primitive(type_name) {
+                // A primitive element with no value -- only an id or
+                // extensions -- is still a primitive on the value branch.
+                return primitive(type_name, String::new());
+            }
+            ResultItem::Complex {
+                fhir_type: type_name.to_string(),
+            }
+        }
     }
 }
