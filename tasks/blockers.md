@@ -726,6 +726,27 @@ check of `model.json.021` still runs over the other eleven and the two fatal
 fixtures keep their path-and-offset coverage. Task 21's box is left unticked
 until then.
 
+**RESOLVED 2026-11-12, by the orchestrator, not by the implementer.** The
+contradiction was reproduced from both independent sources before anything was
+touched: `model.json.023` in the approved spec delta says the lenient decode
+"**fails**", and
+`reference/hapi-fhir/hapi-fhir-base/src/main/java/ca/uhn/fhir/parser/LenientErrorHandler.java:100-108`
+delegates `invalidValue` to `STRICT_ERROR_HANDLER` whenever the value is
+non-blank. The table entry was the slip, exactly as reported.
+
+`Fixture` now carries `fatal_in_lenient`, set on that one entry and `false` on
+the other eleven, and `the_parse_mode_is_selectable_and_lenient_is_the_default`
+takes a second arm for it: both modes must **reject**, and the two reports must
+be equal. That is stronger than what the test asked for before, not weaker. The
+fixture stays in the table, so `model.errors.001` and `model.errors.002` still
+grade its kind, path, offset and message through the strict loop, and the
+compiler now requires every future fixture to state which kind it is.
+
+The implementer did not do this, and should not have: an implementer editing the
+oracle that grades it is the failure mode the role boundary exists to prevent.
+`model_decode` is 37 of 37.
+
+
 ---
 
 ## 2026-11-12 — `add-fhirpath-and-codegen-r4` — `extensionContainsValueAndNestedExtensions` is an encode-side condition in HAPI, not a decode-side one

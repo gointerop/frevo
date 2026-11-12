@@ -533,22 +533,23 @@ checkpoint because it changes what a gate measures.
   `model.json.021`, `model.json.022`, `model.json.023`, `model.errors.003`,
   `codegen.cardinality.002`, `codegen.cardinality.004`,
   `codegen.cardinality.005`.
-  **Not ticked, and not because the work is undone.** Every condition above is
-  implemented and 36 of `model_decode`'s 37 tests pass. Two things remain, both
-  recorded in `tasks/blockers.md` on 2026-11-12:
-  (a) `model.json.021`'s test cannot pass as written —
-  `the_parse_mode_is_selectable_and_lenient_is_the_default` requires a *lenient
-  success* for `INVALID_PRIMITIVE_VALUE`, which
-  `an_invalid_primitive_value_is_fatal_in_both_modes_but_a_blank_one_is_not` and
-  `model.json.023` require to *fail*; `oracle-builder` has to amend the fixture
-  table, and neither test was weakened to get past it;
-  (b) `codegen.cardinality.002`, `.004` and `.005` are graded by
-  `codegen_r4.rs`, whose own `generator_under_test` seam is still unbound, and
-  the missing-required-element diagnostic cannot travel through
-  `decode::ReportKind` in any case — adding a variant breaks `model_decode.rs`'s
-  exhaustive match, and reporting the condition would give several
-  `SINGLE_PROBLEM_FIXTURES` a second diagnostic (`Media.content` is `1..1`).
-  It needs the same separate channel the two coded conditions of task 21a use.
+  **Not ticked, and not because the decoding work is undone.** All ten
+  conditions are implemented and `model_decode` is 37 of 37. What remains is
+  the three `codegen.cardinality.*` scenarios this task also claims, and they
+  are held on an owner decision recorded in `tasks/blockers.md` on
+  2026-11-12: HAPI has **no** general missing-required-element check on
+  decode. The callback's four decode-side call sites are all about an
+  `Extension`'s `url`, nothing consults `getMin()` while parsing, and HAPI
+  accepts an `Observation` with no `status` silently. So
+  `codegen.cardinality.004`'s "returns a missing-required-element
+  diagnostic" would be a diagnostic HAPI never raises — a strict-mode
+  superset needing a `DEV-nnnn`, not an implementation gap. The three are
+  graded by `codegen_r4.rs`, whose `generator_under_test` seam is still
+  unbound, so they are not reachable from here in any case.
+  The `model.json.021` contradiction that first held this box is
+  **resolved**: `Fixture` now carries `fatal_in_lenient`, and the fixture
+  that is fatal in both modes is graded as such rather than required to
+  decode.
 
 - [x] **21a. Implement the two contained-resource decode diagnostics.** A
   contained resource with no `id` is **still appended** to the parent's

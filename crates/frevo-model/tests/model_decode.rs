@@ -726,6 +726,12 @@ struct Fixture {
     path: &'static str,
     message_needle: &'static str,
     at_offset: &'static [&'static str],
+    /// Whether `LenientErrorHandler` treats this condition as fatal by
+    /// default. For such a fixture there is no lenient diagnostic to compare a
+    /// strict error against, because the lenient decode raises the same error --
+    /// so `model.json.021`'s "the two modes cannot drift apart" is an equality
+    /// of the two errors rather than of an error and a diagnostic.
+    fatal_in_lenient: bool,
 }
 
 const SINGLE_PROBLEM_FIXTURES: &[Fixture] = &[
@@ -736,6 +742,7 @@ const SINGLE_PROBLEM_FIXTURES: &[Fixture] = &[
         path: "Patient.nmae",
         message_needle: "nmae",
         at_offset: &[r##""nmae""##],
+        fatal_in_lenient: false,
     },
     Fixture {
         what: "a boolean given as a string",
@@ -744,6 +751,7 @@ const SINGLE_PROBLEM_FIXTURES: &[Fixture] = &[
         path: "Patient.active",
         message_needle: "boolean",
         at_offset: &[r##""active""##, r##""true""##],
+        fatal_in_lenient: false,
     },
     Fixture {
         what: "a repeating element given a bare object",
@@ -752,6 +760,7 @@ const SINGLE_PROBLEM_FIXTURES: &[Fixture] = &[
         path: "Patient.name",
         message_needle: "name",
         at_offset: &[r##""name""##, r##"{"family""##],
+        fatal_in_lenient: false,
     },
     Fixture {
         what: "a 0..1 element given an array",
@@ -760,6 +769,7 @@ const SINGLE_PROBLEM_FIXTURES: &[Fixture] = &[
         path: "Patient.birthDate",
         message_needle: "birthDate",
         at_offset: &[r##""birthDate""##, r##"["1974-12-25""##],
+        fatal_in_lenient: false,
     },
     Fixture {
         what: "a duplicate property",
@@ -768,6 +778,7 @@ const SINGLE_PROBLEM_FIXTURES: &[Fixture] = &[
         path: "Patient.gender",
         message_needle: "gender",
         at_offset: &[r##""gender":"female""##],
+        fatal_in_lenient: false,
     },
     Fixture {
         what: "a null in a non-primitive array",
@@ -776,6 +787,7 @@ const SINGLE_PROBLEM_FIXTURES: &[Fixture] = &[
         path: "Patient.name",
         message_needle: "name",
         at_offset: &[r##""name""##, "null"],
+        fatal_in_lenient: false,
     },
     Fixture {
         what: "an integer above the integer range",
@@ -784,6 +796,7 @@ const SINGLE_PROBLEM_FIXTURES: &[Fixture] = &[
         path: "MolecularSequence.coordinateSystem",
         message_needle: "2147483648",
         at_offset: &[r##""coordinateSystem""##, "2147483648"],
+        fatal_in_lenient: false,
     },
     Fixture {
         what: "a positiveInt of zero",
@@ -792,6 +805,7 @@ const SINGLE_PROBLEM_FIXTURES: &[Fixture] = &[
         path: "Media.height",
         message_needle: "positiveInt",
         at_offset: &[r##""height""##, "0}"],
+        fatal_in_lenient: false,
     },
     Fixture {
         what: "an unsignedInt below zero",
@@ -800,6 +814,7 @@ const SINGLE_PROBLEM_FIXTURES: &[Fixture] = &[
         path: "Bundle.total",
         message_needle: "unsignedInt",
         at_offset: &[r##""total""##, "-1}"],
+        fatal_in_lenient: false,
     },
     Fixture {
         what: "an invalid primitive value",
@@ -808,6 +823,11 @@ const SINGLE_PROBLEM_FIXTURES: &[Fixture] = &[
         path: "Patient.birthDate",
         message_needle: "not-a-date",
         at_offset: &[r##""birthDate""##, r##""not-a-date""##],
+        // LenientErrorHandler.java:100-108 delegates a non-blank invalid value
+        // to STRICT_ERROR_HANDLER, and model.json.023 says the lenient decode
+        // fails. It stays in this table so model.errors.001 and .002 still
+        // grade its path, offset, kind and message.
+        fatal_in_lenient: true,
     },
     Fixture {
         what: "unequal _field array lengths",
@@ -816,6 +836,7 @@ const SINGLE_PROBLEM_FIXTURES: &[Fixture] = &[
         path: "Patient.name[0].given",
         message_needle: "given",
         at_offset: &[r##""given""##, r##""_given""##],
+        fatal_in_lenient: false,
     },
     Fixture {
         what: "a _field property on a complex element",
@@ -824,6 +845,7 @@ const SINGLE_PROBLEM_FIXTURES: &[Fixture] = &[
         path: "Patient.name",
         message_needle: "_name",
         at_offset: &[r##""name""##, r##""_name""##],
+        fatal_in_lenient: false,
     },
 ];
 
@@ -1471,6 +1493,19 @@ fn the_parse_mode_is_selectable_and_lenient_is_the_default() {
     // same kind, path, offset and message -- so the two modes cannot drift
     // apart -- and nothing else about decoding changes.
     for f in SINGLE_PROBLEM_FIXTURES {
+        if f.fatal_in_lenient {
+            // The condition is one LenientErrorHandler raises on, so there is
+            // no diagnostic beside a resource to compare against: both modes
+            // fail. The requirement still bites -- they must fail identically.
+            let strict = must_reject(f.json.as_bytes(), ParseMode::Strict, f.what);
+            let lenient = must_reject(f.json.as_bytes(), ParseMode::Lenient, f.what);
+            assert_eq!(
+                strict, lenient,
+                "{}: a condition that is fatal in both modes must be reported                  identically in both -- same kind, path, offset and message",
+                f.what
+            );
+            continue;
+        }
         let lenient = must_decode(f.json.as_bytes(), ParseMode::Lenient, f.what);
         assert_eq!(
             lenient.diagnostics.len(),
