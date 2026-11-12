@@ -893,3 +893,86 @@ instruction that protects the oracle and reported the conflict instead of
 resolving it quietly, which is the correct order of precedence. Recorded here
 because the alternative record -- three tasks that "only got 11 of 44" -- would
 blame the work for a defect in the instruction.
+
+## 2026-11-12 — `add-fhirpath-and-codegen-r4` — tasks 23, 23a and 24 cannot start: the implementer's worktree is not on a `change/` branch
+
+**What happened.** The implementer for tasks 23, 23a and 24 was given worktree
+`.claude/worktrees/agent-a9e71bab4ceeac10d` on branch
+`worktree-agent-a9e71bab4ceeac10d`, created from `main` (`9d97bdc`) and not from
+the change branch. It was moved to `fb3975f` (the head of
+`change/add-fhirpath-and-codegen-r4`) with a reset on its own clean branch. Then
+the first write under `crates/` was refused by
+`.claude/hooks/require-active-change.sh`: `active_change()` in
+`.claude/hooks/_lib.sh` takes the change id from the branch name only, and a
+`worktree-agent-*` branch names no change. The implementer role's own
+precondition 1 ("the branch is `change/<id>`") is false for the same reason.
+
+**What was tried, and what was not.** `change/add-fhirpath-and-codegen-r4` is
+already checked out in `C:/gointerop/git/frevo-change`, so git will not check it
+out in a second worktree. A suffixed name such as
+`change/add-fhirpath-and-codegen-r4-task23` would make the hook look for
+`openspec/changes/add-fhirpath-and-codegen-r4-task23/`, which does not exist,
+and creating it to satisfy the hook would be working around the gate. (The
+earlier `change/add-fhirpath-and-codegen-r4-path-frontend` merge predates #17,
+which stopped these hooks failing open.) Writing the files through the shell
+instead of the edit tools would also bypass the hook, and was not done. Nothing
+under `crates/` was changed.
+
+**Decision needed.** One of:
+
+1. run the implementer in the worktree that holds the change branch
+   (`C:/gointerop/git/frevo-change`), one task at a time; or
+2. have a `chore/governance-*` change teach `active_change()` a task-branch
+   convention, for example `change/<id>--<task>` mapping to `<id>`, so parallel
+   implementer worktrees can be gated against their change.
+
+### Upstream findings for tasks 23 and 23a, recorded here so nobody has to find them again
+
+They come from reading the reference at the pins. None of them is implemented.
+Each is behaviour the spec delta does not cover, so it goes back to the proposer
+rather than into code.
+
+1. **`JsonCreatorCanonical` does not keep a decimal's presented form when it
+   uses an exponent.** `org.hl7.fhir.r4.formats.JsonParser.composeDecimalCore`
+   calls `prop(name, value.getValue())`, which is `JsonParserBase.prop(String,
+   BigDecimal)` and then `JsonCreatorDirect.value(BigDecimal)`, and that writes
+   `BigDecimal.toString()`. So `1.58700` stays `1.58700`, but `1.00e3` comes out
+   as `1.00E+3`. `model_canonical.rs:722`
+   (`canonical_form_preserves_a_decimals_presented_form`) asserts that `1.00e3`
+   survives, which matches the scenario title and `design.md`'s decimal rule but
+   contradicts the requirement sentence at `specs/model/spec.md:401`, "SHALL
+   produce the canonical JSON form that `JsonCreatorCanonical` produces". The
+   oracle compares Frevo's canonical form with Frevo's canonical form, so no
+   gate can see the difference. The requirement text and the oracle still have
+   to agree on one of the two.
+2. **`JsonCreatorCanonical` re-escapes strings, it does not copy them.**
+   `JsonCreatorDirect.value(String)` writes `Utilities.escapeJson(value)`, which
+   escapes `\r`, `\n`, `\t`, `"`, `\` and control characters, writes Unicode
+   whitespace other than U+0020 as `\uXXXX`, and leaves `/` and non-ASCII
+   characters literal. The codec's canonical emitters in `decode.rs` and
+   `stored.rs` copy each string token's input bytes. No scenario covers string
+   escaping in the canonical form.
+3. **HAPI's encoder changes contained resources on the way out.**
+   `FhirTerser.containResources` (`FhirTerser.java:1601-1612`, at `7ab4c7c7`)
+   strips leading `#` characters from a contained resource's id, with a
+   deprecation warning. `ContainedResources.addContained` (`:1929-1934`) gives an
+   id-less contained resource a random UUID id. So HAPI encodes
+   `CONTAINED_WITHOUT_ID` in `model_parser_errors.rs` with an id on the
+   contained `Organization`, and the spec says nothing about that.
+4. **Which contained resources an internal reference is checked against.**
+   `JsonParser.encodeResourceToJsonStreamWriter` (`JsonParser.java:924-926`)
+   calls `containResourcesInReferences` only for a resource that is not itself
+   contained. That call replaces the `EncodeContext`'s contained set and never
+   restores it. So a reference inside a contained resource is checked against
+   its container's `contained` list, but once a `Bundle.entry.resource` has been
+   encoded, the Bundle's later references are checked against that entry's
+   list. Neither rule is in `model.canonical.007`.
+5. **`model.mutate.007` cannot pass inside task 24.** Its last assertion
+   (`model_mutate.rs:578`) requires a file under `bench/micro/` that names the
+   `model-meta-update` workload. That is task 27's deliverable, so task 24 can
+   make at most 6 of the 7 `model_mutate` tests green on its own.
+
+Baseline measured at `fb3975f` with `cargo test -p frevo-model --no-fail-fast`:
+`model_canonical` 0/6, `model_mutate` 0/7, `model_parser_errors` 3/6 (the three
+`model.canonical.007` tests fail on `NotImplemented`), `model_bytes_lazy_perf`
+12/18 (pre-existing: `bench/micro/` missing, and entries 2 and 3 above).
