@@ -72,3 +72,9 @@ was modified. Every
 other row is updated by the change that first ports into that crate;
 `openspec-guard` checks that a crate whose sources gained a provenance header
 also gained a row here.
+
+## Derived harness files
+
+| File | Upstream path | Pinned SHA | Notes |
+|---|---|---|---|
+| `harness/hapi-fhirpath-results/src/main/java/dev/frevo/harness/HapiFhirPathResults.java` | `hapifhir/org.hl7.fhir.core` `org.hl7.fhir.r4/src/test/java/org/hl7/fhir/r4/test/FHIRPathTests.java` | `73c432b5f43ddbce979978a760ec4aa81e929094` | Apache-2.0. Test body kept; JUnit parameterisation replaced by a catch-per-case loop that writes JSON. Used only to record HAPI's measured results (`oracles/fhirpath/hapi-8.12.0-results.json`); not shipped. |
