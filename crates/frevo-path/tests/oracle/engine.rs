@@ -61,8 +61,9 @@ impl std::fmt::Display for EngineError {
             }
             EngineError::NotImplemented => f.write_str(
                 "the stage or feature this case needs is not bound to the oracle harness yet \
-                 -- parse and check are bound, evaluate is bound for navigation only, \
-                 convert_to_boolean is not \
+                 -- parse and check are bound, evaluate is bound for navigation, the \
+                 collection predicates, filtering, subsetting, combining and membership \
+                 (tasks 31-34) and `=`/`!=`; convert_to_boolean is not \
                  (crates/frevo-path/tests/oracle/engine.rs::engine_under_test)",
             ),
         }
@@ -203,7 +204,9 @@ pub trait SuiteEngine {
 ///
 /// Tasks 28, 29 and 30 built the front end, so `configure` and `parse` are
 /// real. Task 31 built the evaluator core, so `evaluate` is bound -- for what
-/// the evaluator implements and nothing else: every function, operator and
+/// the evaluator implements (navigation, and since tasks 32-34 the collection
+/// predicates, filtering and projection, subsetting, combining and membership,
+/// and `=` and `!=`) and nothing else: every function, operator and
 /// environment variable it does not implement yet comes back as
 /// [`frevo_path::EvalError::Unsupported`], which this seam turns into
 /// [`EngineError::NotImplemented`]. Task 50 built the static check pass, so

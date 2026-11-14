@@ -1542,3 +1542,82 @@ target (`zz_tmp_verify` 0/1), and the scenario-coverage script reads its
 **Decision needed (owner):** delete the untracked
 `crates/frevo-path/tests/zz_tmp_verify.rs` by hand. It is not a test of record.
 No agent should commit it.
+
+## 2026-11-14 — `add-fhirpath-and-codegen-r4` — tasks 32-34: the evaluator is built; eight test assertions contradict the pinned engine
+
+**Raised by** the implementer, on `change/add-fhirpath-and-codegen-r4`
+(commits `1a2b787`, `f0f0bb8`, `51a0d16`). Tasks 32, 33 and 34 are **not
+ticked**: no test file for them is fully green, for the reasons below. Where
+the test and `FHIRPathEngine.java` disagree the evaluator follows HAPI, and the
+assertion is listed so the oracle-builder or the owner can rule. Nothing was
+weakened. The findings are from reading the pinned source and from the failing
+assertions; none was confirmed against a live HAPI.
+
+### A. Assertions that cannot pass against the pinned engine
+
+1. **`path.collection.013`** (`path_collection.rs`,
+   `Patient.name.given.distinct()` expecting `Peter, James, Jim`).
+   `funcDistinct` (`:5659`) drops item `i` when an equal item follows it
+   (`for j = i+1`), so it keeps the **last** occurrence: HAPI answers
+   `Jim, Peter, James`. The scenario title says "first-occurrence"; no suite
+   case grades the order (`testDistinct4` is `(1 | 2 | 3)`).
+2. **`path.subset.012`** (`path_subset.rs`, `(1 | 1 | 2).exclude(2).count()` = 2).
+   `(1 | 1 | 2)` is two items because the union operator de-duplicates (the same
+   test asserts `(1 | 1 | 2).count()` = 2), so the answer is 1. The two
+   assertions cannot both hold.
+3. **`path.combine.006`** (`path_combine.rs`, `1 in {}` expected empty). `opIn`
+   (`:2630`) returns **`false`** for an empty right operand (empty only for an
+   empty left). The scenario states only the empty-left half; `contains` is
+   empty for either side.
+4. **`path.filter.009`** (`path_filter.rs`, `Patient.ofType(System.Patient)`
+   expected empty). `funcOfType` (`:5198`) calls `isKnownType`, which is false
+   for `System.Patient`, and raises `FHIRPATH_INVALID_TYPE`. Implemented as
+   HAPI. (The test also needs `type()`, which is not built, so it fails earlier
+   today.)
+5. **`path.filter.002`** (`path_filter.rs`, `where(given[1] = 'James')`). The
+   pinned parser attaches an operator that follows an indexer to the synthetic
+   `item` node (`focus = item`, `:1188-1197`), not to the proximal node, so
+   `execute` (`:1467`) never applies it: with the check skipped the `=` is
+   dropped, and the check pass rejects the expression (`string` is not legal
+   for `where` parameter 1). The test passes neither way.
+6. **`path.filter.003`** (`where('x')` must fail at **Evaluate**). Already noted
+   in the test: the check rejects it first, and evaluation alone returns all
+   items.
+7. **`path.filter.007`** (`Questionnaire.repeat(item).count() =
+   Questionnaire.repeat(item).repeat(item).count()`). `funcRepeat` starts with
+   an empty `result` and does not seed it with the focus, so the second pass
+   over the nested items yields only the descendants of those items; the counts
+   differ. The evaluator is a faithful port.
+8. **`path.collection.010`** (`{}.subsetOf(1 | 2)`) fails the **static check**
+   (`checkParamTypes` against `UNORDERED[]` of an empty focus type), which is
+   task 50's behaviour. The test expects it to pass the check.
+
+### B. Behaviour implemented to the approved scenarios, not to HAPI
+
+`skip(n)` with a negative `n` returns the focus; `skip({})` and `take({})` are
+empty (`testSkip5`, `testSkip7`, `testSkip8`, `testTake8`, `testTake9`; HAPI
+raises on all five). Recorded in the `filter.rs` module notes as `ahead-of-hapi`
+under `path.oracle.012`; they are not in `docs/deviations.md`, which is the
+owner's to rule on alongside `DEV-0012` and `DEV-0013`.
+
+### C. Scope note: `=` and `!=` were built early
+
+Nearly every criteria in the 32-34 scenarios is written `given = 'Jim'`, so
+`opEquals` and `opNotEquals` (and the `doEquals`, `compareDeep` and `isEmpty`
+primitives) are in `eval/equality.rs`. Quantity and date/dateTime equality are
+`EvalError::Unsupported` (did-not-run), so `testUnion12` and similar stay
+unrun until task 35. `~`, `!~` and the ordered operators are not built. Four
+in-crate unit tests in `eval/tests.rs` that listed `=`, `|`, `exists`, `where`,
+`count`, `skip`, `ofType` and `first` as unimplemented samples now list features
+that are still unimplemented; the property they test is unchanged.
+
+### D. Upstream behaviours the spec does not state
+
+- `empty()` is `ElementUtil.isEmpty(List)`: true when **every item is itself
+  empty**, so a collection holding only `''` is empty. The test comment says the
+  opposite.
+- `removeTrailingZeros` strips zeros from an integer written without a decimal
+  point (`100` becomes `1`), so `100 = 1.0` is true. Ported as written.
+- `intersect`, `union()` and `combine()` evaluate their argument against
+  `$this`; `exclude` evaluates it against the focus.
+- `ofType` on a primitive never walks to its base (`code` is not a `string`).
