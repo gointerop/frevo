@@ -138,13 +138,50 @@ fn pinned() -> &'static (Suite, RunReport) {
     ONCE.get_or_init(run::run_pinned_suite)
 }
 
-/// The four `isSemanticChecks` pairs whose expressions are byte-identical and
-/// which differ only by `context` and `contextType`.
-const HAPI_CANNOT_PASS_PAIRS: [[&str; 2]; 4] = [
-    ["isEffectOnLogic2Base", "isEffectOnLogic3Base"],
-    ["isGuardOr", "isGuardOrBad"],
-    ["isGuardXorBad", "isGuardXorBad2"],
-    ["isGuardOrInnerImplies", "isGuardOrInnerImpliesBad"],
+/// The six `isSemanticChecks` groups, 13 cases, whose expressions are
+/// byte-identical, which share an `inputfile`, which differ only by `context`
+/// and `contextType`, and whose expected outcomes differ (`path.oracle.016`,
+/// task 3). The pinned R4 harness reads neither attribute, so it gives every
+/// member of a group the same outcome and necessarily fails at least one.
+const HAPI_CANNOT_PASS_GROUPS: [&[&str]; 6] = [
+    &["isEffectOnLogic2Base", "isEffectOnLogic3Base"],
+    &["isGuardOr", "isGuardOr2", "isGuardOrBad"],
+    &["isGuardXorBad", "isGuardXorBad2"],
+    &["isGuardOrInnerImplies", "isGuardOrInnerImpliesBad"],
+    &["isGuardOrTypesImpliesBad", "isGuardOrTypesImpliesAll"],
+    &["isGuardNotImplies", "isGuardNotImpliesBad"],
+];
+
+/// The two groups that also share an expression and differ only in
+/// `context`/`contextType`, but whose expected outcomes are identical, so HAPI
+/// is not forced to fail any member and they are **not** `hapi-cannot-pass`.
+const SAME_OUTCOME_GROUPS: [[&str; 2]; 2] = [
+    ["isEffectOnLogic1", "isGuardImpliesEmpty"],
+    ["isEffectOnLogic2", "isEffectOnLogic3"],
+];
+
+/// Frevo's graded status for the 13, from its own context-aware run, as
+/// `path.oracle.016` breaks it down. `None` is a case that passes the check and
+/// is graded by evaluation: no status is asserted for it here, only that it is
+/// not a plain check-stage failure.
+const FREVO_HAPI_CANNOT_PASS_STATUS: [(&str, Option<CaseStatus>); 13] = [
+    // Expect success, end at the check stage graded `failed`: the check pass
+    // does not narrow (`path.check.005`, `path.check.009`).
+    ("isGuardOr", Some(CaseStatus::Failed)),
+    ("isGuardOrInnerImplies", Some(CaseStatus::Failed)),
+    ("isGuardNotImplies", Some(CaseStatus::Failed)),
+    // `invalid="semantic"`, fail the check, graded `passed`.
+    ("isEffectOnLogic3Base", Some(CaseStatus::Passed)),
+    ("isGuardOrBad", Some(CaseStatus::Passed)),
+    ("isGuardXorBad", Some(CaseStatus::Passed)),
+    ("isGuardOrInnerImpliesBad", Some(CaseStatus::Passed)),
+    ("isGuardOrTypesImpliesBad", Some(CaseStatus::Passed)),
+    ("isGuardNotImpliesBad", Some(CaseStatus::Passed)),
+    // Expect success, pass the check, graded by evaluation.
+    ("isEffectOnLogic2Base", None),
+    ("isGuardOr2", None),
+    ("isGuardOrTypesImpliesAll", None),
+    ("isGuardXorBad2", None),
 ];
 
 // ---------------------------------------------------------------------------
@@ -513,60 +550,164 @@ fn a_case_hapi_structurally_cannot_pass_is_recorded_as_such() {
     let (suite, report) = pinned();
     let hapi = hapi_results();
 
-    for [a, b] in HAPI_CANNOT_PASS_PAIRS {
-        let left = suite
-            .case("isSemanticChecks", a)
-            .unwrap_or_else(|| panic!("isSemanticChecks/{a} must resolve to one case"));
-        let right = suite
-            .case("isSemanticChecks", b)
-            .unwrap_or_else(|| panic!("isSemanticChecks/{b} must resolve to one case"));
-
-        // The premise: the two expressions are byte-identical...
-        assert_eq!(
-            left.expression, right.expression,
-            "{a} and {b} must be byte-identical expressions"
-        );
-        // ...and they differ only by `context` and `contextType`.
-        assert_eq!(left.context, right.context);
-        assert_ne!(
-            left.context_types, right.context_types,
-            "{a} and {b} must differ by contextType"
-        );
-
-        // So the pinned R4 harness, which reads neither attribute, necessarily
-        // fails one of each pair -- and at least one of the two is recorded
-        // `hapi-cannot-pass` rather than `failed`.
-        let statuses = [
-            hapi.get(&left.address.to_string())
-                .unwrap_or_else(|| panic!("{} has no HAPI status", left.address)),
-            hapi.get(&right.address.to_string())
-                .unwrap_or_else(|| panic!("{} has no HAPI status", right.address)),
-        ];
-        assert!(
-            statuses
+    let resolve = |name: &str| {
+        suite
+            .case("isSemanticChecks", name)
+            .unwrap_or_else(|| panic!("isSemanticChecks/{name} must resolve to one case"))
+    };
+    // What a case expects: its `invalid` stage and its outputs.
+    let expected_outcome = |case: &oracle::suite::Case| {
+        (
+            case.expected_failure,
+            case.outputs
                 .iter()
-                .any(|(s, _)| *s == HapiStatus::HapiCannotPass),
-            "one of {a}/{b} must be recorded hapi-cannot-pass, not {:?}",
-            statuses.map(|(s, _)| s.as_str())
-        );
+                .map(|o| (o.type_name.clone(), o.body.clone()))
+                .collect::<Vec<_>>(),
+        )
+    };
+    let hapi_status = |case: &oracle::suite::Case| {
+        hapi.get(&case.address.to_string())
+            .unwrap_or_else(|| panic!("{} has no HAPI status", case.address))
+            .0
+    };
+
+    // The rule selects exactly six groups and 13 cases.
+    let members: Vec<&str> = HAPI_CANNOT_PASS_GROUPS
+        .iter()
+        .flat_map(|g| g.iter().copied())
+        .collect();
+    assert_eq!(members.len(), 13, "six groups, 13 cases");
+    let mut distinct = members.clone();
+    distinct.sort_unstable();
+    distinct.dedup();
+    assert_eq!(distinct.len(), 13, "no case is in two groups");
+
+    for group in HAPI_CANNOT_PASS_GROUPS {
+        let cases: Vec<_> = group.iter().map(|n| resolve(n)).collect();
+        let first = cases[0];
+
+        for case in &cases[1..] {
+            // The premise: the expressions are byte-identical, on the same
+            // input...
+            assert_eq!(
+                case.expression, first.expression,
+                "{group:?} must be byte-identical expressions"
+            );
+            assert_eq!(
+                case.inputfile, first.inputfile,
+                "{group:?} share an inputfile"
+            );
+            // ...and they differ only by `context` and `contextType`.
+            assert_eq!(case.context, first.context, "{group:?}");
+        }
+        for (i, a) in cases.iter().enumerate() {
+            for b in &cases[i + 1..] {
+                assert_ne!(
+                    a.context_types, b.context_types,
+                    "{} and {} must differ by contextType",
+                    a.address.name, b.address.name
+                );
+            }
+        }
+        // ...and their expected outcomes differ, which is what forces HAPI's
+        // context-blind harness to fail at least one of them.
+        let outcomes: Vec<_> = cases.iter().map(|c| expected_outcome(c)).collect();
         assert!(
-            statuses.iter().all(|(s, _)| *s != HapiStatus::Failed),
-            "neither may be recorded as a plain failure: {:?}",
-            statuses.map(|(s, _)| s.as_str())
+            outcomes.iter().any(|o| *o != outcomes[0]),
+            "{group:?} must have differing expected outcomes: {outcomes:?}"
         );
 
-        // Frevo's status comes from its own context-aware run, which honours
-        // all four attributes -- so Frevo passes **both** halves of every pair.
-        for case in [left, right] {
-            let r = report
-                .get(&case.address.to_string())
-                .unwrap_or_else(|| panic!("{} must appear in the run report", case.address));
-            assert_eq!(
-                r.status,
-                CaseStatus::Passed,
-                "{}: Frevo is graded on its own run and must pass -- {}",
+        // So every member is recorded `hapi-cannot-pass`, a status distinct
+        // from `failed` -- and none of them as a plain failure.
+        let statuses: Vec<HapiStatus> = cases.iter().map(|c| hapi_status(c)).collect();
+        assert!(
+            statuses.iter().all(|s| *s == HapiStatus::HapiCannotPass),
+            "every member of {group:?} must be recorded hapi-cannot-pass, not {:?}",
+            statuses.iter().map(|s| s.as_str()).collect::<Vec<_>>()
+        );
+        assert!(
+            statuses.iter().all(|s| *s != HapiStatus::Failed),
+            "no member of {group:?} may be recorded as a plain failure"
+        );
+    }
+
+    // Frevo's status comes from its own context-aware run, which honours all
+    // four attributes. It is **not** `passed` for every member: 3 end at the
+    // check stage `failed` because the check pass does not narrow, 6 are
+    // semantic-invalid and graded `passed` at the check stage, and 4 pass the
+    // check and are graded by evaluation.
+    assert_eq!(
+        {
+            let mut names: Vec<&str> = FREVO_HAPI_CANNOT_PASS_STATUS
+                .iter()
+                .map(|(n, _)| *n)
+                .collect();
+            names.sort_unstable();
+            names
+        },
+        distinct,
+        "the breakdown covers exactly the 13"
+    );
+    for (name, expected) in FREVO_HAPI_CANNOT_PASS_STATUS {
+        let case = resolve(name);
+        let r = report
+            .get(&case.address.to_string())
+            .unwrap_or_else(|| panic!("{} must appear in the run report", case.address));
+        match expected {
+            Some(status) => assert_eq!(
+                (r.status, r.failed_stage),
+                (status, Some(oracle::suite::Stage::Check)),
+                "{}: Frevo must end at the check stage graded {} -- {}",
                 r.address,
+                status.as_str(),
                 r.reason
+            ),
+            None => {
+                // Graded by evaluation: no status is asserted until evaluation
+                // exists, but the case must pass the check and must not be a
+                // plain failure.
+                assert!(
+                    !matches!(
+                        r.failed_stage,
+                        Some(oracle::suite::Stage::Parse | oracle::suite::Stage::Check)
+                    ),
+                    "{}: must pass the check and reach evaluation, stopped at {:?} -- {}",
+                    r.address,
+                    r.failed_stage.map(|s| s.as_str()),
+                    r.reason
+                );
+                assert_ne!(
+                    r.status,
+                    CaseStatus::Failed,
+                    "{}: must not be recorded as a plain failure -- {}",
+                    r.address,
+                    r.reason
+                );
+            }
+        }
+    }
+
+    // The two groups that share an expression and differ only by
+    // `context`/`contextType` but expect the same outcome are excluded: HAPI is
+    // not forced to fail any of them, so none is `hapi-cannot-pass`.
+    for [a, b] in SAME_OUTCOME_GROUPS {
+        let (a, b) = (resolve(a), resolve(b));
+        assert_eq!(a.expression, b.expression);
+        assert_eq!(a.inputfile, b.inputfile);
+        assert_ne!(a.context_types, b.context_types);
+        assert_eq!(
+            expected_outcome(a),
+            expected_outcome(b),
+            "{} and {} expect the same outcome",
+            a.address.name,
+            b.address.name
+        );
+        for case in [a, b] {
+            assert_ne!(
+                hapi_status(case),
+                HapiStatus::HapiCannotPass,
+                "{} expects the same outcome as its twin and is not hapi-cannot-pass",
+                case.address
             );
         }
     }

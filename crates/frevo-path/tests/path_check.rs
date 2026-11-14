@@ -10,7 +10,7 @@
 //! verdict and the type inference, graded from the suite's 29
 //! `invalid="semantic"` cases and the `isSemanticChecks` group.
 //!
-//! Two facts about those 29 shape several tests here:
+//! Three facts shape several tests here:
 //!
 //! - **27 of them fail at the check stage, not 29.**
 //!   `documentFunctions/testResourcesAbstract3` and
@@ -19,14 +19,22 @@
 //!   consults the host service only after `Function.fromCode` returns null
 //!   (FHIRPathEngine.java:1158-1166) and `FHIRPathTestEvaluationServices`
 //!   **raises** from `resolveFunction`, so those two fail at the **parse**
-//!   stage. They are still graded `passed`, because the harness grades a
-//!   `semantic` expectation against the stage the failure came from
-//!   (`path.oracle.005`) -- which is why this file asserts the stage and not
-//!   only the verdict.
-//! - **four `isSemanticChecks` pairs are byte-identical apart from `context`
-//!   and `contextType`.** HAPI's pinned R4 harness reads neither attribute, so
-//!   it necessarily fails one of each pair (`path.oracle.016`); Frevo is graded
-//!   on its own context-aware run.
+//!   stage. The harness grades a `semantic` expectation against the stage the
+//!   failure came from (`path.oracle.005`, `tests/oracle/run.rs::graded_failure`),
+//!   so a parse-stage failure of either is graded `failed` -- as HAPI's own run
+//!   grades it (`FHIRPathTests.java:201`). `path.check.002` as written requires
+//!   all 29 to fail the check; that contradiction is open in
+//!   `tasks/blockers.md` and the test below is left as the spec states it.
+//! - **six `isSemanticChecks` groups, 13 cases, are byte-identical apart from
+//!   `context` and `contextType`, with differing expected outcomes.** HAPI's
+//!   pinned R4 harness reads neither attribute, so it necessarily fails at
+//!   least one of each group (`path.oracle.016`); Frevo is graded on its own
+//!   context-aware run.
+//! - **the check pass does not narrow on a type guard**, because the pinned
+//!   engine does not (`path.check.005` to `.012`, owner ruling of 2026-11-12):
+//!   the 14 `isSemanticChecks` cases that expect success but guard a
+//!   `toString()` over a non-primitive focus end at the check stage graded
+//!   `failed`, which is parity with HAPI.
 //!
 //! Provenance:
 //! `reference/org.hl7.fhir.core/org.hl7.fhir.r4/src/main/java/org/hl7/fhir/r4/fhirpath/FHIRPathEngine.java`
@@ -39,7 +47,7 @@ mod oracle;
 
 use std::sync::OnceLock;
 
-use frevo_path::TypeSet;
+use frevo_path::{CheckError, CheckOutcome, TypeSet, WarningId};
 
 use oracle::engine::{
     CaseContext, EngineConfig, EngineError, StrictnessFlags, SuiteEngine, engine_under_test,
@@ -52,15 +60,37 @@ use oracle::value::ResultItem;
 // ---------------------------------------------------------------------------
 // The type-returning check seam
 //
-// `SuiteEngine::check` answers pass or fail, which is all the suite needs. Four
-// scenarios here are about the inferred **type**, so they drive this seam
-// instead. Its unbound binding answers `NotImplemented`, never an empty type
-// set.
+// `SuiteEngine::check` answers pass or fail, which is all the suite needs.
+// Several scenarios here are about the inferred **type**, or about a context the
+// suite does not carry, so they drive this seam instead. It is bound over the
+// oracle harness's own check binding (`oracle::engine::check_expression`), so it
+// checks with exactly the model, host services and focus rules the suite run
+// grades with. Anything the pass cannot answer yet comes back
+// `NotImplemented`, which the helpers below report as a failure to run --
+// never as a pass and never as an empty type set.
 // ---------------------------------------------------------------------------
+
+/// Why a type check produced no type set.
+#[derive(Debug)]
+enum CheckFailure {
+    /// A real check verdict: upstream's message constant and its text.
+    Diagnostic { id: &'static str, message: String },
+    /// The pass, or the model it was given, cannot answer yet. Not a verdict.
+    NotRun(String),
+}
+
+impl std::fmt::Display for CheckFailure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            CheckFailure::Diagnostic { id, message } => write!(f, "{id}: {message}"),
+            CheckFailure::NotRun(why) => write!(f, "did not run: {why}"),
+        }
+    }
+}
 
 trait TypeCheckEngine {
     /// Check `expr` against a focus described by `context` and `context_types`
-    /// and return the inferred type set.
+    /// and return the inferred type set and the warnings.
     ///
     /// `context_types` may name several types, which is what the suite's
     /// `contextType="Period|Timing"` means (`path.check.012`).
@@ -70,24 +100,57 @@ trait TypeCheckEngine {
         root_type: &str,
         context: Option<&str>,
         context_types: &[&str],
-    ) -> Result<TypeSet, EngineError>;
+    ) -> Result<CheckOutcome, CheckFailure>;
 }
 
 fn type_check_engine_under_test() -> Box<dyn TypeCheckEngine> {
-    Box::new(UnboundTypeCheck)
+    Box::new(HarnessTypeCheck)
 }
 
-struct UnboundTypeCheck;
+/// The check pass, through the same binding the oracle harness grades with.
+///
+/// `root_type` is the case's resource type: `%resource` is typed as it and
+/// `%rootResource` as `Resource`, as `FHIRPathTests` checks
+/// (`fp.check(res, "Resource", type, type, node)`). With a `context_types`
+/// list the focus is those types (`checkOnTypes`); otherwise it is `context`,
+/// or with neither the resource type itself.
+struct HarnessTypeCheck;
 
-impl TypeCheckEngine for UnboundTypeCheck {
+impl TypeCheckEngine for HarnessTypeCheck {
     fn check_types(
         &mut self,
-        _expr: &str,
-        _root_type: &str,
-        _context: Option<&str>,
-        _context_types: &[&str],
-    ) -> Result<TypeSet, EngineError> {
-        Err(EngineError::NotImplemented)
+        expr: &str,
+        root_type: &str,
+        context: Option<&str>,
+        context_types: &[&str],
+    ) -> Result<CheckOutcome, CheckFailure> {
+        // A parse failure is not a check verdict, so it must never satisfy
+        // `check_failure_at`: every expression here is one the suite parses.
+        let parsed = frevo_path::Expression::parse(expr).unwrap_or_else(|e| {
+            panic!(
+                "{expr:?} must parse before it is checked: {} (at offset {})",
+                e.message(),
+                e.offset()
+            )
+        });
+        let context_types: Vec<String> = context_types.iter().map(|t| t.to_string()).collect();
+        let case_context = CaseContext {
+            root_resource_type: Some(root_type),
+            resource_type: Some(root_type),
+            context,
+            context_types: &context_types,
+            ..CaseContext::default()
+        };
+        match oracle::engine::check_expression(&parsed, &case_context, &EngineConfig::default()) {
+            Err(e) => Err(CheckFailure::NotRun(e.to_string())),
+            Ok(Ok(outcome)) => Ok(outcome),
+            Ok(Err(e @ CheckError::NotImplemented { .. })) => {
+                Err(CheckFailure::NotRun(e.to_string()))
+            }
+            Ok(Err(CheckError::Failed { message, id, .. })) => {
+                Err(CheckFailure::Diagnostic { id, message })
+            }
+        }
     }
 }
 
@@ -97,10 +160,12 @@ fn inferred(expr: &str, root_type: &str) -> TypeSet {
     engine
         .check_types(expr, root_type, None, &[])
         .unwrap_or_else(|e| panic!("checking {expr:?} against {root_type} must succeed: {e}"))
+        .types
 }
 
-/// The inferred type set for `expr` checked at `context` with `context_types`.
-fn inferred_at(expr: &str, root_type: &str, context: &str, context_types: &[&str]) -> TypeSet {
+/// The check outcome for `expr` checked at `context` with `context_types`,
+/// requiring the check to succeed.
+fn outcome_at(expr: &str, root_type: &str, context: &str, context_types: &[&str]) -> CheckOutcome {
     let mut engine = type_check_engine_under_test();
     engine
         .check_types(expr, root_type, Some(context), context_types)
@@ -110,13 +175,68 @@ fn inferred_at(expr: &str, root_type: &str, context: &str, context_types: &[&str
 }
 
 /// `expr` must fail the check at `context` with `context_types`, with a real
-/// diagnostic.
-fn check_failure_at(expr: &str, root_type: &str, context: &str, context_types: &[&str]) -> String {
+/// diagnostic; answers its message id and its message.
+fn check_failure_at(
+    expr: &str,
+    root_type: &str,
+    context: &str,
+    context_types: &[&str],
+) -> (&'static str, String) {
     let mut engine = type_check_engine_under_test();
     match engine.check_types(expr, root_type, Some(context), context_types) {
-        Ok(t) => panic!("checking {expr:?} at {context} as {context_types:?} must fail, got {t}"),
-        Err(EngineError::Diagnostic { message, .. }) => message,
+        Ok(o) => panic!(
+            "checking {expr:?} at {context} as {context_types:?} must fail, got {}",
+            o.types
+        ),
+        Err(CheckFailure::Diagnostic { id, message }) => (id, message),
         Err(e) => panic!("{expr:?} must fail the check with a diagnostic, not: {e}"),
+    }
+}
+
+/// The `FHIRPATH_PRIMITIVE_ONLY` diagnostic for `toString`, exactly: the
+/// template at `Messages.properties:353` with `{0}` bound to `toString`, which
+/// `makeException` passes through unchanged and suffixes with no location,
+/// because neither `FHIRPathTests` nor the harness sets one
+/// (`FHIRPathEngine.java:584-594`). `path.check.005` states it, and
+/// `path.check.006` to `.012` refer to it.
+const PRIMITIVE_ONLY_ID: &str = "FHIRPATH_PRIMITIVE_ONLY";
+const PRIMITIVE_ONLY_TO_STRING: &str =
+    "Error evaluating FHIRPath expression: The function toString can only be used on primitives";
+
+/// `expr`, checked at `Observation.effective` as `context_types`, must fail
+/// with exactly the `FHIRPATH_PRIMITIVE_ONLY` diagnostic for `toString`.
+fn fails_primitive_only(expr: &str, context_types: &[&str]) {
+    let (id, message) =
+        check_failure_at(expr, "Observation", "Observation.effective", context_types);
+    assert_eq!(
+        (id, message.as_str()),
+        (PRIMITIVE_ONLY_ID, PRIMITIVE_ONLY_TO_STRING),
+        "{expr:?} as {context_types:?} must fail with the primitive-only diagnostic for toString"
+    );
+}
+
+/// `expr`, checked at `Observation.effective` as `context_types`, must pass
+/// the check; answers the outcome. An empty `context_types` is a case with no
+/// `contextType`, whose focus is the whole `effective[x]` choice set.
+fn passes_at_effective(expr: &str, context_types: &[&str]) -> CheckOutcome {
+    outcome_at(expr, "Observation", "Observation.effective", context_types)
+}
+
+/// The check verdict for `expr` at `Observation.effective` as `context_types`:
+/// `None` when it passes, the message id and message when it fails. Panics
+/// when the pass did not run, so "did not run" can never compare equal to a
+/// verdict.
+fn verdict_at_effective(expr: &str, context_types: &[&str]) -> Option<(&'static str, String)> {
+    let mut engine = type_check_engine_under_test();
+    match engine.check_types(
+        expr,
+        "Observation",
+        Some("Observation.effective"),
+        context_types,
+    ) {
+        Ok(_) => None,
+        Err(CheckFailure::Diagnostic { id, message }) => Some((id, message)),
+        Err(e) => panic!("{expr:?} as {context_types:?} must be checked: {e}"),
     }
 }
 
@@ -152,6 +272,51 @@ fn expect_case(group: &str, name: &str) {
         "{}: {:?} is {} -- {}",
         r.address,
         r.expression,
+        r.status.as_str(),
+        r.reason
+    );
+}
+
+/// The run report's entry for `group/name`.
+fn report_for(group: &str, name: &str) -> &'static run::CaseReport {
+    let (suite, report) = pinned();
+    let case = suite
+        .case(group, name)
+        .unwrap_or_else(|| panic!("{group}/{name} must resolve to exactly one case"));
+    report
+        .get(&case.address.to_string())
+        .unwrap_or_else(|| panic!("{} must appear in the run report", case.address))
+}
+
+/// `group/name` must end at the **check** stage with `status`: `Failed` for a
+/// case that expects success, `Passed` for an `invalid="semantic"` one.
+fn expect_at_check(group: &str, name: &str, status: CaseStatus) {
+    let r = report_for(group, name);
+    assert_eq!(
+        (r.status, r.failed_stage),
+        (status, Some(Stage::Check)),
+        "{}: {:?} must end at the check stage graded {}, but is {} at {:?} -- {}",
+        r.address,
+        r.expression,
+        status.as_str(),
+        r.status.as_str(),
+        r.failed_stage.map(|s| s.as_str()),
+        r.reason
+    );
+}
+
+/// `group/name` passes the check, so its graded status is decided by
+/// evaluation. Only that much is asserted: the run report must not attribute
+/// it to the parse or the check stage. What evaluation then gives it is that
+/// scenario's business, not the check pass's.
+fn expect_decided_by_evaluation(group: &str, name: &str) {
+    let r = report_for(group, name);
+    assert!(
+        !matches!(r.failed_stage, Some(Stage::Parse | Stage::Check)),
+        "{}: {:?} must pass the check and reach evaluation, but stopped at {:?} ({}) -- {}",
+        r.address,
+        r.expression,
+        r.failed_stage.map(|s| s.as_str()),
         r.status.as_str(),
         r.reason
     );
@@ -337,7 +502,8 @@ fn navigating_a_non_existent_element_is_a_semantic_error() {
     // `executeType`'s name node raises `FHIRPATH_UNKNOWN_NAME` when the focus
     // yields no types for the name and the node may not be none
     // (FHIRPathEngine.java:1593).
-    let message = check_failure_at("Patient.nosuchelement", "Patient", "Patient", &["Patient"]);
+    let (_, message) =
+        check_failure_at("Patient.nosuchelement", "Patient", "Patient", &["Patient"]);
     assert!(
         message.contains("nosuchelement"),
         "the error must name the element: {message}"
@@ -345,7 +511,7 @@ fn navigating_a_non_existent_element_is_a_semantic_error() {
 
     // The same for a nested element, so the rule is not only about the leading
     // name.
-    let message = check_failure_at(
+    let (_, message) = check_failure_at(
         "Patient.name.nosuchpart",
         "Patient",
         "Patient",
@@ -397,31 +563,81 @@ fn the_check_infers_a_choice_elements_type_as_the_declared_set() {
 }
 
 // ---------------------------------------------------------------------------
-// path.check.005 -- the check narrows after an `is` guard in `implies`
+// path.check.005 -- an `is` guard in `implies` does not narrow
 // ---------------------------------------------------------------------------
 
 // covers: path.check.005
 #[test]
-fn the_check_narrows_the_type_after_an_is_guard_in_implies() {
-    // `$this is dateTime implies ...` checks the right operand assuming the
-    // guard is true, so `toString()` is checked against `dateTime` and not
-    // against the declared `Period`.
-    let types = inferred_at(
-        "$this is dateTime implies $this.toString().length() > 10",
-        "Observation",
-        "Observation.effective",
+fn an_is_guard_in_implies_does_not_narrow_the_type_the_other_operand_is_checked_against() {
+    // HAPI 8.12.0's `executeType` types every operand of an operator chain
+    // against the same focus (FHIRPathEngine.java:1621-1637); `is` and
+    // `implies` type to `Boolean` and leave the focus alone (`:2013-2015`,
+    // `:2027`). So `toString()` on the right is checked against the declared
+    // `Period`, and fails exactly as the unguarded expression does.
+    let guarded = "$this is dateTime implies $this.toString().length() > 10";
+    fails_primitive_only(guarded, &["Period"]);
+
+    // So the three implies-guard cases the suite expects to pass the check end
+    // at the check stage graded `failed` -- parity with HAPI, whose harness
+    // checks them against the `Observation` root and fails them too.
+    for name in [
+        "isEffectOnLogic3",
+        "isGuardOrTypesImplies",
+        "isGuardNotImplies",
+    ] {
+        expect_at_check("isSemanticChecks", name, CaseStatus::Failed);
+    }
+    fails_primitive_only(
+        "($this is dateTime or $this is instant) implies $this.toString().length() >= 10",
         &["Period"],
     );
-    assert!(
-        !types.is_empty(),
-        "the guarded form checks cleanly: {types}"
+    fails_primitive_only(
+        "($this is Period).not() implies $this.toString().length() >= 10",
+        &["Period"],
     );
-    expect_case("isSemanticChecks", "isEffectOnLogic3");
 
-    // The guard narrows to the named type, not to anything: a guard on a type
-    // the focus cannot be leaves the operand unreachable rather than erroneous
-    // (`path.check.011`).
-    expect_case("isSemanticChecks", "isGuardImpliesEmpty");
+    // The same guard passes the check when the focus includes a primitive:
+    // with `dateTime` as the context type, and with no context type, where the
+    // focus is the whole `effective[x]` choice set. Those cases' graded status
+    // is decided by evaluation.
+    passes_at_effective(guarded, &["dateTime"]);
+    passes_at_effective(guarded, &[]);
+    passes_at_effective(
+        "$this is dateTime implies $this.toString().length() >= 10",
+        &[],
+    );
+    passes_at_effective(
+        "$this is Period implies ($this is dateTime implies $this.toString().length() >= 10)",
+        &["dateTime"],
+    );
+    passes_at_effective(
+        "($this is dateTime or $this is Period) implies $this.toString().length() >= 10",
+        &[],
+    );
+    for name in [
+        "isEffectOnLogic2",
+        "isEffectOnLogic1",
+        "isGuardOrTypesImpliesAll",
+    ] {
+        expect_decided_by_evaluation("isSemanticChecks", name);
+    }
+
+    // Every implies-guard case the suite expects to fail the check fails it
+    // and is graded `passed`.
+    for name in [
+        "isGuardImpliesBad",
+        "isGuardOrTypesImpliesBad",
+        "isGuardOrFnTypesImpliesBad",
+        "isGuardNotImpliesBad",
+        "isGuardSupertypeBad",
+        "isGuardOtherExpressionBad",
+    ] {
+        expect_at_check("isSemanticChecks", name, CaseStatus::Passed);
+    }
+    // HAPI's recorded status for these cases (`hapi-cannot-pass` for
+    // `isGuardNotImplies`, `isGuardOrTypesImpliesAll`,
+    // `isGuardOrTypesImpliesBad` and `isGuardNotImpliesBad`) is asserted, with
+    // the rest of the 13, by `path_oracle.rs`'s `path.oracle.016` test.
 }
 
 // ---------------------------------------------------------------------------
@@ -432,24 +648,27 @@ fn the_check_narrows_the_type_after_an_is_guard_in_implies() {
 #[test]
 fn the_same_expression_without_the_guard_fails_the_check() {
     // Without the guard, `$this.toString()` is checked against `Period`, which
-    // has no `toString()` of its own -- so the check fails. This is the control
-    // for `path.check.005`: the two cases are byte-identical apart from the
-    // guard.
-    let message = check_failure_at(
-        "$this.toString().length() > 10",
-        "Observation",
-        "Observation.effective",
-        &["Period"],
+    // is not a primitive -- so the check fails, with the same
+    // `FHIRPATH_PRIMITIVE_ONLY` diagnostic as the guarded form of
+    // `path.check.005`.
+    let unguarded = "$this.toString().length() > 10";
+    let guarded = "$this is dateTime implies $this.toString().length() > 10";
+    fails_primitive_only(unguarded, &["Period"]);
+    expect_at_check(
+        "isSemanticChecks",
+        "isEffectOnLogic3Base",
+        CaseStatus::Passed,
     );
-    assert!(
-        !message.is_empty(),
-        "the semantic error must carry a message"
-    );
-    expect_case("isSemanticChecks", "isEffectOnLogic3Base");
 
-    // And with no `contextType` at all the same expression checks cleanly,
-    // because the focus is then the whole `effective[x]` choice set -- which is
-    // `isEffectOnLogic1Base`.
+    // With `dateTime` as the context type (`isEffectOnLogic2Base`) or with no
+    // context type at all (`isEffectOnLogic1Base`), where the focus is the
+    // whole `effective[x]` choice set, the same expression passes the check.
+    passes_at_effective(unguarded, &["dateTime"]);
+    passes_at_effective(unguarded, &[]);
+    expect_decided_by_evaluation("isSemanticChecks", "isEffectOnLogic2Base");
+    expect_decided_by_evaluation("isSemanticChecks", "isEffectOnLogic1Base");
+    // `isEffectOnLogic1Base` carries no `contextType`, and with the context
+    // honoured it evaluates `true` over the example's `dateTime`.
     expect_case("isSemanticChecks", "isEffectOnLogic1Base");
     let (suite, _) = pinned();
     assert!(
@@ -459,67 +678,110 @@ fn the_same_expression_without_the_guard_fails_the_check() {
             .context_types
             .is_empty()
     );
+
+    // For each of the three context types the guarded and the unguarded
+    // expression get the same check outcome, message for message: the guard
+    // changes nothing the check pass observes.
+    for context_types in [&["Period"][..], &["dateTime"][..], &[][..]] {
+        assert_eq!(
+            verdict_at_effective(guarded, context_types),
+            verdict_at_effective(unguarded, context_types),
+            "the guard must not change the check outcome as {context_types:?}"
+        );
+    }
 }
 
 // ---------------------------------------------------------------------------
-// path.check.007 -- the `is()` function narrows as the operator does
+// path.check.007 -- the `is()` function does not narrow; `ofType` and `as` do
 // ---------------------------------------------------------------------------
 
 // covers: path.check.007
 #[test]
-fn the_is_function_narrows_the_type_as_the_is_operator_does() {
-    // The guard may be written either way round, and both narrow: the suite
-    // grades the function form with `isGuardFnImplies` and the operator form
-    // with `isEffectOnLogic3`.
-    let types = inferred_at(
+fn the_is_function_does_not_narrow_and_only_of_type_and_as_retype_the_focus() {
+    // The `is()` function types to `Boolean` and leaves the focus unchanged
+    // (FHIRPathEngine.java:3401-3404), exactly as the operator does, so the
+    // function spelling of the guard narrows nothing either.
+    fails_primitive_only(
         "$this.is(dateTime) implies $this.toString().length() >= 10",
-        "Observation",
-        "Observation.effective",
         &["Period"],
     );
-    assert!(!types.is_empty(), "{types}");
-    expect_case("isSemanticChecks", "isGuardFnImplies");
+    expect_at_check("isSemanticChecks", "isGuardFnImplies", CaseStatus::Failed);
 
-    // And the bad form fails either way round too, so the function spelling is
-    // not a way around the rule.
+    // The bad form fails the check and is graded `passed`.
     check_failure_at(
         "$this.is(Period) implies $this.toString().length() >= 10",
         "Observation",
         "Observation.effective",
         &["Period", "Timing"],
     );
-    expect_case("isSemanticChecks", "isGuardFnImpliesBad");
-    expect_case("isSemanticChecks", "isGuardImpliesBad");
+    expect_at_check(
+        "isSemanticChecks",
+        "isGuardFnImpliesBad",
+        CaseStatus::Passed,
+    );
+    expect_at_check("isSemanticChecks", "isGuardImpliesBad", CaseStatus::Passed);
+
+    // `ofType()` types its result as the named type whatever the focus
+    // (`:3377-3384`), and `as` as the type named on its right (`:2016-2021`),
+    // so these two pass the check over the same `Period` focus --
+    // `isGuardOfType` and `isGuardAs`.
+    let of_type = passes_at_effective(
+        "$this.ofType(dateTime).toString().length() >= 10",
+        &["Period"],
+    );
+    passes_at_effective("($this as dateTime).toString().length() >= 10", &["Period"]);
+    expect_decided_by_evaluation("isSemanticChecks", "isGuardOfType");
+    expect_decided_by_evaluation("isSemanticChecks", "isGuardAs");
+
+    // The `ofType(dateTime)` form also yields an of-type-impossible warning,
+    // because a `Period` focus can never be a `dateTime` (`:3782-3784`); the
+    // warning does not fail the check (`path.check.015`).
+    assert!(
+        of_type
+            .warnings
+            .iter()
+            .any(|w| w.id == WarningId::OfTypeImpossible),
+        "ofType(dateTime) over Period must warn of-type-impossible: {:?}",
+        of_type.warnings
+    );
 }
 
 // ---------------------------------------------------------------------------
-// path.check.008 -- `and` narrows the right operand
+// path.check.008 -- `and` checks its right operand against the unnarrowed focus
 // ---------------------------------------------------------------------------
 
 // covers: path.check.008
 #[test]
-fn and_narrows_the_right_operand_assuming_the_left_is_true() {
-    // `and` is the one operator where the right operand may assume the left,
-    // and the group grades both polarities plus the case where the guard sits
-    // on the other side of an unrelated condition.
+fn and_does_not_narrow_its_right_operand() {
+    // `and` types to `Boolean` (FHIRPathEngine.java:2025) and its right
+    // operand is typed against the same focus as its left (`:1621-1637`).
+    fails_primitive_only(
+        "$this is dateTime and $this.toString().length() >= 10",
+        &["Period"],
+    );
+
+    // So the three `and`-guard cases the suite expects to pass end at the check
+    // stage graded `failed`, as they are for HAPI. Their
+    // `%resource.status = 'final'` operand types cleanly and does not change
+    // which diagnostic is raised.
     for name in [
         "isGuardAnd",
         "isGuardAndOtherImplies",
         "isGuardOtherAndImplies",
     ] {
-        expect_case("isSemanticChecks", name);
+        expect_at_check("isSemanticChecks", name, CaseStatus::Failed);
     }
-    expect_case("isSemanticChecks", "isGuardAndBad");
-
-    // Stated directly: with `Period` as the context type, the guarded form
-    // checks and the unguarded form does not.
-    let types = inferred_at(
-        "$this is dateTime and $this.toString().length() >= 10",
-        "Observation",
-        "Observation.effective",
+    fails_primitive_only(
+        "($this is dateTime and %resource.status = 'final') implies $this.toString().length() >= 10",
         &["Period"],
     );
-    assert!(!types.is_empty(), "{types}");
+    fails_primitive_only(
+        "(%resource.status = 'final' and $this is dateTime) implies $this.toString().length() >= 10",
+        &["Period"],
+    );
+
+    // `isGuardAndBad` fails the check and is graded `passed`.
+    expect_at_check("isSemanticChecks", "isGuardAndBad", CaseStatus::Passed);
     check_failure_at(
         "$this is Period and $this.toString().length() >= 10",
         "Observation",
@@ -529,127 +791,143 @@ fn and_narrows_the_right_operand_assuming_the_left_is_true() {
 }
 
 // ---------------------------------------------------------------------------
-// path.check.009 -- `or` narrows assuming the left is false
+// path.check.009 -- `or` and `xor` check their right operand unnarrowed
 // ---------------------------------------------------------------------------
 
 // covers: path.check.009
 #[test]
-fn or_narrows_the_right_operand_assuming_the_left_is_false() {
-    // `$this is Period or ...` lets the right operand assume the focus is
-    // **not** a Period, which with a single `Period` context type narrows to
-    // nothing and so cannot be wrong (`isGuardOr`), while with
-    // `Period|Timing` it narrows to `Timing` and the operand is wrong
-    // (`isGuardOrBad`).
-    for name in [
-        "isGuardOr",
-        "isGuardOr2",
-        "isGuardOrBoth",
-        "isGuardOrInnerImplies",
-    ] {
-        expect_case("isSemanticChecks", name);
+fn or_and_xor_do_not_narrow_their_right_operand() {
+    // `or` types to `Boolean` (FHIRPathEngine.java:2024) and does not assume
+    // its left operand false when typing its right.
+    let or = "$this is Period or $this.toString().length() >= 10";
+    let xor = "$this is dateTime xor $this.toString().length() >= 10";
+    fails_primitive_only(or, &["Period"]);
+
+    // So the three `or`-guard cases the suite expects to pass end at the check
+    // stage, and Frevo grades all three `failed`.
+    for name in ["isGuardOr", "isGuardOrBoth", "isGuardOrInnerImplies"] {
+        expect_at_check("isSemanticChecks", name, CaseStatus::Failed);
     }
+    fails_primitive_only(
+        "$this is Period or (%resource.status = 'final' implies $this.toString().length() >= 10)",
+        &["Period"],
+    );
+
+    // `isGuardOr` and `isGuardOrInnerImplies` are `hapi-cannot-pass` because
+    // each belongs to a `path.oracle.016` group of byte-identical expressions
+    // that differ only by `contextType`: `isGuardOr` with `isGuardOr2` and
+    // `isGuardOrBad`, `isGuardOrInnerImplies` with `isGuardOrInnerImpliesBad`.
+    // HAPI's statuses are asserted by `path_oracle.rs`; the grouping is
+    // asserted here.
+    let (suite, _) = pinned();
+    let expression = |name: &str| {
+        suite
+            .case("isSemanticChecks", name)
+            .unwrap_or_else(|| panic!("isSemanticChecks/{name} resolves"))
+            .expression
+            .clone()
+    };
+    for name in ["isGuardOr", "isGuardOr2", "isGuardOrBad"] {
+        assert_eq!(expression(name), or, "{name} shares the `or` expression");
+    }
+    assert_eq!(
+        expression("isGuardOrInnerImplies"),
+        expression("isGuardOrInnerImpliesBad")
+    );
+
+    // The `or` and `xor` cases the suite expects to fail the check fail it,
+    // and Frevo grades them `passed`.
     for name in [
         "isGuardOrBad",
-        "isGuardOrTypesImpliesBad",
-        "isGuardOrFnTypesImpliesBad",
         "isGuardOrOtherImpliesBad",
         "isGuardOrOtherImpliesNoParensBad",
         "isGuardOrInnerImpliesBad",
+        "isGuardXorBad",
+        "isGuardOrTypesImpliesBad",
+        "isGuardOrFnTypesImpliesBad",
     ] {
-        expect_case("isSemanticChecks", name);
+        expect_at_check("isSemanticChecks", name, CaseStatus::Passed);
     }
+    fails_primitive_only(xor, &["Period"]);
+    fails_primitive_only(or, &["Period", "Timing"]);
 
-    // The two that differ only by `contextType` are one of the four
-    // `hapi-cannot-pass` pairs (`path.oracle.016`), so the context really is
-    // read.
-    let types = inferred_at(
-        "$this is Period or $this.toString().length() >= 10",
-        "Observation",
-        "Observation.effective",
-        &["Period"],
-    );
-    assert!(!types.is_empty(), "{types}");
-    check_failure_at(
-        "$this is Period or $this.toString().length() >= 10",
-        "Observation",
-        "Observation.effective",
-        &["Period", "Timing"],
-    );
-
-    // `xor` narrows nothing at all, which is why `isGuardXorBad` fails where
-    // the `or` form passes.
-    expect_case("isSemanticChecks", "isGuardXorBad");
-    expect_case("isSemanticChecks", "isGuardXorBad2");
+    // With `Period|dateTime` the same `or` expression (`isGuardOr2`) and its
+    // `xor` counterpart (`isGuardXorBad2`) pass the check, because the focus
+    // then includes a primitive (`path.check.012`); their graded status is
+    // decided by evaluation.
+    passes_at_effective(or, &["Period", "dateTime"]);
+    passes_at_effective(xor, &["Period", "dateTime"]);
+    assert_eq!(expression("isGuardXorBad2"), xor);
+    assert_eq!(expression("isGuardXorBad"), xor);
+    expect_decided_by_evaluation("isSemanticChecks", "isGuardOr2");
+    expect_decided_by_evaluation("isSemanticChecks", "isGuardXorBad2");
 }
 
 // ---------------------------------------------------------------------------
-// path.check.010 -- `iif` narrows its branches by the condition's polarity
+// path.check.010 -- `iif` checks both branches against the unnarrowed focus
 // ---------------------------------------------------------------------------
 
 // covers: path.check.010
 #[test]
-fn iif_narrows_its_branches_by_the_conditions_polarity() {
-    // The then-branch assumes the condition is true and the else-branch assumes
-    // it is false, so the same guard makes one branch safe and the other not.
-    expect_case("isSemanticChecks", "isGuardIifTrue");
-    expect_case("isSemanticChecks", "isGuardIifElse");
-    expect_case("isSemanticChecks", "isGuardIifBad");
-
-    // then-branch under a true `is dateTime` guard: safe.
-    let types = inferred_at(
+fn iif_does_not_narrow_either_branch() {
+    // `iif`'s arguments are not expression parameters
+    // (FHIRPathEngine.java:3804-3816), so each is typed against the same
+    // `$this` (`:3261-3271`), and its result is the union of its branch types
+    // with no reference to the condition (`:3441-3449`). The diagnostic is the
+    // same whichever branch holds `toString()`.
+    fails_primitive_only(
         "iif($this is dateTime, $this.toString().length() >= 10, true)",
-        "Observation",
-        "Observation.effective",
         &["Period"],
     );
-    assert!(!types.is_empty(), "{types}");
-
-    // else-branch under a false `is Period` guard: also safe, and it is the
-    // *other* branch that is narrowed.
-    let types = inferred_at(
+    fails_primitive_only(
         "iif($this is Period, true, $this.toString().length() >= 10)",
-        "Observation",
-        "Observation.effective",
         &["Period"],
     );
-    assert!(!types.is_empty(), "{types}");
-
-    // ...and putting the unsafe operand in the branch the guard does not
-    // protect fails.
-    check_failure_at(
+    fails_primitive_only(
         "iif($this is Period, $this.toString().length() >= 10, true)",
-        "Observation",
-        "Observation.effective",
         &["Period"],
     );
+
+    // So `isGuardIifTrue` and `isGuardIifElse` end at the check stage graded
+    // `failed`, as they are for HAPI, and `isGuardIifBad` fails the check and
+    // is graded `passed`.
+    expect_at_check("isSemanticChecks", "isGuardIifTrue", CaseStatus::Failed);
+    expect_at_check("isSemanticChecks", "isGuardIifElse", CaseStatus::Failed);
+    expect_at_check("isSemanticChecks", "isGuardIifBad", CaseStatus::Passed);
 }
 
 // ---------------------------------------------------------------------------
-// path.check.011 -- a guard narrowing to the empty type set
+// path.check.011 -- a guard that can never be true makes nothing unreachable
 // ---------------------------------------------------------------------------
 
 // covers: path.check.011
 #[test]
-fn a_guard_that_narrows_to_the_empty_type_set_is_not_an_error() {
-    // The group's own note is the specification here: when a guard narrows the
-    // focus to no type at all, the guarded operand is unreachable, and
-    // unreachable is **not** wrong. `isGuardImpliesEmpty` is the case:
-    // `$this is dateTime` over a `Period|Timing` focus can never be true.
-    let types = inferred_at(
+fn a_guard_that_can_never_be_true_leaves_the_other_operand_checked_as_usual() {
+    // `$this is dateTime` over a `Period|Timing` focus can never be true, but
+    // the pinned engine has no notion of an unreachable operand: the right
+    // operand is checked as usual and fails. The group's note asking for an
+    // exemption (tests-fhir-r4.xml:1695-1702) describes behaviour HAPI 8.12.0
+    // does not have.
+    fails_primitive_only(
         "$this is dateTime implies $this.toString().length() >= 10",
-        "Observation",
-        "Observation.effective",
         &["Period", "Timing"],
     );
-    assert!(
-        !types.is_empty(),
-        "an unreachable operand must not fail the check: {types}"
+    fails_primitive_only(
+        "$this is Period implies ($this is dateTime implies $this.toString().length() >= 10)",
+        &["Period", "Timing"],
     );
-    expect_case("isSemanticChecks", "isGuardImpliesEmpty");
 
-    // The group carries its note in the pinned file, and the harness reads it,
-    // so the specification is traceable to the oracle rather than only to the
-    // delta.
+    // So `isGuardImpliesEmpty` and `isGuardNested` end at the check stage
+    // graded `failed`, as they are for HAPI.
+    expect_at_check(
+        "isSemanticChecks",
+        "isGuardImpliesEmpty",
+        CaseStatus::Failed,
+    );
+    expect_at_check("isSemanticChecks", "isGuardNested", CaseStatus::Failed);
+
+    // The group carries its note in the pinned file, and the harness reads the
+    // group, so what the note asks for is traceable to the oracle.
     let (suite, _) = pinned();
     let group = suite
         .groups
@@ -659,13 +937,17 @@ fn a_guard_that_narrows_to_the_empty_type_set_is_not_an_error() {
     assert_eq!(group.mode.as_deref(), Some("semantic"));
     assert_eq!(group.cases.len(), 38);
 
-    // The same shape with a guard that *is* reachable fails, so the exemption
-    // is specifically about the empty narrowing.
-    check_failure_at(
-        "$this is Period implies $this.toString().length() >= 10",
-        "Observation",
-        "Observation.effective",
-        &["Period", "Timing"],
+    // The same shape with a guard that *can* be true fails identically, so
+    // whether the guard is satisfiable changes nothing the check observes.
+    assert_eq!(
+        verdict_at_effective(
+            "$this is Period implies $this.toString().length() >= 10",
+            &["Period", "Timing"],
+        ),
+        verdict_at_effective(
+            "$this is dateTime implies $this.toString().length() >= 10",
+            &["Period", "Timing"],
+        ),
     );
 }
 
@@ -676,44 +958,70 @@ fn a_guard_that_narrows_to_the_empty_type_set_is_not_an_error() {
 // covers: path.check.012
 #[test]
 fn a_context_type_naming_several_types_checks_against_all_of_them() {
-    // `contextType="Period|Timing"` splits on `|`, and the check considers the
-    // focus to be **either** type -- which is why a guard that excludes only
-    // one of them leaves the other reachable and the operand wrong.
-    let (suite, _) = pinned();
-    let case = suite
-        .case("isSemanticChecks", "isGuardOrBad")
-        .expect("the case resolves");
-    assert_eq!(case.context_types, ["Period", "Timing"]);
-
-    // With both types the operand is reachable through `Timing`, so the check
-    // fails...
-    check_failure_at(
-        "$this is Period or $this.toString().length() >= 10",
-        "Observation",
-        "Observation.effective",
-        &["Period", "Timing"],
+    // `contextType="Period|Timing"` splits on `|`, and the focus is the set of
+    // all the named types, as `checkOnTypes` builds it from a type list
+    // (FHIRPathEngine.java:477-485).
+    let focus = passes_at_effective("$this", &["Period", "Timing"]).types;
+    assert!(
+        focus.len() == 2 && focus.contains("Period") && focus.contains("Timing"),
+        "the focus must be exactly Period and Timing: {focus}"
     );
-    // ...and with only `Period` it is not, so the check passes. The two differ
-    // in nothing but the context type list.
-    let types = inferred_at(
-        "$this is Period or $this.toString().length() >= 10",
-        "Observation",
-        "Observation.effective",
-        &["Period"],
-    );
-    assert!(!types.is_empty(), "{types}");
 
-    // Excluding both types makes it unreachable again, which is `isGuardOrBoth`.
-    let types = inferred_at(
+    // A focus rule is satisfied when **any** type in the set satisfies it
+    // (TypeDetails.java:436-448): `$this.toString()` passes with
+    // `Period|dateTime` and fails with `Period|Timing`, where neither type is a
+    // primitive.
+    let or = "$this is Period or $this.toString().length() >= 10";
+    let xor = "$this is dateTime xor $this.toString().length() >= 10";
+    passes_at_effective("$this.toString()", &["Period", "dateTime"]);
+    passes_at_effective(or, &["Period", "dateTime"]);
+    passes_at_effective(xor, &["Period", "dateTime"]);
+    fails_primitive_only("$this.toString()", &["Period", "Timing"]);
+    fails_primitive_only(or, &["Period", "Timing"]);
+    fails_primitive_only(
         "$this is Period or $this is Timing or $this.toString().length() >= 10",
-        "Observation",
-        "Observation.effective",
         &["Period", "Timing"],
     );
-    assert!(!types.is_empty(), "{types}");
 
-    // Exactly four cases in the pinned file carry a multi-type `contextType`,
-    // so a re-pin that adds one is visible.
+    // Every `Period|Timing` case in the suite, and how each is graded.
+    let (suite, _) = pinned();
+    let period_timing: [(&str, CaseStatus); 9] = [
+        ("isGuardOrBad", CaseStatus::Passed),
+        ("isGuardImpliesBad", CaseStatus::Passed),
+        ("isGuardFnImpliesBad", CaseStatus::Passed),
+        ("isGuardAndBad", CaseStatus::Passed),
+        ("isGuardNotImpliesBad", CaseStatus::Passed),
+        ("isGuardOrInnerImpliesBad", CaseStatus::Passed),
+        ("isGuardImpliesEmpty", CaseStatus::Failed),
+        ("isGuardOrBoth", CaseStatus::Failed),
+        ("isGuardNested", CaseStatus::Failed),
+    ];
+    for (name, status) in period_timing {
+        let case = suite
+            .case("isSemanticChecks", name)
+            .unwrap_or_else(|| panic!("isSemanticChecks/{name} resolves"));
+        assert_eq!(case.context_types, ["Period", "Timing"], "{name}");
+        expect_at_check("isSemanticChecks", name, status);
+    }
+    // ...and every `Period|dateTime` one, both of which pass the check.
+    for name in ["isGuardOr2", "isGuardXorBad2"] {
+        let case = suite
+            .case("isSemanticChecks", name)
+            .unwrap_or_else(|| panic!("isSemanticChecks/{name} resolves"));
+        assert_eq!(case.context_types, ["Period", "dateTime"], "{name}");
+        expect_decided_by_evaluation("isSemanticChecks", name);
+    }
+    let in_group = suite
+        .cases()
+        .filter(|c| c.address.group == "isSemanticChecks" && c.context_types.len() > 1)
+        .count();
+    assert_eq!(
+        in_group, 11,
+        "the nine Period|Timing and two Period|dateTime cases"
+    );
+
+    // Exactly eleven cases in the pinned file carry a multi-type
+    // `contextType`, so a re-pin that adds one is visible.
     let multi = suite.cases().filter(|c| c.context_types.len() > 1).count();
     assert_eq!(multi, 11, "eleven cases carry a `|`-separated contextType");
 }

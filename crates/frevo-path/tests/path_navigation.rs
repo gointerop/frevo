@@ -227,8 +227,8 @@ fn empty() -> Vec<ResultItem> {
 // `FHIRPathTests.testEvaluate_Id` is a JUnit test, not a suite case: its input
 // is a `Patient` whose id was set from `http://base/Patient/123/_history/222`,
 // which no file in `oracles/fhir-test-cases/fetched/r4/` carries. So that one
-// scenario is driven over the crate's published `Node` seam, which exists
-// today, with the engine still an unbound trait object.
+// scenario is driven over the crate's published `Node` seam, through a trait
+// object bound to the harness's evaluation binding.
 // ---------------------------------------------------------------------------
 
 /// A node built in memory, as a model implementation would hand one out.
@@ -304,21 +304,30 @@ trait NodeEngine {
     ) -> Result<Vec<Value>, EngineError>;
 }
 
-/// Phase D binds the real engine here. Until then every call is
+/// Bound over the oracle harness's own evaluation binding
+/// (`oracle::engine::evaluate_over`), so it evaluates with the same model the
+/// suite run does. A feature the evaluator does not implement yet is
 /// `NotImplemented`, which is not a result and is not a failure.
 fn node_engine_under_test() -> Box<dyn NodeEngine> {
-    Box::new(UnboundNodeEngine)
+    Box::new(HarnessNodeEngine)
 }
 
-struct UnboundNodeEngine;
+struct HarnessNodeEngine;
 
-impl NodeEngine for UnboundNodeEngine {
+impl NodeEngine for HarnessNodeEngine {
     fn evaluate_over_node(
         &mut self,
-        _expr: &str,
-        _root: Arc<dyn Node>,
+        expr: &str,
+        root: Arc<dyn Node>,
     ) -> Result<Vec<Value>, EngineError> {
-        Err(EngineError::NotImplemented)
+        let parsed = frevo_path::Expression::parse(expr).unwrap_or_else(|e| {
+            panic!(
+                "{expr:?} must parse before it is evaluated: {} (at offset {})",
+                e.message(),
+                e.offset()
+            )
+        });
+        oracle::engine::evaluate_over(&parsed, Some(&Value::Node(root)))
     }
 }
 
@@ -676,7 +685,7 @@ fn resource_id_yields_the_logical_id_and_not_the_full_url() {
     // `toUnqualifiedVersionless().withResourceType(null)`.
     //
     // No suite input carries such an id, so this is driven over the published
-    // `Node` seam. `evaluate_over_node` is `NotImplemented` today.
+    // `Node` seam, evaluated through the harness's evaluation binding.
     let patient = TestNode::resource(
         "Patient",
         vec![(

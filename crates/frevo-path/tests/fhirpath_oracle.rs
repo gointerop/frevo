@@ -1409,9 +1409,10 @@ impl SuiteEngine for RecordingEngine {
 #[test]
 fn the_harness_hands_the_engine_every_attribute_that_changes_the_run() {
     // Frevo's run honours `context`, `contextType`, `mode` and `version`. The
-    // pinned R4 Java harness reads none of them, which is why four
-    // `isSemanticChecks` pairs are recorded `hapi-cannot-pass` rather than
-    // `failed`; Frevo is graded on its own context-aware run instead.
+    // pinned R4 Java harness reads none of them, which is why the 13 cases of
+    // six `isSemanticChecks` groups are recorded `hapi-cannot-pass` rather than
+    // `failed` (`path.oracle.016`); Frevo is graded on its own context-aware
+    // run instead.
     let src = concat!(
         r#"<tests name="x"><group name="g" mode="semantic">"#,
         r#"<test name="t" inputfile="observation-example.xml" "#,

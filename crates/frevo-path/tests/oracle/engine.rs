@@ -17,9 +17,9 @@ use std::collections::HashMap;
 use std::sync::{Arc, OnceLock};
 
 use frevo_path::{
-    CheckError, CheckFocus, CheckOptions, CheckRequest, Checker, ConstantMode, ElementInfo,
-    EvalError, Evaluator, FunctionDetails, HostError, HostServices, Model, Node, NodeError,
-    Primitive, TypeSet, Value,
+    CheckError, CheckFocus, CheckOptions, CheckOutcome, CheckRequest, Checker, ConstantMode,
+    ElementInfo, EvalError, Evaluator, FunctionDetails, HostError, HostServices, Model, Node,
+    NodeError, Primitive, TypeSet, Value,
 };
 
 use super::input::{self, Document, SuiteInput};
@@ -145,8 +145,10 @@ impl Default for EngineConfig {
 ///
 /// Frevo's run honours `context`, `contextType`, `mode` and `version`. The
 /// pinned R4 Java harness reads none of them and always checks against the
-/// resource root, which is why four `isSemanticChecks` pairs are recorded
-/// `hapi-cannot-pass` rather than `failed` (`path.oracle.016`).
+/// resource root, which is why the 13 cases of six `isSemanticChecks` groups
+/// -- byte-identical expressions whose expected outcomes differ only through
+/// `context`/`contextType` -- are recorded `hapi-cannot-pass` rather than
+/// `failed` (`path.oracle.016`).
 #[derive(Debug, Clone, Default)]
 pub struct CaseContext<'a> {
     pub root_resource_type: Option<&'a str>,
@@ -294,10 +296,7 @@ impl SuiteEngine for FrontEndEngine {
         _flags: StrictnessFlags,
     ) -> Result<(), EngineError> {
         // The strictness flags are read by evaluation's `as` and by nothing
-        // in the check pass. The type information is the same pinned R4
-        // package evaluation is typed from; without it nothing can be
-        // checked, which is a missing prerequisite and not a verdict.
-        let model = sd_model().ok_or(EngineError::NotImplemented)?;
+        // in the check pass; `check_expression` is the binding itself.
         let expr = self
             .parsed
             .get(parsed.0)
@@ -306,44 +305,7 @@ impl SuiteEngine for FrontEndEngine {
                 offset: None,
             })?;
         let config = self.config.unwrap_or_default();
-
-        // `FHIRPathTests.test` checks with `fp.check(null, null, null, node)`
-        // when the case has no input, and otherwise with
-        // `fp.check(res, "Resource", type, type, node)`: the root resource
-        // type is the literal `Resource`, and the resource type is both the
-        // `%resource` type and the context. Frevo's run also honours the
-        // case's `context` and `contextType` (`path.oracle.016`):
-        // a `contextType` list is `checkOnTypes`, a `context` path is
-        // `check(..., context, ...)`.
-        let context_types: Vec<&str> = context.context_types.iter().map(String::as_str).collect();
-        let focus = if !context_types.is_empty() {
-            CheckFocus::Types(&context_types)
-        } else if let Some(c) = context.context {
-            CheckFocus::Context(c)
-        } else if let Some(rt) = context.resource_type {
-            CheckFocus::Context(rt)
-        } else {
-            CheckFocus::None
-        };
-        let request = CheckRequest {
-            root_resource_type: context.resource_type.map(|_| "Resource"),
-            resource_type: context.resource_type,
-            focus,
-        };
-        let mut checker = Checker::new(model).with_options(CheckOptions {
-            allow_polymorphic_names: false,
-            emit_sql_on_fhir_warning: config.emit_sql_on_fhir_warning,
-        });
-        if config.install_test_host_services {
-            checker = checker.with_host_services(&SuiteHostServices);
-        }
-        match checker.check(expr, &request) {
-            Ok(_) => Ok(()),
-            Err(CheckError::NotImplemented { .. }) => Err(EngineError::NotImplemented),
-            Err(CheckError::Failed {
-                message, offset, ..
-            }) => Err(EngineError::Diagnostic { message, offset }),
-        }
+        check_types(expr, context, &config).map(|_| ())
     }
 
     fn evaluate(
@@ -381,9 +343,7 @@ impl SuiteEngine for FrontEndEngine {
                 message: format!("no expression was parsed under handle {}", parsed.0),
                 offset: None,
             })?;
-        let values = Evaluator::new(model)
-            .evaluate(expr, root.as_ref())
-            .map_err(engine_error)?;
+        let values = evaluate_over(expr, root.as_ref())?;
         Ok(values.iter().map(|v| result_item(model, v)).collect())
     }
 
@@ -398,6 +358,98 @@ impl SuiteEngine for FrontEndEngine {
     fn take_log(&mut self) -> String {
         self.unbound.take_log()
     }
+}
+
+/// The check stage as the harness binds it, answering the check pass's own
+/// result: the inferred types and warnings, or the [`CheckError`] with its
+/// message id.
+///
+/// It is a free function so that a test about the inferred **type**
+/// (`path.check.003`, `004`), about a diagnostic's message id, or about a
+/// context the suite does not carry (`path.check.005` to `012`) drives exactly
+/// the binding the suite run grades, over the same model and host services,
+/// rather than a second copy of it. The outer error is the one prerequisite
+/// the pass itself cannot report -- no type model -- and is
+/// [`EngineError::NotImplemented`]. A caller must treat
+/// [`CheckError::NotImplemented`] the same way: did-not-run, never a pass.
+pub fn check_expression(
+    expr: &frevo_path::Expression,
+    context: &CaseContext<'_>,
+    config: &EngineConfig,
+) -> Result<Result<CheckOutcome, CheckError>, EngineError> {
+    {
+        // The type information is the same pinned R4 package evaluation is
+        // typed from; without it nothing can be checked, which is a missing
+        // prerequisite and not a verdict.
+        let model = sd_model().ok_or(EngineError::NotImplemented)?;
+
+        // `FHIRPathTests.test` checks with `fp.check(null, null, null, node)`
+        // when the case has no input, and otherwise with
+        // `fp.check(res, "Resource", type, type, node)`: the root resource
+        // type is the literal `Resource`, and the resource type is both the
+        // `%resource` type and the context. Frevo's run also honours the
+        // case's `context` and `contextType` (`path.oracle.016`):
+        // a `contextType` list is `checkOnTypes`, a `context` path is
+        // `check(..., context, ...)`.
+        let context_types: Vec<&str> = context.context_types.iter().map(String::as_str).collect();
+        let focus = if !context_types.is_empty() {
+            CheckFocus::Types(&context_types)
+        } else if let Some(c) = context.context {
+            CheckFocus::Context(c)
+        } else if let Some(rt) = context.resource_type {
+            CheckFocus::Context(rt)
+        } else {
+            CheckFocus::None
+        };
+        let request = CheckRequest {
+            root_resource_type: context.resource_type.map(|_| "Resource"),
+            resource_type: context.resource_type,
+            focus,
+        };
+        let mut checker = Checker::new(model).with_options(CheckOptions {
+            allow_polymorphic_names: false,
+            emit_sql_on_fhir_warning: config.emit_sql_on_fhir_warning,
+        });
+        if config.install_test_host_services {
+            checker = checker.with_host_services(&SuiteHostServices);
+        }
+        Ok(checker.check_with_warnings(expr, &request))
+    }
+}
+
+/// [`check_expression`] with the pass's answer folded into the harness's
+/// error: a failure is a [`EngineError::Diagnostic`] and a not-implemented
+/// answer is [`EngineError::NotImplemented`]. [`SuiteEngine::check`] is this
+/// with the type set dropped.
+pub fn check_types(
+    expr: &frevo_path::Expression,
+    context: &CaseContext<'_>,
+    config: &EngineConfig,
+) -> Result<TypeSet, EngineError> {
+    match check_expression(expr, context, config)? {
+        Ok(outcome) => Ok(outcome.types),
+        Err(CheckError::NotImplemented { .. }) => Err(EngineError::NotImplemented),
+        Err(CheckError::Failed {
+            message, offset, ..
+        }) => Err(EngineError::Diagnostic { message, offset }),
+    }
+}
+
+/// The evaluation stage as the harness binds it, over a root value the caller
+/// supplies.
+///
+/// [`SuiteEngine::evaluate`] is this over the input file's typed tree. A test
+/// whose input no suite file carries (`path.navigation.013`, an in-memory
+/// `Patient`) drives the same binding over a node it built. A feature the
+/// evaluator does not implement yet is [`EngineError::NotImplemented`].
+pub fn evaluate_over(
+    expr: &frevo_path::Expression,
+    root: Option<&Value>,
+) -> Result<Vec<Value>, EngineError> {
+    let model = sd_model().ok_or(EngineError::NotImplemented)?;
+    Evaluator::new(model)
+        .evaluate(expr, root)
+        .map_err(engine_error)
 }
 
 /// `FHIRPathTests.FHIRPathTestEvaluationServices`

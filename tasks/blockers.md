@@ -1453,3 +1453,48 @@ test binaries ("os error 4551"): `path_api`, `path_math`, `path_parse_errors`
 and `path_utility` in one run. They were rerun from a separate
 `CARGO_TARGET_DIR` and the counts above are from those reruns. CI is the
 authority.
+
+## 2026-11-14 — `add-fhirpath-and-codegen-r4` — `path.check.002` contradicts `path.oracle.014` and HAPI
+
+**Raised by** the oracle-builder, on `change/add-fhirpath-and-codegen-r4`,
+while retargeting `tests/path_check.rs` (task 50 finding 1, which asked the
+oracle-builder to decide).
+
+**The contradiction is in the spec text, not only in the test.**
+`path.check.002` says each of the suite's 29 `invalid="semantic"` cases
+"fails the check", and `path.oracle.016`'s last bullet repeats "requiring all
+29 semantic-invalid cases to fail the check". Two of the 29 cannot reach the
+check: `documentFunctions/testResourcesAbstract3` and
+`documentFunctions/testHasCoding11` name `resources()` and `hasCoding()`, which
+the R4 `ExpressionNode.Function` enum lacks, so both fail at the **parse**
+stage (`FHIRPathEngine.java:1158-1166`; `FHIRPathTestEvaluationServices`
+raises from `resolveFunction`). HAPI's own harness fails both
+(`FHIRPathTests.java:201` asserts a `SYNTAX` failure kind). And
+`path.oracle.014` requires every non-syntax `documentFunctions` case,
+these two included, to be reported `failed` (the test asserts 111 failed /
+4 passed). Frevo's run grades them `failed` at the parse stage
+(`run.rs::graded_failure`), matching HAPI and `path.oracle.014`.
+
+So no implementation can satisfy both `path.check.002` and `path.oracle.014`
+while matching HAPI. Changing the test to expect "27 fail the check, 2 fail at
+parse graded `failed`" would edit around spec text that says 29, which this role
+may not do.
+
+**Left unchanged:** `path_check.rs::the_semantic_invalid_oracle_cases_all_fail_the_check`
+(it fails today on exactly this: `testResourcesAbstract3` graded `failed` at
+parse), and `path_oracle.rs`'s trailing `semantic_passed == 29` assertion in the
+`path.oracle.016` test. Its doc comment now states the contradiction.
+
+**Decision needed (proposer, then spec-reviewer):** amend `path.check.002`, and
+`path.oracle.016`'s last bullet, to say that 27 cases fail the check and the
+two `documentFunctions` cases fail at the parse stage graded `failed`, as they
+do for HAPI and as `path.oracle.014` requires. Recommended: this is HAPI's
+behaviour. The oracle-builder then changes both assertions to match. The other
+option, grading a parse-stage failure of a `semantic` case as `passed`, would
+contradict `path.oracle.005` and HAPI.
+
+**Also disclosed:** one edit to `tests/path_check.rs`, which replaced the seam
+helper block, was written with a Python one-liner and not with the edit tool.
+No hook had blocked it; it was a mistake. Every later edit to the file went
+through the edit tool, and the edit hooks (clippy, format) re-ran over the
+whole file after it. The content is in the same commit, for review.
