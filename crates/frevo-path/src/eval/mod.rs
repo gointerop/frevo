@@ -29,6 +29,7 @@
 //! every step that reads it.
 
 mod collection;
+mod combine;
 mod equality;
 mod error;
 mod filter;
@@ -268,6 +269,8 @@ impl Run<'_> {
             Some(Function::IsDistinct) => self.func_is_distinct(focus, id),
             Some(Function::Distinct) => self.func_distinct(focus, id),
             Some(Function::Count) => Ok(self.func_count(focus)),
+            Some(Function::Union) => self.func_union(context, focus, id),
+            Some(Function::Combine) => self.func_combine(context, focus, id),
             Some(Function::Where) => self.func_where(context, focus, id),
             Some(Function::Select) => self.func_select(context, focus, id),
             Some(Function::Repeat) => self.func_repeat(context, focus, id),
@@ -373,6 +376,9 @@ impl Run<'_> {
         match op {
             Operation::Equals => equality::op_equals(self.model, left, right, false, offset),
             Operation::NotEquals => equality::op_equals(self.model, left, right, true, offset),
+            Operation::Union => self.op_union(left, right, offset),
+            Operation::In => self.op_in(left, right, offset),
+            Operation::Contains => self.op_contains(left, right, offset),
             other => Err(EvalError::unsupported(
                 format!("the operator {}", other.to_code()),
                 offset,

@@ -781,6 +781,28 @@ fn intersect_deduplicates_and_exclude_does_not() {
     assert!(ok("1.exclude(1)", None).is_empty());
 }
 
+// ---------------------------------------------------------------------------
+// Combining and membership (task 34)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn union_deduplicates_and_combine_does_not() {
+    assert_eq!(ok("(1 | 1 | 2)", None), ["integer:1", "integer:2"]);
+    assert_eq!(ok("1.union(1)", None), ["integer:1"]);
+    assert_eq!(ok("1.combine(1)", None), ["integer:1", "integer:1"]);
+    assert_eq!(ok("1.combine(1).union(2).count()", None), ["integer:2"]);
+}
+
+#[test]
+fn in_and_contains_disagree_about_an_empty_right_operand() {
+    assert_eq!(ok("1 in (1 | 2)", None), ["boolean:true"]);
+    assert_eq!(ok("(1 | 2) contains 3", None), ["boolean:false"]);
+    assert!(ok("{} in (1 | 2)", None).is_empty());
+    assert_eq!(ok("1 in {}", None), ["boolean:false"]);
+    assert!(ok("{} contains 1", None).is_empty());
+    assert!(ok("(1 | 2) contains {}", None).is_empty());
+}
+
 #[test]
 fn equality_reaches_the_decimal_rule_and_leaves_dates_and_quantities_unsupported() {
     assert_eq!(ok("1 = 1.0", None), ["boolean:true"]);

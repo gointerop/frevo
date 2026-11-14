@@ -65,7 +65,9 @@ against the specification and the oracles, not from upstream source), `empty`
 collection predicates and subsetting — `src/eval/{collection,equality,filter}.rs`
 (`funcWhere`, `funcSelect`, `funcRepeat`, `funcOfType`, `isKnownType`,
 `funcSingle`, `funcFirst`, `funcLast`, `funcTail`, `funcSkip`, `funcTake`,
-`funcIntersect`, `funcExclude`), and the predicates from
+`funcIntersect`, `funcExclude`), and combining and membership —
+`src/eval/combine.rs` (`opUnion`, `funcUnion`, `funcCombine`, `opIn`,
+`opContains`, `doContains`) — and the predicates from
 `FHIRPathEngine.java`'s `funcEmpty`, `funcExists`, `funcNot`, `funcAll`, the
 four boolean folds, `funcSubsetOf`, `funcSupersetOf`, `funcIsDistinct`,
 `funcDistinct`, `funcCount`, `asBool`, `doEquals`, `opEquals` and
