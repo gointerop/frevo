@@ -31,6 +31,7 @@
 mod collection;
 mod equality;
 mod error;
+mod filter;
 mod navigate;
 
 #[cfg(test)]
@@ -267,6 +268,20 @@ impl Run<'_> {
             Some(Function::IsDistinct) => self.func_is_distinct(focus, id),
             Some(Function::Distinct) => self.func_distinct(focus, id),
             Some(Function::Count) => Ok(self.func_count(focus)),
+            Some(Function::Where) => self.func_where(context, focus, id),
+            Some(Function::Select) => self.func_select(context, focus, id),
+            Some(Function::Repeat) => self.func_repeat(context, focus, id),
+            Some(Function::OfType) => self.func_of_type(focus, id),
+            Some(Function::Single) => self.func_single(focus, id),
+            // `funcFirst`, `funcLast` and `funcTail`: one item at either end,
+            // or everything after the first, with no error for a short focus.
+            Some(Function::First) => Ok(focus.first().cloned().into_iter().collect()),
+            Some(Function::Last) => Ok(focus.last().cloned().into_iter().collect()),
+            Some(Function::Tail) => Ok(focus.iter().skip(1).cloned().collect()),
+            Some(Function::Skip) => self.func_skip(context, focus, id),
+            Some(Function::Take) => self.func_take(context, focus, id),
+            Some(Function::Intersect) => self.func_intersect(context, focus, id),
+            Some(Function::Exclude) => self.func_exclude(context, focus, id),
             Some(Function::Custom) | None => Err(EvalError::unsupported(
                 format!("the host function {}()", node.name().unwrap_or("?")),
                 node.start(),

@@ -180,6 +180,28 @@ pub(super) fn op_equals(
     })
 }
 
+/// `doContains(list, item)` (`FHIRPathEngine.java:2846`): an item is contained
+/// when `doEquals` answers `true`; a `null` answer is not a match.
+pub(super) fn do_contains(
+    model: &dyn Model,
+    list: &[Value],
+    item: &Value,
+    offset: usize,
+) -> Result<bool, EvalError> {
+    for test in list {
+        if do_equals(model, test, item, offset)? == Some(true) {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+/// `Base.primitiveValue()`: the text of a primitive that has a value, and
+/// `None` for anything else.
+pub(super) fn primitive_text(model: &dyn Model, value: &Value) -> Option<String> {
+    primitive_value(model, value).flatten()
+}
+
 /// The Java class of the value a primitive holds, which is what
 /// `PrimitiveType.equalsDeep` compares: an `integer` is never equal to the
 /// `string` `"1"`, and a `code` is a `string` because `CodeType` extends

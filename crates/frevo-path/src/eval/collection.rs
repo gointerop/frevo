@@ -128,8 +128,9 @@ impl Run<'_> {
             [one] if is_boolean_primitive(one) => Ok(as_bool_item(one)),
             [_] => Ok(Tri::True),
             many => Err(EvalError::execution(
+                // `FHIRPATH_UNABLE_BOOLEAN`.
                 format!(
-                    "Unable to convert '{}' to a boolean",
+                    "Unable to evaluate as a boolean: {}",
                     convert_list_to_string(many)
                 ),
                 self.expr.node(at).start(),

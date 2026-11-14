@@ -743,6 +743,44 @@ fn a_boolean_fold_over_a_non_boolean_names_the_item() {
     assert_eq!(ok("false.anyFalse()", None), ["boolean:true"]);
 }
 
+// ---------------------------------------------------------------------------
+// Filtering, projection and subsetting (task 33)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn single_fails_for_an_empty_focus_as_well_as_for_a_long_one() {
+    let p = patient();
+    assert!(execution_error("{}.single()", None).contains("single"));
+    assert!(execution_error("Patient.name.given.single()", Some(&p)).contains("single"));
+    assert_eq!(ok("1.single()", None), ["integer:1"]);
+}
+
+#[test]
+fn skip_and_take_tolerate_negative_and_empty_counts() {
+    assert_eq!(ok("1.skip(-1)", None), ["integer:1"]);
+    assert!(ok("1.skip({})", None).is_empty());
+    assert!(ok("1.take({})", None).is_empty());
+    assert!(ok("1.take(-1)", None).is_empty());
+    assert!(ok("1.skip(1)", None).is_empty());
+    assert!(ok("{}.tail()", None).is_empty());
+}
+
+#[test]
+fn of_type_rejects_an_unknown_namespace_and_a_base_type_for_a_primitive() {
+    assert!(execution_error("1.ofType(System.Patient)", None).contains("not valid"));
+    assert_eq!(ok("1.ofType(System.Integer)", None), ["integer:1"]);
+    // The stub model knows no primitive, so a `FHIR.` primitive name is an
+    // unknown type to it.
+    assert!(execution_error("1.ofType(FHIR.integer)", None).contains("not valid"));
+}
+
+#[test]
+fn intersect_deduplicates_and_exclude_does_not() {
+    assert_eq!(ok("1.intersect(1)", None), ["integer:1"]);
+    assert_eq!(ok("1.exclude(2)", None), ["integer:1"]);
+    assert!(ok("1.exclude(1)", None).is_empty());
+}
+
 #[test]
 fn equality_reaches_the_decimal_rule_and_leaves_dates_and_quantities_unsupported() {
     assert_eq!(ok("1 = 1.0", None), ["boolean:true"]);

@@ -62,7 +62,10 @@ against the specification and the oracles, not from upstream source), `empty`
 `src/eval/{mod,navigate}.rs`, from `FHIRPathEngine.java`'s `execute`,
 `getChildrenByName`, `filterIdType`, `funcItem`, `funcChildren` and
 `funcDescendants` and from `IdType.java`'s `setValue` — the second. Its
-collection predicates — `src/eval/{collection,equality}.rs`, from
+collection predicates and subsetting — `src/eval/{collection,equality,filter}.rs`
+(`funcWhere`, `funcSelect`, `funcRepeat`, `funcOfType`, `isKnownType`,
+`funcSingle`, `funcFirst`, `funcLast`, `funcTail`, `funcSkip`, `funcTake`,
+`funcIntersect`, `funcExclude`), and the predicates from
 `FHIRPathEngine.java`'s `funcEmpty`, `funcExists`, `funcNot`, `funcAll`, the
 four boolean folds, `funcSubsetOf`, `funcSupersetOf`, `funcIsDistinct`,
 `funcDistinct`, `funcCount`, `asBool`, `doEquals`, `opEquals` and
