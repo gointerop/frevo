@@ -758,7 +758,7 @@ Every allocated ID, grouped as it is grouped in the delta files.
 
 **Requirement: Execution errors**
 
-- `path.errors.001` — the 27 execution-invalid oracle cases all fail at evaluation
+- `path.errors.001` — 21 of the 27 execution-invalid oracle cases fail at evaluation; the other 6 fail at parse, as for HAPI
 - `path.errors.002` — an error names the expression and the position
 - `path.errors.003` — evaluation never panics
 - `path.errors.004` — evaluation is bounded for an adversarial expression
@@ -792,7 +792,7 @@ Every allocated ID, grouped as it is grouped in the delta files.
 - `path.oracle.012` — the gate is pass rate at or above HAPI's on the same cases
 - `path.oracle.016` — a case HAPI structurally cannot pass is recorded as such, and Frevo is graded on its own run
 - `path.oracle.013` — the harness can run the same cases through `helios-fhirpath`
-- `path.oracle.014` — the `documentFunctions` group is reported as out of scope, not as passing
+- `path.oracle.014` — the `documentFunctions` group is reported as out of scope; only its four syntax-invalid cases pass
 - `path.oracle.015` — the harness does not modify the suite
 
 **Requirement: FHIRPath performance budgets**

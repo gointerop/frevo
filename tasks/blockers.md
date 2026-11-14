@@ -1407,6 +1407,21 @@ the reasoning is recorded under "Considered and not recorded as deviations".
   `chore/governance-*` branch. **Decision needed (owner):** fix the hook's
   marker test, for example by matching only a marker comment line, or
   authorise the `design.md` edit some other way.
+  **Added 2026-11-14 (proposer, review 5 of `d9fcfc5`).** A second `design.md`
+  edit is owed for the same reason. `design.md:519-521` currently reads
+  "which is why the `documentFunctions` group — 115 of the 1,191 cases — is
+  out of scope (`path.oracle.014`)." The count of 115 is the group's size and
+  is correct. But the context implies that all 115 fail, and the amended
+  `path.oracle.014` says only 111 do: the group's 4 `invalid="syntax"` cases
+  (`testSection13`, `testEntry12`, `testSameSubject16`, `testHasCoding10`)
+  fail at parse as they expect, and pass for HAPI and Frevo alike. Suggested
+  replacement for those lines: "which is why the `documentFunctions` group —
+  115 of the 1,191 cases, of which 111 fail for HAPI and its 4 syntax-invalid
+  cases pass — is out of scope (`path.oracle.014`)." The same inaccuracy is in
+  `docs/deviations.md:563-565` ("115 of the 1,191 cases fail for HAPI too").
+  That is a register, outside this commit's brief (specs, proposal and tasks
+  only), so it was not edited. It should read "111 of the 1,191 cases fail for
+  HAPI too; the group's 4 syntax-invalid cases pass".
 
 ### 4. The `covers:` hook still blocks unit tests in new files
 

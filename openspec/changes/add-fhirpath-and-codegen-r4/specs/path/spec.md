@@ -2054,8 +2054,9 @@ it. Like the pinned engine, it SHALL NOT narrow a type on a type guard
   suite's host service raises from `resolveFunction`
   (`FHIRPathTests.java:72-76`)
 - **AND** a parse-stage failure of a case expecting a `semantic` failure comes
-  from the wrong stage, so both are graded `failed` (`path.oracle.005`), as
-  `path.oracle.014` requires of every `documentFunctions` case. HAPI fails both
+  from the wrong stage, so both are graded `failed` under `path.oracle.005`'s
+  stage rule; `path.oracle.014` lists them among the group's 111 `failed`
+  cases. HAPI fails both
   the same way: its harness asserts a `SYNTAX` expectation when parsing fails
   (`FHIRPathTests.java:199-202`). This is parity
 - **AND** each case is checked with the `context` and `contextType` the case
@@ -2436,11 +2437,17 @@ deviation from HAPI, so neither needs a `DEV-nnnn` entry: both are HAPI.
 
 The engine SHALL report an evaluation failure as an error naming the sub-expression, and SHALL never panic or substitute an empty collection for a failure.
 
-#### Scenario: [path.errors.001] the 27 execution-invalid oracle cases all fail at evaluation
+#### Scenario: [path.errors.001] 21 of the 27 execution-invalid oracle cases fail at evaluation; the other 6 fail at parse, as for HAPI
 
-- **WHEN** each of the suite's 27 `invalid="execution"` cases is parsed, checked
-  and evaluated
-- **THEN** parsing and checking succeed and evaluation fails for each
+- **WHEN** each of the suite's 27 `invalid="execution"` cases is run
+- **THEN** for 21 of them parsing and checking succeed and evaluation fails, and
+  each is graded `passed`
+- **AND** the other six are in `documentFunctions`: `testSection11`,
+  `testSection12`, `testEntryIn5`, `testEntryIn6`, `testResources7` and
+  `testResourcesIn3`. They call a function the R4 engine does not implement, so
+  they fail at the **parse** stage and are graded `failed` under
+  `path.oracle.005`'s stage rule, as `path.oracle.014` states. HAPI fails them
+  the same way (`FHIRPathTests.java:199-202`)
 
 #### Scenario: [path.errors.002] an error names the expression and the position
 
@@ -2761,15 +2768,28 @@ The oracle harness SHALL run every case in the vendored suite without modifying 
 - **AND** `helios-fhirpath` appears in no shipped crate's dependency graph
   (ADR 0004 decision 3)
 
-#### Scenario: [path.oracle.014] the `documentFunctions` group is reported as out of scope, not as passing
+#### Scenario: [path.oracle.014] the `documentFunctions` group is reported as out of scope; only its four syntax-invalid cases pass
 
 - **WHEN** the harness runs the 115 cases in the `mode="custom"`
-  `documentFunctions` group
-- **THEN** each is reported `failed` with the reason that the R4 engine
-  implements none of `section`, `entry`, `entryIn`, `resources`, `resourcesIn`,
-  `sameSubject` or `hasCoding`
-- **AND** HAPI's recorded status for the same cases is `failed` too, so the
-  aggregate gate is unaffected
+  `documentFunctions` group, every one of which calls at least one of
+  `section`, `entry`, `entryIn`, `resources`, `resourcesIn`, `sameSubject` or
+  `hasCoding`. The R4 engine implements none of them, so every case fails at
+  the **parse** stage
+- **THEN** the unknown function is reported as a real parse error, a
+  diagnostic and not "not implemented". Otherwise the harness would grade the
+  cases `did-not-run` (`run.rs`'s classification of a not-implemented error)
+- **AND** the four `invalid="syntax"` cases are graded `passed`, because a
+  parse-stage failure is what they expect (`path.oracle.005`):
+  `testSection13` (`tests-fhir-r4.xml:1860`), `testEntry12` (`:1879`),
+  `testSameSubject16` (`:1930`) and `testHasCoding10` (`:1950`)
+- **AND** the other 111 are reported `failed` with the reason that the R4 engine
+  does not implement the function. That is 103 that expect success, 6 that
+  expect an `execution` failure and 2 that expect a `semantic` failure
+  (`path.check.002`, `path.errors.001`)
+- **AND** HAPI's recorded status is the same, 4 `passed` and 111 `failed`. Its
+  harness passes a syntax case when parsing fails and fails every other case
+  whose parse fails (`FHIRPathTests.java:199-202`), so the aggregate gate is
+  unaffected
 
 #### Scenario: [path.oracle.015] the harness does not modify the suite
 

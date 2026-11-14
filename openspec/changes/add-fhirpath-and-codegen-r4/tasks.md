@@ -87,9 +87,11 @@ checkpoint because it changes what a gate measures.
   that record into the harness so every case reports Frevo's status beside
   HAPI's. Implement the gate as "Frevo's `passed` count at least HAPI's", with
   every case HAPI passes and Frevo fails listed individually regardless of the
-  aggregate. Confirm and record that all 115 `documentFunctions` cases fail for
-  HAPI too, with the reason that the R4 `ExpressionNode.Function` enum
-  implements none of the seven functions. Record a status of `hapi-cannot-pass`,
+  aggregate. Confirm and record that the 115 `documentFunctions` cases all fail
+  at parse for HAPI, because the R4 `ExpressionNode.Function` enum implements
+  none of the seven functions. That leaves 111 `failed` and the 4
+  `invalid="syntax"` ones (`testSection13`, `testEntry12`, `testSameSubject16`,
+  `testHasCoding10`) `passed`, for HAPI and Frevo alike (`path.oracle.014`). Record a status of `hapi-cannot-pass`,
   distinct from `failed`, for every case in a group whose expressions are
   byte-identical, which share an `inputfile`, which differ only by
   `context`/`contextType`, and whose expected outcomes differ. The pinned R4
@@ -752,8 +754,9 @@ checkpoint because it changes what a gate measures.
   all seven `invalid="syntax"` cases fail at the parse stage and are
   graded `passed`. The rest evaluate, or belong to task 53. With the
   parser bound, 118 of the 1,191 cases reach a verdict and 1,073 report
-  did-not-run; 118 is exactly the 7 syntax-invalid cases plus the 115
-  `documentFunctions` cases, so the parser rejects what HAPI rejects and
+  did-not-run; 118 is exactly the 3 syntax-invalid cases outside
+  `documentFunctions` plus that group's 115 cases (4 of which are themselves
+  syntax-invalid), so the parser rejects what HAPI rejects and
   accepts everything else.
   Satisfies `path.parse.001` through `path.parse.008`.
 
@@ -1024,9 +1027,10 @@ checkpoint because it changes what a gate measures.
   Satisfies `path.strictness.001` through `path.strictness.010`,
   `path.lexer.015`, `path.lexer.016`, `path.string.024`.
 
-- [ ] **53. Implement error reporting and the bounds.** All 27
+- [ ] **53. Implement error reporting and the bounds.** 21 of the 27
   `invalid="execution"` cases failing at evaluation after a clean parse and
-  check; errors naming the sub-expression and offset; no panic anywhere in the
+  check, with the 6 `documentFunctions` ones failing at parse, graded `failed`,
+  as for HAPI; errors naming the sub-expression and offset; no panic anywhere in the
   suite; depth and step limits; and a model decode error surfacing as an error
   rather than as an empty collection.
   Satisfies `path.errors.001` through `path.errors.005`.
