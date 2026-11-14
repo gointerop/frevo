@@ -485,26 +485,31 @@ file, so its prose is not redistributable here (see `oracles/PINS.md`).
 
 - **Area:** path
 - **Scenario IDs:** path.filter.002
-- **HAPI 8.12.0 behaviour:** the parser (`ENGINE:1188-1213`) makes the
-  indexer a synthetic `item` node and, after it, attaches a trailing operator
-  to that node (`focus = item`) rather than to the proximal node; `execute`
-  applies an operation only when `exp.isProximal()` (`ENGINE:1508`). So
-  `name[0].given = 'x'` evaluates as `name[0].given`, with no error from the
-  parser, and `where(given[1] = 'James')` fails the check because `where`
-  parameter 1 is then a `string`. Established by reading the pinned source and
+- **HAPI 8.12.0 behaviour:** when an indexer is on the **first term** of an
+  expression, argument or group, the proximal parse (`ENGINE:1199`) attaches
+  trailing operators to `focus`, which the indexer has moved to the synthetic
+  `item` node (`ENGINE:1188-1197`, `1203`, `1206-1213`); `execute` applies an
+  operation only when `exp.isProximal()` (`ENGINE:1508`). So `given[1] = 'x'`
+  evaluates as `given[1]`, with no parser error, and
+  `where(given[1] = 'James')` fails the check because `where` parameter 1 is
+  then a `string`. An indexer on a later term is unaffected:
+  `Patient.name[0].given = 'Peter' | 'James'` (`testIndexer1`), `testIndexer2`,
+  `testSort9` and `testQuantityUnitTextEqual` pass. Established by reading the pinned source and
   the implementer's failing assertion; not confirmed against a live HAPI.
 - **Specification requirement:** FHIRPath 2.0.0 — an operator applies to the
   whole preceding invocation chain, indexer included.
 - **Chosen behaviour:** HAPI — the operator is dropped.
 - **Configuration flag:** none
 - **Debt:** none
-- **Rationale:** owner decision, 2026-11-14: HAPI 8.12.0's observable behaviour
-  is the reference. Confirm against live HAPI in the differential before
-  closing; if the live engine differs from this reading, this entry is wrong.
+- **Rationale:** the owner's 2026-11-14 ruling for HAPI was given for a broader
+  wording (any operator after an indexer); this entry is narrowed to the first
+  term and needs the owner's re-confirmation. Confirm against live HAPI in the
+  differential before closing; if the live engine differs, this entry is wrong.
 - **Normalizer impact:** an R4 search-parameter expression that compares after
   an indexer would behave differently from the specification on HAPI and on
   Frevo alike; none is known (not checked against the generated table).
-- **Reviewed:** owner, 2026-11-14 (ruled for HAPI).
+- **Reviewed:** pending owner re-confirmation. Ruled for HAPI on 2026-11-14 for
+  the broader wording; narrowed after review the same day.
 
 ## Considered and not recorded as deviations
 

@@ -474,8 +474,11 @@ The engine SHALL implement the collection predicates `FHIRPathEngine` implements
   `Jim, Peter, James`: `funcDistinct` (`FHIRPathEngine.java:5659-5680`) drops
   item `i` when an equal item follows it (`for j = i+1`), so it keeps the
   **last** occurrence and the survivors stay in their original relative order
-- **AND** no suite case grades the order (`testDistinct4` is `(1 | 2 | 3)`), so
-  it is differential-only
+- **AND** when any two items cannot be compared (`doEquals` answers null),
+  `distinct()` returns an **empty** collection rather than the items
+  (`FHIRPathEngine.java:5668-5670`)
+- **AND** no suite case grades the order or the null case (`testDistinct4` is
+  `(1 | 2 | 3)`), so both are differential-only
 
 #### Scenario: [path.collection.014] `count` returns the number of items
 
@@ -501,13 +504,21 @@ The engine SHALL implement `where`, `select`, `repeat` and `ofType`, flattening 
 - **WHEN** `Patient.name.where(prefix = 'Dr')` is evaluated over
   `patient-example.xml`, whose names have no prefix
 - **THEN** the result is an empty collection
-- **AND** an operator that follows an **indexer** is dropped by the pinned
-  parser, so an expression such as `Patient.name.where(given[1] = 'James')` is
-  not a comparison: the parser attaches the operator to the synthetic indexer
-  node (`focus = item`, `FHIRPathEngine.java:1188-1213`), and `execute`
-  applies an operation only on a proximal node (`:1508`). The check pass then
-  fails the expression, because `where` parameter 1 is a `string`, not a
-  boolean. This is `DEV-0015`; no suite case grades it
+- **AND** an operator that follows an **indexer on the first term** of an
+  expression, argument or group is dropped by the pinned parser, so
+  `Patient.name.where(given[1] = 'James')` is not a comparison: only a
+  proximal parse reads trailing operators (`FHIRPathEngine.java:1199`), and it
+  attaches them to `focus`, which the indexer has moved to the synthetic item
+  node (`:1188-1197`, `:1203`, `:1206-1213`); `execute` applies an operation
+  only on a proximal node (`:1508`). With the check skipped the expression
+  evaluates as `given[1]`, yielding the second given name (or empty) for each
+  name, which is neither true nor false, so no name is kept; the check pass
+  fails it, because `where` parameter 1 is a `string`, not a boolean
+- **AND** an indexer on a later term is not affected: `Patient.name[0].given =
+  'Peter' | 'James'` (`testIndexer1`), `testIndexer2`, `testSort9` and
+  `testQuantityUnitTextEqual` evaluate the operator and pass, as
+  `path.navigation.008` relies on
+- **AND** this is `DEV-0015`; no suite case grades the dropped form
 
 #### Scenario: [path.filter.003] `where` with a non-boolean criteria is rejected by the check, before evaluation
 
