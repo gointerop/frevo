@@ -456,6 +456,56 @@ file, so its prose is not redistributable here (see `oracles/PINS.md`).
 - **Reviewed:** pending owner review. Raised 2026-11-12 by the implementation
   of task 31 of `add-fhirpath-and-codegen-r4`.
 
+### DEV-0014 — `skip` with a negative or empty count, and `take` with an empty count, raise
+
+- **Area:** path
+- **Scenario IDs:** path.subset.006, path.subset.008
+- **HAPI 8.12.0 behaviour:** `funcSkip` (`ENGINE:6101-6109`) and `funcTake`
+  (`ENGINE:5024-5032`) read `n1.get(0).primitiveValue()` with no emptiness
+  guard, so `skip({})` and `take({})` end with an unchecked
+  `IndexOutOfBoundsException`; `funcSkip` starts its loop at the count, so
+  `skip(-1)` reaches `focus.get(-1)` and raises too. `take(-1)` does not raise
+  (it is empty). HAPI fails five of its own suite cases on this:
+  `testSkip5`, `testSkip7`, `testSkip8`, `testTake8`, `testTake9`
+  (`oracles/fhirpath/hapi-8.12.0-results.json`).
+- **Specification requirement:** FHIRPath 2.0.0 and the pinned suite — a
+  non-positive `skip` count returns the input, and an empty count yields empty.
+- **Chosen behaviour:** HAPI — the three functions raise an execution error in
+  those cases (as an error, not a panic: `path.errors.003`).
+- **Configuration flag:** none
+- **Debt:** none
+- **Rationale:** owner decision, 2026-11-14: HAPI 8.12.0's observable behaviour
+  is the reference. The five cases are `failed` on both sides and so are parity
+  under `path.oracle.012`, not a gap and not `ahead-of-hapi`. This reverses the
+  earlier implementation, which returned the input or empty.
+- **Normalizer impact:** none on stored bytes.
+- **Reviewed:** owner, 2026-11-14 (ruled for HAPI).
+
+### DEV-0015 — an operator that follows an indexer is silently dropped
+
+- **Area:** path
+- **Scenario IDs:** path.filter.002
+- **HAPI 8.12.0 behaviour:** the parser (`ENGINE:1188-1213`) makes the
+  indexer a synthetic `item` node and, after it, attaches a trailing operator
+  to that node (`focus = item`) rather than to the proximal node; `execute`
+  applies an operation only when `exp.isProximal()` (`ENGINE:1508`). So
+  `name[0].given = 'x'` evaluates as `name[0].given`, with no error from the
+  parser, and `where(given[1] = 'James')` fails the check because `where`
+  parameter 1 is then a `string`. Established by reading the pinned source and
+  the implementer's failing assertion; not confirmed against a live HAPI.
+- **Specification requirement:** FHIRPath 2.0.0 — an operator applies to the
+  whole preceding invocation chain, indexer included.
+- **Chosen behaviour:** HAPI — the operator is dropped.
+- **Configuration flag:** none
+- **Debt:** none
+- **Rationale:** owner decision, 2026-11-14: HAPI 8.12.0's observable behaviour
+  is the reference. Confirm against live HAPI in the differential before
+  closing; if the live engine differs from this reading, this entry is wrong.
+- **Normalizer impact:** an R4 search-parameter expression that compares after
+  an indexer would behave differently from the specification on HAPI and on
+  Frevo alike; none is known (not checked against the generated table).
+- **Reviewed:** owner, 2026-11-14 (ruled for HAPI).
+
 ## Considered and not recorded as deviations
 
 Recorded so the reasoning is not re-derived:

@@ -446,6 +446,13 @@ The engine SHALL implement the collection predicates `FHIRPathEngine` implements
 
 - **WHEN** the `testSubSetOf` group's cases are evaluated
 - **THEN** every case yields its stated output
+- **AND** `{}.subsetOf(1 | 2)` **fails the static check**, naming `subsetOf`
+  parameter 1: `case SubsetOf` (`FHIRPathEngine.java:3316`) types the argument
+  against the focus's type set, an empty focus has no types, and
+  `checkParamTypes` (`:3828`) raises `FHIRPATH_WRONG_PARAM_TYPE` for `integer`.
+  Evaluation alone, with the check skipped, answers `true` (`funcSubsetOf`,
+  `:5360`: an empty focus is a subset of anything). No suite case grades it, so
+  it is differential-only
 
 #### Scenario: [path.collection.011] `supersetOf` compares by equality
 
@@ -458,10 +465,17 @@ The engine SHALL implement the collection predicates `FHIRPathEngine` implements
   `patient-example.xml`, whose given names repeat
 - **THEN** the result is `false`
 
-#### Scenario: [path.collection.013] `distinct` removes duplicates and keeps first-occurrence order
+#### Scenario: [path.collection.013] `distinct` removes duplicates and keeps the last occurrence of each
 
 - **WHEN** the `testDistinct` group's cases are evaluated
 - **THEN** every case yields its stated output
+- **AND** `Patient.name.given.distinct()` over `patient-example.xml`, whose given
+  names in document order are `Peter, James, Jim, Peter, James`, yields
+  `Jim, Peter, James`: `funcDistinct` (`FHIRPathEngine.java:5659-5680`) drops
+  item `i` when an equal item follows it (`for j = i+1`), so it keeps the
+  **last** occurrence and the survivors stay in their original relative order
+- **AND** no suite case grades the order (`testDistinct4` is `(1 | 2 | 3)`), so
+  it is differential-only
 
 #### Scenario: [path.collection.014] `count` returns the number of items
 
@@ -487,11 +501,25 @@ The engine SHALL implement `where`, `select`, `repeat` and `ofType`, flattening 
 - **WHEN** `Patient.name.where(prefix = 'Dr')` is evaluated over
   `patient-example.xml`, whose names have no prefix
 - **THEN** the result is an empty collection
+- **AND** an operator that follows an **indexer** is dropped by the pinned
+  parser, so an expression such as `Patient.name.where(given[1] = 'James')` is
+  not a comparison: the parser attaches the operator to the synthetic indexer
+  node (`focus = item`, `FHIRPathEngine.java:1188-1213`), and `execute`
+  applies an operation only on a proximal node (`:1508`). The check pass then
+  fails the expression, because `where` parameter 1 is a `string`, not a
+  boolean. This is `DEV-0015`; no suite case grades it
 
-#### Scenario: [path.filter.003] `where` with a non-boolean criteria is an execution error
+#### Scenario: [path.filter.003] `where` with a non-boolean criteria is rejected by the check, before evaluation
 
-- **WHEN** `Patient.name.where('x')` is evaluated
-- **THEN** evaluation fails
+- **WHEN** `Patient.name.where('x')` is checked and then evaluated
+- **THEN** the **check** fails: `case Where` (`FHIRPathEngine.java:3330`) calls
+  `checkParamTypes` against a singleton boolean and raises
+  `FHIRPATH_WRONG_PARAM_TYPE` for a `string`
+- **AND** the expression is not evaluated; evaluated with the check skipped, as
+  `FhirPathR4` does (`path.check.013`), it does **not** fail: `asBool`
+  (`:6887-6894`) answers `True` for any single non-boolean item, so all three
+  names are kept
+- **AND** no suite case grades either answer, so it is differential-only
 
 #### Scenario: [path.filter.004] `select` projects each item and flattens the result
 
@@ -510,9 +538,17 @@ The engine SHALL implement `where`, `select`, `repeat` and `ofType`, flattening 
 
 #### Scenario: [path.filter.007] `repeat` terminates on a cyclic projection
 
-- **WHEN** `repeat(item)` is evaluated over `questionnaire-example.xml`, whose
-  `item` elements nest
-- **THEN** evaluation terminates and returns each nested item once
+- **WHEN** `Questionnaire.repeat(item)` is evaluated over
+  `questionnaire-example.xml`, whose `item` elements nest
+- **THEN** evaluation terminates and returns each distinct item, at every depth,
+  once
+- **AND** `repeat` does not seed its result with the focus (`funcRepeat`,
+  `FHIRPathEngine.java:5261-5290`, starts with an empty `result`), so
+  `Questionnaire.repeat(item).repeat(item)` returns only the items at depth two
+  or deeper and its `count()` is **strictly smaller** than that of
+  `Questionnaire.repeat(item)`; the expression
+  `Questionnaire.repeat(item).count() = Questionnaire.repeat(item).repeat(item).count()`
+  is therefore `false`
 
 #### Scenario: [path.filter.008] `ofType` keeps only items of the named type
 
@@ -527,10 +563,16 @@ The engine SHALL implement `where`, `select`, `repeat` and `ofType`, flattening 
 - **WHEN** `Patient.ofType(FHIR.Patient).type().name` is evaluated over
   `patient-example.xml`
 - **THEN** the result is the string `Patient` (`testType` group)
+- **AND** `Patient.ofType(System.Patient)` **raises** `FHIRPATH_INVALID_TYPE`
+  rather than yielding empty: `funcOfType` (`FHIRPathEngine.java:5198-5207`)
+  rejects a name for which `isKnownType` (`:1904`) is false, and the `System`
+  namespace admits only `String`, `Boolean`, `Integer`, `Decimal`, `Quantity`,
+  `DateTime`, `Time`, `SimpleTypeInfo` and `ClassInfo`. No suite case grades it,
+  so it is differential-only
 
 ### Requirement: Subsetting
 
-The engine SHALL implement the subsetting functions, and SHALL yield an empty collection rather than an error for an index or count outside the collection.
+The engine SHALL implement the subsetting functions, and SHALL yield an empty collection rather than an error for a count beyond the end of the collection, while raising, as HAPI does, for a `skip` or `take` whose count is empty and for a `skip` whose count is negative (`DEV-0014`).
 
 #### Scenario: [path.subset.001] `single` returns the only item
 
@@ -569,7 +611,15 @@ The engine SHALL implement the subsetting functions, and SHALL yield an empty co
 #### Scenario: [path.subset.006] `skip` drops the first n items
 
 - **WHEN** the `testSkip` group's cases are evaluated
-- **THEN** every case yields its stated output
+- **THEN** every case yields its stated output, **except** `testSkip5`
+  (`skip(-1)`), `testSkip7` (`(0 | 1 | 2).skip({})`) and `testSkip8`
+  (`{}.skip({})`), which **raise**: `funcSkip` (`FHIRPathEngine.java:6101-6109`)
+  reads `n1.get(0)` with no emptiness guard and starts its loop at `i1`, so an
+  empty count and a negative count each reach an out-of-range `List.get`
+- **AND** HAPI fails those three cases on its own suite
+  (`oracles/fhirpath/hapi-8.12.0-results.json`, status `failed`); Frevo
+  matches, so they are `failed` on both sides and are parity, not a gap. This is
+  `DEV-0014`
 
 #### Scenario: [path.subset.007] `skip` past the end yields empty
 
@@ -580,7 +630,13 @@ The engine SHALL implement the subsetting functions, and SHALL yield an empty co
 #### Scenario: [path.subset.008] `take` keeps the first n items
 
 - **WHEN** the `testTake` group's cases are evaluated
-- **THEN** every case yields its stated output
+- **THEN** every case yields its stated output, **except** `testTake8`
+  (`(0 | 1 | 2).take({})`) and `testTake9` (`{}.take({})`), which **raise**:
+  `funcTake` (`FHIRPathEngine.java:5024-5032`) reads `n1.get(0)` with no
+  emptiness guard
+- **AND** HAPI fails those two cases on its own suite, Frevo matches, and they
+  are parity (`DEV-0014`). A negative count does not raise: `take(-1)` is empty
+  (`path.subset.009`)
 
 #### Scenario: [path.subset.009] `take(0)` and `take(-1)` yield empty
 
@@ -611,8 +667,12 @@ The engine SHALL implement the subsetting functions, and SHALL yield an empty co
 
 #### Scenario: [path.subset.012] `exclude` keeps duplicates that are not excluded
 
-- **WHEN** `(1 | 1 | 2).exclude(2).count()` is evaluated
-- **THEN** the result is the integer `2`
+- **WHEN** `1.combine(1).exclude(2).count()` is evaluated
+- **THEN** the result is the integer `2` (`funcExclude`,
+  `FHIRPathEngine.java:5074`, filters and never deduplicates)
+- **AND** `(1 | 1 | 2).count()` is `2` and `(1 | 1 | 2).exclude(2).count()` is
+  `1`, not `2`: the union operator removes the duplicate (`opUnion`, `:2831`)
+  before `exclude` runs, as `testUnion/testUnion3` grades
 
 ### Requirement: Combining
 
@@ -643,10 +703,14 @@ The engine SHALL implement the union operator, `union`, `combine`, `in` and `con
 - **WHEN** the `testContainsCollection` group's cases are evaluated
 - **THEN** every case yields its stated output
 
-#### Scenario: [path.combine.006] `in` with an empty left operand yields empty
+#### Scenario: [path.combine.006] `in` with an empty left operand yields empty, and with an empty right operand yields false
 
 - **WHEN** `{} in (1 | 2)` is evaluated
 - **THEN** the result is an empty collection
+- **AND** `1 in {}` is the boolean `false`, not empty: `opIn`
+  (`FHIRPathEngine.java:2630-2636`) tests the left operand's size first and
+  the right operand's second. `contains` is empty for an empty operand on
+  either side
 
 ### Requirement: Equality and equivalence
 
