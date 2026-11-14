@@ -61,7 +61,14 @@ against the specification and the oracles, not from upstream source), `empty`
 — is the first derived code in the repository, and its evaluator core —
 `src/eval/{mod,navigate}.rs`, from `FHIRPathEngine.java`'s `execute`,
 `getChildrenByName`, `filterIdType`, `funcItem`, `funcChildren` and
-`funcDescendants` and from `IdType.java`'s `setValue` — the second. Its static
+`funcDescendants` and from `IdType.java`'s `setValue` — the second. Its
+collection predicates — `src/eval/{collection,equality}.rs`, from
+`FHIRPathEngine.java`'s `funcEmpty`, `funcExists`, `funcNot`, `funcAll`, the
+four boolean folds, `funcSubsetOf`, `funcSupersetOf`, `funcIsDistinct`,
+`funcDistinct`, `funcCount`, `asBool`, `doEquals`, `opEquals` and
+`opNotEquals`, from `Base.java`'s `compareDeep` and `isEmpty`, and from
+`ca.uhn.fhir.util.ElementUtil.isEmpty` in `hapi-fhir` at
+`7ab4c7c7c49281496faa1b3c2498a652457669ae` — extend it. Its static
 check pass — `src/check/{mod,pass,signature,types}.rs`, from
 `FHIRPathEngine.java`'s `check`, `checkOnTypes`, `executeType`,
 `operateTypes`, `resolveConstantType`, `evaluateFunctionType`,

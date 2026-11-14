@@ -28,6 +28,8 @@
 //! parsed form and allocates no string; a focus collection is borrowed by
 //! every step that reads it.
 
+mod collection;
+mod equality;
 mod error;
 mod navigate;
 
@@ -36,6 +38,7 @@ mod tests;
 
 pub use error::EvalError;
 
+use self::collection::Tri;
 use crate::seam::model::Model;
 use crate::seam::value::{Decimal, Value};
 use crate::syntax::ast::{Constant, Expression, Function, Kind, NodeId, Operation};
@@ -56,6 +59,20 @@ struct Context<'c> {
     index: usize,
     /// `$total`. Only `aggregate()` sets it; everywhere else it is `null`.
     total: Option<&'c [Value]>,
+}
+
+impl Context<'_> {
+    /// `changeThis(context, newThis)` (`FHIRPathEngine.java:4719`): a context
+    /// for one item of a per-item criteria. The index goes back to 0 and
+    /// `$total` is not carried, because upstream builds a new
+    /// `ExecutionContext` and copies only the defined variables.
+    fn change_this<'n>(&self, item: &'n Value) -> Context<'n> {
+        Context {
+            this: Some(item),
+            index: 0,
+            total: None,
+        }
+    }
 }
 
 /// Evaluates parsed expressions against a model.
@@ -169,10 +186,8 @@ impl Run<'_> {
                     let right = self.execute(context, focus, next_id, true)?;
                     work = self.unary_sign(op, &right, id)?;
                 } else {
-                    return Err(EvalError::unsupported(
-                        format!("the operator {}", op.to_code()),
-                        last_node.op_start(),
-                    ));
+                    let right = self.execute(context, focus, next_id, true)?;
+                    work = self.operate(&work, op, &right, last_node.op_start())?;
                 }
                 last = next_id;
                 next = self.expr.node(next_id).op_next();
@@ -239,6 +254,19 @@ impl Run<'_> {
             Some(Function::Item) => self.func_item(context, focus, id),
             Some(Function::Children) => func_children(focus),
             Some(Function::Descendants) => func_descendants(focus),
+            Some(Function::Empty) => self.func_empty(focus),
+            Some(Function::Exists) => self.func_exists(context, focus, id),
+            Some(Function::Not) => self.func_not(focus, id),
+            Some(Function::All) => self.func_all(context, focus, id),
+            Some(Function::AllTrue) => self.func_fold(context, focus, id, Tri::True, true),
+            Some(Function::AnyTrue) => self.func_fold(context, focus, id, Tri::True, false),
+            Some(Function::AllFalse) => self.func_fold(context, focus, id, Tri::False, true),
+            Some(Function::AnyFalse) => self.func_fold(context, focus, id, Tri::False, false),
+            Some(Function::SubsetOf) => self.func_subset_of(context, focus, id),
+            Some(Function::SupersetOf) => self.func_superset_of(context, focus, id),
+            Some(Function::IsDistinct) => self.func_is_distinct(focus, id),
+            Some(Function::Distinct) => self.func_distinct(focus, id),
+            Some(Function::Count) => Ok(self.func_count(focus)),
             Some(Function::Custom) | None => Err(EvalError::unsupported(
                 format!("the host function {}()", node.name().unwrap_or("?")),
                 node.start(),
@@ -310,6 +338,31 @@ impl Run<'_> {
             .cloned()
             .into_iter()
             .collect())
+    }
+
+    /// `operate(context, left, operation, right, holder)`
+    /// (`FHIRPathEngine.java:1843`), for the operators implemented so far.
+    /// Every other operator is [`EvalError::Unsupported`].
+    ///
+    /// `Is` and `As` take their right operand as a type name rather than an
+    /// evaluated expression (`executeTypeName`), and `And`, `Or` and
+    /// `Implies` are short-circuited by `preOperate` first; none of them is
+    /// here, so none reaches this match.
+    fn operate(
+        &self,
+        left: &[Value],
+        op: Operation,
+        right: &[Value],
+        offset: usize,
+    ) -> Result<Vec<Value>, EvalError> {
+        match op {
+            Operation::Equals => equality::op_equals(self.model, left, right, false, offset),
+            Operation::NotEquals => equality::op_equals(self.model, left, right, true, offset),
+            other => Err(EvalError::unsupported(
+                format!("the operator {}", other.to_code()),
+                offset,
+            )),
+        }
     }
 
     /// `0 + x` and `0 - x` for the unary node, over a single integer or

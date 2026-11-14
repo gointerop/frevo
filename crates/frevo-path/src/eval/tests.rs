@@ -608,13 +608,12 @@ fn a_time_literal_with_an_offset_is_an_execution_error() {
 fn every_unimplemented_function_is_unsupported_and_never_empty() {
     let p = patient();
     for text in [
-        "Patient.name.given.first()",
-        "Patient.name.exists()",
-        "Patient.name.where(given = 'Jim')",
-        "Patient.telecom.select($index)",
-        "Patient.name.count()",
-        "Patient.name.skip(1)",
-        "contained.ofType(Organization)",
+        "Patient.name.given.upper()",
+        "Patient.name.given.length()",
+        "Patient.name.given.toInteger()",
+        "Patient.name.iif(true, 1, 2)",
+        "Patient.name.given.trim()",
+        "Patient.name.abs()",
         "Patient.name.aggregate($this, 0)",
         "Patient.birthDate.extension('x')",
         "today()",
@@ -629,8 +628,8 @@ fn every_unimplemented_function_is_unsupported_and_never_empty() {
 fn every_binary_operator_is_unsupported_and_never_empty() {
     let p = patient();
     for text in [
-        "1 = 1",
-        "Patient.name.given | Patient.name.family",
+        "1 ~ 1",
+        "1 < 2",
         "1 + 1",
         "true and false",
         "{} and true",
@@ -665,8 +664,8 @@ fn an_environment_variable_is_unsupported() {
 fn an_unsupported_feature_deep_inside_navigation_still_surfaces() {
     // Navigation that reaches nothing must not hide the unsupported step after
     // it: the error is raised whether or not the focus is empty.
-    unsupported("{}.name.first()", None);
-    unsupported("Patient.name.prefix.empty()", Some(&patient()));
+    unsupported("{}.name.upper()", None);
+    unsupported("Patient.name.prefix.upper()", Some(&patient()));
 }
 
 // ---------------------------------------------------------------------------
@@ -713,4 +712,43 @@ fn a_parsed_expression_is_shared_and_reused_without_reparsing() {
     for h in handles {
         assert_eq!(h.join().expect("joins").expect("evaluates"), 5);
     }
+}
+
+// ---------------------------------------------------------------------------
+// Collection predicates (task 32)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn not_of_an_empty_collection_is_empty_and_all_of_one_is_true() {
+    assert!(ok("{}.not()", None).is_empty());
+    assert_eq!(ok("true.not()", None), ["boolean:false"]);
+    assert_eq!(ok("{}.all(false)", None), ["boolean:true"]);
+    assert_eq!(ok("{}.count()", None), ["integer:0"]);
+    assert_eq!(ok("{}.empty()", None), ["boolean:true"]);
+    assert_eq!(ok("{}.exists()", None), ["boolean:false"]);
+}
+
+#[test]
+fn a_single_non_boolean_criteria_result_is_true_and_several_are_an_error() {
+    let p = patient();
+    assert_eq!(ok("Patient.name.exists('x')", Some(&p)), ["boolean:true"]);
+    execution_error("Patient.name.exists(given)", Some(&p));
+}
+
+#[test]
+fn a_boolean_fold_over_a_non_boolean_names_the_item() {
+    let message = execution_error("'foo'.allTrue()", None);
+    assert!(message.contains("foo"), "{message}");
+    assert_eq!(ok("true.allTrue()", None), ["boolean:true"]);
+    assert_eq!(ok("false.anyFalse()", None), ["boolean:true"]);
+}
+
+#[test]
+fn equality_reaches_the_decimal_rule_and_leaves_dates_and_quantities_unsupported() {
+    assert_eq!(ok("1 = 1.0", None), ["boolean:true"]);
+    assert_eq!(ok("1 != 2", None), ["boolean:true"]);
+    assert!(ok("{} = 1", None).is_empty());
+    assert_eq!(ok("1 = 'a'", None), ["boolean:false"]);
+    assert!(unsupported("@2015 = @2015", None).contains("date"));
+    assert!(unsupported("1 'mg' = 1 'mg'", None).contains("quantity"));
 }
