@@ -724,7 +724,7 @@ Every allocated ID, grouped as it is grouped in the delta files.
 **Requirement: The static type-check pass**
 
 - `path.check.001` — the check pass is separate from evaluation
-- `path.check.002` — the 29 semantic-invalid oracle cases all fail the check
+- `path.check.002` — 27 of the 29 semantic-invalid oracle cases fail the check; the other 2 fail at parse, as for HAPI
 - `path.check.003` — navigating a non-existent element is a semantic error
 - `path.check.004` — the check infers the type of a choice element as the declared set
 - `path.check.005` — an `is` guard in `implies` does not narrow the type the other operand is checked against

@@ -2039,11 +2039,25 @@ it. Like the pinned engine, it SHALL NOT narrow a type on a type guard
 - **THEN** the check reports its result without evaluating the expression
 - **AND** an expression that fails the check is not evaluated
 
-#### Scenario: [path.check.002] the 29 semantic-invalid oracle cases all fail the check
+#### Scenario: [path.check.002] 27 of the 29 semantic-invalid oracle cases fail the check; the other 2 fail at parse, as for HAPI
 
-- **WHEN** each of the suite's 29 `invalid="semantic"` cases is checked
-- **THEN** each one fails the check
+- **WHEN** each of the suite's 29 `invalid="semantic"` cases is run
+- **THEN** 27 of them parse cleanly and fail the **check**, and each is graded
+  `passed`
 - **AND** the check reports which element path or type caused the failure
+- **AND** the other two never reach the check. They are
+  `documentFunctions/testResourcesAbstract3` (`tests-fhir-r4.xml:1940`) and
+  `documentFunctions/testHasCoding11` (`:1951`), and they call `resources()`
+  and `hasCoding()`, which the R4 `ExpressionNode.Function` enum does not have.
+  Both fail at the **parse** stage. The parser asks the host service only after
+  `Function.fromCode` returns null (`FHIRPathEngine.java:1158-1166`), and the
+  suite's host service raises from `resolveFunction`
+  (`FHIRPathTests.java:72-76`)
+- **AND** a parse-stage failure of a case expecting a `semantic` failure comes
+  from the wrong stage, so both are graded `failed` (`path.oracle.005`), as
+  `path.oracle.014` requires of every `documentFunctions` case. HAPI fails both
+  the same way: its harness asserts a `SYNTAX` expectation when parsing fails
+  (`FHIRPathTests.java:199-202`). This is parity
 - **AND** each case is checked with the `context` and `contextType` the case
   carries, so this is graded against Frevo's context-aware run and not against
   HAPI's, which reads neither attribute (`path.oracle.016`)
@@ -2565,7 +2579,7 @@ The oracle harness SHALL run every case in the vendored suite without modifying 
 - **WHEN** `testIif/testIif6` is run, whose expression element is
   `<expression mode="strict" invalid="semantic">iif('non boolean criteria', 'true-result', 'true-result')</expression>`
   at `tests-fhir-r4.xml:625` — the only expression-level `mode` in the pinned
-  file, and one of the 29 cases `path.check.002` requires to fail the check
+  file, and one of the 27 cases `path.check.002` requires to fail the check
 - **THEN** the case fails the check pass and is therefore graded `passed`,
   identically to a run that ignored the attribute, which is what HAPI's pinned
   harness does
@@ -2733,8 +2747,11 @@ The oracle harness SHALL run every case in the vendored suite without modifying 
     `isGuardXorBad2`. Despite its name, `isGuardXorBad2` carries no `invalid`
     attribute and expects `false` (`tests-fhir-r4.xml:1777-1779`)
 - **AND** `path.check.002` is graded against that context-aware run, not against
-  HAPI's status, so requiring all 29 semantic-invalid cases to fail the check is
-  consistent with the aggregate gate rather than stricter than it
+  HAPI's status. Requiring 27 semantic-invalid cases to fail the check is
+  therefore consistent with the aggregate gate rather than stricter than it. The
+  other two, `documentFunctions/testResourcesAbstract3` and
+  `testHasCoding11`, fail at parse and are graded `failed` for Frevo and HAPI
+  alike (`path.check.002`, `path.oracle.014`)
 
 #### Scenario: [path.oracle.013] the harness can run the same cases through `helios-fhirpath`
 

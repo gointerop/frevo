@@ -951,7 +951,9 @@ checkpoint because it changes what a gate measures.
   Satisfies `path.utility.012` through `path.utility.028`.
 
 - [ ] **50. Implement the static type-check pass.** Separate from evaluation;
-  all 29 `invalid="semantic"` cases failing it with the offending path named;
+  27 of the 29 `invalid="semantic"` cases failing it with the offending path
+  named, and the two `documentFunctions` cases among them failing at parse,
+  graded `failed`, as for HAPI;
   non-existent elements; choice-element type inference; and the pass being
   skippable as `FhirPathR4` skips it.
   Satisfies `path.check.001`, `path.check.002`, `path.check.003`,
@@ -962,8 +964,10 @@ checkpoint because it changes what a gate measures.
   (`check/signature.rs`); anything it cannot type is
   `CheckError::NotImplemented`. The oracle seam's `check` is bound: the run
   goes from 1,073 did-not-run / 111 failed / 7 passed to 1,019 / 126 / 46,
-  with 27 of the 29 semantic-invalid cases failing at the check. `002`
-  contradicts the harness's grading of the two parse-stage cases; `003`, `004`
+  with 27 of the 29 semantic-invalid cases failing at the check. `002` was
+  amended on 2026-11-14 to match: the two parse-stage `documentFunctions`
+  cases are graded `failed`, as for HAPI (`tasks/blockers.md`, 2026-11-14).
+  `003`, `004`
   and `005`-`012` drive a seam inside `path_check.rs` that was not rebound;
   `014` needs evaluation. The `Model` trait gained five check-pass methods,
   which `R4Model` does not implement yet (`DEBT-0012`). See
