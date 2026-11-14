@@ -472,6 +472,20 @@ fn the_document_functions_group_is_reported_as_out_of_scope_not_as_passing() {
                 r.address,
                 r.reason
             );
+            assert_ne!(
+                r.status,
+                CaseStatus::DidNotRun,
+                "{}: the unknown function is a graded parse error, never did-not-run -- {}",
+                r.address,
+                r.reason
+            );
+            assert_eq!(
+                r.failed_stage,
+                Some(oracle::suite::Stage::Parse),
+                "{}: passes because the failure comes from the parse stage -- {}",
+                r.address,
+                r.reason
+            );
             passed += 1;
         } else {
             assert_eq!(
@@ -480,6 +494,16 @@ fn the_document_functions_group_is_reported_as_out_of_scope_not_as_passing() {
                 "{} must be reported failed, not {}: {}",
                 r.address,
                 r.status.as_str(),
+                r.reason
+            );
+            // Every one of the 111 fails at the parse stage: the R4 engine has
+            // none of the seven functions (103 expect success, 6 an
+            // `execution` failure, 2 a `semantic` one).
+            assert_eq!(
+                r.failed_stage,
+                Some(oracle::suite::Stage::Parse),
+                "{} must fail at the parse stage -- {}",
+                r.address,
                 r.reason
             );
             // And the reason names the function, so "out of scope" is reported
@@ -713,9 +737,11 @@ fn a_case_hapi_structurally_cannot_pass_is_recorded_as_such() {
     }
 
     // `path.check.002` is graded against that same context-aware run, so
-    // requiring the semantic-invalid cases to fail the check is consistent with
-    // the aggregate gate rather than stricter than it: every one of them is
-    // `passed` for Frevo.
+    // requiring 27 semantic-invalid cases to fail the check is consistent with
+    // the aggregate gate rather than stricter than it: those 27 are `passed`
+    // for Frevo. The other two, `documentFunctions/testResourcesAbstract3` and
+    // `testHasCoding11`, fail at parse and are graded `failed`, for Frevo and
+    // HAPI alike (`path.check.002`, `path.oracle.014`).
     let semantic_passed = suite
         .cases()
         .filter(|c| c.expected_failure == Some(oracle::suite::Stage::Check))
@@ -725,5 +751,21 @@ fn a_case_hapi_structurally_cannot_pass_is_recorded_as_such() {
                 .is_some_and(|r| r.status == CaseStatus::Passed)
         })
         .count();
-    assert_eq!(semantic_passed, 29);
+    assert_eq!(semantic_passed, 27);
+    for name in ["testResourcesAbstract3", "testHasCoding11"] {
+        let case = suite
+            .case("documentFunctions", name)
+            .unwrap_or_else(|| panic!("documentFunctions/{name} resolves"));
+        assert_eq!(case.expected_failure, Some(oracle::suite::Stage::Check));
+        let r = report
+            .get(&case.address.to_string())
+            .unwrap_or_else(|| panic!("{} must appear in the run report", case.address));
+        assert_eq!(
+            (r.status, r.failed_stage),
+            (CaseStatus::Failed, Some(oracle::suite::Stage::Parse)),
+            "{}: fails at parse and is graded failed -- {}",
+            r.address,
+            r.reason
+        );
+    }
 }

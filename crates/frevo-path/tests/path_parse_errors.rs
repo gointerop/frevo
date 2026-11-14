@@ -479,16 +479,48 @@ fn every_execution_invalid_case_parses_and_checks_and_then_fails_to_evaluate() {
         suite::EXPECTED_EXECUTION_INVALID
     );
 
+    // Six of the 27 are in `documentFunctions` and call a function the R4
+    // engine does not implement, so they fail at the **parse** stage and are
+    // graded `failed` under `path.oracle.005`'s stage rule (`path.oracle.014`),
+    // as HAPI's harness grades them (FHIRPathTests.java:199-202).
+    const PARSE_STAGE: [&str; 6] = [
+        "testSection11",
+        "testSection12",
+        "testEntryIn5",
+        "testEntryIn6",
+        "testResources7",
+        "testResourcesIn3",
+    ];
     let mut failures = Vec::new();
+    let mut at_evaluate = 0usize;
+    let mut at_parse = Vec::new();
     for case in &cases {
         let address = case.address.to_string();
         let r = report
             .get(&address)
             .unwrap_or_else(|| panic!("{address} must appear in the run report"));
+        if case.address.group == "documentFunctions"
+            && PARSE_STAGE.contains(&case.address.name.as_str())
+        {
+            if r.status != CaseStatus::Failed || r.failed_stage != Some(Stage::Parse) {
+                failures.push(format!(
+                    "{address} ({:?}): {} at {:?}, expected failed at parse -- {}",
+                    case.expression,
+                    r.status.as_str(),
+                    r.failed_stage,
+                    r.reason
+                ));
+            } else {
+                at_parse.push(case.address.name.as_str());
+            }
+            continue;
+        }
         // The harness only reaches the evaluate stage after parse and check
         // have both returned Ok, so `failed_stage == Evaluate` is the
         // assertion that the two earlier stages succeeded.
-        if r.status != CaseStatus::Passed || r.failed_stage != Some(Stage::Evaluate) {
+        if r.status == CaseStatus::Passed && r.failed_stage == Some(Stage::Evaluate) {
+            at_evaluate += 1;
+        } else {
             failures.push(format!(
                 "{address} ({:?}): {} at {:?} -- {}",
                 case.expression,
@@ -500,10 +532,18 @@ fn every_execution_invalid_case_parses_and_checks_and_then_fails_to_evaluate() {
     }
     assert!(
         failures.is_empty(),
-        "{} of the {} execution-invalid cases did not fail at the evaluate stage:\n  {}",
+        "{} of the {} execution-invalid cases did not fail at the expected stage:\n  {}",
         failures.len(),
         cases.len(),
         failures.join("\n  ")
+    );
+    assert_eq!(
+        at_evaluate, 21,
+        "21 of the 27 fail at evaluation, graded passed"
+    );
+    assert_eq!(
+        at_parse, PARSE_STAGE,
+        "and these six documentFunctions cases fail at parse, graded failed"
     );
 }
 

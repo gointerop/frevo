@@ -22,9 +22,9 @@
 //!   stage. The harness grades a `semantic` expectation against the stage the
 //!   failure came from (`path.oracle.005`, `tests/oracle/run.rs::graded_failure`),
 //!   so a parse-stage failure of either is graded `failed` -- as HAPI's own run
-//!   grades it (`FHIRPathTests.java:201`). `path.check.002` as written requires
-//!   all 29 to fail the check; that contradiction is open in
-//!   `tasks/blockers.md` and the test below is left as the spec states it.
+//!   grades it (`FHIRPathTests.java:201`). `path.check.002`, as amended, states
+//!   exactly this: 27 fail the check graded `passed`, and the two fail at parse
+//!   graded `failed` (`path.oracle.014`).
 //! - **six `isSemanticChecks` groups, 13 cases, are byte-identical apart from
 //!   `context` and `contextType`, with differing expected outcomes.** HAPI's
 //!   pinned R4 harness reads neither attribute, so it necessarily fails at
@@ -417,11 +417,38 @@ fn the_semantic_invalid_oracle_cases_all_fail_the_check() {
         "the pinned file carries 29 invalid=\"semantic\" cases"
     );
 
-    // Every one is graded `passed`, which is the scenario's requirement.
+    // 27 are graded `passed`. The two `documentFunctions` cases never reach the
+    // check: they fail at the parse stage, which is the wrong stage for a
+    // `semantic` expectation, so they are graded `failed` (`path.oracle.005`,
+    // `path.oracle.014`), as HAPI's harness grades them
+    // (FHIRPathTests.java:199-202).
+    const PARSE_STAGE: [&str; 2] = ["testResourcesAbstract3", "testHasCoding11"];
+    let mut passed = 0usize;
     for case in &cases {
         let r = report
             .get(&case.address.to_string())
             .unwrap_or_else(|| panic!("{} must appear in the run report", case.address));
+        if case.address.group == "documentFunctions"
+            && PARSE_STAGE.contains(&case.address.name.as_str())
+        {
+            assert_eq!(
+                r.status,
+                CaseStatus::Failed,
+                "{}: {:?} fails at parse and must be graded failed, is {} -- {}",
+                r.address,
+                r.expression,
+                r.status.as_str(),
+                r.reason
+            );
+            assert_eq!(
+                r.failed_stage,
+                Some(Stage::Parse),
+                "{}: the failure must come from the parse stage -- {}",
+                r.address,
+                r.reason
+            );
+            continue;
+        }
         assert_eq!(
             r.status,
             CaseStatus::Passed,
@@ -431,7 +458,9 @@ fn the_semantic_invalid_oracle_cases_all_fail_the_check() {
             r.status.as_str(),
             r.reason
         );
+        passed += 1;
     }
+    assert_eq!(passed, 27, "27 of the 29 are graded passed");
 
     // 27 fail at the **check** stage. The other two are
     // `documentFunctions/testResourcesAbstract3` and
@@ -479,8 +508,9 @@ fn the_semantic_invalid_oracle_cases_all_fail_the_check() {
     }
 
     // Each case is checked with the `context` and `contextType` it carries, so
-    // this is graded against Frevo's context-aware run. 27 of the 29 carry at
-    // least one of the two.
+    // this is graded against Frevo's context-aware run. 15 of the 29 carry at
+    // least one of the two: the 15 `isSemanticChecks` cases, counted from the
+    // pinned file; the other 14 carry neither.
     let with_context = cases
         .iter()
         .filter(|c| c.context.is_some() || !c.context_types.is_empty())
@@ -1113,10 +1143,25 @@ fn the_harness_records_which_stage_each_failure_came_from() {
             r.reason
         );
         assert_eq!(r.expected_failure, case.expected_failure);
-        // The two `documentFunctions` semantic cases are the recorded exception
-        // (`path.check.002`): they fail at parse because the function does not
-        // exist.
-        let allowed = case.address.group == "documentFunctions";
+        // The recorded exceptions are the eight `documentFunctions` cases that
+        // expect a non-syntax failure: two `semantic` (`path.check.002`) and six
+        // `execution` (`path.errors.001`). Each fails at parse because the R4
+        // engine has no such function, and only a parse-stage failure is
+        // excused. The group's four syntax cases are not exempt; they expect
+        // the parse failure they get (`path.oracle.014`).
+        const PARSE_STAGE_EXCEPTIONS: [&str; 8] = [
+            "testResourcesAbstract3",
+            "testHasCoding11",
+            "testSection11",
+            "testSection12",
+            "testEntryIn5",
+            "testEntryIn6",
+            "testResources7",
+            "testResourcesIn3",
+        ];
+        let allowed = case.address.group == "documentFunctions"
+            && PARSE_STAGE_EXCEPTIONS.contains(&case.address.name.as_str())
+            && r.failed_stage == Some(Stage::Parse);
         if r.failed_stage != case.expected_failure && !allowed {
             mismatched.push(format!(
                 "{}: expected a {} failure, got {:?} -- {}",

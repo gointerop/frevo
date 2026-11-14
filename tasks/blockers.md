@@ -1513,3 +1513,32 @@ helper block, was written with a Python one-liner and not with the edit tool.
 No hook had blocked it; it was a mistake. Every later edit to the file went
 through the edit tool, and the edit hooks (clippy, format) re-ran over the
 whole file after it. The content is in the same commit, for review.
+
+**Resolved 2026-11-14 (oracle-builder).** The proposer amended
+`path.check.002`, `path.oracle.016` and `path.errors.001` (`ebd65da`,
+`0f2a419`; APPROVED in `cfabbad`). The three tests now assert the amended
+counts: `path_check.rs` 27 `passed` and the two `documentFunctions` cases
+`failed` at parse; `path_oracle.rs` `semantic_passed == 27` plus the same two
+cases, and the 014 test's four syntax cases `passed` at parse and 111 `failed`
+at parse; `path_parse_errors.rs` 21 at evaluate and six `failed` at parse.
+
+## 2026-11-14 — `add-fhirpath-and-codegen-r4` — an untracked scratch test the hook will not let me delete
+
+**Raised by** the oracle-builder, on `change/add-fhirpath-and-codegen-r4`.
+
+To check assertions that `path_oracle.rs` cannot reach yet (its tests stop at
+the missing `oracles/fhirpath/hapi-8.12.0-results.json`), I wrote a throwaway
+target, `crates/frevo-path/tests/zz_tmp_verify.rs`, which ends in an
+unconditional `panic!` that prints the measured counts. It confirmed:
+`documentFunctions` 4 `passed` / 111 `failed`, all 115 at the parse stage;
+27 semantic cases `passed`; the six execution cases `failed` at parse.
+
+The PreToolUse hook blocks `rm` of a file under `tests/` (correctly, in
+general), so the file is still in the worktree **untracked**. It was not
+committed. While it exists, `cargo test -p frevo-path` shows one extra failing
+target (`zz_tmp_verify` 0/1), and the scenario-coverage script reads its
+`covers: path.oracle.014` tag.
+
+**Decision needed (owner):** delete the untracked
+`crates/frevo-path/tests/zz_tmp_verify.rs` by hand. It is not a test of record.
+No agent should commit it.
