@@ -561,7 +561,9 @@ Recorded so the reasoning is not re-derived:
   `path.oracle.008`. Normalising the prefix away on either side would be
   weakening the oracle under constitution rule 3.
 - **The `documentFunctions` oracle group.** The R4 engine implements none of its
-  seven functions, so 115 of the 1,191 cases fail for HAPI too. That is parity —
+  seven functions, so 111 of the group's 115 cases fail for HAPI too (its 4
+  `invalid="syntax"` cases pass, because the unknown-function error is the
+  syntax failure they expect). That is parity —
   not a gap and not a deviation — and belongs in a note on the suite's runner.
 - **No type-guard narrowing in the check pass.** The `isSemanticChecks` group's
   note (`tests-fhir-r4.xml:1695-1702`) says an `is` test narrows the type the
