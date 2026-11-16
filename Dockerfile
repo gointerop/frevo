@@ -16,7 +16,7 @@
 # platform, so each architecture compiles its own binary for its own musl
 # target. Pinning it to BUILDPLATFORM would silently ship the host's
 # architecture under both tags.
-FROM rust:1.99-alpine3.22 AS builder
+FROM rust:1.100-alpine3.22 AS builder
 
 # musl-dev provides the static libc; pkgconfig is needed by common build
 # scripts; binutils provides readelf, used below to prove the output is static.
