@@ -858,7 +858,7 @@ checkpoint because it changes what a gate measures.
   with its empty segments, `join`, `encode` and `decode` for base64, urlbase64
   and hex, `escape` and `unescape` for html and json and also for url (form
   urlencoding, UTF-8) and md (a backslash before seven characters), and `join`
-  with its separate last separator. No crate is added.
+  taking at most one argument (a second is a parse failure). No crate is added.
   Satisfies `path.string.011`, `path.string.013` through `path.string.019`.
 
 - [ ] **41a. Implement string functions: the regular-expression functions.**

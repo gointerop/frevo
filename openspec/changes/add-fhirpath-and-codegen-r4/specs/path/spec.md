@@ -1581,10 +1581,13 @@ The engine SHALL implement the string functions `FHIRPathEngine` implements, inc
   - `Patient.name.join(',')` yields one empty string `''`: each `null` item is
     skipped, with no separator added for it (`CommaSeparatedStringBuilder`
     `commit`, `append`)
-- **AND** `join` with a second argument uses it as the separator before the
-  **last** item only: `(1 | 2 | 3).join(',', ' and ')` is `1,2 and 3`
-  (`:4548-4560`, `CommaSeparatedStringBuilder(sep, lastSep)`); with a single
-  argument both separators are that argument
+- **AND** `join` takes zero or one argument: `checkParameters` allows between 0
+  and 1 (`FHIRPathEngine.java:1427`, `checkParamCount` `:1355-1359`), so
+  `(1 | 2 | 3).join(',', ' and ')` is a **parse** failure, raised while parsing
+  with the message `The function "join" requires between 0 and 1 parameters`
+  and never reaching the check or evaluation. The second-argument branch inside
+  `funcJoin` (`:4553-4556`) is unreachable. `join()` with no argument joins with
+  an empty separator
 - **AND** this differs from the FHIRPath specification, which makes a
   type-mismatched focus an error; the divergence is recorded as `DEV-0006` and
   resolved as HAPI's behaviour
