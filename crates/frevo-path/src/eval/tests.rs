@@ -608,14 +608,9 @@ fn a_time_literal_with_an_offset_is_an_execution_error() {
 fn every_unimplemented_function_is_unsupported_and_never_empty() {
     let p = patient();
     for text in [
-        "Patient.name.given.upper()",
-        "Patient.name.given.length()",
         "Patient.name.given.toInteger()",
-        "Patient.name.given.trim()",
-        "Patient.name.abs()",
         "Patient.name.aggregate($this, 0)",
         "Patient.birthDate.extension('x')",
-        "today()",
         "Patient.name.given.join(',')",
     ] {
         let feature = unsupported(text, Some(&p));
@@ -632,12 +627,7 @@ fn every_binary_operator_is_unsupported_and_never_empty() {
     }
     // Operators that are built, applied to operands whose rule is not: still
     // Unsupported, never empty, though the message names the missing rule.
-    for text in [
-        "1 / 3",
-        "@2015-02-03 + 1 day",
-        "1 'mg' < 2 'g'",
-        "1 'mg' ~ 1 'mg'",
-    ] {
+    for text in ["1 / 3", "1 'mg' < 2 'g'", "1 'mg' ~ 1 'mg'"] {
         unsupported(text, Some(&p));
     }
 }
@@ -664,8 +654,8 @@ fn an_environment_variable_is_unsupported() {
 fn an_unsupported_feature_deep_inside_navigation_still_surfaces() {
     // Navigation that reaches nothing must not hide the unsupported step after
     // it: the error is raised whether or not the focus is empty.
-    unsupported("{}.name.upper()", None);
-    unsupported("Patient.name.prefix.upper()", Some(&patient()));
+    unsupported("{}.name.aggregate($this, 0)", None);
+    unsupported("Patient.name.prefix.aggregate($this, 0)", Some(&patient()));
 }
 
 // ---------------------------------------------------------------------------

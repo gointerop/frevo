@@ -1246,6 +1246,12 @@ The engine SHALL implement the arithmetic operators over integers, decimals, str
   `@2014-01-01 - 1 day` are evaluated
 - **THEN** each yields a `date` computed as the engine at the pinned SHA
   computes it, including its month-end behaviour
+- **AND** the suite cases that reach `dateAdd` are graded as HAPI ran them:
+  `testMinus5` (`@1974-12-25 - 1 'month'`) and `testMinus6` pass, while
+  `testMinus7` is `failed` (`oracles/fhirpath/hapi-8.12.0-results.json:835`,
+  `Invalid date/time string (datatype DateTimeType does not support MINUTE
+  precision)`), as are `testPlusDate23` and `testPlusDate24`; Frevo fails them
+  with the same message (`path.math.001`, `path.math.003`, `DEV-0017`)
 
 #### Scenario: [path.math.013] date arithmetic preserves the operand's precision
 
@@ -1260,7 +1266,7 @@ The engine SHALL implement the arithmetic operators over integers, decimals, str
 
 ### Requirement: Math functions
 
-The engine SHALL implement the math functions `FHIRPathEngine` implements, each over a singleton numeric focus, yielding an empty collection for an empty focus. `round` and `truncate` are exact; the other eight go through a binary `double` (`path.compare.012`).
+The engine SHALL implement the math functions `FHIRPathEngine` implements, each over a singleton numeric focus. An empty focus yields an empty collection for `exp` only; the other nine raise (`path.mathfn.010`). `round` and `truncate` are exact; the other eight go through a binary `double` (`path.compare.012`).
 
 #### Scenario: [path.mathfn.001] `abs` works on integers, decimals and quantities
 
@@ -1307,10 +1313,22 @@ The engine SHALL implement the math functions `FHIRPathEngine` implements, each 
 - **WHEN** the `testTruncate` group's cases are evaluated
 - **THEN** every case yields its stated output
 
-#### Scenario: [path.mathfn.010] a math function on an empty collection yields empty
+#### Scenario: [path.mathfn.010] a math function on an empty collection yields empty only for `exp`
 
-- **WHEN** `{}.abs()`, `{}.sqrt()` and `{}.round(2)` are evaluated
-- **THEN** each yields an empty collection
+- **WHEN** `{}.exp()` is evaluated
+- **THEN** the result is an empty collection: `funcExp` guards an empty focus
+  (`FHIRPathEngine.java:4177`)
+- **WHEN** `{}.abs()`, `{}.ceiling()`, `{}.floor()`, `{}.sqrt()`, `{}.ln()`,
+  `{}.log(2)`, `{}.power(2)`, `{}.round(2)` and `{}.truncate()` are evaluated
+  with the check skipped
+- **THEN** each fails with an execution error, because each opens with
+  `if (focus.size() != 1) throw makeExceptionPlural(...)`, which covers zero
+  (`funcAbs` `:4116`, `funcCeiling` `:4139`, `funcFloor` `:4157`, `funcSqrt`
+  `:4096`, `funcLn` `:4201`, `funcLog` `:4221`, `funcPower` `:4249`, `funcRound`
+  `:4397`, `funcTruncate` `:4273`)
+- **AND** the requirement's "yielding an empty collection for an empty focus" is
+  the FHIRPath specification's, not HAPI's; recorded as `DEV-0019` and resolved
+  as HAPI's behaviour. No live case grades it, so it is differential-only
 
 #### Scenario: [path.mathfn.011] a math function on a collection of more than one is an execution error
 
@@ -1339,7 +1357,26 @@ The engine SHALL implement the string functions `FHIRPathEngine` implements, inc
 #### Scenario: [path.string.004] `substring` takes a start and an optional length
 
 - **WHEN** the `testSubstring` group's cases are evaluated
-- **THEN** every case yields its stated output
+- **THEN** every case HAPI passes yields its stated output (8 of 16)
+- **AND** Frevo's required status per case follows HAPI's own recorded run
+  (`oracles/fhirpath/hapi-8.12.0-results.json:352-359`): `failed` (parity under
+  `path.oracle.012`) for `testSubstring11` to `18`, and `passed` for the rest
+- **AND** the eight failures are, in `funcSubstring`
+  (`FHIRPathEngine.java:5864-5895`):
+  - `testSubstring11`, `12` (`{}.substring({})`, `'string'.substring({})`): the
+    start argument is read with no emptiness guard
+    (`Integer.parseInt(n1.get(0)...)`, `:5867`), an index-out-of-bounds failure
+  - `testSubstring13`, `14`, `15` (`substring(3, -1)`, `substring(0, -1)`,
+    `substring(1, 2147483647)`): the end is `min(length, start + count)` with
+    an `int` sum (`:5884`), which falls before the start or overflows, and
+    `String.substring` fails
+  - `testSubstring16` (`substring(3, 0)`): the empty result is dropped
+    (`:5888`), so the answer is empty and `= ''` is empty
+  - `testSubstring17`, `18` (`substring(3, {})`, `substring(0, {})`): an empty
+    length argument returns empty (`:5871-5872`) rather than the rest of the
+    string
+- **AND** the specification requires `{}` for an empty start, the rest of the
+  string for an empty length, and `''` for a zero count; recorded as `DEV-0019`
 
 #### Scenario: [path.string.005] `substring` with an out-of-range start yields empty
 
@@ -1447,8 +1484,13 @@ The engine SHALL implement the string functions `FHIRPathEngine` implements, inc
 - **THEN** each fails, because those functions raise on a focus whose size is
   not 1 rather than returning empty — unlike the string functions in
   `path.string.020`
-- **AND** `'abc'.round(2)` fails on the focus type, which is the other shape of
-  rejection the engine has
+- **AND** `'abc'.round(2)` is rejected by the **check** on the focus type, which
+  is the other shape of rejection the engine has: `checkContextDecimal`
+  (`FHIRPathEngine.java:3690`, `3890-3892`) raises `FHIRPATH_DECIMAL_ONLY`
+  ("The function round can only be used on a decimal but found
+  [System.String]"). With the check skipped it does **not** fail at evaluation:
+  the else arm of `funcRound` builds an exception and never throws it
+  (`:4414`), so the result is empty
 
 #### Scenario: [path.string.024] implicit string conversion changes the outcome of every string function
 
@@ -1462,12 +1504,18 @@ The engine SHALL implement the string functions `FHIRPathEngine` implements, inc
 - **AND** the engine exposes this as a public setting
   (`setDoImplicitStringConversion`), so both outcomes are reachable
 
-#### Scenario: [path.string.022] string functions operate on unicode scalar values, not bytes
+#### Scenario: [path.string.022] string functions count UTF-16 code units, not bytes
 
 - **WHEN** a string containing non-ASCII characters is measured with `length()`
-  and sliced with `substring()`
-- **THEN** both count characters as the engine at the pinned SHA counts them,
-  and never split a character
+  and sliced with `substring()` or searched with `indexOf()`
+- **THEN** all three count UTF-16 code units, as a Java `String` does
+  (`FHIRPathEngine.java:5771`, `5884`), so a character above U+FFFF counts as
+  two; a character in the Basic Multilingual Plane counts as one and is never
+  split, and a byte count is never used
+- **AND** `toChars()` yields one item per UTF-16 code unit in HAPI
+  (`:5835`), so a character above U+FFFF yields two lone surrogate halves; Frevo
+  yields one item per Unicode scalar value, because a lone surrogate cannot be
+  held in a Rust `String`. The two agree below U+FFFF. Recorded as `DEV-0020`
 
 ### Requirement: Type conversion
 

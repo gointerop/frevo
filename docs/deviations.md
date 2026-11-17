@@ -45,8 +45,8 @@ decision.
 
 ## Entries
 
-All seventeen entries below come from `add-fhirpath-and-codegen-r4`;
-`DEV-0013`, `DEV-0015`, `DEV-0017` and `DEV-0018` are pending the owner's review (see their entries);
+All nineteen entries below come from `add-fhirpath-and-codegen-r4`;
+`DEV-0013`, `DEV-0015` and `DEV-0017` to `DEV-0020` are pending the owner's review (see their entries);
 `DEV-0012` and `DEV-0014` were ruled for HAPI (2026-11-17 and 2026-11-14).
 `DEV-0001` through `DEV-0010` are the same kind of case: the pinned R4
 `FHIRPathEngine` does something the FHIRPath specification does not describe. In
@@ -581,6 +581,58 @@ file, so its prose is not redistributable here (see `oracles/PINS.md`).
   offset-less literals. Differences arise only for a HAPI whose JVM default
   differs from the Frevo evaluation zone, for operands about 14 hours apart.
 - **Normalizer impact:** none on stored bytes.
+- **Reviewed:** pending owner.
+
+### DEV-0019 — math functions on an empty focus raise, and `substring` fails on eight suite cases
+
+- **Area:** path
+- **Scenario IDs:** path.mathfn.010, path.string.004
+- **HAPI 8.12.0 behaviour:** `abs`, `ceiling`, `floor`, `sqrt`, `ln`, `log`,
+  `power`, `round` and `truncate` open with `if (focus.size() != 1) throw`, which
+  covers an empty focus (`ENGINE:4096`, `4116`, `4139`, `4157`, `4201`, `4221`,
+  `4249`, `4397`, `4273`); only `exp` returns empty (`ENGINE:4177`).
+  `funcSubstring` (`ENGINE:5864-5895`) reads its start argument with no
+  emptiness guard (`5867`), computes the end with an `int` sum (`5884`), drops an
+  empty result (`5888`) and returns empty for an empty length (`5871-5872`).
+  HAPI fails `testSubstring11`-`18` of its own suite
+  (`oracles/fhirpath/hapi-8.12.0-results.json:352-359`).
+- **Specification requirement:** FHIRPath 2.0.0 — a function over an empty input
+  yields empty; `substring` of an empty start is empty, an empty length means
+  the rest of the string, and a zero length gives `''`.
+- **Chosen behaviour:** HAPI — an execution error for the nine math functions,
+  and the eight `substring` cases fail identically (`path.oracle.012` parity).
+- **Configuration flag:** none
+- **Debt:** none
+- **Rationale:** owner ruling, 2026-11-17: HAPI 8.12.0's observable behaviour is
+  the reference. Established from the pinned source; not confirmed against a
+  live HAPI.
+- **Normalizer impact:** none on stored bytes.
+- **Reviewed:** pending owner.
+
+### DEV-0020 — Frevo differs from HAPI on `toChars` above U+FFFF and on exponent rendering
+
+- **Area:** path
+- **Scenario IDs:** path.string.002, path.string.022, path.mathfn.004
+- **HAPI 8.12.0 behaviour:** `toChars` iterates `toCharArray()` (`ENGINE:5835`),
+  so a character above U+FFFF yields two items, each a lone surrogate half.
+  `abs`, `sqrt` and the other `double`-based functions build results through
+  `BigDecimal.valueOf(double)`, and `round` through `setScale` with a negative
+  scale; both render a large or tiny value with an exponent (`1.0E+10`).
+- **Specification requirement:** FHIRPath 2.0.0 — `toChars` yields one item per
+  character; a decimal has no exponent form.
+- **Chosen behaviour:** Frevo yields one item per Unicode scalar value, because
+  a lone surrogate cannot be a Rust `String`, and renders the plain form,
+  because its decimal type carries no exponent. Both are **differences from
+  HAPI**. `length`, `indexOf` and `substring` do count UTF-16 code units as HAPI
+  does (`path.string.022`).
+- **Configuration flag:** none
+- **Debt:** none
+- **Rationale:** the first cannot be matched in a Rust `String`; the second
+  changes the string and not the value. Both were raised by the implementer of
+  tasks 39 and 40 and need the owner's ruling; if the owner requires the HAPI
+  rendering, an exponent-capable decimal rendering is due.
+- **Normalizer impact:** none on stored bytes. A search-parameter expression
+  that renders a decimal through `E+n` is not known.
 - **Reviewed:** pending owner.
 
 ## Considered and not recorded as deviations

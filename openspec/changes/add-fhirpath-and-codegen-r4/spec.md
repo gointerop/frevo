@@ -565,7 +565,7 @@ Every allocated ID, grouped as it is grouped in the delta files.
 - `path.mathfn.007` — `log` takes the base as its argument
 - `path.mathfn.008` — `power` of a negative base with a fractional exponent yields empty
 - `path.mathfn.009` — `truncate` discards the fractional part
-- `path.mathfn.010` — a math function on an empty collection yields empty
+- `path.mathfn.010` — a math function on an empty collection yields empty only for `exp`
 - `path.mathfn.011` — a math function on a collection of more than one is an execution error
 
 **Requirement: String functions**
@@ -593,7 +593,7 @@ Every allocated ID, grouped as it is grouped in the delta files.
 - `path.string.021` — a string function on an empty collection yields empty
 - `path.string.023` — the functions that do reject a bad focus reject it with an error
 - `path.string.024` — implicit string conversion changes the outcome of every string function
-- `path.string.022` — string functions operate on unicode scalar values, not bytes
+- `path.string.022` — string functions count UTF-16 code units, not bytes
 
 **Requirement: Type conversion**
 

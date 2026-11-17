@@ -349,7 +349,13 @@ impl SuiteEngine for FrontEndEngine {
                 message: format!("no expression was parsed under handle {}", parsed.0),
                 offset: None,
             })?;
-        let values = evaluate_over(expr, root.as_ref())?;
+        // The evaluation time zone is the configured one (UTC+11 for the
+        // suite), which `today()`, `now()` and offset-less dateTime
+        // comparison read (`path.datetime.004`).
+        let zone = self.config.map_or(SUITE_TIME_ZONE_OFFSET_MINUTES, |c| {
+            c.time_zone_offset_minutes
+        });
+        let values = evaluate_over_in_zone(expr, root.as_ref(), zone)?;
         Ok(values.iter().map(|v| result_item(model, v)).collect())
     }
 
@@ -457,12 +463,26 @@ pub fn check_types(
 /// whose input no suite file carries (`path.navigation.013`, an in-memory
 /// `Patient`) drives the same binding over a node it built. A feature the
 /// evaluator does not implement yet is [`EngineError::NotImplemented`].
+#[allow(dead_code)] // used by test binaries that drive the seam directly
 pub fn evaluate_over(
     expr: &frevo_path::Expression,
     root: Option<&Value>,
 ) -> Result<Vec<Value>, EngineError> {
+    evaluate_over_in_zone(expr, root, SUITE_TIME_ZONE_OFFSET_MINUTES)
+}
+
+/// [`evaluate_over`] in an explicit evaluation time zone, as minutes east of
+/// UTC. The suite runs at `UTC+1100`, which is `SUITE_TIME_ZONE_OFFSET_MINUTES`
+/// (660); `today()`, `now()` and the placement of an offset-less `dateTime`
+/// read it (`path.datetime.004`, DEV-0018).
+pub fn evaluate_over_in_zone(
+    expr: &frevo_path::Expression,
+    root: Option<&Value>,
+    time_zone_offset_minutes: i32,
+) -> Result<Vec<Value>, EngineError> {
     let model = sd_model().ok_or(EngineError::NotImplemented)?;
     Evaluator::new(model)
+        .with_time_zone_offset_minutes(time_zone_offset_minutes)
         .evaluate(expr, root)
         .map_err(engine_error)
 }
