@@ -611,7 +611,6 @@ fn every_unimplemented_function_is_unsupported_and_never_empty() {
         "Patient.name.given.upper()",
         "Patient.name.given.length()",
         "Patient.name.given.toInteger()",
-        "Patient.name.iif(true, 1, 2)",
         "Patient.name.given.trim()",
         "Patient.name.abs()",
         "Patient.name.aggregate($this, 0)",
@@ -627,25 +626,26 @@ fn every_unimplemented_function_is_unsupported_and_never_empty() {
 #[test]
 fn every_binary_operator_is_unsupported_and_never_empty() {
     let p = patient();
-    for text in [
-        "1 ~ 1",
-        "1 < 2",
-        "1 + 1",
-        "true and false",
-        "{} and true",
-        "Patient.name is HumanName",
-        "-1 + 2",
-        "'a' & 'b'",
-    ] {
+    for text in ["Patient.name is HumanName", "Patient.name as HumanName"] {
         let feature = unsupported(text, Some(&p));
         assert!(feature.contains("operator"), "{text}: {feature}");
+    }
+    // Operators that are built, applied to operands whose rule is not: still
+    // Unsupported, never empty, though the message names the missing rule.
+    for text in [
+        "1 / 3",
+        "@2015-02-03 + 1 day",
+        "1 'mg' < 2 'g'",
+        "1 'mg' ~ 1 'mg'",
+    ] {
+        unsupported(text, Some(&p));
     }
 }
 
 #[test]
-fn a_unary_sign_over_a_non_number_is_unsupported() {
-    unsupported("-'a'", None);
-    unsupported("-{}", None);
+fn a_unary_sign_over_an_unbuilt_operation_is_unsupported() {
+    unsupported("-1.0 / 3", None);
+    unsupported("-(1 / 3)", None);
 }
 
 #[test]
@@ -805,11 +805,12 @@ fn in_and_contains_disagree_about_an_empty_right_operand() {
 }
 
 #[test]
-fn equality_reaches_the_decimal_rule_and_leaves_dates_and_quantities_unsupported() {
+fn equality_reaches_the_decimal_rule_and_leaves_quantities_unsupported() {
     assert_eq!(ok("1 = 1.0", None), ["boolean:true"]);
     assert_eq!(ok("1 != 2", None), ["boolean:true"]);
     assert!(ok("{} = 1", None).is_empty());
     assert_eq!(ok("1 = 'a'", None), ["boolean:false"]);
-    assert!(unsupported("@2015 = @2015", None).contains("date"));
-    assert!(unsupported("1 'mg' = 1 'mg'", None).contains("quantity"));
+    assert_eq!(ok("@2015 = @2015", None), ["boolean:true"]);
+    assert!(unsupported("1 'mg' = 1 'g'", None).contains("quantit"));
+    assert!(unsupported("1 'mg' = 1 'mg'", None).contains("quantit"));
 }
