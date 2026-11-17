@@ -286,8 +286,11 @@ The engine SHALL navigate a resource through the node trait, addressing a polymo
 
 - **WHEN** `Patient.name[0].given[0]` is evaluated over `patient-example.xml`,
   and the `testIndexer` group's cases are evaluated
-- **THEN** the first result is `Peter` and every `testIndexer` case yields its
-  stated output
+- **THEN** the first result is `Peter`, and `testIndexer1` and `testIndexer2`
+  (the group has three cases) yield their stated output
+- **AND** `testIndexer3` (`Patient.name[-1]`) is graded `failed` for HAPI
+  (`oracles/fhirpath/hapi-8.12.0-results.json`) and for Frevo alike, per
+  `path.navigation.010` and `DEV-0012`
 
 #### Scenario: [path.navigation.009] an out-of-range index yields empty
 
