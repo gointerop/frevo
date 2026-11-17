@@ -374,6 +374,9 @@ them is the whole reason that decision is safe to make.
 - **Owed:** carry a signed scale through `Decimal` so `12345.round(-2) * 1`
   keeps HAPI's scale (`Decimal` stores `scale` as `u32`; negative scale is kept
   only in the rendered text).
+- **Why deferred:** the engine's `Decimal` is the interim fixed-precision type
+  of DEBT-0011; the rendering that the scenarios need works from the lexical
+  text, and widening the type belongs with the arbitrary-precision decimal.
 - **Cost if unpaid:** arithmetic on a rounded-to-tens-or-higher decimal renders
   as a plain number where HAPI's `BigDecimal` result may differ.
 - **Trigger:** the first differential diff or suite case doing arithmetic on a
