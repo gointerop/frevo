@@ -342,3 +342,42 @@ them is the whole reason that decision is safe to make.
   a differential test that `R4Model` and the package model answer the same.
 - **Status:** open
 - **Reviewed:** not yet. Raised 2026-11-12 by the task-50 implementer.
+
+### DEBT-0013 — a lone UTF-16 surrogate is carried as a private-use code point
+
+- **Area:** path
+- **Origin:** change `add-fhirpath-and-codegen-r4`, commit `44227f4`
+  (`crates/frevo-path/src/eval/`), required by `path.string.002`/`.022`
+- **Owed:** a string value that holds UTF-16 units natively. Today a lone
+  surrogate is stored inside a Rust `String` as U+10F800 + (unit − 0xD800), and
+  `utf16()`/`from_utf16()` map it back, because the harness matches `Value`
+  exhaustively and a new variant was not available.
+- **Why deferred:** HAPI's string type is UTF-16, so `toChars`, `length`,
+  `indexOf` and `substring` must see units and may split a pair (the spec, per
+  review f397da5). The encoding satisfies every scenario and leaves ordinary
+  strings on the old path.
+- **Cost if unpaid:** a real character in U+10F800..U+10FFFF is misread as a
+  surrogate; `+` does not re-join a high and a low half into a pair. Both
+  return a wrong answer rather than an error.
+- **Trigger:** the first pinned-suite case, differential diff or consumer
+  expression involving a supplementary-plane private-use character or a
+  concatenation of split halves; or the first change that adds a `Value`
+  variant.
+- **Size:** small to medium.
+- **Status:** open
+- **Reviewed:** not yet. Raised 2026-11-17.
+
+### DEBT-0014 — a decimal's negative scale lives only in its lexical text
+
+- **Area:** path
+- **Origin:** change `add-fhirpath-and-codegen-r4`, commit `9235a33`
+- **Owed:** carry a signed scale through `Decimal` so `12345.round(-2) * 1`
+  keeps HAPI's scale (`Decimal` stores `scale` as `u32`; negative scale is kept
+  only in the rendered text).
+- **Cost if unpaid:** arithmetic on a rounded-to-tens-or-higher decimal renders
+  as a plain number where HAPI's `BigDecimal` result may differ.
+- **Trigger:** the first differential diff or suite case doing arithmetic on a
+  decimal with negative scale; or the arbitrary-precision decimal of DEBT-0011.
+- **Size:** small; best done with DEBT-0011.
+- **Status:** open
+- **Reviewed:** not yet. Raised 2026-11-17.
