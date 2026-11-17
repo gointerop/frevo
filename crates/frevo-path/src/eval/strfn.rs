@@ -55,7 +55,7 @@ fn has_lone(text: &str) -> bool {
 }
 
 /// The UTF-16 code units of a Java string.
-fn utf16(text: &str) -> Vec<u16> {
+pub(super) fn utf16(text: &str) -> Vec<u16> {
     let mut units = Vec::with_capacity(text.len());
     for c in text.chars() {
         match lone_unit(c) {
@@ -70,7 +70,7 @@ fn utf16(text: &str) -> Vec<u16> {
 }
 
 /// A Java string of these code units; an unpaired surrogate is kept.
-fn from_utf16(units: &[u16]) -> String {
+pub(super) fn from_utf16(units: &[u16]) -> String {
     char::decode_utf16(units.iter().copied())
         .map(|r| {
             r.unwrap_or_else(|e| {

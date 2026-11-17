@@ -42,6 +42,7 @@ mod logic;
 mod mathfn;
 mod navigate;
 mod operand;
+mod strext;
 mod strfn;
 mod temporal;
 
@@ -362,6 +363,16 @@ impl Run<'_> {
                 | Function::Contains
                 | Function::Length),
             ) => self.func_string(context, focus, id, f),
+            Some(
+                f @ (Function::Replace
+                | Function::Trim
+                | Function::Split
+                | Function::Join
+                | Function::Encode
+                | Function::Decode
+                | Function::Escape
+                | Function::Unescape),
+            ) => self.func_string_ext(context, focus, id, f),
             Some(
                 f @ (Function::ToInteger
                 | Function::ToDecimal

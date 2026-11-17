@@ -1903,3 +1903,36 @@ the string functions that need no regular-expression engine (`replace`, `trim`,
 branch chooses the engine and the owner approves the dependency (constitution
 section 5). No crate is added meanwhile. Supersedes the open question in the
 earlier task 41 entry.
+
+## 2026-11-17 — `add-fhirpath-and-codegen-r4` — task 41: four suite cases contradict the pinned engine; HAPI followed, tests red
+
+**Raised by** the implementer of task 41. Implemented `replace`, `trim`,
+`split`, `join`, `encode`, `decode`, `escape`, `unescape` in
+`crates/frevo-path/src/eval/strext.rs` as the pinned engine behaves. Four
+cases in `crates/frevo-path/tests/path_string.rs` (which expect Frevo to pass
+what HAPI fails) therefore stay red; the tests were not touched:
+
+1. `testJoin/testJoinEmpty` (`path.string.015`): `funcJoin`
+   (`FHIRPathEngine.java:4547-4562`) ends with `result.add(new
+   StringType(b.toString()))` outside any emptiness test, so an empty focus
+   yields one empty string. The test expects zero items.
+2. `testEscapeUnescape/testUnescapeJson2` and `testUnescapeJson4`
+   (`path.string.019`): `Utilities.unescapeJson`
+   (`org.hl7.fhir.utilities/.../Utilities.java:488-489`) is `case '"':
+   b.append('b');`, so `\"` becomes the letter `b`. HAPI's recorded run
+   (`oracles/fhirpath/hapi-8.12.0-results.json`) gives `b1<2b`.
+3. `testUnescapeJson3` (`path.string.019`): after a `\uXXXX` the cursor is
+   advanced one place, not past the four hex digits, so they are appended
+   too: `AB` is `A0041B` (recorded the same way).
+
+Decision needed: either rule these behaviours `ahead-of-hapi` (the tests'
+stated position; a small change in `strext.rs`: `func_join` returns empty for
+an empty focus, `unescape_json` emits `"` and skips the hex digits) or amend
+the tests to HAPI's outcome as was done for `path.convert.*`
+(`path.oracle.012`). Not decided here.
+
+Also in this task: `split` with an empty separator loops forever in
+`Utilities.simpleSplit` (the cursor never advances); Frevo raises an
+execution error instead. `testSplit/testSplit3` needs `trace()`, not part of
+this task. `replace_substitutes_literal_substrings` also asserts
+`replaceMatches`, which is 41a.

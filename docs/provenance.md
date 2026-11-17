@@ -98,7 +98,14 @@ precision check and string rendering), and the math functions —
 `funcTruncate`, `funcSqrt`, `funcExp`, `funcLn`, `funcLog`, `funcPower` and
 `DecimalType(double)`), and the base string functions — `src/eval/strfn.rs`
 (`funcUpper`, `funcLower`, `funcToChars`, `funcIndexOf`, `funcSubstring`,
-`funcStartsWith`, `funcEndsWith`, `funcContains`, `funcLength`), and type
+`funcStartsWith`, `funcEndsWith`, `funcContains`, `funcLength`), and the
+string functions that need no regular-expression engine —
+`src/eval/strext.rs` (`funcReplace`, `funcTrim`, `funcSplit`, `funcJoin`,
+`funcEncode`, `funcDecode`, `funcEscape`, `funcUnescape`, `bytesToHex`,
+`hexStringToByteArray`, and `Utilities.java`'s `escapeXml`, `unescapeXml`,
+`escapeJson`, `unescapeJson`, `simpleSplit`, `URLEncode`, `URLDecode` and
+`isWhitespace`, `CommaSeparatedStringBuilder.java` and
+`MarkDownProcessor.java`'s markdown escaping), and type
 conversion — `src/eval/convert.rs` (`funcToInteger`, `funcToDecimal`,
 `funcToString`, `funcToBoolean`, `funcToQuantity`, `funcToDateTime`,
 `funcToTime`, the `funcIsX` family, `parseQuantityString`, and
