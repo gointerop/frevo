@@ -38,6 +38,7 @@ mod equality;
 mod error;
 mod filter;
 mod logic;
+mod mathfn;
 mod navigate;
 mod operand;
 mod temporal;
@@ -322,6 +323,18 @@ impl Run<'_> {
             Some(Function::Exclude) => self.func_exclude(context, focus, id),
             // `funcToday` and `funcNow` read the clock on every call; no
             // evaluation instant is cached (`DEV-0008`).
+            Some(
+                f @ (Function::Abs
+                | Function::Ceiling
+                | Function::Floor
+                | Function::Round
+                | Function::Truncate
+                | Function::Sqrt
+                | Function::Exp
+                | Function::Ln
+                | Function::Log
+                | Function::Power),
+            ) => self.func_math(context, focus, id, f),
             Some(Function::Today) => Ok(vec![temporal::today()]),
             Some(Function::Now) => Ok(vec![temporal::now()]),
             Some(Function::Custom) | None => Err(EvalError::unsupported(

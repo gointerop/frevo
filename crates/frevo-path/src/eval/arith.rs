@@ -73,12 +73,12 @@ fn error(message: String, at: usize) -> EvalError {
     )
 }
 
-fn too_wide(at: usize) -> EvalError {
+pub(super) fn too_wide(at: usize) -> EvalError {
     EvalError::unsupported("decimal arithmetic beyond 38 significant digits", at)
 }
 
 /// A decimal written out in plain notation (`BigDecimal.toPlainString`).
-fn make_decimal(mantissa: i128, scale: u32, at: usize) -> Result<Decimal, EvalError> {
+pub(super) fn make_decimal(mantissa: i128, scale: u32, at: usize) -> Result<Decimal, EvalError> {
     let digits = mantissa.unsigned_abs().to_string();
     let mut text = String::new();
     if mantissa < 0 {

@@ -1767,3 +1767,24 @@ report them uncovered until then.
    `precision()` (tasks 42 and 44), and `path.compare.013` needs `toString()`
    plus a per-evaluation overlay that rewrites an operand's stored string to
    Zulu. Not built; not faked.
+
+## 2026-11-17 — `add-fhirpath-and-codegen-r4` — task 39 cannot be ticked: `path.mathfn.010` contradicts the pinned source, `path.mathfn.001` needs quantity equality
+
+**Raised by** the implementer (task 39). Implemented `abs`, `ceiling`, `floor`,
+`round`, `truncate`, `sqrt`, `exp`, `ln`, `log`, `power` (`eval/mathfn.rs`);
+`path.mathfn.002`-`009` and `011` pass.
+
+1. `path.mathfn.010` (`path_math.rs`, `a_math_function_on_an_empty_collection_yields_empty`)
+   asserts `{}.abs()`, `{}.sqrt()` and `{}.round(2)` are empty. The pinned
+   source raises for all three: `FHIRPathEngine.java:4096` (`funcSqrt`),
+   `:4116` (`funcAbs`), `:4397` (`funcRound`) open with
+   `if (focus.size() != 1) throw makeExceptionPlural(...)`, which covers zero.
+   Only `funcExp` (`:4177`) has an empty guard. The test's own comment says the
+   same. Frevo follows HAPI (execution error), so that test stays red. The
+   spec scenario text needs correcting (or a DEV entry) and the test retargeted.
+2. `path.mathfn.001` (`testAbs3`, `(-5.5 'mg').abs() = 5.5 'mg'`) needs quantity
+   equality through UCUM (task 43); `abs` itself returns the quantity.
+3. Two renderings differ from the pinned engine's string and not its value:
+   `BigDecimal.valueOf(double)` and `setScale` with a negative scale render
+   `E+n` for large or tiny values (`1.0E+10`); `Decimal` cannot carry an
+   exponent, so the plain form is returned.
