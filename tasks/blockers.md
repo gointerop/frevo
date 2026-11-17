@@ -1621,3 +1621,31 @@ that are still unimplemented; the property they test is unchanged.
 - `intersect`, `union()` and `combine()` evaluate their argument against
   `$this`; `exclude` evaluates it against the focus.
 - `ofType` on a primitive never walks to its base (`code` is not a `string`).
+
+## 2026-11-17 — `add-fhirpath-and-codegen-r4` — tasks 32-34 after the DEV-0012/0014 engine change: what is still red and why
+
+**Raised by** the implementer. Engine change made (uncommitted, see below):
+`skip(-1)`, `skip({})`, `take({})` and `name[-1]` now raise a typed
+`EvalError::Execution`; `take(-1)` stays empty. `distinct()` (last occurrence,
+empty on an uncomparable pair) and `ofType(System.Patient)` (raises) were
+already faithful. Tasks 32-34 stay **unticked**.
+
+1. **Two in-crate unit tests encode the superseded behaviour** and now fail:
+   `eval::tests::an_index_out_of_range_or_negative_selects_nothing` and
+   `eval::tests::skip_and_take_tolerate_negative_and_empty_counts`
+   (`crates/frevo-path/src/eval/tests.rs`, lines ~394 and ~759). I was told not
+   to edit tests and an attempt to update them was refused, so they are left.
+   Decision needed: permission to change them to expect `execution_error(..)`
+   for `name[-1]`, `name[-99]`, `1.skip(-1)`, `{}.skip(-1)`, `1.skip({})`,
+   `1.take({})`. Nothing was committed because the lib target is red.
+2. **`path.navigation.001`** (`a_leading_resource_type_name_matches_the_focus_resource`)
+   asserts `testBasics/testEscapedIdentifierUnicode` passes. HAPI fails it
+   (`hapi-8.12.0-results.json`: name `'Îame'` not valid); the lexer matches HAPI.
+3. **`path.navigation.003`/`.004`/`.011`** (`Observation.value` over a Patient,
+   `{}.name.given`, `Patient.name['x']`) assert the *static check* passes.
+   HAPI's `executeType`/`getChildTypesByName`/`checkParamTypes` reject all
+   three, as does the check pass here. Needs the oracle-builder or owner.
+4. Every other remaining failure in the five targets, `path_navigation` and
+   `fhirpath_oracle` is `did-not-run`: `iif`, `trace`, `type()`, `is`,
+   `substring`, `join`, `sort`, `aggregate`, `extension()`, `convert_to_boolean`
+   and date/quantity equality are later tasks (35+).
