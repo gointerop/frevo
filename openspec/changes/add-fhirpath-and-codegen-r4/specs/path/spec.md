@@ -1540,7 +1540,7 @@ The engine SHALL implement the string functions `FHIRPathEngine` implements, inc
 
 ### Requirement: Type conversion
 
-The engine SHALL implement the `toX` functions the R4 engine implements and each `convertsToX` predicate, so that a failed conversion yields an empty collection while the predicate yields `false`. The set is not symmetric: `convertsToDate` exists and `toDate` does not.
+The engine SHALL implement the `toX` functions the R4 engine implements and each `convertsToX` predicate, so that a failed conversion yields an empty collection while the predicate yields `false`, except `toDateTime` and `toTime`, which are stubs that always raise (`path.convert.011`, `path.convert.013`). The set is not symmetric: `convertsToDate` exists and `toDate` does not.
 
 #### Scenario: [path.convert.001] `toInteger` converts strings, booleans and integers
 
@@ -1642,7 +1642,9 @@ The engine SHALL implement the `toX` functions the R4 engine implements and each
   (`FHIRPathEngine.java:4983-4987`), whatever the focus
 - **AND** the static check passes for a primitive focus and types the result as
   a `time` (`:3654-3656`), so the failure is at evaluation and not at parse or
-  check; a non-primitive focus is rejected by the check
+  check; a non-primitive focus is rejected by the check with "The function ToTime
+  can only be used on primitives" (`FHIRPATH_PRIMITIVE_ONLY`), the name written with
+  a capital `T` (`:3655`)
 - **AND** `convertsToTime` is implemented (`funcIsTime`, `:5986-5990`): `true`
   for a `time` value or a string matching
   `(T)?([01][0-9]|2[0-3])(:[0-5][0-9](:([0-5][0-9]|60))?)?(\.[0-9]+)?(Z|...)?`,
@@ -1670,7 +1672,10 @@ The engine SHALL implement the `toX` functions the R4 engine implements and each
   `Messages.properties:347`): `funcToDateTime` is a stub whose whole body is
   that `throw` (`FHIRPathEngine.java:4976-4981`), whatever the focus
 - **AND** the static check passes for a primitive focus and types the result as
-  a `dateTime` (`:3650-3652`); a non-primitive focus is rejected by the check
+  a `dateTime` (`:3650-3652`); a non-primitive focus is rejected by the check with
+  "The function ToDateTime can only be used on primitives" (`FHIRPATH_PRIMITIVE_ONLY`,
+  `Messages.properties:353`), the function name written with a capital `T`
+  (`:3651`)
 - **AND** `convertsToDateTime` is implemented (`funcIsDateTime`, `:5942-5955`):
   `true` for a `date` or `dateTime` value or a string matching
   `RegexConstants.DATE_TIME_REGEX`, `false` for any other focus including a
