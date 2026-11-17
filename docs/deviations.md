@@ -510,6 +510,74 @@ file, so its prose is not redistributable here (see `oracles/PINS.md`).
 - **Reviewed:** pending owner re-confirmation. Ruled for HAPI on 2026-11-14 for
   the broader wording; narrowed after review the same day.
 
+### DEV-0017 — equality, equivalence, comparison, date arithmetic and division follow pinned-engine defects
+
+- **Area:** path
+- **Scenario IDs:** path.equality.001, path.equality.002, path.equality.004, path.equality.005, path.equality.012, path.compare.001, path.compare.002, path.compare.003, path.compare.004, path.combine.001, path.math.001, path.math.003, path.math.005, path.math.006, path.math.007, path.math.008
+- **HAPI 8.12.0 behaviour:** HAPI fails 38 cases of its own pinned suite
+  (`oracles/fhirpath/hapi-8.12.0-results.json`) on these mechanisms.
+  `removeTrailingZeros` (`ENGINE:2161-2182`) strips zeros from a number written
+  with no decimal point, so `100 = 1.0` is `true` and `10 = 10.0` is `false`
+  (`testEquality31`-`33`, `35`). A minute- or hour-precision `dateTime` is
+  rejected by `DateTimeType.copy()` (`Invalid date/time format`), which
+  `equalsUsingFhirPathRules` (`BaseDateTimeType.java:916`) and `dateAdd` call
+  (`testEquality37`-`40`, `testNEquality27`, `testEquivalent30`,
+  `testPlusDate23`/`24`, `testMinus7`, `testUnion12`). `qtyEquivalent` returns
+  `null`, which `doEquivalent` unboxes (`ENGINE:2204-2206`): a
+  `NullPointerException` (`testEquivalent24`-`29`, `testNotEquivalent23`/`24`).
+  `<=`, `>` and `>=` over quantities dereference `qtyToCanonicalDecimal`'s
+  `null` for a non-UCUM system (`ENGINE:2301-2304`, `2494-2496`, `2544-2546`,
+  `2592-2594`), and `<` over differing code lists compares canonical decimals
+  (`ENGINE:2440`) (`testLessThan28`-`30`, `33`, `testLessOrEqual28`/`29`,
+  `testGreaterThan28`/`29`, `testGreatorOrEqual28`/`29`). `hasValue()` over a
+  `HumanName` is `true` (`ENGINE:5776-5780`, `testHasCodingValue2`). Division
+  and modulo by zero are empty only for integers and for `/` with a non-zero
+  dividend; `0.0 / 0`, `0 div 0.0` and `0.0 mod 0` answer one item and
+  `5.5 mod 0`, `5 mod 0.0` raise (`ENGINE:3005-3011`, `3050-3064`,
+  `3098-3105`; `testDivide7`, `testDiv6`, `testMod6`-`8`). `0 - q` yields `abs(q)`
+  and `q - q` yields empty (`ENGINE:2965-2970`).
+- **Specification requirement:** FHIRPath 2.0.0 and the pinned suite: decimal
+  equality by value, equality and equivalence of quantities and of
+  minute-precision dateTimes, a difference for `q - q`, negation for `0 - q`,
+  and empty for every division by zero.
+- **Chosen behaviour:** HAPI, case by case, as `path.oracle.012` parity
+  (`failed` on both sides). Frevo raises an execution error where HAPI raises an
+  unchecked exception.
+- **Configuration flag:** none
+- **Debt:** none
+- **Rationale:** owner ruling, 2026-11-17: HAPI 8.12.0's observable behaviour is
+  the reference. Established by reading the pinned source and HAPI's recorded
+  run; not confirmed against a live HAPI. The value `0.0 / 0` yields depends on
+  `org.fhir.ucum.Decimal`, which is not in `reference/` (see `tasks/blockers.md`).
+- **Normalizer impact:** none on stored bytes.
+- **Reviewed:** pending owner.
+
+### DEV-0018 — a dateTime with no UTC offset is placed in the evaluation zone
+
+- **Area:** path
+- **Scenario IDs:** path.datetime.004
+- **HAPI 8.12.0 behaviour:** `couldBeTheSameTime` (`BaseDateTimeType.java:937-960`)
+  reads the instant of an offset-less `dateTime` through the JVM default zone
+  (`TimeZone.getDefault()`, `BaseDateTimeType.java:434`, `721-723`) before
+  widening it by 14 hours each way, so `=` of an offset-less and an offset
+  `dateTime` is `false` or empty depending on the machine's zone. The suite sets
+  the default to `UTC+1100` (`FHIRPathTests`), which is what the recorded run
+  used.
+- **Specification requirement:** FHIRPath 2.0.0 — a `dateTime` without an offset
+  compares as unknown against one with an offset, independent of the machine.
+- **Chosen behaviour:** the evaluation zone configured on the engine, which the
+  oracle harness sets to `UTC+1100` (`path.datetime.004`), and UTC when none is
+  configured. It is identical to HAPI whenever the zones agree, and does not
+  read the machine's zone.
+- **Configuration flag:** none
+- **Debt:** none
+- **Rationale:** reading the platform zone is the hazard `path.datetime.004`
+  already rejects for `today()` and `now()`; this applies the same rule to
+  offset-less literals. Differences arise only for a HAPI whose JVM default
+  differs from the Frevo evaluation zone, for operands about 14 hours apart.
+- **Normalizer impact:** none on stored bytes.
+- **Reviewed:** pending owner.
+
 ## Considered and not recorded as deviations
 
 Recorded so the reasoning is not re-derived:

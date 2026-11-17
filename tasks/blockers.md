@@ -1711,3 +1711,15 @@ Decision needed from the oracle-builder or owner for each.
 5. **Frevo reads a missing UTC offset as UTC** where the pinned engine reads
    the JVM default zone (`couldBeTheSameTime`, `setTimeZoneZulu`). Identical on a
    UTC JVM; recorded here rather than silently chosen.
+
+## 2026-11-17 — `add-fhirpath-and-codegen-r4` — `org.fhir.ucum.Decimal` is not vendored; the digits of `1 / 3` cannot be specified
+
+**Raised by** the proposer. `opDivideBy`, `opDiv` and `opMod` delegate decimal
+arithmetic to `org.fhir.ucum.Decimal` (`FHIRPathEngine.java:3005-3011`,
+`3056-3063`, `3098-3105`). The class is not under `reference/`, so the precision
+and digit rule for a non-terminating quotient (`1 / 3`), and the value of
+`0.0 / 0`, `0 div 0.0` and `0.0 mod 0`, are not stated in the spec (`path.math.005`
+and `path.math.008` say so) and were not invented. Decision needed from the
+owner: vendor `fhir-ucum` at the version the pin resolves under `reference/`
+(or `oracles/`), after which the spec states the rule; or accept the gap in
+`docs/known-gaps.md`.

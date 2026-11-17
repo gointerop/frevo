@@ -742,7 +742,11 @@ The engine SHALL implement the union operator, `union`, `combine`, `in` and `con
 #### Scenario: [path.combine.001] the union operator unions and removes duplicates
 
 - **WHEN** the `testUnion` group's cases are evaluated
-- **THEN** every case yields its stated output
+- **THEN** every case HAPI passes yields its stated output
+- **AND** Frevo's required status per case follows HAPI's own recorded run (`oracles/fhirpath/hapi-8.12.0-results.json`): `passed` for every case HAPI passes, and `failed` (parity under `path.oracle.012`) for the cases named below, which HAPI fails. A Frevo pass on one of them would be listed as `ahead-of-hapi`, not accepted as a pass of this scenario
+- **AND** the failed case is `testUnion12` (`(@2015-02-04T10:00 |
+  @2015-02-04T10:00).count()`), for the minute-precision reason in
+  `path.equality.001`
 
 #### Scenario: [path.combine.002] `union()` behaves as the union operator
 
@@ -780,12 +784,28 @@ The engine SHALL implement equality, inequality, equivalence and non-equivalence
 #### Scenario: [path.equality.001] the equality operator compares values of the same type
 
 - **WHEN** the `testEquality` group's cases are evaluated
-- **THEN** every case yields its stated output
+- **THEN** every case HAPI passes yields its stated output
+- **AND** Frevo's required status per case follows HAPI's own recorded run (`oracles/fhirpath/hapi-8.12.0-results.json`): `passed` for every case HAPI passes, and `failed` (parity under `path.oracle.012`) for the cases named below, which HAPI fails. A Frevo pass on one of them would be listed as `ahead-of-hapi`, not accepted as a pass of this scenario
+- **AND** the failed cases are `testEquality31`, `32`, `33` and `35` (`100 = 1.0`,
+  `10 = 1.0`, `10 = 10.0`, `100.toDecimal() = 1.0`): `removeTrailingZeros`
+  (`FHIRPathEngine.java:2161-2182`) strips zeros from a number written with no
+  decimal point, so `100 = 1.0` is `true` and `10 = 10.0` is `false`; and
+  `testEquality37`, `38`, `39` and `40`, where a minute-precision `dateTime`
+  (`@2015-02-04T10:00`) is rejected by `DateTimeType.copy()` with
+  `Invalid date/time format` on the `equalsUsingFhirPathRules` path
+  (`BaseDateTimeType.java:916`) and evaluation fails
+- **AND** the FHIRPath specification requires `100 = 1.0` to be `false` and
+  `10 = 10.0` to be `true`; this is recorded as `DEV-0017` and resolved as
+  HAPI's behaviour. Equality of a minute-precision `dateTime` is recorded in the
+  same entry
 
 #### Scenario: [path.equality.002] the inequality operator is the negation of equality
 
 - **WHEN** the `testNEquality` group's cases are evaluated
-- **THEN** every case yields its stated output
+- **THEN** every case HAPI passes yields its stated output
+- **AND** Frevo's required status per case follows HAPI's own recorded run (`oracles/fhirpath/hapi-8.12.0-results.json`): `passed` for every case HAPI passes, and `failed` (parity under `path.oracle.012`) for the cases named below, which HAPI fails. A Frevo pass on one of them would be listed as `ahead-of-hapi`, not accepted as a pass of this scenario
+- **AND** the failed case is `testNEquality27` (`@2015-02-04T10:00 !=
+  @2015-02-04T11:00`), for the minute-precision reason in `path.equality.001`
 
 #### Scenario: [path.equality.003] equality with an empty operand yields empty
 
@@ -795,12 +815,25 @@ The engine SHALL implement equality, inequality, equivalence and non-equivalence
 #### Scenario: [path.equality.004] the equivalence operator ignores case and whitespace for strings
 
 - **WHEN** the `testEquivalent` group's cases are evaluated
-- **THEN** every case yields its stated output
+- **THEN** every case HAPI passes yields its stated output
+- **AND** Frevo's required status per case follows HAPI's own recorded run (`oracles/fhirpath/hapi-8.12.0-results.json`): `passed` for every case HAPI passes, and `failed` (parity under `path.oracle.012`) for the cases named below, which HAPI fails. A Frevo pass on one of them would be listed as `ahead-of-hapi`, not accepted as a pass of this scenario
+- **AND** the failed cases are `testEquivalent24` to `29` (`1 year ~ 1 'a'`,
+  `2 years ~ 2 'a'`, `1 month ~ 1 'mo'`, `1 year ~ 1 day`, `1 'x' ~ 1 year`,
+  `1 year ~ 1 'kg'`): `qtyEquivalent` returns `null` and `doEquivalent` unboxes
+  it (`doEquivalent`, `FHIRPathEngine.java:2204-2206`), so HAPI raises a `NullPointerException` and
+  evaluation fails; and `testEquivalent30` (`@2015-02-04T10:00 ~
+  @2015-02-04T10:00`), for the minute-precision reason in `path.equality.001`.
+  Frevo raises an execution error in each (an error, not a panic:
+  `path.errors.003`)
+- **AND** the specification makes these `true` or `false`; recorded as `DEV-0017`
 
 #### Scenario: [path.equality.005] the non-equivalence operator is the negation of equivalence
 
 - **WHEN** the `testNotEquivalent` group's cases are evaluated
-- **THEN** every case yields its stated output
+- **THEN** every case HAPI passes yields its stated output
+- **AND** Frevo's required status per case follows HAPI's own recorded run (`oracles/fhirpath/hapi-8.12.0-results.json`): `passed` for every case HAPI passes, and `failed` (parity under `path.oracle.012`) for the cases named below, which HAPI fails. A Frevo pass on one of them would be listed as `ahead-of-hapi`, not accepted as a pass of this scenario
+- **AND** the failed cases are `testNotEquivalent23` (`1 year !~ 1 day`) and
+  `24` (`1 month !~ 1 'mo'`), for the `qtyEquivalent` reason in `path.equality.004`
 
 #### Scenario: [path.equality.006] equivalence with an empty operand yields a boolean, never empty
 
@@ -837,7 +870,13 @@ The engine SHALL implement equality, inequality, equivalence and non-equivalence
 #### Scenario: [path.equality.012] `hasValue()` distinguishes a primitive with a value from one without
 
 - **WHEN** the `testHasValue` group's cases are evaluated
-- **THEN** every case yields its stated output
+- **THEN** every case HAPI passes yields its stated output
+- **AND** Frevo's required status per case follows HAPI's own recorded run (`oracles/fhirpath/hapi-8.12.0-results.json`): `passed` for every case HAPI passes, and `failed` (parity under `path.oracle.012`) for the cases named below, which HAPI fails. A Frevo pass on one of them would be listed as `ahead-of-hapi`, not accepted as a pass of this scenario
+- **AND** the failed case is `testHasCodingValue2` (`name.first().hasValue()`,
+  expected `false`): `funcHasValue` is `!noString(convertToString(item))` and a
+  `HumanName`'s string is its `toString()`, so HAPI answers `true`. Frevo
+  answers `true`; the specification says a complex element has no value;
+  recorded as `DEV-0017`
 
 ### Requirement: Ordered comparison
 
@@ -846,7 +885,15 @@ The engine SHALL implement the four ordered comparison operators as `FHIRPathEng
 #### Scenario: [path.compare.001] the less-than operator accepts a narrower numeric type set than the other three
 
 - **WHEN** the `testLessThan` group's cases are evaluated
-- **THEN** every case yields its stated output
+- **THEN** every case HAPI passes yields its stated output
+- **AND** Frevo's required status per case follows HAPI's own recorded run (`oracles/fhirpath/hapi-8.12.0-results.json`): `passed` for every case HAPI passes, and `failed` (parity under `path.oracle.012`) for the cases named below, which HAPI fails. A Frevo pass on one of them would be listed as `ahead-of-hapi`, not accepted as a pass of this scenario
+- **AND** the failed cases are `testLessThan28` (a birth-time extension
+  compared with `@1975-01-01T00:00:00Z`; HAPI's recorded outcome is that the
+  second conjunct is false where the suite expects `true`), `testLessThan29`
+  (`1 year < 2 months`) and `testLessThan30` (`1 'kg' < 2 'm'`), each of which
+  yields one item where the suite expects none (`opLessThan` compares the `code`
+  lists at `FHIRPathEngine.java:2440` and, when they differ, compares canonical
+  decimals rather than yielding empty), and `testLessThan33`, which raises
 - **AND** the operator compares the 12 string-like types
   (`string`, `uri`, `code`, `oid`, `id`, `uuid`, `sid`, `markdown`,
   `base64Binary`, `canonical`, `url`, `xhtml`), `integer` and `decimal` only,
@@ -856,21 +903,39 @@ The engine SHALL implement the four ordered comparison operators as `FHIRPathEng
 #### Scenario: [path.compare.002] the less-or-equal operator accepts the extended numeric type set
 
 - **WHEN** the `testLessOrEqual` group's cases are evaluated
-- **THEN** every case yields its stated output
+- **THEN** every case HAPI passes yields its stated output
+- **AND** Frevo's required status per case follows HAPI's own recorded run (`oracles/fhirpath/hapi-8.12.0-results.json`): `passed` for every case HAPI passes, and `failed` (parity under `path.oracle.012`) for the cases named below, which HAPI fails. A Frevo pass on one of them would be listed as `ahead-of-hapi`, not accepted as a pass of this scenario
+- **AND** the failed cases are `testLessOrEqual28` (`1 year <= 2 days`) and `29` (`1 'kg' <= 999 ...`): `<=`, `>` and `>=` compare `unit`, and
+  `qtyToCanonicalDecimal` returns `null` for a quantity with no UCUM system
+  (`FHIRPathEngine.java:2301-2304`), so `isPrimitive()` is called on `null`
+  (`:2494-2496`, `:2544-2546`, `:2592-2594`) and HAPI
+  raises, or answers a different boolean than the suite expects
 - **AND** the operator's numeric branch accepts `integer`, `decimal`,
   `unsignedInt` and `positiveInt`
 
 #### Scenario: [path.compare.003] the greater-than operator accepts the extended numeric type set
 
 - **WHEN** the `testGreaterThan` group's cases are evaluated
-- **THEN** every case yields its stated output
+- **THEN** every case HAPI passes yields its stated output
+- **AND** Frevo's required status per case follows HAPI's own recorded run (`oracles/fhirpath/hapi-8.12.0-results.json`): `passed` for every case HAPI passes, and `failed` (parity under `path.oracle.012`) for the cases named below, which HAPI fails. A Frevo pass on one of them would be listed as `ahead-of-hapi`, not accepted as a pass of this scenario
+- **AND** the failed cases are `testGreaterThan28` (`1 year > 1 'a'`) and `29` (`1 year > 2 months`): `<=`, `>` and `>=` compare `unit`, and
+  `qtyToCanonicalDecimal` returns `null` for a quantity with no UCUM system
+  (`FHIRPathEngine.java:2301-2304`), so `isPrimitive()` is called on `null`
+  (`:2494-2496`, `:2544-2546`, `:2592-2594`) and HAPI
+  raises, or answers a different boolean than the suite expects
 - **AND** the operator's numeric branch accepts `integer`, `decimal`,
   `unsignedInt` and `positiveInt`
 
 #### Scenario: [path.compare.004] the greater-or-equal operator accepts the extended numeric type set
 
 - **WHEN** the `testGreatorOrEqual` group's cases are evaluated
-- **THEN** every case yields its stated output
+- **THEN** every case HAPI passes yields its stated output
+- **AND** Frevo's required status per case follows HAPI's own recorded run (`oracles/fhirpath/hapi-8.12.0-results.json`): `passed` for every case HAPI passes, and `failed` (parity under `path.oracle.012`) for the cases named below, which HAPI fails. A Frevo pass on one of them would be listed as `ahead-of-hapi`, not accepted as a pass of this scenario
+- **AND** the failed cases are `testGreatorOrEqual28` (`2 years >= 2 year`) and `29` (`2 'kg' >= 1 'm'`): `<=`, `>` and `>=` compare `unit`, and
+  `qtyToCanonicalDecimal` returns `null` for a quantity with no UCUM system
+  (`FHIRPathEngine.java:2301-2304`), so `isPrimitive()` is called on `null`
+  (`:2494-2496`, `:2544-2546`, `:2592-2594`) and HAPI
+  raises, or answers a different boolean than the suite expects
 - **AND** the operator's numeric branch accepts `integer`, `decimal`,
   `unsignedInt` and `positiveInt`
 
@@ -992,17 +1057,26 @@ Three-valued logic: an operand may be true, false or empty.
 
 #### Scenario: [path.logic.008] `iif` selects a branch and does not evaluate the other
 
-- **WHEN** the `testIif` group's cases are evaluated
-- **THEN** every case yields its stated output
+- **WHEN** the `testIif` group's cases are evaluated, each over its input
+  resource
+- **THEN** every case yields its stated output (HAPI passes all 11)
+- **AND** the static check of `iif` needs a focus type: `checkSingleton`
+  dereferences it (`FHIRPathEngine.java:3441-3443`, `3839-3840`), so `iif(...)`
+  with **no input resource** makes the check raise a `NullPointerException`
+  rather than pass. A test of `iif` without an input must therefore evaluate
+  with the check skipped, as `FhirPathR4` does (`path.check.013`), or supply an
+  input; Frevo's check reports an error for the input-less form
 
 #### Scenario: [path.logic.009] `iif` with an empty condition yields the else branch
 
-- **WHEN** `iif({}, 1, 2)` is evaluated
+- **WHEN** `iif({}, 1, 2)` is evaluated, over an input resource or with the
+  check skipped (`path.logic.008`)
 - **THEN** the result is the integer `2`
 
 #### Scenario: [path.logic.010] `iif` with no else branch and a false condition yields empty
 
-- **WHEN** `iif(false, 1)` is evaluated
+- **WHEN** `iif(false, 1)` is evaluated, over an input resource or with the
+  check skipped (`path.logic.008`)
 - **THEN** the result is an empty collection
 
 ### Requirement: Arithmetic
@@ -1012,7 +1086,13 @@ The engine SHALL implement the arithmetic operators over integers, decimals, str
 #### Scenario: [path.math.001] addition works on integers, decimals, strings and quantities
 
 - **WHEN** the `testPlus` group's cases are evaluated
-- **THEN** every case yields its stated output
+- **THEN** every case HAPI passes yields its stated output
+- **AND** Frevo's required status per case follows HAPI's own recorded run (`oracles/fhirpath/hapi-8.12.0-results.json`): `passed` for every case HAPI passes, and `failed` (parity under `path.oracle.012`) for the cases named below, which HAPI fails. A Frevo pass on one of them would be listed as `ahead-of-hapi`, not accepted as a pass of this scenario
+- **AND** the failed cases are `testPlusDate23` (`@2015-02-04T10:00Z + 1 hour =
+  @2015-02-04T11:00Z`) and `testPlusDate24` (`@2015-02-04T10Z + 1 hour = ...`):
+  `dateAdd` calls `DateTimeType.copy()`, which rejects a minute- or
+  hour-precision `dateTime` with `Invalid date/time format`, so evaluation fails.
+  Recorded as `DEV-0017`
 
 #### Scenario: [path.math.002] the concatenation operator joins strings and treats empty as the empty string
 
@@ -1022,7 +1102,23 @@ The engine SHALL implement the arithmetic operators over integers, decimals, str
 #### Scenario: [path.math.003] subtraction works on integers, decimals and quantities
 
 - **WHEN** the `testMinus` group's cases are evaluated
-- **THEN** every case yields its stated output
+- **THEN** every case HAPI passes yields its stated output
+- **AND** Frevo's required status per case follows HAPI's own recorded run (`oracles/fhirpath/hapi-8.12.0-results.json`): `passed` for every case HAPI passes, and `failed` (parity under `path.oracle.012`) for the cases named below, which HAPI fails. A Frevo pass on one of them would be listed as `ahead-of-hapi`, not accepted as a pass of this scenario
+- **AND** the failed case is `testMinus7` (`@2015-02-04T10:00Z - 1 day =
+  @2015-02-03T10:00Z`), for the reason in `path.math.001`
+- **AND** a `Quantity` on the right of `-` is accepted only when the left is a
+  date, dateTime, instant, `Quantity`, or a number whose string value is exactly
+  `0` (`FHIRPathEngine.java:2953`); `5 - 3 'mg'` fails with a wrong-type error
+- **AND** when the left is the number `0` the result is the right quantity with
+  its value made **absolute**, not negated: `0 - 5 'mg'` and `0 - (-5 'mg')` both
+  yield `5 'mg'` (`:2965-2970`); `0.0 - 5 'mg'` is not matched, as its string
+  value is not `0`
+- **AND** when the left is a `Quantity` (`q - q`, for example `5 'mg' - 3 'mg'`)
+  the branch adds nothing and the result is an **empty** collection, not a
+  difference (`:2965-2970`)
+- **AND** these are quirks of the pinned engine, not of the suite or the
+  specification, which gives `-q` as negation and `q - q` as a difference;
+  recorded as `DEV-0017` and resolved as HAPI's behaviour
 
 #### Scenario: [path.math.004] multiplication works on integers, decimals and quantities
 
@@ -1032,22 +1128,53 @@ The engine SHALL implement the arithmetic operators over integers, decimals, str
 #### Scenario: [path.math.005] division always yields a decimal
 
 - **WHEN** the `testDivide` group's cases are evaluated
-- **THEN** every case yields its stated output
+- **THEN** every case HAPI passes yields its stated output
+- **AND** Frevo's required status per case follows HAPI's own recorded run (`oracles/fhirpath/hapi-8.12.0-results.json`): `passed` for every case HAPI passes, and `failed` (parity under `path.oracle.012`) for the cases named below, which HAPI fails. A Frevo pass on one of them would be listed as `ahead-of-hapi`, not accepted as a pass of this scenario
+- **AND** the failed case is `testDivide7` (`0.0 / 0`): `opDivideBy` swallows the
+  `UcumException` the decimal division raises (`FHIRPathEngine.java:3005-3011`),
+  but `org.fhir.ucum.Decimal.divide` returns zero for a zero dividend before it
+  checks the divisor, so HAPI answers one item where the suite expects none
+- **AND** the digits `/` yields where the quotient does not terminate (`1 / 3`)
+  are those of `org.fhir.ucum.Decimal.divide`, whose source is not in
+  `reference/`; the required precision is therefore not stated here and is
+  listed in `tasks/blockers.md`
 
 #### Scenario: [path.math.006] `div` truncates toward zero
 
 - **WHEN** the `testDiv` group's cases are evaluated
-- **THEN** every case yields its stated output
+- **THEN** every case HAPI passes yields its stated output
+- **AND** Frevo's required status per case follows HAPI's own recorded run (`oracles/fhirpath/hapi-8.12.0-results.json`): `passed` for every case HAPI passes, and `failed` (parity under `path.oracle.012`) for the cases named below, which HAPI fails. A Frevo pass on one of them would be listed as `ahead-of-hapi`, not accepted as a pass of this scenario
+- **AND** the failed case is `testDiv6` (`0 div 0.0`), for the zero-dividend
+  reason in `path.math.005`; `opDiv` (`FHIRPathEngine.java:3050-3064`) answers
+  one item
 
 #### Scenario: [path.math.007] `mod` returns the remainder
 
 - **WHEN** the `testMod` group's cases are evaluated
-- **THEN** every case yields its stated output
+- **THEN** every case HAPI passes yields its stated output
+- **AND** Frevo's required status per case follows HAPI's own recorded run (`oracles/fhirpath/hapi-8.12.0-results.json`): `passed` for every case HAPI passes, and `failed` (parity under `path.oracle.012`) for the cases named below, which HAPI fails. A Frevo pass on one of them would be listed as `ahead-of-hapi`, not accepted as a pass of this scenario
+- **AND** the failed cases are `testMod6` (`5.5 mod 0`) and `testMod7`
+  (`5 mod 0.0`), which fail with an execution error, because the decimal arm of
+  `opMod` rethrows the `UcumException` as a `PathEngineException`
+  (`FHIRPathEngine.java:3098-3105`); and `testMod8` (`0.0 mod 0`), which answers
+  one item where the suite expects none
 
-#### Scenario: [path.math.008] division by zero yields empty
+#### Scenario: [path.math.008] division by zero yields empty only where the pinned engine says so
 
-- **WHEN** `1 / 0`, `1 div 0` and `1 mod 0` are evaluated
-- **THEN** each yields an empty collection
+- **WHEN** `1 / 0`, `1 div 0`, `1 mod 0`, `5 div 0` and `5 mod 0` are evaluated
+- **THEN** each yields an empty collection: integer `div` and `mod` guard a zero
+  divisor (`FHIRPathEngine.java:3051-3054`, `3092-3095`), and `/` swallows the
+  `UcumException` (`:3009-3011`)
+- **WHEN** `0.0 / 0`, `0 div 0.0` and `0.0 mod 0` are evaluated
+- **THEN** each yields one item, not an empty collection (the suite cases
+  `testDivide7`, `testDiv6`, `testMod8`, recorded `failed` by HAPI); the value
+  is `org.fhir.ucum.Decimal`'s, whose source is not in `reference/`, so it is
+  not stated here
+- **WHEN** `5.5 mod 0` and `5 mod 0.0` are evaluated
+- **THEN** evaluation fails with an execution error (`testMod6`, `testMod7`,
+  recorded `failed` by HAPI)
+- **AND** the FHIRPath specification makes every division by zero empty; recorded
+  as `DEV-0017` and resolved as HAPI's behaviour
 
 #### Scenario: [path.math.009] arithmetic with an empty operand yields empty
 
@@ -1423,6 +1550,15 @@ The engine SHALL implement `today`, `now` and `precision`, and SHALL take the ev
   `TimeZone.setDefault` because the engine reads the platform default
 - **AND** the oracle harness sets that configuration to `UTC+1100`, so the
   suite's result does not depend on where it runs
+- **AND** the zone the engine reads also decides how a `dateTime` **without** a
+  UTC offset is placed on the time line when it is compared with one that has an
+  offset (`couldBeTheSameTime`, `BaseDateTimeType.java:937-960`, via
+  `getValue().getTime()` and `setValue`'s `TimeZone.getDefault()`, `:721-723`):
+  the answer is `false` or empty according to a +-14 hour window around that
+  instant. The suite evaluates at `UTC+1100`; Frevo reads a missing offset as
+  the configured evaluation zone, which for the oracle harness is the same
+  `UTC+1100`, and as UTC where none is configured. This is recorded as
+  `DEV-0018`
 
 #### Scenario: [path.datetime.005] `precision()` reports the component count of a date, dateTime or time
 
