@@ -1,4 +1,10 @@
-CHANGES_REQUESTED
+APPROVED
+
+Twenty-fifth review (commit `14524ee`, 2026-11-17) resolves the one finding of
+the twenty-fourth review. Detail is in the dated section at the end. The earlier
+findings follow, kept for the record.
+
+## Twenty-fourth-review findings as raised (commit `8a7b868`)
 
 Twenty-fourth review (commit `8a7b868`, 2026-11-17). Both findings of the
 twenty-third review are resolved, except for one new claim that HAPI does not
@@ -1498,3 +1504,28 @@ deviations, 14 debt entries).
 
 **Stale text.** The only last-separator mentions are the two in finding 1.
 Task 41 otherwise now lists `url` and `md`.
+
+## Twenty-fifth review - commit `14524ee` (2026-11-17)
+
+**Finding 1: resolved.**
+- **Stage.** The failure happens at **parse**. `checkParameters` runs inside
+  the parser right after the argument list (`FHIRPathEngine.java:1182`). For
+  `Join` it calls `checkParamCount(…, 0, 1)` (`:1427`), and that throws
+  `lexer.error(...)` (`:1355-1359`). Neither the check nor evaluation is
+  reached.
+- **Message.** The text is `The function "join" requires between 0 and 1
+  parameters`, as quoted. `FHIRLexer.error` wraps it as `Error @<location>: `
+  + msg (`FHIRLexer.java:139-141`). That is the usual lexer prefix, the same
+  one other parse-error scenarios rely on, so it is not a finding.
+- `join()` with no argument uses `param = ""` (`:4549`), which is an empty
+  separator, as stated.
+- The `funcJoin` two-argument branch (`:4553-4556`) is unreachable.
+
+**Stale text.** The change directory has no other two-argument `join` or
+last-separator statement. The one remaining hit is the new parse-failure
+clause (`spec.md:1586`). Task 41 now says "taking at most one argument".
+
+**Scenario IDs.** No `#### Scenario:` heading changed.
+
+**Registers.** `check-registries.sh` reports "registers agree" (20
+deviations, 14 debt entries).
