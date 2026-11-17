@@ -9,8 +9,8 @@ capability, because that is the layout `openspec validate` parses and
 |---|---|---:|
 | `codegen` | [`specs/codegen/spec.md`](specs/codegen/spec.md) | 49 |
 | `model` | [`specs/model/spec.md`](specs/model/spec.md) | 83 |
-| `path` | [`specs/path/spec.md`](specs/path/spec.md) | 361 |
-| **Total** | | **493** |
+| `path` | [`specs/path/spec.md`](specs/path/spec.md) | 363 |
+| **Total** | | **495** |
 
 This file carries no normative text of its own. It carries the ID registry,
 which is the thing a later change must not collide with.
@@ -93,7 +93,7 @@ cases): see `docs/deviations.md`, "Considered and not recorded as deviations".
 | `path.subset.*` | 13 | `001`-`013` |
 | `path.combine.*` | 6 | `001`-`006` |
 | `path.equality.*` | 12 | `001`-`012` |
-| `path.compare.*` | 12 | `001`-`012` |
+| `path.compare.*` | 14 | `001`-`014` |
 | `path.logic.*` | 10 | `001`-`010` |
 | `path.math.*` | 14 | `001`-`014` |
 | `path.mathfn.*` | 11 | `001`-`011` |
@@ -521,6 +521,8 @@ Every allocated ID, grouped as it is grouped in the delta files.
 - `path.compare.011` — a `positiveInt` or `unsignedInt` operand compares under three operators and fails under `<`
 - `path.compare.012` — numeric comparison goes through binary floating point
 - `path.compare.010` — a Period invariant written with raw comparison and one written with boundaries differ
+- `path.compare.013` — an ordered comparison of a dateTime rewrites the operand's stored string to Zulu
+- `path.compare.014` — `<=` with a unit-less left quantity and a unit-bearing right quantity fails
 
 **Requirement: Boolean logic**
 
@@ -544,7 +546,7 @@ Every allocated ID, grouped as it is grouped in the delta files.
 - `path.math.005` — division always yields a decimal
 - `path.math.006` — `div` truncates toward zero
 - `path.math.007` — `mod` returns the remainder
-- `path.math.008` — division by zero yields empty
+- `path.math.008` — division by zero yields empty only where the pinned engine says so
 - `path.math.009` — arithmetic with an empty operand yields empty
 - `path.math.010` — arithmetic on incompatible types is an execution error
 - `path.math.011` — integer arithmetic that overflows behaves as the pinned engine does

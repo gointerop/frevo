@@ -115,12 +115,12 @@ checkpoint because it changes what a gate measures.
 - [ ] **4. Write the failing tests for every `path.*` scenario.** One test per
   scenario ID, each carrying a `// covers: path.<area>.<nnn>` comment, with the
   oracle-backed scenarios driven from the harness's case selectors and the rest
-  written directly. All 361 must fail, and none by `todo!()`, `#[ignore]` or a
+  written directly. All 363 must fail, and none by `todo!()`, `#[ignore]` or a
   bare `#[should_panic]`. Where a scenario says it is differential-only, the
   test is written against a recorded HAPI response rather than against a suite
   case, and says so. `path.check.015`-`019` are driven from the in-process
   `path-check-warnings` oracle of task 4a, not from a suite selector.
-  Covers all 361 `path.*` scenarios.
+  Covers all 363 `path.*` scenarios.
 
 - [ ] **4a. Build the `path-check-warnings` in-process oracle.** The check
   pass's warning channel is reachable by neither the vendored suite — whose
@@ -810,7 +810,7 @@ checkpoint because it changes what a gate measures.
   four compare numerics through a binary `double`; and the two `Period`
   invariant forms.
   Satisfies `path.equality.001` through `path.equality.012`, `path.compare.001`
-  through `path.compare.012`.
+  through `path.compare.014`.
 
 - [ ] **36. Implement boolean logic.** The four operators' three-valued truth
   tables, the singleton-evaluation rule for a non-boolean operand, both
