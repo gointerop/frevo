@@ -221,6 +221,16 @@ fn eval_unchecked(expr: &str) -> Vec<ResultItem> {
         .unwrap_or_else(|e| panic!("{expr:?} must evaluate with the check skipped: {e}"))
 }
 
+/// `expr` must fail to **parse** with a real diagnostic.
+fn expect_parse_error(expr: &str) -> String {
+    let mut engine = fresh_engine();
+    match engine.parse(expr) {
+        Ok(_) => panic!("{expr:?} must fail to parse, but it parsed"),
+        Err(EngineError::Diagnostic { message, .. }) => message,
+        Err(e) => panic!("{expr:?} must fail to parse with a diagnostic, not: {e}"),
+    }
+}
+
 /// `expr` must fail the static check with a real diagnostic.
 fn expect_check_failure(expr: &str) -> String {
     let mut engine = fresh_engine();
@@ -668,6 +678,17 @@ fn replace_substitutes_literal_substrings() {
     assert_eq!(eval("'a.b'.replace('.', 'x')"), string("axb"));
     assert_eq!(eval("'a.b'.replaceMatches('.', 'x')"), string("xxx"));
     assert_eq!(eval("{}.replace('2', 'x')"), empty());
+
+    // Java's `String.replace` (FHIRPathEngine.java:4854), no pattern: an empty
+    // target inserts the replacement between every character and at both ends.
+    assert_eq!(eval("'abc'.replace('', '-')"), string("-a-b-c-"));
+    // An empty focus string yields `''` whatever the arguments (:4851-4852).
+    assert_eq!(eval("''.replace('a', 'b')"), string(""));
+    // An empty focus collection or an empty argument yields empty (:4846).
+    assert_eq!(eval("'abc'.replace({}, 'x')"), empty());
+    assert_eq!(eval("'abc'.replace('a', {})"), empty());
+    // A focus of more than one item is an execution error (:4859).
+    expect_evaluation_failure("('a' | 'b').replace('a', 'x')", None);
 }
 
 // ---------------------------------------------------------------------------
@@ -709,6 +730,16 @@ fn trim_removes_leading_and_trailing_whitespace() {
 
     // Interior whitespace is kept, so the length after trimming is 7 and not 6.
     assert_eq!(eval("'123 456'.trim().length()"), integer("7"));
+
+    // The characters removed are those Java's `String.trim` removes: every
+    // character up to and including U+0020 (FHIRPathEngine.java:4527), so a
+    // U+00A0 no-break space is NOT removed.
+    assert_eq!(eval("'\t\n x \r'.trim()"), string("x"));
+    assert_eq!(
+        eval("'\u{a0}x\u{a0}'.trim().length()"),
+        integer("3"),
+        "a no-break space is not trimmed"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -745,6 +776,23 @@ fn split_keeps_empty_segments() {
     );
     assert_eq!(eval("'fr-BE'.split('-').first()"), string("fr"));
     assert_eq!(eval("'fr-BE'.split('-').last()"), string("BE"));
+
+    // `split` is `Utilities.simpleSplit` (Utilities.java:1978-1996): the
+    // separator is a literal, not a pattern, and a trailing separator yields a
+    // trailing empty segment.
+    assert_eq!(eval("'a.b'.split('.').count()"), integer("2"));
+    assert_eq!(eval("'a,'.split(',').count()"), integer("2"));
+
+    // An empty separator: HAPI never terminates (`simpleSplit` appends an empty
+    // segment at a zero-length match without advancing, Utilities.java:
+    // 1985-1994), so there is no HAPI result. Frevo returns an execution error
+    // as `path.errors.004` and `path.errors.003` require (DEV-0022); a
+    // differential test grades Frevo's error alone.
+    let message = expect_evaluation_failure("'abc'.split('')", None);
+    assert!(
+        !message.is_empty(),
+        "the empty-separator error must carry a message"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -754,30 +802,41 @@ fn split_keeps_empty_segments() {
 // covers: path.string.015
 #[test]
 fn join_concatenates_with_a_separator_and_is_empty_for_an_empty_collection() {
-    expect_group("testJoin", 2);
+    // `testJoinEmpty` is `failed` in HAPI (`hapi-8.12.0-results.json:457`) and
+    // required `failed` here (parity, `path.oracle.012`); `testJoin` passes.
+    expect_group_except("testJoin", 2, &["testJoinEmpty"]);
 
     assert_eq!(
         eval_patient("name.given.join(',')"),
         string("Peter,James,Jim,Peter,James")
     );
 
-    // Contradiction with the pinned engine, recorded rather than silently
-    // accommodated. `funcJoin` (FHIRPathEngine.java:4547) ends with
-    //
-    //     result.add(new StringType(b.toString()));
-    //
-    // at :4561, outside any emptiness test, so an empty focus yields **one**
-    // item -- the empty string -- and not an empty collection. The suite's own
-    // `testJoin/testJoinEmpty` expects no output at all, so the harness's count
-    // check fails the case for HAPI; Frevo passing it is `ahead-of-hapi` under
-    // `path.oracle.012`. The assertion below is the scenario's and the suite's.
-    assert_eq!(eval_patient("name.prefix.join(',')"), empty());
-    assert_ne!(eval_patient("name.prefix.join(',')"), string(""));
-    expect_case("testJoin", "testJoinEmpty");
+    // `funcJoin` (FHIRPathEngine.java:4547-4565) ends with
+    // `result.add(new StringType(b.toString()))` outside any emptiness test, so
+    // an empty focus yields ONE empty string, not an empty collection. The
+    // FHIRPath specification yields empty; DEV-0022, resolved as HAPI's
+    // behaviour. A Frevo pass on `testJoinEmpty` would be `ahead-of-hapi`.
+    assert_eq!(eval_patient("name.prefix.join(',')"), string(""));
+    assert_ne!(eval_patient("name.prefix.join(',')"), empty());
 
     // A separator of more than one character, and the no-argument form.
     assert_eq!(eval("('a' | 'b').join('--')"), string("a--b"));
     assert_eq!(eval("('a' | 'b').join()"), string("ab"));
+
+    // `join` takes zero or one argument: `checkParameters` allows between 0 and
+    // 1 (FHIRPathEngine.java:1427, `checkParamCount` :1355-1359), so a second
+    // argument is a PARSE failure, never reaching the check or evaluation. The
+    // branch inside `funcJoin` for a second argument (:4553-4556) is
+    // unreachable. HAPI prefixes its parse errors with `Error @<location>: `.
+    let message = expect_parse_error("(1 | 2 | 3).join(',', ' and ')");
+    assert!(
+        message.contains("The function \"join\" requires between 0 and 1 parameters"),
+        "unexpected parse message: {message:?}"
+    );
+    assert!(
+        message.starts_with("Error @"),
+        "HAPI's `Error @<location>: ` prefix expected, got {message:?}"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -855,6 +914,12 @@ fn an_unsupported_encode_format_behaves_as_the_pinned_engine_does() {
     assert_eq!(eval("'x'.decode('rot13')"), empty());
     assert_eq!(eval("'x'.encode('')"), empty());
 
+    // `'!!'.decode('base64')` fails with an execution error:
+    // `Base64.Decoder.decode` raises `IllegalArgumentException` on malformed
+    // input. Text is converted to bytes with the JVM default charset in HAPI;
+    // Frevo uses UTF-8, identical wherever the default is UTF-8.
+    expect_evaluation_failure("'!!'.decode('base64')", None);
+
     // Empty specifically, and not a failure: the distinction is the whole
     // scenario, so an implementation that raised here would be wrong even
     // though the result is unusable either way.
@@ -873,7 +938,18 @@ fn an_unsupported_encode_format_behaves_as_the_pinned_engine_does() {
 // covers: path.string.019
 #[test]
 fn escape_and_unescape_support_html_and_json() {
-    expect_group("testEscapeUnescape", 7);
+    // HAPI fails three of the seven (`hapi-8.12.0-results.json:439-441`):
+    // required `failed` (parity, `path.oracle.012`), `passed` for the rest
+    // (DEV-0022).
+    expect_group_except(
+        "testEscapeUnescape",
+        7,
+        &[
+            "testUnescapeJson2",
+            "testUnescapeJson3",
+            "testUnescapeJson4",
+        ],
+    );
 
     // `funcEscape` :4481 delegates to `Utilities.escapeXml` for `html` and
     // `Utilities.escapeJson` for `json`; `funcUnescape` :4502 is the inverse
@@ -887,17 +963,60 @@ fn escape_and_unescape_support_html_and_json() {
         string("\"1<2\"")
     );
 
-    // Round-tripping through `json`, which `testUnescapeJson2` grades.
+    // `testUnescapeJson` (the literal `'\"1<2\"'`, which the lexer has already
+    // turned into `"1<2"`) passes.
+    assert_eq!(eval("'\\\"1<2\\\"'.unescape('json')"), string("\"1<2\""));
+
+    // The three failures come from `Utilities.unescapeJson`
+    // (Utilities.java:481-525), and Frevo matches them (DEV-0022).
+    //
+    // `case '"'` appends the letter `b`, not a quote (:492-494): the escaped
+    // form `\"1<2\"` unescapes to `b1<2b`. That is `testUnescapeJson2`, whose
+    // escape step produces exactly that string, and `testUnescapeJson4`, whose
+    // FHIRPath literal `'\\"1<2\\"'` is that string.
     assert_eq!(
         eval("'\"1<2\"'.escape('json').unescape('json')"),
-        string("\"1<2\"")
+        string("b1<2b")
     );
+    assert_eq!(eval("'\\\\\"1<2\\\\\"'.unescape('json')"), string("b1<2b"));
+    // After `\u` the cursor advances one place and not past the four hex
+    // digits (:516-519, :525), so they are appended as text: the FHIRPath
+    // literal `'\\u0041B'` (a backslash then `u0041B`) unescapes to `A0041B`,
+    // not `AB` (`testUnescapeJson3`).
+    assert_eq!(eval("'\\\\u0041B'.unescape('json')"), string("A0041B"));
+    // An unknown escape such as `\x` raises `Unknown JSON escape` (:521), and a
+    // trailing lone backslash raises an index error: execution errors.
+    expect_evaluation_failure("'\\\\x'.unescape('json')", None);
+    expect_evaluation_failure("'a\\\\'.unescape('json')", None);
 
-    // A `\u` escape becomes its character, which is `testUnescapeJson3`: the
-    // expression's own source carries the two characters `\` and `u`, so the
-    // unescaping is the engine's and not the lexer's.
-    assert_eq!(eval("'\\u0041B'.unescape('json')"), string("AB"));
-    expect_case("testEscapeUnescape", "testUnescapeJson3");
+    // `url` and `md` are also accepted (FHIRPathEngine.java:4492-4495,
+    // 4513-4516) and any other format yields empty. No pinned suite case grades
+    // either, so everything below is DIFFERENTIAL-ONLY, written against the
+    // spec's statement of the pinned source.
+    //
+    // `escape('url')` is Java's `URLEncoder.encode(s, "UTF-8")`: letters,
+    // digits and `.` `-` `*` `_` are kept, a space is `+`, everything else is
+    // its UTF-8 bytes as upper-case `%XX` (`~` is encoded).
+    assert_eq!(
+        eval("'a b&c=d/\u{e9}~'.escape('url')"),
+        string("a+b%26c%3Dd%2F%C3%A9%7E")
+    );
+    // `unescape('url')` is `URLDecoder.decode`: `+` is a space, `%XX` decodes
+    // as UTF-8, and a malformed `%` sequence is an execution error.
+    assert_eq!(eval("'a+b%20c'.unescape('url')"), string("a b c"));
+    expect_evaluation_failure("'%zz'.unescape('url')", None);
+    // `escape('md')` inserts a backslash before exactly seven characters, `*`
+    // `&` `#` `[` `>` `<` and the backtick, and before nothing else.
+    assert_eq!(
+        eval("'a*b&c#d[e>f<g`h]_()'.escape('md')"),
+        string("a\\*b\\&c\\#d\\[e\\>f\\<g\\`h]_()")
+    );
+    // `unescape('md')` drops a backslash only when the next character is one
+    // of those seven and the backslash is not the last character.
+    assert_eq!(eval("'a\\\\*b'.unescape('md')"), string("a*b"));
+    assert_eq!(eval("'a\\\\xb'.unescape('md')"), string("a\\xb"));
+    assert_eq!(eval("'a\\\\'.unescape('md')"), string("a\\"));
+    assert_eq!(eval("'\\\\\\\\*'.unescape('md')"), string("\\*"));
 }
 
 // ---------------------------------------------------------------------------
@@ -932,8 +1051,11 @@ fn a_string_function_on_a_non_string_focus_yields_empty() {
     // An integer focus is not one of them, so the function appends nothing.
     // `DEV-0006` resolves this as HAPI's behaviour: the FHIRPath specification
     // makes a type-mismatched focus an error.
-    assert_eq!(eval("1.startsWith('1')"), empty());
-    assert_eq!(eval("1.startsWith('1').empty()"), boolean(true));
+    // Evaluated with the static check skipped: the check itself rejects a
+    // string function over an integer focus (`checkContextString`), so the
+    // empty answer is the evaluation's.
+    assert_eq!(eval_unchecked("1.startsWith('1')"), empty());
+    assert_eq!(eval_unchecked("1.startsWith('1').empty()"), boolean(true));
 
     // The thirteen functions that carry the guard, each over an integer focus.
     for expr in [
@@ -951,7 +1073,11 @@ fn a_string_function_on_a_non_string_focus_yields_empty() {
         "1.toChars()",
         "1.startsWith('1')",
     ] {
-        assert_eq!(eval(expr), empty(), "{expr} must yield empty");
+        assert_eq!(
+            eval_unchecked(expr),
+            empty(),
+            "{expr} must yield empty with the check skipped"
+        );
     }
 
     // A string-like but non-`string` focus **is** accepted: `code` is in the
@@ -961,14 +1087,31 @@ fn a_string_function_on_a_non_string_focus_yields_empty() {
         boolean(true)
     );
 
-    // The delta's prose also lists `trim`, `split` and `join` as guarded. They
-    // are not: `funcTrim` :4523, `funcSplit` :4532 and `funcJoin` :4547 read
-    // `primitiveValue()` behind a size check with no `FHIR_TYPES_STRING` test,
-    // so an integer focus is converted rather than rejected. Recorded here
-    // rather than implemented either way; the assertions are the delta's.
-    assert_eq!(eval("1.trim()"), empty());
-    assert_eq!(eval("1.split(',')"), empty());
-    assert_eq!(eval("1.join(',')"), empty());
+    // `trim`, `split` and `join` do NOT check the focus type
+    // (FHIRPathEngine.java:4523-4529, 4532-4545, 4547-4565): they use the
+    // item's primitive value, so an integer focus is converted, not rejected.
+    assert_eq!(eval("1.trim()"), string("1"));
+    assert_eq!(eval("1.split(',')"), string("1"));
+    assert_eq!(eval("1.join(',')"), string("1"));
+
+    // On a COMPLEX (non-primitive) focus the primitive value is null, and the
+    // static check passes it (:3622-3630):
+    let patient = load_input("patient-example.xml");
+    //  - `trim` fails at evaluation with a NullPointerException on
+    //    `cnt.trim()` (:4527): an execution error in Frevo;
+    expect_evaluation_failure("Patient.name.first().trim()", Some(&patient));
+    //  - `split` yields an empty collection (`simpleSplit` returns no segments
+    //    for a null string, Utilities.java:1979-1981);
+    assert_eq!(
+        eval_over("Patient.name.first().split(',')", Some(&patient)),
+        empty()
+    );
+    //  - `join` yields one empty string: each null item is skipped, with no
+    //    separator added for it.
+    assert_eq!(
+        eval_over("Patient.name.join(',')", Some(&patient)),
+        string("")
+    );
 }
 
 // ---------------------------------------------------------------------------
