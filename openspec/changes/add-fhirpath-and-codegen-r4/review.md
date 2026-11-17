@@ -1,4 +1,10 @@
-CHANGES_REQUESTED
+APPROVED
+
+Eighteenth review (commit `c35959a`, 2026-11-17) resolves the one finding of
+the seventeenth review. Detail is in the dated section at the end. The earlier
+findings follow, kept for the record.
+
+## Seventeenth-review findings as raised (commit `9fea32e`)
 
 Seventeenth review (commit `9fea32e`, 2026-11-17). All six findings of the
 sixteenth review are resolved in the scenario text, and the two new scenarios
@@ -909,3 +915,41 @@ section 6), so it cannot reproduce that past the evaluation. The spec's
 "in the same evaluation" is the right scope for Frevo. Whether HAPI's
 in-memory rewrite ever reaches a response body is a question for the
 differential harness, not this spec.
+
+## Eighteenth review - commit `c35959a` (2026-11-17)
+
+**Seventeenth-review finding 1: resolved.**
+- `tasks.md:812-813` (task 35) now satisfies `path.compare.001` through `.014`.
+- Task 4's two counts (`tasks.md:118`, `:123`) read 363.
+- The `spec.md` index is updated in four places:
+  - the `path.compare.*` row reads 14, `001`-`014`;
+  - the scenario list has `013` and `014`;
+  - `path.math.008` carries its current title;
+  - the totals read `path` 363 and **Total** 495.
+
+**Counts, verified independently.**
+- **Headings in this change.** Counting `#### Scenario: [` headings in the
+  change's delta specs gives `codegen` 49, `model` 83 and `path` 363, which is
+  495. No ID is duplicated.
+- **Index cross-check.** A script compared every `path.<area>.*` row of the
+  index table with the declared IDs: count, first, last and contiguity. All 27
+  areas match. The index's ID list equals the declared set exactly: none
+  missing, none extra.
+- **The 495-before / 497-now question.** With no argument,
+  `harness/scripts/scenario-coverage.sh` declares from both `openspec/specs`
+  and `openspec/changes` (script lines 41-46). `openspec/specs/server/spec.md`
+  holds two settled scenarios, `server.metadata.001` and `.002`.
+  - The script's earlier 495 was this change's 493 plus those 2.
+  - Today it reports 497 in scope, 495 covered, and 2 uncovered
+    (`path.compare.013`, `.014`, expected until the oracle-builder runs).
+  - `--change add-fhirpath-and-codegen-r4` reports 495 in scope.
+  - So the change's **Total** of 495 is right, and it is consistent with the
+    script.
+- **Other counts.** I grepped the change directory, `docs/inventory.md`,
+  `tasks/` and `gates/` for 493, 361, 495 and 363. The only other hit is a
+  dated status comment at `tasks/graph.yaml:56`: "proposal APPROVED on the
+  third review, 493 scenarios". It is historical, and outside this change's
+  artifacts. It is not a finding, but whoever next edits that entry may want to
+  refresh it.
+
+**Scenario IDs.** `c35959a` changes no `#### Scenario:` heading.
