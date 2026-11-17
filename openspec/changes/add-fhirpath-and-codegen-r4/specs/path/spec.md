@@ -1557,11 +1557,25 @@ The engine SHALL implement the `toX` functions the R4 engine implements and each
 - **WHEN** the `testToString` group's cases are evaluated
 - **THEN** every case yields its stated output
 
-#### Scenario: [path.convert.004] `convertsToDate` accepts year, month and day precision strings
+#### Scenario: [path.convert.004] `convertsToDate` matches the dateTime pattern, not a date pattern
 
 - **WHEN** `'2015'.convertsToDate()`, `'2015-02'.convertsToDate()` and
   `'2015-02-04'.convertsToDate()` are evaluated
-- **THEN** each yields `true` (`testTypes` group)
+- **THEN** each yields `true` (`testTypes` group: `testStringYearConvertsToDate`,
+  `testStringMonthConvertsToDate`, `testStringDayConvertsToDate`, all passed by
+  HAPI)
+- **AND** `funcIsDate` tests a string against `RegexConstants.DATE_TIME_REGEX`
+  and not `DATE_REGEX`, with an upstream `FIXME` saying so
+  (`FHIRPathEngine.java:5957-5965`), so `'2015-02-04T14'.convertsToDate()`,
+  `'2015-02-04T14:34'.convertsToDate()` and
+  `'2015-02-04T14:34:28+10:00'.convertsToDate()` also yield `true`, while
+  `'abc'`, `'2015-13'` and `'2015-02-04T25'` yield `false`
+- **AND** a `date` or `dateTime` value, whatever its precision, yields `true`
+  (`:5961`), and a focus that is not exactly one item yields `false`
+- **AND** no case in the pinned suite grades the time forms, so they are
+  differential-only; the FHIRPath specification does not accept a time
+  component for `convertsToDate`, and this is recorded as `DEV-0021` and
+  resolved as HAPI's behaviour
 
 #### Scenario: [path.convert.005] `convertsToDateTime` accepts every precision and offset form
 
@@ -1586,7 +1600,15 @@ The engine SHALL implement the `toX` functions the R4 engine implements and each
 
 - **WHEN** the `testTypes` group's `convertsToQuantity` and `toQuantity` cases
   are evaluated
-- **THEN** every case yields its stated output
+- **THEN** every case HAPI passes yields its stated output
+- **AND** the two cases HAPI fails stay `failed` in Frevo (parity under
+  `path.oracle.012`): `testStringQuantityMonthToQuantityEquivalent`
+  (`'1 month'.toQuantity() ~ 1 month`) and
+  `testStringQuantityYearToQuantityEquivalent`, which raise because
+  `qtyEquivalent` returns `null` (`hapi-8.12.0-results.json:192-193`,
+  `path.equality.004`, `DEV-0017`)
+- **AND** `toQuantity` converts an `integer` or `decimal` to a quantity with
+  system `http://unitsofmeasure.org` and code `1` (`FHIRPathEngine.java:4957-4973`)
 
 #### Scenario: [path.convert.009] a failed conversion yields empty while its `convertsTo` yields false
 
@@ -1610,11 +1632,25 @@ The engine SHALL implement the `toX` functions the R4 engine implements and each
   behaviour
 - **AND** no live case grades it, so it is differential-only
 
-#### Scenario: [path.convert.013] `toTime` converts and yields empty on failure
+#### Scenario: [path.convert.013] `toTime` is not implemented; `convertsToTime` is
 
-- **WHEN** `'14:34:28'.toTime()` and `'abc'.toTime()` are evaluated
-- **THEN** the first yields a single `time` and the second an empty collection
-- **AND** `'abc'.convertsToTime()` yields `false`
+- **WHEN** `'14:34:28'.toTime()`, `'abc'.toTime()` and `{}.toTime()` are
+  evaluated
+- **THEN** each fails at **evaluation** with the error "The function toTime is
+  not implemented" (`FHIRPATH_NOT_IMPLEMENTED`, `Messages.properties:347`):
+  `funcToTime` is a stub whose whole body is that `throw`
+  (`FHIRPathEngine.java:4983-4987`), whatever the focus
+- **AND** the static check passes for a primitive focus and types the result as
+  a `time` (`:3654-3656`), so the failure is at evaluation and not at parse or
+  check; a non-primitive focus is rejected by the check
+- **AND** `convertsToTime` is implemented (`funcIsTime`, `:5986-5990`): `true`
+  for a `time` value or a string matching
+  `(T)?([01][0-9]|2[0-3])(:[0-5][0-9](:([0-5][0-9]|60))?)?(\.[0-9]+)?(Z|...)?`,
+  so `'abc'.convertsToTime()` is `false` and `'14'`, `'14:34'`, `'14:34:28'` and
+  `'14:34:28.123'` are `true` (`path.convert.006`)
+- **AND** the FHIRPath specification defines `toTime`; recorded as `DEV-0021`
+  and resolved as HAPI's behaviour. The pinned suite has no case for it, so it
+  is differential-only
 
 #### Scenario: [path.convert.014] `toBoolean` converts the engine's accepted spellings and yields empty on failure
 
@@ -1625,10 +1661,23 @@ The engine SHALL implement the `toX` functions the R4 engine implements and each
 - **AND** the accepted set is the same one `convertsToBoolean` reports `true`
   for (`path.convert.007`)
 
-#### Scenario: [path.convert.011] `toDateTime` on a date widens precision without inventing components
+#### Scenario: [path.convert.011] `toDateTime` is not implemented; `convertsToDateTime` is
 
-- **WHEN** `@2014.toDateTime()` is evaluated
-- **THEN** the result is a year-precision `dateTime`
+- **WHEN** `@2014.toDateTime()`, `'2015-02-04'.toDateTime()` and
+  `{}.toDateTime()` are evaluated
+- **THEN** each fails at **evaluation** with the error "The function
+  toDateTime is not implemented" (`FHIRPATH_NOT_IMPLEMENTED`,
+  `Messages.properties:347`): `funcToDateTime` is a stub whose whole body is
+  that `throw` (`FHIRPathEngine.java:4976-4981`), whatever the focus
+- **AND** the static check passes for a primitive focus and types the result as
+  a `dateTime` (`:3650-3652`); a non-primitive focus is rejected by the check
+- **AND** `convertsToDateTime` is implemented (`funcIsDateTime`, `:5942-5955`):
+  `true` for a `date` or `dateTime` value or a string matching
+  `RegexConstants.DATE_TIME_REGEX`, `false` for any other focus including a
+  collection of other than one item (`path.convert.005`)
+- **AND** the FHIRPath specification defines `toDateTime`, with precision
+  preserved; recorded as `DEV-0021` and resolved as HAPI's behaviour. The pinned
+  suite has no case for it, so it is differential-only
 
 ### Requirement: Date and time functions
 

@@ -45,8 +45,8 @@ decision.
 
 ## Entries
 
-All eighteen entries below come from `add-fhirpath-and-codegen-r4`;
-`DEV-0013`, `DEV-0015`, `DEV-0017`, `DEV-0018` and `DEV-0019` are pending the owner's review (see their entries);
+All nineteen entries below come from `add-fhirpath-and-codegen-r4`;
+`DEV-0013`, `DEV-0015`, `DEV-0017`, `DEV-0018`, `DEV-0019` and `DEV-0021` are pending the owner's review (see their entries);
 `DEV-0012` and `DEV-0014` were ruled for HAPI (2026-11-17 and 2026-11-14).
 `DEV-0001` through `DEV-0010` are the same kind of case: the pinned R4
 `FHIRPathEngine` does something the FHIRPath specification does not describe. In
@@ -607,6 +607,32 @@ file, so its prose is not redistributable here (see `oracles/PINS.md`).
   the reference. Established from the pinned source; not confirmed against a
   live HAPI.
 - **Normalizer impact:** none on stored bytes.
+- **Reviewed:** pending owner.
+
+### DEV-0021 — `toDateTime` and `toTime` are not implemented, and `convertsToDate` accepts a time component
+
+- **Area:** path
+- **Scenario IDs:** path.convert.004, path.convert.011, path.convert.013
+- **HAPI 8.12.0 behaviour:** `funcToDateTime` and `funcToTime` are stubs whose
+  whole body is `throw makeException(expr, FHIRPATH_NOT_IMPLEMENTED, ...)`
+  (`ENGINE:4976-4987`): for any focus, including an empty one, evaluation fails
+  with "The function toDateTime is not implemented" (`toTime` likewise). The
+  static check passes for a primitive focus (`ENGINE:3650-3656`).
+  `convertsToDateTime` and `convertsToTime` are implemented (`ENGINE:5942`,
+  `5986`). `funcIsDate` tests a string against `DATE_TIME_REGEX`, not
+  `DATE_REGEX`, with an upstream `FIXME` (`ENGINE:5957-5965`), so
+  `'2015-02-04T14'.convertsToDate()` is `true`. The pinned suite has no case for
+  `toDateTime`, `toTime` or the time forms.
+- **Specification requirement:** FHIRPath 2.0.0 — `toDateTime` and `toTime`
+  convert and yield empty on failure; `convertsToDate` accepts only a date.
+- **Chosen behaviour:** HAPI, as above. Same direction as `DEV-0009`.
+- **Configuration flag:** none
+- **Debt:** none
+- **Rationale:** owner ruling, 2026-11-17: HAPI 8.12.0's observable behaviour is
+  the reference. Established from the pinned source; not confirmed against a
+  live HAPI.
+- **Normalizer impact:** none on stored bytes; no search-parameter expression
+  is known to call these functions (not checked against the generated table).
 - **Reviewed:** pending owner.
 
 ## Considered and not recorded as deviations

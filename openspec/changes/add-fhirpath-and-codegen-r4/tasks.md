@@ -861,8 +861,10 @@ checkpoint because it changes what a gate measures.
 
 - [ ] **42. Implement type conversion.** Each `toX` the R4 engine has and each
   `convertsToX`, including every date, dateTime and time precision string, the
-  boolean spellings, quantities, the failed-conversion asymmetry, the multi-item
-  error, and precision-preserving widening. `toDate` must **not** exist:
+  boolean spellings, quantities, the failed-conversion asymmetry and the
+  multi-item error. `toDateTime` and `toTime` are stubs that raise "not
+  implemented" (`path.convert.011`, `path.convert.013`, `DEV-0021`), and
+  `convertsToDate` uses the dateTime pattern (`path.convert.004`). `toDate` must **not** exist:
   `'2015'.toDate()` is a parse failure while `'2015'.convertsToDate()` is
   `true`, and shipping the symmetric pair would make Frevo accept an expression
   HAPI rejects.

@@ -600,7 +600,7 @@ Every allocated ID, grouped as it is grouped in the delta files.
 - `path.convert.001` — `toInteger` converts strings, booleans and integers
 - `path.convert.002` — `toDecimal` converts strings, booleans, integers and decimals
 - `path.convert.003` — `toString` converts every convertible type
-- `path.convert.004` — `convertsToDate` accepts year, month and day precision strings
+- `path.convert.004` — `convertsToDate` matches the dateTime pattern, not a date pattern
 - `path.convert.005` — `convertsToDateTime` accepts every precision and offset form
 - `path.convert.006` — `convertsToTime` accepts hour, minute, second and millisecond precision
 - `path.convert.007` — `convertsToBoolean` accepts the engine's accepted spellings
@@ -608,9 +608,9 @@ Every allocated ID, grouped as it is grouped in the delta files.
 - `path.convert.009` — a failed conversion yields empty while its `convertsTo` yields false
 - `path.convert.010` — a conversion function on a collection of more than one is an execution error
 - `path.convert.012` — `toDate()` does not exist and is a parse failure
-- `path.convert.013` — `toTime` converts and yields empty on failure
+- `path.convert.013` — `toTime` is not implemented; `convertsToTime` is
 - `path.convert.014` — `toBoolean` converts the engine's accepted spellings and yields empty on failure
-- `path.convert.011` — `toDateTime` on a date widens precision without inventing components
+- `path.convert.011` — `toDateTime` is not implemented; `convertsToDateTime` is
 
 **Requirement: Date and time functions**
 
