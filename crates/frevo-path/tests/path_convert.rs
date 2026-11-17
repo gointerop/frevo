@@ -139,6 +139,107 @@ fn expect_cases_calling(group: &str, call: &str, expected: usize) {
     );
 }
 
+/// As [`expect_cases_calling`], except the named cases, which HAPI fails
+/// (`oracles/fhirpath/hapi-8.12.0-results.json`) and which must therefore be
+/// `failed` here (parity under `path.oracle.012`). `did-not-run` satisfies
+/// neither side, so an unbuilt feature never passes vacuously.
+fn expect_cases_calling_except(group: &str, call: &str, expected: usize, failing: &[&str]) {
+    let (suite, report) = pinned();
+    let g = suite
+        .groups
+        .iter()
+        .find(|g| g.name == group)
+        .unwrap_or_else(|| panic!("the pinned suite has a group named {group}"));
+    let selected: Vec<_> = g
+        .cases
+        .iter()
+        .filter(|c| c.expression.contains(call))
+        .collect();
+    assert_eq!(
+        selected.len(),
+        expected,
+        "{group} must have {expected} case(s) calling {call}"
+    );
+    for name in failing {
+        assert!(
+            selected.iter().any(|c| c.address.name == *name),
+            "{group}/{name} must be one of the {call} cases"
+        );
+    }
+    let mut problems = Vec::new();
+    for case in &selected {
+        let r = report
+            .get(&case.address.to_string())
+            .unwrap_or_else(|| panic!("{} must appear in the run report", case.address));
+        let want = if failing.iter().any(|n| case.address.name == *n) {
+            CaseStatus::Failed
+        } else {
+            CaseStatus::Passed
+        };
+        if r.status != want {
+            problems.push(format!(
+                "{} ({:?}): {} (wanted {}) -- {}",
+                case.address,
+                case.expression,
+                r.status.as_str(),
+                want.as_str(),
+                r.reason
+            ));
+        }
+    }
+    assert!(
+        problems.is_empty(),
+        "{} of {} {call} cases in {group} are not graded as HAPI grades them; the first few:\n  {}",
+        problems.len(),
+        selected.len(),
+        problems[..problems.len().min(5)].join("\n  ")
+    );
+}
+
+/// `expr` must parse and then fail at **evaluation** with a diagnostic, the
+/// static check having been skipped (as `FhirPathR4` skips it).
+fn expect_unchecked_evaluation_error(expr: &str) -> String {
+    let mut engine = fresh_engine();
+    let context = CaseContext::default();
+    let parsed = engine
+        .parse(expr)
+        .unwrap_or_else(|e| panic!("{expr:?} must parse before it can fail at evaluation: {e}"));
+    match engine.evaluate(parsed, None, &context, StrictnessFlags::EVALUATE) {
+        Ok(items) => panic!("{expr:?} must fail at evaluation, but it returned {items:?}"),
+        Err(EngineError::Diagnostic { message, .. }) => message,
+        Err(e) => panic!("{expr:?} must fail with a diagnostic, not: {e}"),
+    }
+}
+
+/// `expr` must pass the static check over no input.
+fn expect_check_passes(expr: &str) {
+    let mut engine = fresh_engine();
+    let parsed = engine
+        .parse(expr)
+        .unwrap_or_else(|e| panic!("{expr:?} must parse: {e}"));
+    engine
+        .check(parsed, &CaseContext::default(), StrictnessFlags::CHECK)
+        .unwrap_or_else(|e| panic!("{expr:?} must pass the static check: {e}"));
+}
+
+/// `expr` must fail the static check against a `Patient` focus.
+fn expect_check_failure_over_patient(expr: &str) -> String {
+    let mut engine = fresh_engine();
+    let context = CaseContext {
+        root_resource_type: Some("Resource"),
+        resource_type: Some("Patient"),
+        ..CaseContext::default()
+    };
+    let parsed = engine
+        .parse(expr)
+        .unwrap_or_else(|e| panic!("{expr:?} must parse: {e}"));
+    match engine.check(parsed, &context, StrictnessFlags::CHECK) {
+        Ok(()) => panic!("{expr:?} must fail the static check, but the check passed"),
+        Err(EngineError::Diagnostic { message, .. }) => message,
+        Err(e) => panic!("{expr:?} must fail the check with a diagnostic, not: {e}"),
+    }
+}
+
 fn fresh_engine() -> Box<dyn SuiteEngine> {
     let mut engine = engine_under_test();
     engine
@@ -271,10 +372,42 @@ fn converts_to_date_accepts_year_month_and_day_precision_strings() {
         );
     }
 
-    // And a string that is not a date is false rather than empty: `funcIsDate`
+    // `funcIsDate` tests a string against `RegexConstants.DATE_TIME_REGEX`, not
+    // `DATE_REGEX`, with an upstream FIXME saying so (FHIRPathEngine.java:
+    // 5957-5965), so the time forms are accepted too. No suite case grades
+    // them (the three `testTypes` cases above all pass in HAPI), so these are
+    // differential-only; the FHIRPath specification does not accept a time
+    // component here (DEV-0021).
+    for s in [
+        "2015-02-04T14",
+        "2015-02-04T14:34",
+        "2015-02-04T14:34:28+10:00",
+    ] {
+        assert_eq!(
+            eval(&format!("'{s}'.convertsToDate()")),
+            boolean(true),
+            "'{s}' matches the dateTime pattern"
+        );
+    }
+
+    // A string that is not a dateTime is false rather than empty: `funcIsDate`
     // matches against a regex and always returns a boolean.
-    assert_eq!(eval("'abc'.convertsToDate()"), boolean(false));
-    assert_eq!(eval("'2015-02-04T14'.convertsToDate()"), boolean(false));
+    for s in ["abc", "2015-13", "2015-02-04T25"] {
+        assert_eq!(
+            eval(&format!("'{s}'.convertsToDate()")),
+            boolean(false),
+            "'{s}' is not a dateTime string"
+        );
+    }
+
+    // A date or dateTime value, whatever its precision, is true (:5961), and a
+    // focus that is not exactly one item is false.
+    assert_eq!(eval("@2015.convertsToDate()"), boolean(true));
+    assert_eq!(
+        eval("@2015-02-04T14:34:28Z.convertsToDate()"),
+        boolean(true)
+    );
+    assert_eq!(eval("(1 | 2).convertsToDate()"), boolean(false));
 }
 
 // ---------------------------------------------------------------------------
@@ -378,7 +511,18 @@ fn converts_to_boolean_accepts_the_engines_accepted_spellings() {
 #[test]
 fn converts_to_quantity_and_to_quantity_convert_strings_and_numbers() {
     expect_cases_calling("testTypes", "convertsToQuantity()", 9);
-    expect_cases_calling("testTypes", ".toQuantity()", 11);
+    // HAPI fails two of the `toQuantity` cases (`hapi-8.12.0-results.json:
+    // 192-193`): they raise because `qtyEquivalent` returns null
+    // (`path.equality.004`, DEV-0017). They stay `failed` here.
+    expect_cases_calling_except(
+        "testTypes",
+        ".toQuantity()",
+        11,
+        &[
+            "testStringQuantityMonthToQuantityEquivalent",
+            "testStringQuantityYearToQuantityEquivalent",
+        ],
+    );
 
     // A bare number becomes a dimensionless quantity, which is the UCUM code
     // `1`; a quoted UCUM code is taken as written; a calendar word is accepted
@@ -467,43 +611,45 @@ fn a_conversion_function_on_a_collection_of_more_than_one_is_an_execution_error(
 // covers: path.convert.011
 #[test]
 fn to_datetime_on_a_date_widens_precision_without_inventing_components() {
-    // NOTE FOR REVIEW -- scenario against pinned source.
-    //
-    // `funcToDateTime` in the pinned R4 engine is a stub: its entire body is
-    // `throw makeException(expr, I18nConstants.FHIRPATH_NOT_IMPLEMENTED, "toDateTime")`,
-    // with the intended implementation commented out immediately above. The
-    // pinned suite has no `.toDateTime()` case at all, which is consistent with
-    // that. So the behaviour this scenario describes does not exist upstream:
-    // `@2014.toDateTime()` raises "The function toDateTime is not implemented".
-    //
-    // Written to the scenario as stated, because a test encoding the stub would
-    // bury the decision rather than surface it. See the module note.
-    assert_eq!(
-        eval("@2014.toDateTime()"),
-        primitive("dateTime", "2014"),
-        "a year-precision date widens to a year-precision dateTime, with no \
-         month, day or time invented"
-    );
-    assert_eq!(
-        eval("@2014.toDateTime().precision()"),
-        primitive("integer", "4")
+    // `funcToDateTime` in the pinned R4 engine is a stub whose whole body is
+    // `throw makeException(expr, I18nConstants.FHIRPATH_NOT_IMPLEMENTED,
+    // "toDateTime")` (FHIRPathEngine.java:4976-4981), whatever the focus. So
+    // every call fails at EVALUATION, an empty focus included. The FHIRPath
+    // specification defines `toDateTime`; recorded as DEV-0021, resolved as
+    // HAPI's behaviour. The pinned suite has no case for it, so this is
+    // differential-only.
+    for expr in [
+        "@2014.toDateTime()",
+        "'2015-02-04'.toDateTime()",
+        "{}.toDateTime()",
+    ] {
+        let message = expect_unchecked_evaluation_error(expr);
+        assert!(
+            message.contains("The function toDateTime is not implemented"),
+            "{expr}: FHIRPATH_NOT_IMPLEMENTED expected, got {message:?}"
+        );
+    }
+
+    // The static check passes for a primitive focus (and types the result as a
+    // dateTime, :3650-3652), so the failure is at evaluation and not at parse or
+    // check.
+    expect_check_passes("@2014.toDateTime()");
+    expect_check_passes("'2015-02-04'.toDateTime()");
+    // A non-primitive focus is rejected by the check, the function name written
+    // with a capital `T` (:3651, FHIRPATH_PRIMITIVE_ONLY).
+    let message = expect_check_failure_over_patient("Patient.name.toDateTime()");
+    assert!(
+        message.contains("The function ToDateTime can only be used on primitives"),
+        "unexpected check message: {message:?}"
     );
 
-    // The same at the other precisions: no component is added that the date did
-    // not state.
-    assert_eq!(
-        eval("@2014-01.toDateTime()"),
-        primitive("dateTime", "2014-01")
-    );
-    assert_eq!(
-        eval("@2014-01-05.toDateTime()"),
-        primitive("dateTime", "2014-01-05")
-    );
-
-    // And the result really is a dateTime rather than the date it came from,
-    // which is the conversion's whole effect.
-    assert_eq!(eval("@2014.toDateTime() is System.DateTime"), boolean(true));
+    // `convertsToDateTime` is implemented (`funcIsDateTime`, :5942-5955): true
+    // for a date or dateTime value or a matching string, false for any other
+    // focus including a collection of other than one item (`path.convert.005`).
     assert_eq!(eval("@2014.convertsToDateTime()"), boolean(true));
+    assert_eq!(eval("'2015-02-04'.convertsToDateTime()"), boolean(true));
+    assert_eq!(eval("'abc'.convertsToDateTime()"), boolean(false));
+    assert_eq!(eval("(1 | 2).convertsToDateTime()"), boolean(false));
 }
 
 // ---------------------------------------------------------------------------
@@ -555,35 +701,37 @@ fn to_date_does_not_exist_and_is_a_parse_failure() {
 // covers: path.convert.013
 #[test]
 fn to_time_converts_and_yields_empty_on_failure() {
-    // NOTE FOR REVIEW -- scenario against pinned source.
-    //
-    // `funcToTime` is the second of the two stubs: its body is
-    // `throw makeException(expr, I18nConstants.FHIRPATH_NOT_IMPLEMENTED, "toTime")`.
-    // So in the pinned engine both halves of this scenario raise rather than
-    // converting or returning empty, and the pinned suite has no `.toTime()`
-    // case. See the module note.
-    assert_eq!(
-        eval("'14:34:28'.toTime()"),
-        primitive("time", "14:34:28"),
-        "a time string converts to a single time"
-    );
-    assert_eq!(
-        eval("'abc'.toTime()"),
-        empty(),
-        "and a failure yields nothing rather than raising"
+    // `funcToTime` is the second stub: its whole body is `throw
+    // makeException(expr, I18nConstants.FHIRPATH_NOT_IMPLEMENTED, "toTime")`
+    // (FHIRPathEngine.java:4983-4987), whatever the focus. Every call fails at
+    // EVALUATION, an empty focus included. The FHIRPath specification defines
+    // `toTime`; recorded as DEV-0021, resolved as HAPI's behaviour. The pinned
+    // suite has no case for it, so this is differential-only.
+    for expr in ["'14:34:28'.toTime()", "'abc'.toTime()", "{}.toTime()"] {
+        let message = expect_unchecked_evaluation_error(expr);
+        assert!(
+            message.contains("The function toTime is not implemented"),
+            "{expr}: FHIRPATH_NOT_IMPLEMENTED expected, got {message:?}"
+        );
+    }
+
+    // The static check passes for a primitive focus (typing the result as a
+    // `time`, :3654-3656); a non-primitive focus is rejected by the check with
+    // the name written with a capital `T` (:3655, FHIRPATH_PRIMITIVE_ONLY).
+    expect_check_passes("'14:34:28'.toTime()");
+    let message = expect_check_failure_over_patient("Patient.name.toTime()");
+    assert!(
+        message.contains("The function ToTime can only be used on primitives"),
+        "unexpected check message: {message:?}"
     );
 
-    // The predicate half, which does exist, agrees about what is convertible.
+    // `convertsToTime` is implemented (`funcIsTime`, :5986-5990).
     assert_eq!(eval("'abc'.convertsToTime()"), boolean(false));
-    assert_eq!(eval("'14:34:28'.convertsToTime()"), boolean(true));
-
-    // Every precision `convertsToTime` accepts converts, so the two halves
-    // agree on the accepted set and not merely on one example.
     for s in ["14", "14:34", "14:34:28", "14:34:28.123"] {
         assert_eq!(
-            eval(&format!("'{s}'.toTime().count()")),
-            primitive("integer", "1"),
-            "'{s}' converts to one time"
+            eval(&format!("'{s}'.convertsToTime()")),
+            boolean(true),
+            "'{s}' is a time string"
         );
     }
 }
