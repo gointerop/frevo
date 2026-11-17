@@ -1287,6 +1287,18 @@ The engine SHALL implement the math functions `FHIRPathEngine` implements, each 
 
 - **WHEN** the `testRound` group's cases are evaluated
 - **THEN** every case yields its stated output
+- **AND** a decimal result is rendered as Java's `BigDecimal.toString` renders
+  it (`DecimalType.encode`, `DecimalType.java:101-102`): plain digits when the
+  scale is zero or positive and the adjusted exponent is at least -6, otherwise
+  scientific with a signed exponent. `round` with a negative digit count uses
+  `setScale` (`FHIRPathEngine.java:4412`), so `12345.round(-2)` is `1.23E+4` and
+  `1234.5.round(-3)` is `1E+3`
+- **AND** the `double`-based functions build the result with
+  `BigDecimal.valueOf(double)` (`DecimalType.java:66-69`), which parses
+  `Double.toString`: `10000000000.abs()` is `1.0E+10`, `0.0000001.abs()` is
+  `1.0E-7`, `0.0001.abs()` is `0.00010` and `12345678.abs()` is `12345678`.
+  This is a pinned-engine rendering, not the specification's, which has no
+  exponent form; it is HAPI's behaviour and Frevo matches it. Differential-only
 
 #### Scenario: [path.mathfn.005] `sqrt` of a negative number yields empty
 
@@ -1348,6 +1360,10 @@ The engine SHALL implement the string functions `FHIRPathEngine` implements, inc
 
 - **WHEN** the `testToChars` group's cases are evaluated
 - **THEN** every case yields its stated output
+- **AND** `toChars` yields one item per UTF-16 code unit
+  (`for (char c : s.toCharArray())`, `FHIRPathEngine.java:5835`), so
+  `'a😀'.toChars()` (U+1F600) yields three items: `a`, the high surrogate
+  U+D83D and the low surrogate U+DE00, each a one-unit string; `count()` is `3`
 
 #### Scenario: [path.string.003] `indexOf` returns a zero-based position or -1
 
@@ -1377,6 +1393,8 @@ The engine SHALL implement the string functions `FHIRPathEngine` implements, inc
     string
 - **AND** the specification requires `{}` for an empty start, the rest of the
   string for an empty length, and `''` for a zero count; recorded as `DEV-0019`
+- **AND** the start and count are UTF-16 code-unit offsets, so `substring` can
+  split a surrogate pair (`path.string.022`)
 
 #### Scenario: [path.string.005] `substring` with an out-of-range start yields empty
 
@@ -1512,10 +1530,13 @@ The engine SHALL implement the string functions `FHIRPathEngine` implements, inc
   (`FHIRPathEngine.java:5771`, `5884`), so a character above U+FFFF counts as
   two; a character in the Basic Multilingual Plane counts as one and is never
   split, and a byte count is never used
-- **AND** `toChars()` yields one item per UTF-16 code unit in HAPI
-  (`:5835`), so a character above U+FFFF yields two lone surrogate halves; Frevo
-  yields one item per Unicode scalar value, because a lone surrogate cannot be
-  held in a Rust `String`. The two agree below U+FFFF. Recorded as `DEV-0020`
+- **AND** `'a😀b'.length()` is `4` and `'a😀b'.indexOf('b')` is `3`
+- **AND** `'a😀b'.substring(1, 1)` is the one-unit string holding the high
+  surrogate U+D83D and `'a😀b'.substring(2)` is the low surrogate U+DE00
+  followed by `b`: `substring` slices by unit and can split a surrogate pair
+  (`:5884-5886`); the result is a string that is not valid Unicode scalar text
+  and Frevo must represent it unchanged
+- **AND** `toChars()` yields one item per UTF-16 unit (`path.string.002`)
 
 ### Requirement: Type conversion
 

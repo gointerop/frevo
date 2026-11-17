@@ -842,8 +842,10 @@ checkpoint because it changes what a gate measures.
 
 - [ ] **40. Implement string functions: the base set.** `upper`, `lower`,
   `toChars`, `indexOf`, `substring` with its out-of-range rule, `startsWith`,
-  `endsWith`, `contains`, `length`, counting UTF-16 code units as a Java `String` does (`toChars` yields
-  one item per scalar value, `DEV-0020`), rather than bytes. A non-string focus yields **empty**, not an error, for all 15 guarded
+  `endsWith`, `contains`, `length`, counting UTF-16 code units as a Java `String` does,
+  rather than bytes; `toChars` yields one item per UTF-16 unit and `substring`
+  may split a surrogate pair (`path.string.002`, `path.string.004`,
+  `path.string.022`). A non-string focus yields **empty**, not an error, for all 15 guarded
   functions; the functions that do reject a bad focus — `round`, `truncate`,
   `single` — reject it with an error, and that difference is the point of the
   two scenarios.
