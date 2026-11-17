@@ -484,10 +484,10 @@ fn a_leading_resource_type_name_matches_the_focus_resource() {
     // in backticks, and as a unicode escape.
     expect_case("testBasics", "testSimpleWithContext");
     expect_case("testBasics", "testSimpleBackTick1");
-    // `testEscapedIdentifierUnicode` is NOT a pass (DEV-0016): HAPI does not
-    // decode the escape to `n`, looks up `Îame`, and fails at the check stage.
-    // Frevo's lexer matches, so the case is `failed` on both sides. The case
-    // still records `Peter` as its expectation.
+    // `testEscapedIdentifierUnicode` is NOT a pass: HAPI decodes the escape in
+    // base 32 (FHIRLexer.java:511: 006e -> U+00CE), looks up `Îame`, and fails
+    // at the check stage. Frevo's lexer matches, so the case is `failed` on
+    // both sides. The case still records `Peter` as its expectation.
     expect_failed_at_check("testBasics", "testEscapedIdentifierUnicode", "Îame");
     assert_eq!(
         output_bodies("testBasics", "testEscapedIdentifierUnicode"),
