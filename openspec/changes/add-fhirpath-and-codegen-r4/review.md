@@ -1,4 +1,55 @@
-APPROVED
+CHANGES_REQUESTED
+
+Twenty-third review (commit `a06bc4f`, 2026-11-17). `ENGINE` is
+`org.hl7.fhir.r4/.../fhirpath/FHIRPathEngine.java` and `UTIL` is
+`org.hl7.fhir.utilities/.../utilities/Utilities.java`, both at `73c432b5`. Every
+stated mechanism and per-case status checks out. Two behaviours the commit now
+asserts are left without outcomes. Detail is in the dated section at the end.
+The twenty-second review was `APPROVED`; earlier findings follow, kept for the
+record.
+
+1. **`trim`, `split` and `join` on a non-primitive focus: the outcomes are
+   unstated, and they differ from one another.**
+   - `path.string.020` now says the three "use the item's primitive value".
+     For a complex item, that value is `null` (`Base.primitiveValue`,
+     `org.hl7.fhir.r4/.../model/Base.java:145-147`). Each function then
+     behaves differently:
+     - `Patient.name.first().trim()` raises a `NullPointerException` from
+       `cnt.trim()` (`ENGINE:4527`).
+     - `Patient.name.first().split(',')` is **empty**: `simpleSplit(null, …)`
+       returns no parts (`UTIL:1979-1981`).
+     - `Patient.name.join(',')` is **one empty string**:
+       `CommaSeparatedStringBuilder.commit` skips a `null` pending value
+       (`CommaSeparatedStringBuilder.java:72-84`). So in a mixed focus the
+       complex items vanish, with no separator.
+   - None of these is a check failure. The check does not type the focus of
+     any of the three (`ENGINE:3622-3630`). Cite that alongside the evaluation
+     lines.
+   - Add the three outcomes, with these or similar concrete WHENs.
+
+2. **`escape` / `unescape` with `url` and `md`: the formats are asserted but
+   not specified.**
+   - `path.string.019` now says both functions "also accept `url` and `md`"
+     (`ENGINE:4492-4495`, `4513-4516`), but gives no output rule. These are
+     not FHIRPath-defined formats, so a tester cannot derive the outputs. The
+     rules are:
+     - **`url` escape** is `URLEncoder.encode(s, "UTF-8")` (`UTIL:880-886`).
+       That is form encoding: a space becomes `+`, and `*`, `-`, `.`, `_` and
+       alphanumerics pass through.
+     - **`url` unescape** is `URLDecoder.decode(s, "UTF-8")` (`UTIL:889-895`).
+       `+` becomes a space, and a malformed `%` sequence raises
+       `IllegalArgumentException`.
+     - **`md` escape** is `makeStringSafeAsMarkdown`
+       (`MarkDownProcessor.java:254-263`). It puts a backslash before each of
+       `* & # [ > < `` ` ``. The set is in `isEscableMarkdownChar`, `:265-278`.
+     - **`md` unescape** is `makeMarkdownForString` (`:280-289`). It drops a
+       backslash only when it is followed by one of those seven characters.
+   - Add concrete examples, such as `'a b*'.escape('url')` → `a+b*` and
+     `'a*b'.escape('md')` → `a\*b`.
+   - Task 41 (`tasks.md:857-859`) still lists only "`escape` and `unescape`
+     for html and json". Bring it into line.
+
+## Twenty-second review header as issued (commit `a2dfc15`)
 
 Twenty-second review (commit `a2dfc15`, 2026-11-17) resolves both findings of the
 twenty-first review. Detail is in the dated section at the end. The earlier
@@ -1298,3 +1349,86 @@ function {0} can only be used on primitives`.
 
 **Registers.** `check-registries.sh` reports "registers agree" (19
 deviations, 14 debt entries).
+
+## Twenty-third review - commit `a06bc4f` (2026-11-17)
+
+**Statuses in the results file: every case of the affected groups.**
+
+| Group | Status | Results lines |
+|---|---|---|
+| `testReplace` (6) | all `passed` | `:415-420` |
+| `testReplaceMatches` (7) | all `passed` | `:408-414` |
+| `testEncodeDecode` (8) | all `passed` | `:427-434` |
+| `testEscapeUnescape` (7) | `testUnescapeJson2`, `3`, `4` `failed`, the rest `passed` | `:435-441` |
+| `testTrim` (6) | all `passed` | `:442-447` |
+| `testSplit` (8) | all `passed` | `:448-455` |
+| `testJoin` (2) | `testJoinEmpty` `failed` | `:456-457` |
+
+These match the spec's per-case lists exactly.
+
+**Mechanisms verified.**
+- **`funcJoin`** (`ENGINE:4547-4567`) adds `b.toString()` at `:4565`,
+  unconditionally. `name.prefix` is empty on `patient-example.xml`, so the
+  result is one `""`, which matches `results:457`.
+- **`unescapeJson`** (`UTIL:478-528`).
+  - `case '"'` appends `b` (`:492-494`).
+  - `case 'u'` reads `substring(i+1, i+5)`, appends the character, and
+    `break`s (`:516-519`). The only advance is the `i++` at `:525`, so `0041B`
+    is copied as text and the result is `A0041B`.
+  - `default` throws `Unknown JSON escape` (`:521`). A trailing `\` reads
+    `charAt(len)`, which is the index error.
+  - All of this matches the reason text at `results:439-441`.
+  - The `testUnescapeJson` explanation (the lexer decodes `\"` first) is
+    consistent with its `passed` status.
+- **`simpleSplit`** (`UTIL:1978-1996`). With `div = ""`, `matches` returns
+  `true` at every cursor, because its loop runs zero times (`:1998-2007`).
+  `cursor` advances by `div.length()`, which is 0 (`:1988`). So the `while` at
+  `:1985` never exits, and each pass appends to `parts`. Non-termination is
+  confirmed. A trailing separator leaves `substring(last, len)`, which is
+  `""`, as stated.
+- **`funcReplace`** (`ENGINE:4840-4861`).
+  - An empty focus, target or replacement yields nothing (`:4846`).
+  - A `""` focus string yields `""` (`:4851-4852`).
+  - Otherwise the result is `String.replace` (`:4854`), so
+    `'abc'.replace('', '-')` is `-a-b-c-`.
+  - More than one item raises `FHIRPATH_NO_COLLECTION` (`:4859`).
+- **`trim`** is `String.trim`, which strips every character at or below U+0020
+  (`:4527`). U+00A0 is kept.
+- **Encode / decode** (`ENGINE:4440-4479`).
+  - The format is compared to `hex`, `base64` and `urlbase64`, and any other
+    format adds nothing, so `rot13` yields empty.
+  - `Base64.Decoder.decode("!!")` raises `IllegalArgumentException`, which is
+    uncaught.
+  - The bytes come from `getBytes()` in the platform charset. That is stated.
+- **`1.trim()`, `1.split(',')` and `1.join(',')`** use
+  `IntegerType.primitiveValue()`, which is `"1"`. Correct. The non-primitive
+  case is finding 1.
+
+**DEV-0022 framing: correct.**
+- The `join` and `unescape('json')` halves are ordinary
+  specification-against-HAPI cases, resolved for HAPI.
+- For the empty `split` separator, HAPI's observable behaviour is unbounded
+  memory growth: no result, and in a server an eventual OOM or timeout.
+  - An undocumented difference from HAPI is a bug (constitution section 1),
+    so the departure belongs in the register.
+  - The entry says plainly that this is a departure from non-termination, not
+    a different defined result, and that it needs the owner's confirmation.
+  - Returning an error is the reading of `path.errors.004` ("rather than ...
+    running unbounded") applied to a loop inside a function rather than to
+    evaluation steps, and of `path.errors.003`.
+- The entry has every field.
+
+**Registers and counts.**
+- The preamble says twenty and lists DEV-0022 as pending.
+- `check-registries.sh` reports "registers agree" (20 deviations, 14 debt
+  entries).
+- Only the title of `path.string.015` changed, and the index (`spec.md:587`)
+  carries it. No ID was added, removed or renumbered. `path` has 363
+  headings.
+
+**Stale text.**
+- No "turning a unicode escape into its character", "join … yields empty"
+  or "harness records which behaviour" text remains for these scenarios.
+- The `spec.md:192` and `:1241` hits are other scenarios.
+- The commit stat shows `tasks.md` was **not** changed, contrary to its
+  description. Task 41 is finding 2.
