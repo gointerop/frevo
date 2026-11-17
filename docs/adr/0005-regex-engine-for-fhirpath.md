@@ -1,9 +1,9 @@
 # 5. The regular-expression engine for FHIRPath
 
-- **Status:** PROPOSED. Needs owner approval. Constitution section 5 requires
-  an ADR and the owner's approval for any new runtime dependency, so no crate
-  is added to any `Cargo.toml` until this ADR reads `accepted`. Task 41a of
-  `add-fhirpath-and-codegen-r4` stays blocked until then.
+- **Status:** accepted. The owner approved the `regex` crate in chat on
+  2026-11-17 ("Approve regex"). Constitution section 5 requires an ADR and the
+  owner's approval for any new runtime dependency; both now exist, so task 41a
+  of `add-fhirpath-and-codegen-r4` is unblocked.
 - **Date:** 2026-11-17
 - **Context phase:** Phase 1, `add-fhirpath-and-codegen-r4` task 41a
 
