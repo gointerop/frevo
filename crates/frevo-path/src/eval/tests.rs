@@ -391,13 +391,13 @@ fn the_indexer_is_zero_based() {
 }
 
 #[test]
-fn an_index_out_of_range_or_negative_selects_nothing() {
+fn an_out_of_range_index_selects_nothing_and_a_negative_one_is_an_execution_error() {
     let p = patient();
     assert!(ok("Patient.name[3]", Some(&p)).is_empty());
     assert!(ok("Patient.name[99]", Some(&p)).is_empty());
-    // DEV-0012: upstream raises IndexOutOfBoundsException here.
-    assert!(ok("Patient.name[-1]", Some(&p)).is_empty());
-    assert!(ok("Patient.name[-99]", Some(&p)).is_empty());
+    // DEV-0012: upstream raises IndexOutOfBoundsException for a negative index.
+    execution_error("Patient.name[-1]", Some(&p));
+    execution_error("Patient.name[-99]", Some(&p));
     assert!(ok("Patient.name[{}]", Some(&p)).is_empty());
 }
 
@@ -756,11 +756,12 @@ fn single_fails_for_an_empty_focus_as_well_as_for_a_long_one() {
 }
 
 #[test]
-fn skip_and_take_tolerate_negative_and_empty_counts() {
-    assert_eq!(ok("1.skip(-1)", None), ["integer:1"]);
-    assert!(ok("1.skip({})", None).is_empty());
-    assert!(ok("1.take({})", None).is_empty());
+fn skip_negative_or_empty_and_take_empty_are_execution_errors() {
+    execution_error("1.skip(-1)", None);
+    execution_error("1.skip({})", None);
+    execution_error("1.take({})", None);
     assert!(ok("1.take(-1)", None).is_empty());
+    assert_eq!(ok("1.skip(0)", None), ["integer:1"]);
     assert!(ok("1.skip(1)", None).is_empty());
     assert!(ok("{}.tail()", None).is_empty());
 }
