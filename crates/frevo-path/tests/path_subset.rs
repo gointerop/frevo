@@ -89,6 +89,64 @@ fn expect_group(group: &str, expected: usize) {
     );
 }
 
+/// Assert every case in `group` passed **except** the named ones, which must be
+/// graded `failed` -- the status HAPI gives them on its own suite -- and
+/// never `did-not-run`, so an unbound engine cannot satisfy this.
+fn expect_group_except(group: &str, expected: usize, failing: &[&str]) {
+    let (suite, report) = pinned();
+    let g = suite
+        .groups
+        .iter()
+        .find(|g| g.name == group)
+        .unwrap_or_else(|| panic!("the pinned suite has a group named {group}"));
+    assert_eq!(
+        g.cases.len(),
+        expected,
+        "{group} must have {expected} case(s), not {}",
+        g.cases.len()
+    );
+    for name in failing {
+        assert!(
+            g.cases.iter().any(|c| c.address.name == *name),
+            "{group}/{name} must be a case of the group"
+        );
+    }
+
+    let mut problems = Vec::new();
+    for case in &g.cases {
+        let r = report
+            .get(&case.address.to_string())
+            .unwrap_or_else(|| panic!("{} must appear in the run report", case.address));
+        let must_fail = failing.iter().any(|n| case.address.name == *n);
+        let want = if must_fail {
+            CaseStatus::Failed
+        } else {
+            CaseStatus::Passed
+        };
+        if r.status != want {
+            problems.push(format!(
+                "{} ({:?}): {} (wanted {}) -- {}",
+                case.address,
+                case.expression,
+                r.status.as_str(),
+                want.as_str(),
+                r.reason
+            ));
+        }
+    }
+    assert!(
+        problems.is_empty(),
+        "{} of {} cases in {group} are not graded as expected; the first few:
+  {}",
+        problems.len(),
+        g.cases.len(),
+        problems[..problems.len().min(5)].join(
+            "
+  "
+        )
+    );
+}
+
 fn expect_case(group: &str, name: &str) {
     let (suite, report) = pinned();
     let case = suite
@@ -359,7 +417,10 @@ fn tail_drops_the_first_item() {
 // covers: path.subset.006
 #[test]
 fn skip_drops_the_first_n_items() {
-    expect_group("testSkip", 8);
+    // `testSkip5`, `testSkip7` and `testSkip8` raise, as they do for HAPI
+    // (`DEV-0014`): `failed` on both sides, so parity and not a gap. Every
+    // other case in the group yields its stated output.
+    expect_group_except("testSkip", 8, &["testSkip5", "testSkip7", "testSkip8"]);
 
     // The uncontroversial half: a positive count drops that many items from the
     // front (`funcSkip`, FHIRPathEngine.java:6101).
@@ -367,33 +428,28 @@ fn skip_drops_the_first_n_items() {
     assert_eq!(eval_over("(0 | 1 | 2).skip(2).count()", None), integer("1"));
     assert_eq!(eval_patient("Patient.name.skip(1).count()"), integer("2"));
 
-    // The rest of the group states behaviour the pinned engine does not have,
-    // and the group assertion above therefore cannot pass on parity alone.
-    // Recorded rather than accommodated:
+    // `funcSkip` (FHIRPathEngine.java:6101-6109) reads `n1.get(0)` with no
+    // emptiness guard and starts its loop at `i1`, so an empty count and a
+    // negative count each reach an out-of-range `List.get` and **raise**
+    // (`DEV-0014`):
     //
-    // - `testSkip5` -- `skip(-1)` must return the input. `funcSkip`'s loop is
-    //   `for (int i = i1; i < focus.size(); i++) result.add(focus.get(i))`
-    //   (:6105-6107) with no lower bound, so `i1 = -1` reaches
-    //   `focus.get(-1)` and raises `IndexOutOfBoundsException`;
-    // - `testSkip7` and `testSkip8` -- `skip({})` must return empty.
-    //   `funcSkip` reads `n1.get(0).primitiveValue()` (:6103) without testing
-    //   `n1.isEmpty()`, so an empty count raises as well.
+    // - `testSkip5` -- `skip(-1)`;
+    // - `testSkip7` -- `(0 | 1 | 2).skip({})`;
+    // - `testSkip8` -- `{}.skip({})`.
     //
-    // HAPI therefore fails those three; Frevo passing them is `ahead-of-hapi`
-    // under `path.oracle.012`.
-    assert_eq!(
-        eval_patient("Patient.name.skip(-1).count() = Patient.name.count()"),
-        boolean(true)
+    // The failure is a returned error and never a panic (`path.errors.003`).
+    expect_evaluation_failure(
+        "Patient.name.skip(-1).count() = Patient.name.count()",
+        Some(&load_input("patient-example.xml")),
     );
+    expect_evaluation_failure("(0 | 1 | 2).skip({}).empty()", None);
+    expect_evaluation_failure("{}.skip({}).empty()", None);
+
+    // `skip(0)` is not one of them.
     assert_eq!(
         eval_patient("Patient.name.skip(0).count() = Patient.name.count()"),
         boolean(true)
     );
-    assert_eq!(
-        eval_over("(0 | 1 | 2).skip({}).empty()", None),
-        boolean(true)
-    );
-    assert_eq!(eval_over("{}.skip({}).empty()", None), boolean(true));
 }
 
 // ---------------------------------------------------------------------------
@@ -422,7 +478,9 @@ fn skip_past_the_end_yields_empty() {
 // covers: path.subset.008
 #[test]
 fn take_keeps_the_first_n_items() {
-    expect_group("testTake", 9);
+    // `testTake8` and `testTake9` raise, as they do for HAPI (`DEV-0014`):
+    // `failed` on both sides. Every other case yields its stated output.
+    expect_group_except("testTake", 9, &["testTake8", "testTake9"]);
 
     // `funcTake` (FHIRPathEngine.java:5024) iterates to
     // `Math.min(focus.size(), i1)`, so a count past the end is clamped rather
@@ -438,16 +496,11 @@ fn take_keeps_the_first_n_items() {
         integer("5")
     );
 
-    // Two cases in the group state behaviour the pinned engine does not have,
-    // recorded rather than accommodated: `testTake8` and `testTake9` expect
-    // `take({})` to be empty, while `funcTake` reads
-    // `n1.get(0).primitiveValue()` (:5026) without testing `n1.isEmpty()` and
-    // so raises. HAPI fails both; Frevo passing them is `ahead-of-hapi`.
-    assert_eq!(
-        eval_over("(0 | 1 | 2).take({}).empty()", None),
-        boolean(true)
-    );
-    assert_eq!(eval_over("{}.take({}).empty()", None), boolean(true));
+    // `funcTake` (:5024-5032) reads `n1.get(0)` with no emptiness guard, so an
+    // empty count **raises** (`testTake8`, `testTake9`). A negative count does
+    // not: `take(-1)` is empty (`path.subset.009`).
+    expect_evaluation_failure("(0 | 1 | 2).take({}).empty()", None);
+    expect_evaluation_failure("{}.take({}).empty()", None);
 }
 
 // ---------------------------------------------------------------------------
@@ -547,21 +600,13 @@ fn exclude_keeps_duplicates_that_are_not_excluded() {
     );
     expect_case("testExclude", "testExclude4");
 
-    // Contradiction with the pinned engine, recorded rather than silently
-    // accommodated. The scenario writes the duplicate with the **union**
-    // operator, which deduplicates before `exclude` ever runs: `funcUnion`
-    // (:5036) adds an item only when it is not already present, which is what
-    // `testUnion/testUnion3` -- `(1|1).count() = 1` -- grades. So
-    // `(1 | 1 | 2)` is two items and `(1 | 1 | 2).exclude(2)` is one, not two.
-    assert_eq!(
-        eval_over("(1 | 1 | 2).count()", None),
-        integer("2"),
-        "the union operator deduplicates, which is the premise of the conflict"
-    );
+    // The union operator removes the duplicate (`opUnion`, :2831) before
+    // `exclude` runs, as `testUnion/testUnion3` grades: `(1 | 1 | 2)` is two
+    // items and `(1 | 1 | 2).exclude(2)` is one.
+    assert_eq!(eval_over("(1 | 1 | 2).count()", None), integer("2"));
     assert_eq!(
         eval_over("(1 | 1 | 2).exclude(2).count()", None),
-        integer("2"),
-        "written to path.subset.012 as approved; the pinned engine answers 1, because the union removed the duplicate first"
+        integer("1")
     );
 }
 

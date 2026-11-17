@@ -342,9 +342,9 @@ fn contains_tests_membership_the_other_way_round() {
 
 // covers: path.combine.006
 #[test]
-fn in_with_an_empty_left_operand_yields_empty() {
-    // `opIn` (FHIRPathEngine.java:2631) returns an empty list when either
-    // operand is empty, so the answer is empty and specifically not `false`.
+fn in_with_an_empty_left_operand_yields_empty_and_with_an_empty_right_operand_false() {
+    // `opIn` (FHIRPathEngine.java:2630-2636) tests the left operand's size
+    // first and the right operand's second: an empty left operand is empty.
     assert_eq!(eval_over("{} in (1 | 2)", None), empty());
     assert_eq!(eval_patient("Patient.name.prefix in (1 | 2)"), empty());
 
@@ -353,6 +353,6 @@ fn in_with_an_empty_left_operand_yields_empty() {
     assert_ne!(eval_over("{} in (1 | 2)", None), boolean(true));
     assert_eq!(eval_over("({} in (1 | 2)).empty()", None), boolean(true));
 
-    // An empty right operand is empty too, so the rule is about either side.
-    assert_eq!(eval_over("1 in {}", None), empty());
+    // `1 in {}` is the boolean `false`, not empty.
+    assert_eq!(eval_over("1 in {}", None), boolean(false));
 }

@@ -8,11 +8,10 @@
 //! suite group or case, so the real case is driven through the committed
 //! harness; the rest state an expression and its result.
 //!
-//! One scenario disagrees with the pinned engine and says so in its own test:
-//! `path.filter.003` asks for an **evaluation** failure for a non-boolean
-//! `where()` criteria, while the pinned engine rejects that at the **check**
-//! stage and, with the check skipped, returns every item. The test is written
-//! to the scenario and the disagreement is recorded at the assertion.
+//! `path.filter.003` states that a non-boolean `where()` criteria is rejected
+//! by the **check**, before evaluation, and that with the check skipped (as
+//! `FhirPathR4` does, `path.check.013`) it does not fail. `path.filter.002`
+//! states `DEV-0015`: an operator after an indexer on the first term is dropped.
 //!
 //! Provenance:
 //! `reference/org.hl7.fhir.core/org.hl7.fhir.r4/src/main/java/org/hl7/fhir/r4/fhirpath/FHIRPathEngine.java`
@@ -164,6 +163,33 @@ fn expect_failure(expr: &str, inp: Option<&SuiteInput>) -> (Stage, String) {
     }
 }
 
+/// Parse and evaluate `expr` with the static check **skipped**, as
+/// `FhirPathR4` does (`path.check.013`).
+fn eval_unchecked(expr: &str, inp: Option<&SuiteInput>) -> Vec<ResultItem> {
+    let mut engine = fresh_engine();
+    let context = context_for(inp);
+    let parsed = engine
+        .parse(expr)
+        .unwrap_or_else(|e| panic!("{expr:?} must parse: {e}"));
+    engine
+        .evaluate(parsed, inp, &context, StrictnessFlags::EVALUATE)
+        .unwrap_or_else(|e| panic!("{expr:?} must evaluate: {e}"))
+}
+
+/// `expr` must parse and then fail at **evaluation** with the check skipped.
+fn expect_unchecked_evaluation_failure(expr: &str, inp: Option<&SuiteInput>) -> String {
+    let mut engine = fresh_engine();
+    let context = context_for(inp);
+    let parsed = engine
+        .parse(expr)
+        .unwrap_or_else(|e| panic!("{expr:?} must parse: {e}"));
+    match engine.evaluate(parsed, inp, &context, StrictnessFlags::EVALUATE) {
+        Ok(items) => panic!("{expr:?} must fail at evaluation, but it returned {items:?}"),
+        Err(EngineError::Diagnostic { message, .. }) => message,
+        Err(e) => panic!("{expr:?} must fail with a diagnostic, not: {e}"),
+    }
+}
+
 fn primitive(fhir_type: &str, value: &str) -> Vec<ResultItem> {
     vec![ResultItem::Primitive {
         fhir_type: fhir_type.to_string(),
@@ -244,52 +270,91 @@ fn where_drops_items_whose_criteria_is_empty() {
         boolean(true)
     );
 
-    // And an empty criteria on only *some* items drops only those: `Jim` is the
-    // one name with no second given name.
+    // An operator that follows an **indexer on the first term** is dropped by
+    // the pinned parser (`DEV-0015`; FHIRPathEngine.java:1188-1213, :1508), so
+    // `where(given[1] = 'James')` is not a comparison. The check pass fails it,
+    // because `where` parameter 1 is a `string` and not a boolean.
+    let patient = load_input("patient-example.xml");
+    let (stage, message) = expect_failure("Patient.name.where(given[1] = 'James')", Some(&patient));
+    assert_eq!(stage, Stage::Check, "{message}");
+    assert!(
+        message.contains("where"),
+        "the check must name where: {message}"
+    );
+
+    // With the check skipped the criteria evaluates as `given[1]`, and `asBool`
+    // (:6891-6892) answers `True` for a single non-boolean item, so `name[0]`
+    // and `name[2]` (each `Peter, James`) are kept and `name[1]` (`Jim`, no
+    // second given, so empty) is dropped: two names, as for `path.filter.003`.
     assert_eq!(
-        eval_patient("Patient.name.where(given[1] = 'James').count()"),
+        eval_unchecked(
+            "Patient.name.where(given[1] = 'James').count()",
+            Some(&patient)
+        ),
         integer("2")
     );
+
+    // The first-term cases are each observable: the operator is dropped, so
+    // `name[0].given = 'Peter'` yields the given names, not a boolean, and
+    // `(1 | 2)[0] = 5` yields the integer `1`, not `false`.
+    assert_eq!(
+        eval_unchecked("name[0].given = 'Peter'", Some(&patient)),
+        vec![
+            ResultItem::Primitive {
+                fhir_type: "string".into(),
+                value: "Peter".into()
+            },
+            ResultItem::Primitive {
+                fhir_type: "string".into(),
+                value: "James".into()
+            },
+        ]
+    );
+    assert_eq!(eval_unchecked("(1 | 2)[0] = 5", None), integer("1"));
+
+    // `$this` is the first term there, the indexer is on a later one, and the
+    // comparison is real: `name[0]` and `name[2]` match, `name[1]` is empty.
+    assert_eq!(
+        eval_patient("Patient.name.where($this.given[1] = 'James').count()"),
+        integer("2")
+    );
+
+    // An indexer on a later term is not affected: these cases evaluate the
+    // operator and pass.
+    expect_case("testIndexer", "testIndexer1");
+    expect_case("testIndexer", "testIndexer2");
+    expect_case("testSort", "testSort9");
+    expect_case("testQuantityUnitComparison", "testQuantityUnitTextEqual");
 }
 
 // ---------------------------------------------------------------------------
-// path.filter.003 -- `where` with a non-boolean criteria
+// path.filter.003 -- `where` with a non-boolean criteria is rejected by the check
 // ---------------------------------------------------------------------------
 
 // covers: path.filter.003
 #[test]
-fn where_with_a_non_boolean_criteria_is_an_execution_error() {
+fn where_with_a_non_boolean_criteria_is_rejected_by_the_check_before_evaluation() {
     let patient = load_input("patient-example.xml");
 
-    // Written to the scenario, which states that **evaluation** fails.
-    //
-    // Contradiction with the pinned engine, recorded rather than silently
-    // accommodated, and it is a disagreement about the *stage*:
-    //
-    // - the check pass rejects it. `case Where` (FHIRPathEngine.java:3330)
-    //   calls `checkParamTypes(..., TypeDetails(SINGLETON, FP_Boolean))`, and
-    //   `checkParamTypes` (:3828) raises `FHIRPATH_WRONG_PARAM_TYPE` for a
-    //   `string` argument;
-    // - with the check skipped -- which is what `FhirPathR4` does, see
-    //   `path.check.013` -- evaluation does **not** fail: `asBool`
-    //   (FHIRPathEngine.java:6890) answers `Equality.True` for any single
-    //   non-boolean item, so `where('x')` keeps all three names.
-    //
-    // No suite case grades either answer. The assertion is the scenario's.
+    // The **check** fails: `case Where` (FHIRPathEngine.java:3330) calls
+    // `checkParamTypes` against a singleton boolean and raises
+    // `FHIRPATH_WRONG_PARAM_TYPE` for a `string`.
     let (stage, message) = expect_failure("Patient.name.where('x')", Some(&patient));
+    assert_eq!(stage, Stage::Check, "{message}");
+
+    // The expression is not evaluated; evaluated with the check skipped, as
+    // `FhirPathR4` does (`path.check.013`), it does **not** fail: `asBool`
+    // (:6887-6894) answers `True` for any single non-boolean item, so all three
+    // names are kept.
     assert_eq!(
-        stage,
-        Stage::Evaluate,
-        "the scenario says evaluation fails; the pinned engine rejects this at \
-         the check stage (checkParamTypes, FHIRPathEngine.java:3828 via :3330) \
-         and returns all three names when the check is skipped. Message: {message}"
+        eval_unchecked("Patient.name.where('x').count()", Some(&patient)),
+        integer("3")
     );
 
-    // The multi-item form fails at evaluation in the pinned engine too, through
-    // `asBool`'s `else` arm (:6893, FHIRPATH_UNABLE_BOOLEAN), so this half of
-    // the scenario is not in dispute.
-    let (multi_stage, _) = expect_failure("Patient.name.where('x' | 'y')", Some(&patient));
-    assert_eq!(multi_stage, Stage::Evaluate);
+    // Not stated by the scenario text, kept from the earlier assertion: the
+    // multi-item form fails at evaluation through `asBool`'s `else` arm
+    // (:6893, FHIRPATH_UNABLE_BOOLEAN) once the check is skipped.
+    expect_unchecked_evaluation_failure("Patient.name.where('x' | 'y')", Some(&patient));
 }
 
 // ---------------------------------------------------------------------------
@@ -397,15 +462,23 @@ fn repeat_terminates_on_a_cyclic_projection() {
     // the number of nested items is the other half.
     let questionnaire = load_input("questionnaire-example.xml");
 
-    // Each nested item appears once, so repeating the projection a second time
-    // over the result adds nothing new.
+    // `repeat` does not seed its result with the focus (`funcRepeat`,
+    // FHIRPathEngine.java:5261-5290, starts with an empty `result`), so a
+    // second `repeat(item)` returns only the items at depth two or deeper: its
+    // `count()` is strictly smaller, and the equality is `false`.
+    assert_eq!(
+        eval_over(
+            "Questionnaire.repeat(item).repeat(item).count() < Questionnaire.repeat(item).count()",
+            Some(&questionnaire)
+        ),
+        boolean(true)
+    );
     assert_eq!(
         eval_over(
             "Questionnaire.repeat(item).count() = Questionnaire.repeat(item).repeat(item).count()",
             Some(&questionnaire)
         ),
-        boolean(true),
-        "a second pass must add nothing, which is what makes the walk terminate"
+        boolean(false)
     );
 
     // And the items really are distinct, so termination is not achieved by
@@ -479,7 +552,12 @@ fn of_type_accepts_a_namespace_qualified_type_name() {
         primitive("string", "Patient")
     );
 
-    // The namespace is read, not ignored: `System.Patient` is not a type, so
-    // nothing matches.
-    assert_eq!(eval_patient("Patient.ofType(System.Patient)"), empty());
+    // `System.Patient` **raises** `FHIRPATH_INVALID_TYPE` rather than yielding
+    // empty: `funcOfType` (FHIRPathEngine.java:5198-5207) rejects a name for
+    // which `isKnownType` (:1904) is false, and the `System` namespace admits
+    // only `String`, `Boolean`, `Integer`, `Decimal`, `Quantity`, `DateTime`,
+    // `Time`, `SimpleTypeInfo` and `ClassInfo`.
+    let patient = load_input("patient-example.xml");
+    let (stage, message) = expect_failure("Patient.ofType(System.Patient)", Some(&patient));
+    assert_eq!(stage, Stage::Evaluate, "{message}");
 }

@@ -185,6 +185,34 @@ fn expect_evaluation_failure(expr: &str, inp: Option<&SuiteInput>) -> String {
     }
 }
 
+/// `expr` must fail the **static check** with a real diagnostic. A
+/// `NotImplemented` answer panics, so an unbound check pass cannot satisfy it.
+fn expect_check_failure(expr: &str, inp: Option<&SuiteInput>) -> String {
+    let mut engine = fresh_engine();
+    let context = context_for(inp);
+    let parsed = engine
+        .parse(expr)
+        .unwrap_or_else(|e| panic!("{expr:?} must parse before the check can reject it: {e}"));
+    match engine.check(parsed, &context, StrictnessFlags::CHECK) {
+        Ok(()) => panic!("{expr:?} must fail the static check, but the check passed"),
+        Err(EngineError::Diagnostic { message, .. }) => message,
+        Err(e) => panic!("{expr:?} must fail the check with a diagnostic, not: {e}"),
+    }
+}
+
+/// Parse and evaluate `expr` with the static check **skipped**, as
+/// `FhirPathR4` does (`path.check.013`).
+fn eval_unchecked(expr: &str, inp: Option<&SuiteInput>) -> Vec<ResultItem> {
+    let mut engine = fresh_engine();
+    let context = context_for(inp);
+    let parsed = engine
+        .parse(expr)
+        .unwrap_or_else(|e| panic!("{expr:?} must parse: {e}"));
+    engine
+        .evaluate(parsed, inp, &context, StrictnessFlags::EVALUATE)
+        .unwrap_or_else(|e| panic!("{expr:?} must evaluate: {e}"))
+}
+
 fn primitive(fhir_type: &str, value: &str) -> Vec<ResultItem> {
     vec![ResultItem::Primitive {
         fhir_type: fhir_type.to_string(),
@@ -444,7 +472,19 @@ fn subset_of_compares_by_equality() {
         eval_patient("Patient.name.subsetOf($this.name.first())"),
         boolean(false)
     );
-    assert_eq!(eval_over("{}.subsetOf(1 | 2)", None), boolean(true));
+
+    // `{}.subsetOf(1 | 2)` **fails the static check**, naming `subsetOf`
+    // parameter 1: `case SubsetOf` (:3316) types the argument against the
+    // focus's type set, an empty focus has no types, and `checkParamTypes`
+    // (:3828) raises `FHIRPATH_WRONG_PARAM_TYPE` for `integer`.
+    let message = expect_check_failure("{}.subsetOf(1 | 2)", None);
+    assert!(
+        message.contains("subsetOf"),
+        "the check must name subsetOf: {message}"
+    );
+    // Evaluation alone, with the check skipped, answers `true` (`funcSubsetOf`,
+    // :5360: an empty focus is a subset of anything).
+    assert_eq!(eval_unchecked("{}.subsetOf(1 | 2)", None), boolean(true));
 
     // One of the group's three cases runs over the JSON
     // `explanationofbenefit-example.json` input, so the comparison is graded
@@ -533,19 +573,26 @@ fn is_distinct_detects_duplicates() {
 }
 
 // ---------------------------------------------------------------------------
-// path.collection.013 -- `distinct` removes duplicates, keeps first order
+// path.collection.013 -- `distinct` removes duplicates, keeps the last occurrence
 // ---------------------------------------------------------------------------
 
 // covers: path.collection.013
 #[test]
-fn distinct_removes_duplicates_and_keeps_first_occurrence_order() {
+fn distinct_removes_duplicates_and_keeps_the_last_occurrence_of_each() {
     expect_group("testDistinct", 6);
 
-    // First-occurrence order, not sorted order: `Jim` stays third because that
-    // is where it first appears, and the two later duplicates are dropped.
+    // The **last** occurrence of each value survives, in the survivors'
+    // original relative order: the given names in document order are
+    // `Peter, James, Jim, Peter, James`, and `funcDistinct`
+    // (FHIRPathEngine.java:5659-5680) drops item `i` when an equal item follows
+    // it (`for j = i+1`), so the result is `Jim, Peter, James`.
     assert_eq!(
         eval_patient("Patient.name.given.distinct()"),
         vec![
+            ResultItem::Primitive {
+                fhir_type: "string".into(),
+                value: "Jim".into()
+            },
             ResultItem::Primitive {
                 fhir_type: "string".into(),
                 value: "Peter".into()
@@ -553,10 +600,6 @@ fn distinct_removes_duplicates_and_keeps_first_occurrence_order() {
             ResultItem::Primitive {
                 fhir_type: "string".into(),
                 value: "James".into()
-            },
-            ResultItem::Primitive {
-                fhir_type: "string".into(),
-                value: "Jim".into()
             },
         ]
     );
@@ -567,6 +610,14 @@ fn distinct_removes_duplicates_and_keeps_first_occurrence_order() {
     assert_eq!(
         eval_patient("Patient.name.given.distinct().isDistinct()"),
         boolean(true)
+    );
+
+    // When any two items cannot be compared (`doEquals` answers null),
+    // `distinct()` returns an **empty** collection rather than the items
+    // (:5668-5670). Dates of different precision compare as null.
+    assert_eq!(
+        eval_over("@2012.combine(@2012-01-01).distinct()", None),
+        empty()
     );
 }
 

@@ -97,6 +97,64 @@ fn expect_group(group: &str, expected: usize) {
 }
 
 /// Assert one case, addressed by `group/name`, passed.
+/// Assert every case in `group` passed **except** the named ones, which must be
+/// graded `failed` -- the status HAPI gives them on its own suite -- and
+/// never `did-not-run`, so an unbound engine cannot satisfy this.
+fn expect_group_except(group: &str, expected: usize, failing: &[&str]) {
+    let (suite, report) = pinned();
+    let g = suite
+        .groups
+        .iter()
+        .find(|g| g.name == group)
+        .unwrap_or_else(|| panic!("the pinned suite has a group named {group}"));
+    assert_eq!(
+        g.cases.len(),
+        expected,
+        "{group} must have {expected} case(s), not {}",
+        g.cases.len()
+    );
+    for name in failing {
+        assert!(
+            g.cases.iter().any(|c| c.address.name == *name),
+            "{group}/{name} must be a case of the group"
+        );
+    }
+
+    let mut problems = Vec::new();
+    for case in &g.cases {
+        let r = report
+            .get(&case.address.to_string())
+            .unwrap_or_else(|| panic!("{} must appear in the run report", case.address));
+        let must_fail = failing.iter().any(|n| case.address.name == *n);
+        let want = if must_fail {
+            CaseStatus::Failed
+        } else {
+            CaseStatus::Passed
+        };
+        if r.status != want {
+            problems.push(format!(
+                "{} ({:?}): {} (wanted {}) -- {}",
+                case.address,
+                case.expression,
+                r.status.as_str(),
+                want.as_str(),
+                r.reason
+            ));
+        }
+    }
+    assert!(
+        problems.is_empty(),
+        "{} of {} cases in {group} are not graded as expected; the first few:
+  {}",
+        problems.len(),
+        g.cases.len(),
+        problems[..problems.len().min(5)].join(
+            "
+  "
+        )
+    );
+}
+
 fn expect_case(group: &str, name: &str) {
     let (suite, report) = pinned();
     let case = suite
@@ -557,8 +615,10 @@ fn the_indexer_selects_by_zero_based_position() {
     );
 
     // Zero-based: `[0]` is the first item and `[1]` the second, which the
-    // group's own cases grade as well.
-    expect_group("testIndexer", 3);
+    // group's own cases grade as well. `testIndexer3` is the exception: it
+    // raises for HAPI and for Frevo (`path.navigation.010`, `DEV-0012`), so it
+    // is `failed` on both sides.
+    expect_group_except("testIndexer", 3, &["testIndexer3"]);
 }
 
 // ---------------------------------------------------------------------------
@@ -592,25 +652,27 @@ fn an_out_of_range_index_yields_empty() {
 
 // covers: path.navigation.010
 #[test]
-fn a_negative_index_yields_empty() {
-    // Written to the scenario, which states empty.
-    //
-    // Contradiction with the pinned engine, recorded rather than silently
-    // accommodated: `funcItem` at FHIRPathEngine.java:6277-6283 guards only the
-    // upper bound -- `Utilities.isInteger(s) && Integer.parseInt(s) <
-    // focus.size()` -- and `Utilities.isInteger` accepts a leading `-`
-    // (`Utilities.java::isInteger`). So `-1 < 3` holds, the pinned engine
-    // reaches `focus.get(-1)` and raises `IndexOutOfBoundsException`. The
-    // suite's own `testIndexer/testIndexer3` expects empty and carries no
-    // `invalid` attribute, so HAPI fails that case; Frevo passing it is
-    // `ahead-of-hapi` under `path.oracle.012`, not a parity break.
-    assert_eq!(eval_patient("Patient.name[-1]"), empty());
-    assert_eq!(eval_patient("Patient.name[-99]"), empty());
+fn a_negative_index_raises() {
+    // `funcItem` (FHIRPathEngine.java:6277-6283) guards only the upper bound --
+    // `Utilities.isInteger("-1")` is true and `-1 < 3` -- so `focus.get(-1)` is
+    // reached and HAPI ends the call with an unchecked
+    // `IndexOutOfBoundsException`. Frevo matches: evaluation fails with an
+    // execution error, as `skip(-1)` does (`path.subset.006`), and the failure
+    // is a returned error and never a panic (`path.errors.003`). `DEV-0012`,
+    // ruled for HAPI by the owner on 2026-11-17.
+    let patient = load_input("patient-example.xml");
+    let message = expect_evaluation_failure("Patient.name[-1]", Some(&patient));
+    assert!(
+        !message.is_empty(),
+        "an execution error must carry a message"
+    );
+    expect_evaluation_failure("Patient.name[-99]", Some(&patient));
 
-    // Empty rather than a failure is the half of the scenario the suite case
-    // grades.
+    // The pinned suite's `testIndexer3` expects empty and carries no `invalid`
+    // attribute, so HAPI fails its own case; Frevo matches, so the case is
+    // `failed` on both sides, which is parity under `path.oracle.012`.
     assert!(output_bodies("testIndexer", "testIndexer3").is_empty());
-    expect_case("testIndexer", "testIndexer3");
+    expect_group_except("testIndexer", 3, &["testIndexer3"]);
 }
 
 // ---------------------------------------------------------------------------
