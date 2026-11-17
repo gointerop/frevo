@@ -1,8 +1,65 @@
-APPROVED
+CHANGES_REQUESTED
 
-Twelfth review (commit `305d4df`, 2026-11-17) resolves both findings of the
-eleventh review. Detail is in the dated section at the end. The earlier
+Thirteenth review (commits `fa4b9be` and `ade70c6`, 2026-11-17). `ENGINE` is
+`org.hl7.fhir.r4/src/main/java/org/hl7/fhir/r4/fhirpath/FHIRPathEngine.java`
+and `LEXER` is `FHIRLexer.java` in the same directory, at `73c432b5`. Detail is
+in the dated section at the end. The twelfth review was `APPROVED`; earlier
 findings follow, kept for the record.
+
+1. **DEV-0016 and `path.navigation.001` misstate the mechanism. HAPI does
+   decode the escape, but in base 32.** A backtick name is read by
+   `readFixedName` (`ENGINE:1148-1149` calls `LEXER:418-423`), which calls
+   `processFixedName` (`LEXER:477`). Its `\u` branch is
+   `Integer.parseInt(s.substring(i, i+4), 32)` (`LEXER:509-513`). `006e` in
+   base 32 is 6*32 + 14 = 206, which is U+00CE `Î`. That is why the name
+   becomes `Îame` and why the oracle reason
+   (`hapi-8.12.0-results.json:20`) names `'Îame'`.
+   - DEV-0016's heading says "is not decoded". That is false.
+   - Its HAPI-behaviour field says "Not diagnosed to a lexer line here". The
+     line is `LEXER:511`, which `tasks.md:734` and `docs/deviations.md:625-627`
+     already cite.
+   - Its chosen-behaviour field says "the escape is not decoded to `n`".
+   - `navigation.001` says HAPI "does not decode the escape … to `n`".
+
+   This is not wording. An implementer who reads "not decoded" leaves
+   `` `name` `` raw, and the check then reports `'name'`, not
+   `'Îame'`. The pass/fail grade agrees, but the error text differs, so the
+   differential sees a diff. Frevo's lexer happens to be right
+   (`crates/frevo-path/src/syntax/lexer.rs:589`, `unicode_escape(.., 32, ..)`),
+   but the spec must state what HAPI does: `\u` in a delimited identifier is
+   read as four base-32 digits, so `` `name` `` names `Îame`. Fix the
+   DEV-0016 heading, its HAPI-behaviour field and its chosen-behaviour field,
+   and the `navigation.001` clause.
+
+2. **DEV-0016 contradicts the "Considered and not recorded as deviations"
+   entry for the same defect.** `docs/deviations.md:622-630` records the
+   base-32 `processFixedName` as "reproduced as they are", and so not a
+   deviation. It also says "None is reachable from an expression that is not
+   already pathological". DEV-0016 now records the same `LEXER:511` behaviour
+   as a deviation, reached by a pinned suite case
+   (`testBasics/testEscapedIdentifierUnicode`). Choose one of these:
+   - keep DEV-0016 as the HAPI-vs-specification record, and change the bullet
+     to point at it and drop the "not reachable" claim; or
+   - withdraw DEV-0016, and correct the bullet to cite the suite case.
+
+   Do not leave both. If you remove DEV-0016, update the `## Entries` preamble
+   and `check-registries.sh` counts to match.
+
+3. **`path.navigation.003` names the wrong identifier in the check failure.**
+   The check rejects `Observation`, not `value`. In `Observation.value`, the
+   Name node `Observation` is evaluated at entry with a non-null focus
+   (`Patient`), so it takes the `else` branch at `ENGINE:1587-1589`.
+   - In `executeType(String…)` (`ENGINE:3231-3238`), the start-up special case
+     needs `hashTail(type)` to equal the name, or `isAncestor` to be true. For
+     `Patient` and `Observation` neither holds.
+   - `getChildTypesByName(Patient, "Observation")` adds no type.
+   - So `ENGINE:1591-1593` throws `FHIRPATH_UNKNOWN_NAME` with
+     `exp.getName()` = `Observation`. Evaluation never reaches `value`.
+
+   This is the same route the oracle shows for `Îame`, which is also a name
+   unknown on Patient. The scenario says "`value` not valid for any of the
+   possible types". A test written from it would assert the wrong name. Change
+   it to `Observation`, against types `[http://hl7.org/fhir/StructureDefinition/Patient]`.
 
 ## Eleventh-review findings as raised (commits `2f07196`, `5425f6c`)
 
@@ -365,3 +422,67 @@ removed, renumbered or duplicated.
 - DEV-0015 and DEV-0013 remain pending owner review.
 - DEV-0014 and DEV-0015 still have no referencing test. That is the
   oracle-builder's work.
+
+## Thirteenth review — commits `fa4b9be` and `ade70c6` (2026-11-17)
+
+I checked every claim against `ENGINE`/`LEXER` at `73c432b5` and against
+`oracles/fhirpath/hapi-8.12.0-results.json`.
+
+**`fa4b9be`, `path.navigation.008`: correct.** The `testIndexer` group has
+three cases (`tests-fhir-r4.xml:567-570`). The results file has `testIndexer1`
+and `testIndexer2` `passed` (`:281-282`), and `testIndexer3` `failed` with
+"Index -1 out of bounds for length 3" (`:283`). This agrees with
+`navigation.010` and DEV-0012.
+
+**`navigation.001` and DEV-0016: wrong mechanism (finding 1) and a
+contradiction with the register (finding 2).** I traced the check-stage
+failure. `name` is the inner of `Patient`, so it is typed by
+`ENGINE:1618`. That call passes `canBeNone` = `false` as a literal,
+whatever the surface. The focus is `Patient`, and
+`getChildTypesByName(Patient, "Îame")` is empty, so `:1591-1593` throws. The
+outcome (`failed` at check on both sides) and the quoted message are right.
+The cause is base-32 decoding (`LEXER:511`). The escape is decoded; the
+claim that it is not is wrong.
+
+**`navigation.003`: outcome right, name wrong (finding 3).**
+`testSimpleWithWrongContext` (`Encounter.name.given`,
+`invalid="semantic"`) is `passed` for HAPI (`results:24`), which is consistent.
+
+**`navigation.011`: correct.**
+- `case Item` (`ENGINE:3363-3367`) calls `checkOrdered`. That passes, because
+  `name` is not UNORDERED.
+- It then calls `checkParamTypes` against a singleton `integer`. The
+  `string` argument raises `FHIRPATH_WRONG_PARAM_TYPE`.
+- The scenario cites `:3828`. The method starts at `:3820` and the `throw` is
+  at `:3830`. This is a citation nit, not a finding.
+
+**`navigation.019`: correct, including `canBeNone`.**
+- `{}` parses to a `null` constant (`ENGINE:1332-1334`).
+- `resolveConstantType(null)` returns `new TypeDetails(SINGLETON)`, which has
+  no types (`ENGINE:3122-3123`).
+- `.name` is the inner, typed at `ENGINE:1618`, where `canBeNone` is
+  hard-coded `false`. So no check surface can make it true for `.name` here.
+- `focus.getTypes()` is empty, the result has no types, and `:1591-1593`
+  throws `FHIRPATH_UNKNOWN_NAME`.
+- The scenario's "with `canBeNone` false" holds. `:1618` is the more exact
+  citation.
+
+**Scenario IDs.** No `#### Scenario:` heading changed in either commit. No ID
+is added, removed, renumbered or duplicated.
+
+**DEV format and registers.** DEV-0016 has every field the other entries have.
+The preamble now says sixteen and lists DEV-0016 as pending.
+`check-registries.sh` reports "registers agree" (16 deviations, 12 debt
+entries).
+
+**Stale text.**
+- `tasks.md:769` ("`path.navigation.001` through `.024`") is still accurate.
+- `tasks/blockers.md:1641-1647` is a dated log. Its item 3 labels
+  `{}.name.given` as `.004`. It is `.019`. That is historical, not a
+  requirement.
+- No other navigation, lexer or escaped-identifier text in the change
+  directory contradicts the amendments. The exception is
+  `docs/deviations.md:622-630` (finding 2).
+
+**Note (not a finding).** `crates/frevo-path/tests/zz_tmp_verify.rs` is
+untracked in this worktree. It is not part of either commit.
