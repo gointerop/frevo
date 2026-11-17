@@ -519,10 +519,20 @@ The engine SHALL implement `where`, `select`, `repeat` and `ofType`, flattening 
   proximal parse reads trailing operators (`FHIRPathEngine.java:1199`), and it
   attaches them to `focus`, which the indexer has moved to the synthetic item
   node (`:1188-1197`, `:1203`, `:1206-1213`); `execute` applies an operation
-  only on a proximal node (`:1508`). With the check skipped the expression
-  evaluates as `given[1]`, yielding the second given name (or empty) for each
-  name, which is neither true nor false, so no name is kept; the check pass
-  fails it, because `where` parameter 1 is a `string`, not a boolean
+  only on a proximal node (`:1508`). With the check skipped the criteria
+  evaluates as `given[1]`, and `asBool` (`:6891-6892`) answers `True` for a
+  single non-boolean item, so `name[0]` and `name[2]` (each `Peter, James`,
+  second given `James`) are kept and `name[1]` (`Jim`, no second given, empty
+  so `Null`) is dropped: the result is **two** names, as for `path.filter.003`.
+  The check pass fails the expression, because `where` parameter 1 is a
+  `string`, not a boolean
+- **AND** the first-term cases are each observable: `name[0].given = 'Peter'`
+  with `Patient` as the context yields the given names `Peter, James`, not a
+  boolean (first term of the expression), and `(1 | 2)[0] = 5` yields the
+  integer `1`, not `false` (the group's content and the indexed group are both
+  proximal first terms, `:1135-1138`)
+- **AND** `Patient.name.where($this.given[1] = 'James')` is a real comparison,
+  because `$this` is the first term and the indexer is on a later one
 - **AND** an indexer on a later term is not affected: `Patient.name[0].given =
   'Peter' | 'James'` (`testIndexer1`), `testIndexer2`, `testSort9` and
   `testQuantityUnitTextEqual` evaluate the operator and pass, as

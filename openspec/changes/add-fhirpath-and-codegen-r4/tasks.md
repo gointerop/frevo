@@ -776,8 +776,9 @@ checkpoint because it changes what a gate measures.
   over inputs typed from the pinned R4 package; the oracle still reports 1,073
   did-not-run and 118 graded, because `check` runs first. The unordered rule is
   a check-pass rule (`checkOrdered`) and is task 50's. `path.navigation.010`
-  and `.011` contradict the pinned engine (`DEV-0012`, `DEV-0013`, pending the
-  owner); `.013`'s seam is inside `path_navigation.rs` and was not rebound. See
+  was a contradiction with the pinned engine (`DEV-0012`); the owner ruled for
+  HAPI on 2026-11-17 and the scenario now says the index raises. `.011`
+  still contradicts it (`DEV-0013`, pending the owner); `.013`'s seam is inside `path_navigation.rs` and was not rebound. See
   `tasks/blockers.md`, 2026-11-12, "task 31".
 
 - [ ] **32. Implement collection predicates.** `empty`, `exists` with and without

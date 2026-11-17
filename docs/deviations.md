@@ -45,9 +45,9 @@ decision.
 
 ## Entries
 
-All thirteen entries below come from `add-fhirpath-and-codegen-r4`;
-`DEV-0013` is pending the owner's review (see its entry); `DEV-0012` was ruled
-for HAPI on 2026-11-17.
+All fifteen entries below come from `add-fhirpath-and-codegen-r4`;
+`DEV-0013` and `DEV-0015` are pending the owner's review (see their entries);
+`DEV-0012` and `DEV-0014` were ruled for HAPI (2026-11-17 and 2026-11-14).
 `DEV-0001` through `DEV-0010` are the same kind of case: the pinned R4
 `FHIRPathEngine` does something the FHIRPath specification does not describe. In
 every one of those the chosen behaviour is **HAPI's**, because the point of the
@@ -404,8 +404,8 @@ file, so its prose is not redistributable here (see `oracles/PINS.md`).
   expects empty and carries no `invalid` attribute, so HAPI fails its own
   case.
 - **Specification requirement:** FHIRPath 2.0.0, Indexer — an index outside
-  the collection yields an empty collection; the approved scenario
-  `path.navigation.010` states empty for a negative index.
+  the collection yields an empty collection. The scenario
+  `path.navigation.010` originally stated empty and now states HAPI's raise.
 - **Chosen behaviour:** HAPI — a negative index is an execution error, as a
   returned error and not a panic (`path.errors.003`), consistent with
   `skip(-1)` (`DEV-0014`). Supersedes the earlier choice of empty.
@@ -504,9 +504,9 @@ file, so its prose is not redistributable here (see `oracles/PINS.md`).
   wording (any operator after an indexer); this entry is narrowed to the first
   term and needs the owner's re-confirmation. Confirm against live HAPI in the
   differential before closing; if the live engine differs, this entry is wrong.
-- **Normalizer impact:** an R4 search-parameter expression that compares after
-  an indexer would behave differently from the specification on HAPI and on
-  Frevo alike; none is known (not checked against the generated table).
+- **Normalizer impact:** an R4 search-parameter expression whose first term
+  carries an indexer followed by an operator would behave differently from the
+  specification on HAPI and on Frevo alike; none is known (not checked against the generated table).
 - **Reviewed:** pending owner re-confirmation. Ruled for HAPI on 2026-11-14 for
   the broader wording; narrowed after review the same day.
 

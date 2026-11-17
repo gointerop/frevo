@@ -421,7 +421,7 @@ Every allocated ID, grouped as it is grouped in the delta files.
 - `path.navigation.007` — a typed polymorphic property name is a semantic error
 - `path.navigation.008` — the indexer selects by zero-based position
 - `path.navigation.009` — an out-of-range index yields empty
-- `path.navigation.010` — a negative index yields empty
+- `path.navigation.010` — a negative index raises, as HAPI does (`DEV-0012`)
 - `path.navigation.011` — a non-integer index is an execution error
 - `path.navigation.012` — a contained resource's elements are navigable
 - `path.navigation.013` — `Resource.id` yields the logical id, not the full URL
@@ -451,7 +451,7 @@ Every allocated ID, grouped as it is grouped in the delta files.
 - `path.collection.010` — `subsetOf` compares by equality
 - `path.collection.011` — `supersetOf` compares by equality
 - `path.collection.012` — `isDistinct` detects duplicates
-- `path.collection.013` — `distinct` removes duplicates and keeps first-occurrence order
+- `path.collection.013` — `distinct` removes duplicates and keeps the last occurrence of each
 - `path.collection.014` — `count` returns the number of items
 - `path.collection.015` — `count` of an empty collection is zero
 
