@@ -224,6 +224,62 @@ fn eval_over(expr: &str, inp: Option<&SuiteInput>) -> Vec<ResultItem> {
         .unwrap_or_else(|e| panic!("{expr:?} must evaluate: {e}"))
 }
 
+/// Parse and evaluate `expr` over `inp` with the static check **skipped**, as
+/// `FhirPathR4` does (`path.check.013`). Used where the amended spec states the
+/// answer at the evaluate stage and the check rejects the same expression.
+fn eval_unchecked(expr: &str, inp: Option<&SuiteInput>) -> Vec<ResultItem> {
+    let mut engine = fresh_engine();
+    let context = context_for(inp);
+    let parsed = engine
+        .parse(expr)
+        .unwrap_or_else(|e| panic!("{expr:?} must parse: {e}"));
+    engine
+        .evaluate(parsed, inp, &context, StrictnessFlags::EVALUATE)
+        .unwrap_or_else(|e| panic!("{expr:?} must evaluate with the check skipped: {e}"))
+}
+
+/// `expr` must fail at **evaluation** with a real diagnostic, the static check
+/// having been skipped.
+fn expect_unchecked_evaluation_failure(expr: &str, inp: Option<&SuiteInput>) -> String {
+    let mut engine = fresh_engine();
+    let context = context_for(inp);
+    let parsed = engine
+        .parse(expr)
+        .unwrap_or_else(|e| panic!("{expr:?} must parse before it can fail at evaluation: {e}"));
+    match engine.evaluate(parsed, inp, &context, StrictnessFlags::EVALUATE) {
+        Ok(items) => panic!("{expr:?} must fail at evaluation, but it returned {items:?}"),
+        Err(EngineError::Diagnostic { message, .. }) => message,
+        Err(e) => panic!("{expr:?} must fail at evaluation with a diagnostic, not: {e}"),
+    }
+}
+
+/// The suite case must be graded `failed` **at the check stage**, as HAPI
+/// grades it, with `needle` in the reason. `did-not-run` never satisfies this.
+fn expect_failed_at_check(group: &str, name: &str, needle: &str) {
+    let (suite, report) = pinned();
+    let case = suite
+        .case(group, name)
+        .unwrap_or_else(|| panic!("{group}/{name} must resolve to exactly one case"));
+    let r = report
+        .get(&case.address.to_string())
+        .unwrap_or_else(|| panic!("{} must appear in the run report", case.address));
+    assert_eq!(
+        r.status,
+        CaseStatus::Failed,
+        "{}: {:?} is {} -- {}",
+        r.address,
+        r.expression,
+        r.status.as_str(),
+        r.reason
+    );
+    assert!(
+        r.reason.contains("check stage") && r.reason.contains(needle),
+        "{} must fail at the check stage naming {needle:?}, not: {}",
+        r.address,
+        r.reason
+    );
+}
+
 /// Evaluate over `patient-example.xml`, the input most of these scenarios name.
 fn eval_patient(expr: &str) -> Vec<ResultItem> {
     let inp = load_input("patient-example.xml");
@@ -428,7 +484,11 @@ fn a_leading_resource_type_name_matches_the_focus_resource() {
     // in backticks, and as a unicode escape.
     expect_case("testBasics", "testSimpleWithContext");
     expect_case("testBasics", "testSimpleBackTick1");
-    expect_case("testBasics", "testEscapedIdentifierUnicode");
+    // `testEscapedIdentifierUnicode` is NOT a pass (DEV-0016): HAPI does not
+    // decode the escape to `n`, looks up `Îame`, and fails at the check stage.
+    // Frevo's lexer matches, so the case is `failed` on both sides. The case
+    // still records `Peter` as its expectation.
+    expect_failed_at_check("testBasics", "testEscapedIdentifierUnicode", "Îame");
     assert_eq!(
         output_bodies("testBasics", "testEscapedIdentifierUnicode"),
         ["Peter"]
@@ -479,18 +539,27 @@ fn a_leading_type_name_that_is_not_the_focus_type_yields_empty() {
     // The leading-name special case adds the focus item only when some type in
     // its hierarchy matches, so a non-matching type name contributes nothing
     // and every step after it navigates nothing.
-    assert_eq!(eval_patient("Observation.value"), empty());
-    assert_eq!(eval_patient("Encounter.status"), empty());
+    // Stated at the evaluate stage with the check skipped, as `FhirPathR4`
+    // does (`path.check.013`).
+    let patient = load_input("patient-example.xml");
+    assert_eq!(eval_unchecked("Observation.value", Some(&patient)), empty());
+    assert_eq!(eval_unchecked("Encounter.status", Some(&patient)), empty());
 
     // Empty, not an error: `exists()` over it answers false rather than
     // failing.
     assert_eq!(
-        eval_patient("Observation.value.exists()"),
+        eval_unchecked("Observation.value.exists()", Some(&patient)),
         vec![primitive("boolean", "false")]
     );
 
-    // The suite grades the *checked* form of the same mistake as a semantic
-    // error, which is a different stage and a different answer.
+    // The **check** rejects it first (`executeType`, FHIRPathEngine.java:1590):
+    // `FHIRPATH_UNKNOWN_NAME`, the name is not valid for any possible type.
+    let message = expect_check_failure("Observation.value", &patient, StrictnessFlags::CHECK);
+    assert!(
+        message.contains("is not valid for any of the possible types"),
+        "unexpected check message: {message}"
+    );
+    // HAPI records the equivalent suite case as `passed`.
     expect_case("testBasics", "testSimpleWithWrongContext");
 }
 
@@ -692,7 +761,18 @@ fn a_non_integer_index_is_an_execution_error() {
     // written to the scenario as approved; if the owner resolves the conflict
     // the other way it becomes a `DEV-nnnn` entry and this assertion inverts.
     let patient = load_input("patient-example.xml");
-    let message = expect_evaluation_failure("Patient.name['x']", Some(&patient));
+
+    // Check stage: `case Item` (FHIRPathEngine.java:3363-3367) types the
+    // argument against a singleton `integer` and `checkParamTypes` (:3828)
+    // raises `FHIRPATH_WRONG_PARAM_TYPE` for `string`.
+    let check = expect_check_failure("Patient.name['x']", &patient, StrictnessFlags::CHECK);
+    assert!(
+        check.contains("not legal for item parameter"),
+        "unexpected check message: {check}"
+    );
+
+    // Evaluate stage, check skipped: evaluation fails.
+    let message = expect_unchecked_evaluation_failure("Patient.name['x']", Some(&patient));
     assert!(
         !message.is_empty(),
         "an execution error must carry a message"
@@ -700,7 +780,7 @@ fn a_non_integer_index_is_an_execution_error() {
 
     // A digit inside a string is the same story: the index is a string,
     // whatever it contains.
-    expect_evaluation_failure("Patient.name['1']", Some(&patient));
+    expect_unchecked_evaluation_failure("Patient.name['1']", Some(&patient));
 }
 
 // ---------------------------------------------------------------------------
@@ -930,16 +1010,28 @@ fn dollar_total_outside_aggregate_fails() {
 fn navigation_over_an_empty_focus_yields_empty() {
     // `case Name`'s per-item loop (FHIRPathEngine.java:1482) runs zero times
     // over an empty focus, so every step after an empty one is empty.
-    assert_eq!(eval_over("{}.name.given", None), empty());
-    assert_eq!(eval_over("{}.name", None), empty());
+    // Evaluate stage with the check skipped; the **check** rejects the empty
+    // literal's untyped `name` (`executeType`, FHIRPathEngine.java:1590-1593).
+    let patient = load_input("patient-example.xml");
+    let message = expect_check_failure("{}.name.given", &patient, StrictnessFlags::CHECK);
+    assert!(
+        message.contains("is not valid for any of the possible types"),
+        "unexpected check message: {message}"
+    );
+    assert_eq!(eval_unchecked("{}.name.given", None), empty());
+    assert_eq!(eval_unchecked("{}.name", None), empty());
     assert_eq!(
-        eval_over("{}.name.given.empty()", None),
+        eval_unchecked("{}.name.given.empty()", None),
         vec![primitive("boolean", "true")]
     );
 
     // Including when the empty focus arises from a real navigation rather than
-    // from the `{}` literal.
-    assert_eq!(eval_patient("Patient.name.prefix.period.start"), empty());
+    // from the `{}` literal. Unchecked: `prefix` is a string, so the check
+    // rejects `period` on it as well.
+    assert_eq!(
+        eval_unchecked("Patient.name.prefix.period.start", Some(&patient)),
+        empty()
+    );
 }
 
 // ---------------------------------------------------------------------------
