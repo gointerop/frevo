@@ -45,8 +45,8 @@ decision.
 
 ## Entries
 
-All fifteen entries below come from `add-fhirpath-and-codegen-r4`;
-`DEV-0013` and `DEV-0015` are pending the owner's review (see their entries);
+All seventeen entries below come from `add-fhirpath-and-codegen-r4`;
+`DEV-0013`, `DEV-0015`, `DEV-0017` and `DEV-0018` are pending the owner's review (see their entries);
 `DEV-0012` and `DEV-0014` were ruled for HAPI (2026-11-17 and 2026-11-14).
 `DEV-0001` through `DEV-0010` are the same kind of case: the pinned R4
 `FHIRPathEngine` does something the FHIRPath specification does not describe. In
@@ -513,14 +513,16 @@ file, so its prose is not redistributable here (see `oracles/PINS.md`).
 ### DEV-0017 — equality, equivalence, comparison, date arithmetic and division follow pinned-engine defects
 
 - **Area:** path
-- **Scenario IDs:** path.equality.001, path.equality.002, path.equality.004, path.equality.005, path.equality.012, path.compare.001, path.compare.002, path.compare.003, path.compare.004, path.combine.001, path.math.001, path.math.003, path.math.005, path.math.006, path.math.007, path.math.008
+- **Scenario IDs:** path.equality.001, path.equality.002, path.equality.004, path.equality.005, path.equality.012, path.compare.001, path.compare.002, path.compare.003, path.compare.004, path.combine.001, path.math.001, path.math.003, path.math.005, path.math.006, path.math.007, path.math.008, path.compare.013, path.compare.014
 - **HAPI 8.12.0 behaviour:** HAPI fails 38 cases of its own pinned suite
   (`oracles/fhirpath/hapi-8.12.0-results.json`) on these mechanisms.
   `removeTrailingZeros` (`ENGINE:2161-2182`) strips zeros from a number written
   with no decimal point, so `100 = 1.0` is `true` and `10 = 10.0` is `false`
   (`testEquality31`-`33`, `35`). A minute- or hour-precision `dateTime` is
-  rejected by `DateTimeType.copy()` (`Invalid date/time format`), which
-  `equalsUsingFhirPathRules` (`BaseDateTimeType.java:916`) and `dateAdd` call
+  rejected by `DateTimeType.copy()` (`Invalid date/time format` with no offset, `does not support MINUTE
+  precision` with one, `BaseDateTimeType.java:797`, `103-106`), which
+  `equalsUsingFhirPathRules` (`BaseDateTimeType.java:924`) and `dateAdd`
+  (`ENGINE:2716`) call
   (`testEquality37`-`40`, `testNEquality27`, `testEquivalent30`,
   `testPlusDate23`/`24`, `testMinus7`, `testUnion12`). `qtyEquivalent` returns
   `null`, which `doEquivalent` unboxes (`ENGINE:2204-2206`): a
@@ -556,7 +558,10 @@ file, so its prose is not redistributable here (see `oracles/PINS.md`).
 
 - **Area:** path
 - **Scenario IDs:** path.datetime.004
-- **HAPI 8.12.0 behaviour:** `couldBeTheSameTime` (`BaseDateTimeType.java:937-960`)
+- **HAPI 8.12.0 behaviour:** ordered comparison is zone-dependent too:
+  `compareDateTimeElements` converts both operands to Zulu when finer than a day
+  (`ENGINE:643-648`), so `@2015-02-04T10:00:00 < @2015-02-04T05:30:00Z` depends
+  on the machine's zone. For `=`, `couldBeTheSameTime` (`BaseDateTimeType.java:937-960`)
   reads the instant of an offset-less `dateTime` through the JVM default zone
   (`TimeZone.getDefault()`, `BaseDateTimeType.java:434`, `721-723`) before
   widening it by 14 hours each way, so `=` of an offset-less and an offset

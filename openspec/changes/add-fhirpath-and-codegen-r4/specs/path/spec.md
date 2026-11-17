@@ -489,7 +489,7 @@ The engine SHALL implement the collection predicates `FHIRPathEngine` implements
 - **AND** `{}.subsetOf(1 | 2)` **fails the static check**, naming `subsetOf`
   parameter 1: `case SubsetOf` (`FHIRPathEngine.java:3316`) types the argument
   against the focus's type set, an empty focus has no types, and
-  `checkParamTypes` (`:3828`) raises `FHIRPATH_WRONG_PARAM_TYPE` for `integer`.
+  `checkParamTypes` (`:3830`) raises `FHIRPATH_WRONG_PARAM_TYPE` for `integer`.
   Evaluation alone, with the check skipped, answers `true` (`funcSubsetOf`,
   `:5360`: an empty focus is a subset of anything). No suite case grades it, so
   it is differential-only
@@ -791,9 +791,12 @@ The engine SHALL implement equality, inequality, equivalence and non-equivalence
   (`FHIRPathEngine.java:2161-2182`) strips zeros from a number written with no
   decimal point, so `100 = 1.0` is `true` and `10 = 10.0` is `false`; and
   `testEquality37`, `38`, `39` and `40`, where a minute-precision `dateTime`
-  (`@2015-02-04T10:00`) is rejected by `DateTimeType.copy()` with
-  `Invalid date/time format` on the `equalsUsingFhirPathRules` path
-  (`BaseDateTimeType.java:916`) and evaluation fails
+  is rejected by `DateTimeType.copy()` (`DateTimeType.java:164-165`, called at
+  `BaseDateTimeType.java:924`) and evaluation fails. With no offset the message
+  is `Invalid date/time format` (`BaseDateTimeType.java:797`); with an offset
+  (`testEquality40`) parsing succeeds and the precision check raises `Invalid
+  date/time string (datatype DateTimeType does not support MINUTE precision)`
+  (`BaseDateTimeType.java:103-106`)
 - **AND** the FHIRPath specification requires `100 = 1.0` to be `false` and
   `10 = 10.0` to be `true`; this is recorded as `DEV-0017` and resolved as
   HAPI's behaviour. Equality of a minute-precision `dateTime` is recorded in the
@@ -887,13 +890,23 @@ The engine SHALL implement the four ordered comparison operators as `FHIRPathEng
 - **WHEN** the `testLessThan` group's cases are evaluated
 - **THEN** every case HAPI passes yields its stated output
 - **AND** Frevo's required status per case follows HAPI's own recorded run (`oracles/fhirpath/hapi-8.12.0-results.json`): `passed` for every case HAPI passes, and `failed` (parity under `path.oracle.012`) for the cases named below, which HAPI fails. A Frevo pass on one of them would be listed as `ahead-of-hapi`, not accepted as a pass of this scenario
-- **AND** the failed cases are `testLessThan28` (a birth-time extension
-  compared with `@1975-01-01T00:00:00Z`; HAPI's recorded outcome is that the
-  second conjunct is false where the suite expects `true`), `testLessThan29`
-  (`1 year < 2 months`) and `testLessThan30` (`1 'kg' < 2 'm'`), each of which
-  yields one item where the suite expects none (`opLessThan` compares the `code`
-  lists at `FHIRPathEngine.java:2440` and, when they differ, compares canonical
-  decimals rather than yielding empty), and `testLessThan33`, which raises
+- **AND** the failed cases, each with its outcome, are:
+  - `testLessThan28`: the comparison is `true` but the second conjunct, the
+    operand's `toString()`, is `false` because the comparison has rewritten the
+    operand's stored string to its Zulu form (`path.compare.013`); the suite
+    expects `true`
+  - `testLessThan29` (`1 year < 2 months`): a calendar-duration literal sets
+    `unit` and no `code` (`FHIRPathEngine.java:1131`), so both `code` lists are
+    empty and compare equal (`:2438-2440`) and the raw values are compared:
+    `1 < 2` is `true`, one item where the suite expects none
+  - `testLessThan30` (`1 'kg' < 2 'm'`): the `code` lists differ, so the
+    canonical decimals are compared (`:2447-2450`): one item, `false`, where the
+    suite expects none
+  - `testLessThan33`: the quantity with only unit text has no code and the other
+    has one, so the lists differ; `qtyToCanonicalDecimal` returns `null` for the
+    quantity with no UCUM system (`:2301-2304`) and the recursive `opLessThan`
+    calls `isPrimitive()` on it (`:2414`): a `NullPointerException`, so
+    evaluation fails
 - **AND** the operator compares the 12 string-like types
   (`string`, `uri`, `code`, `oid`, `id`, `uuid`, `sid`, `markdown`,
   `base64Binary`, `canonical`, `url`, `xhtml`), `integer` and `decimal` only,
@@ -905,11 +918,17 @@ The engine SHALL implement the four ordered comparison operators as `FHIRPathEng
 - **WHEN** the `testLessOrEqual` group's cases are evaluated
 - **THEN** every case HAPI passes yields its stated output
 - **AND** Frevo's required status per case follows HAPI's own recorded run (`oracles/fhirpath/hapi-8.12.0-results.json`): `passed` for every case HAPI passes, and `failed` (parity under `path.oracle.012`) for the cases named below, which HAPI fails. A Frevo pass on one of them would be listed as `ahead-of-hapi`, not accepted as a pass of this scenario
-- **AND** the failed cases are `testLessOrEqual28` (`1 year <= 2 days`) and `29` (`1 'kg' <= 999 ...`): `<=`, `>` and `>=` compare `unit`, and
-  `qtyToCanonicalDecimal` returns `null` for a quantity with no UCUM system
-  (`FHIRPathEngine.java:2301-2304`), so `isPrimitive()` is called on `null`
-  (`:2494-2496`, `:2544-2546`, `:2592-2594`) and HAPI
-  raises, or answers a different boolean than the suite expects
+- **AND** the failed cases are `testLessOrEqual28` (`1 year <= 2 days`), which
+  fails with a `NullPointerException`: the units differ, so
+  `qtyToCanonicalDecimal` returns `null` for the calendar duration
+  (`FHIRPathEngine.java:2301-2304`) and `isPrimitive()` is called on it
+  (`:2544-2546`); and `testLessOrEqual29` (`1 'kg' <= 999 'g'`), which yields one
+  item, `true`, where the suite expects `false`: a UCUM-quoted literal sets
+  `code` and `system` and leaves `unit` null (`:1131`), `<=` compares `unit`
+  (`:2533-2537`), null against null is equal, and the raw values are compared
+- **AND** `<=` with a null left `unit` and a non-null right `unit`
+  (`1 'kg' <= 1 year`) fails with a `NullPointerException` on `lunit.equals`
+  (`:2537`); see `path.compare.014`
 - **AND** the operator's numeric branch accepts `integer`, `decimal`,
   `unsignedInt` and `positiveInt`
 
@@ -918,11 +937,11 @@ The engine SHALL implement the four ordered comparison operators as `FHIRPathEng
 - **WHEN** the `testGreaterThan` group's cases are evaluated
 - **THEN** every case HAPI passes yields its stated output
 - **AND** Frevo's required status per case follows HAPI's own recorded run (`oracles/fhirpath/hapi-8.12.0-results.json`): `passed` for every case HAPI passes, and `failed` (parity under `path.oracle.012`) for the cases named below, which HAPI fails. A Frevo pass on one of them would be listed as `ahead-of-hapi`, not accepted as a pass of this scenario
-- **AND** the failed cases are `testGreaterThan28` (`1 year > 1 'a'`) and `29` (`1 year > 2 months`): `<=`, `>` and `>=` compare `unit`, and
-  `qtyToCanonicalDecimal` returns `null` for a quantity with no UCUM system
-  (`FHIRPathEngine.java:2301-2304`), so `isPrimitive()` is called on `null`
-  (`:2494-2496`, `:2544-2546`, `:2592-2594`) and HAPI
-  raises, or answers a different boolean than the suite expects
+- **AND** the failed cases are `testGreaterThan28` (`1 year > 1 'a'`) and `29`
+  (`1 year > 2 months`), both of which fail with a `NullPointerException`: `>`
+  compares `unit` (`FHIRPathEngine.java:2485-2487`), the units differ,
+  `qtyToCanonicalDecimal` returns `null` for the calendar duration
+  (`:2301-2304`) and `isPrimitive()` is called on it (`:2494-2496`)
 - **AND** the operator's numeric branch accepts `integer`, `decimal`,
   `unsignedInt` and `positiveInt`
 
@@ -931,11 +950,12 @@ The engine SHALL implement the four ordered comparison operators as `FHIRPathEng
 - **WHEN** the `testGreatorOrEqual` group's cases are evaluated
 - **THEN** every case HAPI passes yields its stated output
 - **AND** Frevo's required status per case follows HAPI's own recorded run (`oracles/fhirpath/hapi-8.12.0-results.json`): `passed` for every case HAPI passes, and `failed` (parity under `path.oracle.012`) for the cases named below, which HAPI fails. A Frevo pass on one of them would be listed as `ahead-of-hapi`, not accepted as a pass of this scenario
-- **AND** the failed cases are `testGreatorOrEqual28` (`2 years >= 2 year`) and `29` (`2 'kg' >= 1 'm'`): `<=`, `>` and `>=` compare `unit`, and
-  `qtyToCanonicalDecimal` returns `null` for a quantity with no UCUM system
-  (`FHIRPathEngine.java:2301-2304`), so `isPrimitive()` is called on `null`
-  (`:2494-2496`, `:2544-2546`, `:2592-2594`) and HAPI
-  raises, or answers a different boolean than the suite expects
+- **AND** the failed cases are `testGreatorOrEqual28` (`2 years >= 2 year`),
+  which fails with a `NullPointerException` (the units differ and the calendar
+  duration has no UCUM system, `FHIRPathEngine.java:2301-2304`, `2583-2594`); and
+  `testGreatorOrEqual29` (`2 'kg' >= 1 'm'`), which yields one item, `true`,
+  where the suite expects none: both `unit`s are null, so the raw values are
+  compared (`:1131`, `:2583-2585`)
 - **AND** the operator's numeric branch accepts `integer`, `decimal`,
   `unsignedInt` and `positiveInt`
 
@@ -998,6 +1018,30 @@ The engine SHALL implement the four ordered comparison operators as `FHIRPathEng
 - **AND** this differs from the FHIRPath specification, which requires decimal
   semantics throughout; the divergence is recorded as `DEV-0004` and resolved as
   HAPI's behaviour
+
+#### Scenario: [path.compare.013] an ordered comparison of a dateTime rewrites the operand's stored string to Zulu
+
+- **WHEN** `Patient.birthDate.extension('http://hl7.org/fhir/StructureDefinition/patient-birthTime').value < @1975-01-01T00:00:00Z`
+  is evaluated and the same element's string is read afterwards in the same
+  evaluation (`testLessThan28`)
+- **THEN** the comparison is `true`, and the element's `toString()` is then its
+  Zulu form rather than `1974-12-25T14:35:45-05:00`
+- **AND** the mechanism is `compareDateTimeElements` calling
+  `setTimeZoneZulu(true)` on the operand itself when it is already a
+  `DateTimeType` and its precision is finer than a day
+  (`FHIRPathEngine.java:636-648`), which rewrites the stored string
+  (`BaseDateTimeType.java:690-694`); `<`, `>`, `<=` and `>=` all reach it
+- **AND** the specification does not describe the mutation; HAPI's recorded run
+  is `failed` for `testLessThan28`, and Frevo matches it as parity
+  (`path.oracle.012`)
+
+#### Scenario: [path.compare.014] `<=` with a unit-less left quantity and a unit-bearing right quantity fails
+
+- **WHEN** `1 'kg' <= 1 year` is evaluated
+- **THEN** evaluation fails: `opLessOrEqual` evaluates `lunit.equals(runit)`
+  with a null `lunit` (`FHIRPathEngine.java:2537`), a `NullPointerException` in
+  HAPI and an execution error in Frevo (`path.errors.003`)
+- **AND** no live case grades it, so it is differential-only
 
 #### Scenario: [path.compare.010] a Period invariant written with raw comparison and one written with boundaries differ
 
@@ -1090,8 +1134,11 @@ The engine SHALL implement the arithmetic operators over integers, decimals, str
 - **AND** Frevo's required status per case follows HAPI's own recorded run (`oracles/fhirpath/hapi-8.12.0-results.json`): `passed` for every case HAPI passes, and `failed` (parity under `path.oracle.012`) for the cases named below, which HAPI fails. A Frevo pass on one of them would be listed as `ahead-of-hapi`, not accepted as a pass of this scenario
 - **AND** the failed cases are `testPlusDate23` (`@2015-02-04T10:00Z + 1 hour =
   @2015-02-04T11:00Z`) and `testPlusDate24` (`@2015-02-04T10Z + 1 hour = ...`):
-  `dateAdd` calls `DateTimeType.copy()`, which rejects a minute- or
-  hour-precision `dateTime` with `Invalid date/time format`, so evaluation fails.
+  `dateAdd` calls `DateTimeType.copy()` (`FHIRPathEngine.java:2716`), which
+  rejects a minute- or hour-precision `dateTime`; these carry an offset (`Z`),
+  so the message is `Invalid date/time string (datatype DateTimeType does not
+  support MINUTE precision)` (`BaseDateTimeType.java:103-106`) rather than
+  `Invalid date/time format`, so evaluation fails.
   Recorded as `DEV-0017`
 
 #### Scenario: [path.math.002] the concatenation operator joins strings and treats empty as the empty string
@@ -1111,8 +1158,9 @@ The engine SHALL implement the arithmetic operators over integers, decimals, str
   `0` (`FHIRPathEngine.java:2953`); `5 - 3 'mg'` fails with a wrong-type error
 - **AND** when the left is the number `0` the result is the right quantity with
   its value made **absolute**, not negated: `0 - 5 'mg'` and `0 - (-5 'mg')` both
-  yield `5 'mg'` (`:2965-2970`); `0.0 - 5 'mg'` is not matched, as its string
-  value is not `0`
+  yield `5 'mg'` (`:2965-2970`); `0.0 - 5 'mg'` fails the guard at `:2953`, as
+  its string value is not `0`, and raises the right-value wrong-type error
+  (`:2954`), as `5 - 3 'mg'` does
 - **AND** when the left is a `Quantity` (`q - q`, for example `5 'mg' - 3 'mg'`)
   the branch adds nothing and the result is an **empty** collection, not a
   difference (`:2965-2970`)
@@ -1551,14 +1599,16 @@ The engine SHALL implement `today`, `now` and `precision`, and SHALL take the ev
 - **AND** the oracle harness sets that configuration to `UTC+1100`, so the
   suite's result does not depend on where it runs
 - **AND** the zone the engine reads also decides how a `dateTime` **without** a
-  UTC offset is placed on the time line when it is compared with one that has an
-  offset (`couldBeTheSameTime`, `BaseDateTimeType.java:937-960`, via
-  `getValue().getTime()` and `setValue`'s `TimeZone.getDefault()`, `:721-723`):
-  the answer is `false` or empty according to a +-14 hour window around that
-  instant. The suite evaluates at `UTC+1100`; Frevo reads a missing offset as
-  the configured evaluation zone, which for the oracle harness is the same
-  `UTC+1100`, and as UTC where none is configured. This is recorded as
-  `DEV-0018`
+  UTC offset is placed on the time line. For `=` against one with an offset it
+  sets the +-14 hour window of `couldBeTheSameTime`
+  (`BaseDateTimeType.java:937-960`, via `getValue().getTime()`, `:434`,
+  `:721-723`), so the answer is `false` or empty by zone. For `<`, `>`, `<=`
+  and `>=`, `compareDateTimeElements` converts both operands to Zulu when finer
+  than a day (`FHIRPathEngine.java:643-648`), so
+  `@2015-02-04T10:00:00 < @2015-02-04T05:30:00Z` depends on the zone too. The
+  suite evaluates at `UTC+1100`; Frevo reads a missing offset as the configured
+  evaluation zone, which for the oracle harness is the same `UTC+1100`, and as
+  UTC where none is configured. Recorded as `DEV-0018`
 
 #### Scenario: [path.datetime.005] `precision()` reports the component count of a date, dateTime or time
 
