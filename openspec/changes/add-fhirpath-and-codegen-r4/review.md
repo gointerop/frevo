@@ -1,4 +1,10 @@
-CHANGES_REQUESTED
+APPROVED
+
+Twenty-second review (commit `a2dfc15`, 2026-11-17) resolves both findings of the
+twenty-first review. Detail is in the dated section at the end. The earlier
+findings follow, kept for the record.
+
+## Twenty-first-review findings as raised (commit `65aeb76`)
 
 Twenty-first review (commit `65aeb76`, 2026-11-17). `ENGINE` is
 `org.hl7.fhir.r4/.../fhirpath/FHIRPathEngine.java` at `73c432b5`. Every factual
@@ -1269,3 +1275,26 @@ section 1 requires, in the same direction as DEV-0009. Every field is present.
 - `crates/frevo-path/tests/path_convert.rs:473-477` and `:561-566` already
   assert the stub behaviour.
 - The remaining stale sentence is the requirement line (finding 1).
+
+## Twenty-second review - commit `a2dfc15` (2026-11-17)
+
+**Finding 1: resolved.** The Type conversion requirement (`spec.md:1543`)
+now excepts `toDateTime` and `toTime` as stubs that always raise, pointing at
+`path.convert.011` and `.013`. `path.convert.009` uses `toInteger`, so its
+"a failed conversion yields empty" stays correct. No other "yields empty"
+statement about `toDateTime` or `toTime` remains in `specs/path/spec.md` or
+`tasks.md`.
+
+**Finding 2: resolved.** `Messages.properties:353` (`org.hl7.fhir.utilities`)
+is `FHIRPATH_PRIMITIVE_ONLY = Error evaluating FHIRPath expression: The
+function {0} can only be used on primitives`.
+- The template uses only `{0}`. The `describe()` and type-list arguments that
+  `checkContextPrimitive` passes (`ENGINE:3880-3881`) are not rendered.
+- So with `{0}` = `ToDateTime` (`:3651`) or `ToTime` (`:3655`), the quoted
+  text "The function ToDateTime can only be used on primitives" is exact,
+  apart from the standard prefix.
+
+**Scenario IDs.** No `#### Scenario:` heading changed.
+
+**Registers.** `check-registries.sh` reports "registers agree" (19
+deviations, 14 debt entries).
