@@ -1822,3 +1822,72 @@ report them uncovered until then.
    half cannot be a Rust `String`. `path.string.022` states "as the engine at
    the pinned SHA counts them", which is UTF-16; the task text says scalar
    values. Needs a decision (and a `DEV` entry if `toChars` stays as it is).
+
+## 2026-11-17 — `add-fhirpath-and-codegen-r4` — task 41 not started: it needs a regular-expression engine and no runtime dependency for one is approved
+
+**Raised by** the implementer (tasks 41 and 42). `matches`, `matchesFull`,
+`replaceMatches` (and `replace`, which upstream also runs through
+`String.replaceAll`, so its pattern is a regular expression as well,
+`path_string.rs:648`) use `java.util.regex`. `frevo-path` has no dependencies at
+all and the workspace dependency table lists no regular-expression crate;
+`regex-automata` is in `Cargo.lock` only through `tracing-subscriber` in
+`frevo-server`, and `regex` itself is not in the product graph. Using either
+from `frevo-path` is a new runtime dependency (CLAUDE.md section 5: ADR plus
+owner approval), so nothing was added and task 41 was not started; task 42 was
+done first as instructed.
+
+Decision needed: (a) approve `regex` (an ADR; note it is linear-time and has no
+backreferences or lookaround, which `java.util.regex` has, so the pinned suite's
+`testMatches` / `testReplaceMatches` patterns must be checked against it and any
+gap recorded as a deviation), or `fancy-regex` (already in the lock file at
+0.11, backtracking, closer to Java but a heavier graph), or (b) approve a small
+in-crate backtracking engine for the Java subset the suite and HAPI use. The
+non-regex half of task 41 (`trim`, `split`, `join`, `encode`, `decode`,
+`escape`, `unescape`) needs no dependency and can proceed independently once the
+owner says whether task 41 may be split.
+
+## 2026-11-17 — `add-fhirpath-and-codegen-r4` — task 42 cannot be ticked: three tests contradict the pinned source and one depends on task 43/44, and one oracle case regresses
+
+**Raised by** the implementer (task 42). Implemented every `toX` and
+`convertsToX` the R4 engine has (`eval/convert.rs`); `toDate` stays a parse
+failure (`DEV-0009`). `path.convert.001`-`003`, `005`-`007`, `009`, `010`, `012`
+and `014` pass (10 of 14 tests in `path_convert.rs`). The signatures in
+`check/signature.rs` were already present and are unchanged.
+
+1. `path.convert.011` and `path.convert.013` (`toDateTime`, `toTime`):
+   `funcToDateTime` and `funcToTime` are stubs whose whole body is
+   `throw makeException(expr, FHIRPATH_NOT_IMPLEMENTED, ...)`
+   (`FHIRPathEngine.java:4976-4989`), and the pinned suite has no case for
+   either. Followed HAPI: both raise "The function toDateTime is not
+   implemented". The scenarios (and the task text "including every date,
+   dateTime and time precision string") ask for a conversion HAPI does not
+   have. Needs a `DEV` entry (a deliberate extension beyond HAPI is the other
+   direction from `DEV-0009`, so the owner must choose) or a spec correction.
+2. `path.convert.004`: `'2015-02-04T14'.convertsToDate()` is asserted `false`.
+   `funcIsDate` matches `RegexConstants.DATE_TIME_REGEX`, the dateTime pattern,
+   with an upstream `FIXME` saying so (`FHIRPathEngine.java:5962`), so HAPI
+   answers `true`; followed HAPI. The three precision strings the scenario
+   names pass.
+3. `path.convert.008`: `.toQuantity()` cases in `testTypes` compare the result
+   to a quantity literal (`1.toQuantity() = 1 '1'`), which needs the quantity
+   equality of tasks 43/44; they are `did-not-run` until then. The conversions
+   themselves are in place (`convertsToQuantity` cases pass).
+4. Oracle regression, not an engine defect:
+   `path_oracle::a_case_hapi_structurally_cannot_pass_is_recorded_as_such` was
+   red before and is red for a different reason now. `isSemanticChecks/
+   isEffectOnLogic2Base` (`$this.toString().length() > 10`, context
+   `Observation.effective`) used to be `did-not-run` because `toString` was
+   unsupported; it now evaluates and is graded `failed`, because
+   `tests/oracle/engine.rs::evaluate` ignores `context` and evaluates against
+   the resource (`"Observation"` has 11 characters, expected `false`). The
+   test requires "not a plain failure"; the harness must evaluate with the
+   case's context as `$this` (HAPI cannot, which is why the case is
+   `hapi-cannot-pass`). Frevo's `toString` and `length` are right.
+5. The in-crate test `eval::tests::every_unimplemented_function_is_unsupported_and_never_empty`
+   (`src/eval/tests.rs:608`) lists `Patient.name.given.toInteger()` as an
+   unimplemented function; it is now built, so that test is red. It was not
+   edited; the entry should be replaced with a function still unbuilt (for
+   example `join`, which is still in the list).
+6. Two fidelity notes, no action needed: a digit is an ASCII digit where Java's
+   `Character.isDigit` takes any Unicode decimal digit; and a decimal beyond
+   `i128` mantissa range is an execution error rather than a value.

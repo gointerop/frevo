@@ -98,7 +98,12 @@ precision check and string rendering), and the math functions —
 `funcTruncate`, `funcSqrt`, `funcExp`, `funcLn`, `funcLog`, `funcPower` and
 `DecimalType(double)`), and the base string functions — `src/eval/strfn.rs`
 (`funcUpper`, `funcLower`, `funcToChars`, `funcIndexOf`, `funcSubstring`,
-`funcStartsWith`, `funcEndsWith`, `funcContains`, `funcLength`). Each file
+`funcStartsWith`, `funcEndsWith`, `funcContains`, `funcLength`), and type
+conversion — `src/eval/convert.rs` (`funcToInteger`, `funcToDecimal`,
+`funcToString`, `funcToBoolean`, `funcToQuantity`, `funcToDateTime`,
+`funcToTime`, the `funcIsX` family, `parseQuantityString`, and
+`Utilities.java`'s `isInteger`, `isDecimal` and `checkDecimal` and
+`RegexConstants.java`'s `DATE_TIME_REGEX`). Each file
 carries the required header naming the upstream path, the pinned SHA and what
 was modified. Every
 other row is updated by the change that first ports into that crate;

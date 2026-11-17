@@ -34,6 +34,7 @@ mod arith;
 mod collection;
 mod combine;
 mod compare;
+mod convert;
 mod equality;
 mod error;
 mod filter;
@@ -361,6 +362,23 @@ impl Run<'_> {
                 | Function::Contains
                 | Function::Length),
             ) => self.func_string(context, focus, id, f),
+            Some(
+                f @ (Function::ToInteger
+                | Function::ToDecimal
+                | Function::ToString
+                | Function::ToBoolean
+                | Function::ToQuantity
+                | Function::ToDateTime
+                | Function::ToTime
+                | Function::ConvertsToInteger
+                | Function::ConvertsToDecimal
+                | Function::ConvertsToString
+                | Function::ConvertsToBoolean
+                | Function::ConvertsToQuantity
+                | Function::ConvertsToDateTime
+                | Function::ConvertsToDate
+                | Function::ConvertsToTime),
+            ) => self.func_convert(focus, id, f),
             Some(Function::Today) => Ok(vec![temporal::today()]),
             Some(Function::Now) => Ok(vec![temporal::now()]),
             Some(Function::Custom) | None => Err(EvalError::unsupported(
