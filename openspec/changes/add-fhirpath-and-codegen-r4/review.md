@@ -1,4 +1,107 @@
-APPROVED
+CHANGES_REQUESTED
+
+Sixteenth review (commit `bdfc6dd`, 2026-11-17). `ENGINE` is
+`org.hl7.fhir.r4/.../fhirpath/FHIRPathEngine.java` and `BDT` is
+`org.hl7.fhir.r4/.../model/BaseDateTimeType.java`, both at `73c432b5`. Detail
+is in the dated section at the end. The fifteenth review was `APPROVED`; the
+earlier findings follow, kept for the record.
+
+1. **`path.compare.001` is truncated, and two of its mechanisms are wrong.**
+   - **The sentence is cut off.** `spec.md:896` ends "and `testLessThan33`,
+     which raises", with no outcome and no cause.
+     - The cause: `opLessThan` compares `code` (`ENGINE:2438-2440`). The
+       unit-text-only quantity has no code and the coded one has one, so the
+       lists differ.
+     - `qtyToCanonicalDecimal` then returns `null` for the quantity with no
+       UCUM system (`ENGINE:2302-2304`). The recursive call dereferences it
+       (`:2413`): an NPE on `isPrimitive()` (`results:631`).
+   - **`testLessThan29` (`1 year < 2 months`) does not reach the
+     canonical-decimal branch.** A calendar-duration literal sets `unit` and
+     no `code` (`ENGINE:1131`). So both `code` lists are empty,
+     `compareDeep` is true, and the raw values are compared: `1 < 2` gives
+     `true`. That is one item, where the suite expects none.
+     `testLessThan30` (`kg` against `m`) is the canonical-decimal case, and
+     answers `false`.
+   - **`testLessThan28` is wrongly grouped** under "yields one item where the
+     suite expects none". It expects `true` and gets `false`.
+   - **A behaviour is missing: ordered comparison mutates its operand.**
+     `compareDateTimeElements` calls `setTimeZoneZulu(true)` on the operand
+     itself when it is already a `DateTimeType` (`ENGINE:636`, `:643-648`).
+     `setTimeZoneZulu` rewrites the stored string (`BDT:690-694`,
+     `updateStringValue`).
+     - So after `value < @1975-...Z`, the same element's `toString()` is the
+       Zulu form, not `1974-12-25T14:35:45-05:00`. That is why the second
+       conjunct of `testLessThan28` is `false`.
+     - The results file does not say which conjunct failed. The spec's "HAPI's
+       recorded outcome is that the second conjunct is false" is an inference,
+       and this is its source.
+     - The mutation is observable to every later read of the element in the
+       same evaluation. `<`, `>`, `<=` and `>=` all reach it through their
+       date branches. Add a scenario stating it.
+
+2. **`path.compare.002` and `.004` give the wrong mechanism for
+   `testLessOrEqual29` and `testGreatorOrEqual29`. The scenarios also leave
+   each case's outcome unstated.**
+   - A UCUM-quoted literal (`1 'kg'`) sets `code` and `system` and leaves
+     `unit` null (`ENGINE:1131`). `<=`, `>` and `>=` compare `unit`
+     (`:2533-2537`, `:2485-2487`, `:2583-2585`), so null against null is
+     "equal" and the raw values are compared.
+     - `1 'kg' <= 999 'g'` gives `true` (`results:668`).
+     - `2 'kg' >= 1 'm'` gives `true` (`results:698`).
+     - Neither reaches `qtyToCanonicalDecimal`.
+   - The NPE route applies to the others: `testLessOrEqual28`,
+     `testGreaterThan28`/`29` and `testGreatorOrEqual28` (`results:667`,
+     `726`, `727`, `697`).
+   - "raises, or answers a different boolean" does not let a tester tell
+     which case does which. State the outcome per case.
+   - **Missing behaviour:** `opLessOrEqual` evaluates `lunit.equals(runit)`
+     when the left unit is null and the right is not (`ENGINE:2537`). For
+     example, `1 'kg' <= 1 year` raises an NPE on `String.equals`. That is a
+     distinct failure, and differential-only. It needs a scenario.
+
+3. **The error message is wrong for four cases, and the `copy()` citation is
+   off.**
+   - `DateTimeType.copy()` (`DateTimeType.java:164-165`) re-parses through
+     `new DateTimeType(String)`. What that raises depends on the offset.
+     - With no offset, parsing fails with `Invalid date/time format`
+       (`BDT:797`).
+     - With an offset, parsing succeeds and
+       `validatePrecisionAndThrowIllegalArgumentException` raises "Invalid
+       date/time string (datatype DateTimeType does not support MINUTE
+       precision)" (`BDT:103-106`).
+   - So `testEquality40` (`results:513`), `testPlusDate23`/`24` (`:823-824`)
+     and `testMinus7` (`:835`) fail with the second message.
+     `path.equality.001` and `path.math.001` say `Invalid date/time format` for
+     all of them, and DEV-0017 repeats it.
+   - The `copy()` call in `equalsUsingFhirPathRules` is `BDT:924`, not
+     `:916`. `dateAdd` calls it at `ENGINE:2716`.
+   - State both messages and which input gives which.
+
+4. **DEV-0018 covers equality only. Ordered comparison of an offset-less
+   dateTime is zone-dependent too.**
+   - `BDT.parse` places an offset-less value in `TimeZone.getDefault()`
+     (`BDT:434`).
+   - `compareDateTimeElements` then converts both operands to Zulu when the
+     precision is finer than DAY (`ENGINE:643-648`). `compareTimes` compares
+     the Zulu fields (`BDT:993ff`).
+   - So `@2015-02-04T10:00:00 < @2015-02-04T05:30:00Z` depends on the
+     machine's zone.
+   - DEV-0018's scenario list (`path.datetime.004`) and its "`=` of an
+     offset-less and an offset `dateTime`" scope both miss this. Extend the
+     entry to `<`, `>`, `<=` and `>=`, and say what Frevo does.
+
+5. **`path.math.003` leaves `0.0 - 5 'mg'` unspecified.** "is not matched"
+   does not give an outcome. The left's string is `0.0`, so the guard at
+   `ENGINE:2953` fails and `:2954` raises `FHIRPATH_RIGHT_VALUE_WRONG_TYPE`,
+   just as `5 - 3 'mg'` does. Say so.
+
+6. **The `docs/deviations.md` preamble is stale.**
+   - `:48-49` still says "All fifteen entries". `check-registries.sh` counts
+     17.
+   - It names only DEV-0013 and DEV-0015 as pending. DEV-0017 and DEV-0018
+     are both "pending owner".
+
+## Fifteenth review header as issued (commits `16d970c`, `eb10763`)
 
 Fifteenth review (commits `16d970c` and `eb10763`, 2026-11-17) resolves all
 three findings of the fourteenth review. Detail is in the dated section at the
@@ -614,3 +717,91 @@ bullet. The thirteenth to fifteenth reviews cover all of them. `tasks.md`,
 
 **Note (not a finding).** The `:3828` `checkParamTypes` citation nits from the
 fourteenth review's note remain.
+
+## Sixteenth review - commit `bdfc6dd` (2026-11-17)
+
+**Per-group failed-case lists: complete and correct.** I extracted every
+non-`passed` row of `hapi-8.12.0-results.json` for the 16 amended groups. There
+are exactly 38. Each case the spec names is `failed` there, and no failed case
+in those groups is missing:
+
+| Group | Failed cases |
+|---|---|
+| Equality | 31, 32, 33, 35, 37, 38, 39, 40 |
+| NEquality | 27 |
+| HasValue | `testHasCodingValue2` |
+| Equivalent | 24-30 |
+| NotEquivalent | 23, 24 |
+| LessThan | 28, 29, 30, 33 |
+| LessOrEqual | 28, 29 |
+| GreaterThan | 28, 29 |
+| GreatorOrEqual | 28, 29 |
+| Union | 12 |
+| Plus | `testPlusDate23`, `24` |
+| Minus | 7 |
+| Divide | 7 |
+| Div | 6 |
+| Mod | 6, 7, 8 |
+| Iif | none (all 11 pass) |
+
+`testQuantityUnitComparison` (5 failed) is not amended by this commit. Its
+existing scenarios (`spec.md:1632-1660`) were not re-checked here.
+
+**Verified against the source.**
+- **`removeTrailingZeros`** (`ENGINE:2161-2178`). `"100"` becomes `"1"` and
+  `"1.0"` becomes `"1"`. `"10.0"` becomes `"10"`, because the strip stops at
+  the first non-zero once the dot is seen. So `100 = 1.0` and `10 = 1.0` are
+  `true` and `10 = 10.0` is `false`, as stated. `doEquals` takes the decimal
+  path when either side is a `DecimalType`.
+- **`doEquivalent`** unboxes `qtyEquivalent`'s `Boolean` (`:2204-2206`), and
+  `qtyEquivalent` can return `null`. The NPE text in `results:568-573` names
+  `qtyEquivalent`. Correct.
+- **`funcHasValue`** (`:5776-5784`): `!noString(convertToString(...))`.
+  Correct, consistent with `results:542`.
+- **`iif` check** (`:3441-3443`): `checkSingleton(focus, ...)` dereferences
+  `focus.getCollectionStatus()` (`:3839-3840`). A `null` context gives
+  `types = null` (`:425-426`), so the NPE follows. All 11 `testIif` cases have
+  `inputfile` (`tests-fhir-r4.xml:612-651`), which is why HAPI passes them.
+  `logic.008` to `.010`: correct.
+- **`opMinus`.** The right-hand guard is at `:2953`. The `0 - q` branch
+  (`:2965-2970`) adds `qty.copy().setValue(abs)` only when the left's string
+  is `"0"`. `q - q` takes the same branch, its `primitiveValue()` is not
+  `"0"`, and the result is empty. Correct, apart from finding 5.
+- **Divide, `div`, `mod`.**
+  - `/` swallows `UcumException` (`:3005-3011`).
+  - Integer `div` guards a zero divisor (`:3050-3054`). Decimal `div` swallows
+    the exception.
+  - Integer `mod` guards zero (`:3090-3094`). Decimal `mod` rethrows as
+    `PathEngineException` (`:3102`).
+  - These match `results:845`, `851` and `857-859`. Correct.
+  - The claim that `Decimal.divide` "returns zero for a zero dividend before it
+    checks the divisor" cannot be verified from `reference/`. The observable
+    part (one item) is backed by the oracle, and the value is deferred to the
+    new blocker. I accept that as recorded, not as a finding.
+- **`equalsUsingFhirPathRules` and `couldBeTheSameTime`** (`BDT:916-957`).
+  - The +-14 h window and the false/null outcome are as stated.
+  - An offset-less value's `getValue().getTime()` comes from a parse in the
+    default zone (`BDT:434`). `setValue` falls back to the default
+    (`:721-723`).
+  - The equality half of DEV-0018 is correct. Finding 4 covers the ordering
+    half.
+
+**Scenario IDs.** Only the title of `path.math.008` changed. No ID is added,
+removed, renumbered or duplicated.
+
+**DEV format.** DEV-0017 and DEV-0018 carry every field. DEV-0018 is a real
+choice that differs from HAPI (a configured zone in place of the JVM default),
+so it is correctly an entry. `check-registries.sh` reports "registers agree"
+(17 deviations, 12 debt entries). The preamble is stale (finding 6).
+
+**Stale `:3828` citations (flagged, not fixed: this role writes only
+`review.md`).** `checkParamTypes` begins at `ENGINE:3820` and throws at
+`:3830`. Three places still cite `:3828`:
+- `specs/path/spec.md:492` (`path.collection`, `subsetOf`): for the proposer;
+- `crates/frevo-path/tests/path_collection.rs:479`: for the oracle-builder;
+- `crates/frevo-path/tests/path_navigation.rs:766`: for the oracle-builder.
+
+These are citation errors, not behaviour.
+
+**Blocker entry.** The `tasks/blockers.md` entry (2026-11-17,
+`org.fhir.ucum.Decimal`) cites accurate lines and states the decision needed.
