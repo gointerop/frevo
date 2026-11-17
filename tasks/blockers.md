@@ -1788,3 +1788,37 @@ report them uncovered until then.
    `BigDecimal.valueOf(double)` and `setScale` with a negative scale render
    `E+n` for large or tiny values (`1.0E+10`); `Decimal` cannot carry an
    exponent, so the plain form is returned.
+
+## 2026-11-17 — `add-fhirpath-and-codegen-r4` — task 40 cannot be ticked: three tests contradict the pinned source or HAPI's recorded run
+
+**Raised by** the implementer (task 40). Implemented `upper`, `lower`,
+`toChars`, `indexOf`, `substring`, `startsWith`, `endsWith`, `contains`,
+`length` (`eval/strfn.rs`) and `Evaluator::with_implicit_string_conversion`.
+`path.string.001`-`003`, `005`-`007`, `012`, `022` pass.
+
+1. `path.string.004` (`substring_takes_a_start_and_an_optional_length`) calls
+   `expect_group("testSubstring", 16)`, which requires every case to pass.
+   HAPI's recorded run fails eight of them
+   (`hapi-8.12.0-results.json:352-359`: `testSubstring11`-`18`), by
+   `Integer.parseInt(n1.get(0)...)` on an empty list (`FHIRPathEngine.java:5866`),
+   `String.substring(i1, min(len, i1+i2))` with an end before the start
+   (`:5885`) and the `i1+i2` int overflow, and `substring(3, 0) = ''`/`{}`
+   length yielding empty (`:5871-5873`, `:5888`). Frevo fails the same eight in
+   the same way, which is parity (`path.oracle.012`); the group assertion should
+   be "except these eight", as `path_compare_equality.rs` does.
+2. `path.string.023` (`the_functions_that_reject_a_bad_focus_reject_it_with_an_error`)
+   expects `'abc'.round(2)` to fail at **evaluation** after passing the check.
+   HAPI's check pass rejects it first (`The function round can only be used on
+   a decimal but found [System.String]`), and Frevo does too; at evaluation the
+   `makeException` in `funcRound`'s else arm (`:4414`) is never thrown, so it
+   would be empty. The helper `expect_evaluation_failure` panics at the check.
+3. `path.string.024` drives `UnboundConfigurable`, which returns
+   `NotImplemented` unconditionally. The setting now exists
+   (`Evaluator::with_implicit_string_conversion`); the test seam needs binding
+   to it.
+4. Proposal point: `length`, `indexOf` and `substring` count UTF-16 code units
+   (a Java `String`), not Unicode scalar values; the two differ only above
+   U+FFFF. `toChars` yields one item per scalar value because a lone surrogate
+   half cannot be a Rust `String`. `path.string.022` states "as the engine at
+   the pinned SHA counts them", which is UTF-16; the task text says scalar
+   values. Needs a decision (and a `DEV` entry if `toChars` stays as it is).

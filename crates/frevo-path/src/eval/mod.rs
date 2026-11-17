@@ -41,6 +41,7 @@ mod logic;
 mod mathfn;
 mod navigate;
 mod operand;
+mod strfn;
 mod temporal;
 
 #[cfg(test)]
@@ -96,6 +97,8 @@ pub struct Evaluator<'m> {
     model: &'m dyn Model,
     /// The evaluation time zone, minutes east of UTC (`DEV-0018`).
     zone_minutes: i32,
+    /// `setDoImplicitStringConversion`: off, as both upstream wrappers leave it.
+    implicit_string_conversion: bool,
 }
 
 impl<'m> Evaluator<'m> {
@@ -104,7 +107,17 @@ impl<'m> Evaluator<'m> {
         Self {
             model,
             zone_minutes: 0,
+            implicit_string_conversion: false,
         }
+    }
+
+    /// `FHIRPathEngine.setDoImplicitStringConversion`: when on, the string
+    /// functions convert a non-string focus to its string value instead of
+    /// answering empty (`path.string.024`).
+    #[must_use]
+    pub fn with_implicit_string_conversion(mut self, on: bool) -> Self {
+        self.implicit_string_conversion = on;
+        self
     }
 
     /// The evaluation time zone as a fixed offset in minutes east of UTC.
@@ -139,6 +152,7 @@ impl<'m> Evaluator<'m> {
         Run {
             model: self.model,
             expr,
+            implicit_string_conversion: self.implicit_string_conversion,
         }
         .execute(context, focus_collection, expr.root(), true)
     }
@@ -148,6 +162,7 @@ impl<'m> Evaluator<'m> {
 struct Run<'r> {
     model: &'r dyn Model,
     expr: &'r Expression,
+    implicit_string_conversion: bool,
 }
 
 impl Run<'_> {
@@ -335,6 +350,17 @@ impl Run<'_> {
                 | Function::Log
                 | Function::Power),
             ) => self.func_math(context, focus, id, f),
+            Some(
+                f @ (Function::Upper
+                | Function::Lower
+                | Function::ToChars
+                | Function::IndexOf
+                | Function::Substring
+                | Function::StartsWith
+                | Function::EndsWith
+                | Function::Contains
+                | Function::Length),
+            ) => self.func_string(context, focus, id, f),
             Some(Function::Today) => Ok(vec![temporal::today()]),
             Some(Function::Now) => Ok(vec![temporal::now()]),
             Some(Function::Custom) | None => Err(EvalError::unsupported(

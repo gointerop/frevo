@@ -96,7 +96,9 @@ date arithmetic and the clock — `src/eval/temporal.rs` (`dateAdd`,
 precision check and string rendering), and the math functions —
 `src/eval/mathfn.rs` (`funcAbs`, `funcCeiling`, `funcFloor`, `funcRound`,
 `funcTruncate`, `funcSqrt`, `funcExp`, `funcLn`, `funcLog`, `funcPower` and
-`DecimalType(double)`). Each file
+`DecimalType(double)`), and the base string functions — `src/eval/strfn.rs`
+(`funcUpper`, `funcLower`, `funcToChars`, `funcIndexOf`, `funcSubstring`,
+`funcStartsWith`, `funcEndsWith`, `funcContains`, `funcLength`). Each file
 carries the required header naming the upstream path, the pinned SHA and what
 was modified. Every
 other row is updated by the change that first ports into that crate;
