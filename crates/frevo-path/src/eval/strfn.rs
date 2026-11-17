@@ -10,9 +10,14 @@
 //! Apache License, Version 2.0.
 //! Modified by the Frevo authors: positions and lengths are counted in UTF-16
 //! code units, as a Java `String` counts them, by converting to code units at
-//! the call; `toChars` yields one item per Unicode scalar value, because a
-//! lone surrogate half cannot be a Rust `String`; the guard's
-//! `doImplicitStringConversion` is the evaluator's setting.
+//! the call; `toChars` yields one item per UTF-16 unit, and a lone surrogate
+//! half, which a Rust `String` cannot hold, is carried as the code point
+//! `U+10F800 + (unit - 0xD800)` (the last 2048 code points of plane 16, a
+//! private-use range). [`utf16`] reads such a code point back as the one unit
+//! it stands for and [`from_utf16`] writes an unpaired unit as one, so
+//! `length`, `indexOf`, `substring` and equality see Java's string. The cost
+//! is that a real character in `U+10F800..=U+10FFFF` is read as a surrogate;
+//! the guard's `doImplicitStringConversion` is the evaluator's setting.
 //!
 //! What the pinned engine does here and the specification does not say, and
 //! what is kept:
@@ -34,12 +39,46 @@ use super::collection::{convert_list_to_string, convert_to_string};
 use super::operand::{STRING_TYPES, has_type, int_of, text_of};
 use super::{Context, EvalError, Run};
 
-fn utf16(text: &str) -> Vec<u16> {
-    text.encode_utf16().collect()
+/// The first code point that stands for a lone surrogate.
+const LONE_BASE: u32 = 0x10F800;
+
+fn lone_unit(c: char) -> Option<u16> {
+    let c = u32::from(c);
+    (LONE_BASE..=0x10FFFF)
+        .contains(&c)
+        .then(|| u16::try_from(0xD800 + (c - LONE_BASE)).unwrap_or(0))
 }
 
+fn has_lone(text: &str) -> bool {
+    // Plane 16 is encoded with the lead byte 0xF4; ordinary text skips this.
+    text.as_bytes().contains(&0xF4) && text.chars().any(|c| lone_unit(c).is_some())
+}
+
+/// The UTF-16 code units of a Java string.
+fn utf16(text: &str) -> Vec<u16> {
+    let mut units = Vec::with_capacity(text.len());
+    for c in text.chars() {
+        match lone_unit(c) {
+            Some(unit) => units.push(unit),
+            None => {
+                let mut buf = [0u16; 2];
+                units.extend_from_slice(c.encode_utf16(&mut buf));
+            }
+        }
+    }
+    units
+}
+
+/// A Java string of these code units; an unpaired surrogate is kept.
 fn from_utf16(units: &[u16]) -> String {
-    String::from_utf16_lossy(units)
+    char::decode_utf16(units.iter().copied())
+        .map(|r| {
+            r.unwrap_or_else(|e| {
+                let at = u32::from(e.unpaired_surrogate()) - 0xD800;
+                char::from_u32(LONE_BASE + at).unwrap_or(char::REPLACEMENT_CHARACTER)
+            })
+        })
+        .collect()
 }
 
 fn string(text: String) -> Value {
@@ -81,7 +120,7 @@ impl Run<'_> {
         match function {
             Function::Length => Ok(match focus {
                 [one] if self.string_guard(one) => {
-                    vec![integer(convert_to_string(one).encode_utf16().count())]
+                    vec![integer(utf16(&convert_to_string(one)).len())]
                 }
                 _ => Vec::new(),
             }),
@@ -99,9 +138,9 @@ impl Run<'_> {
                 _ => Vec::new(),
             }),
             Function::ToChars => Ok(match focus {
-                [one] if self.string_guard(one) => convert_to_string(one)
-                    .chars()
-                    .map(|c| string(c.to_string()))
+                [one] if self.string_guard(one) => utf16(&convert_to_string(one))
+                    .iter()
+                    .map(|unit| string(from_utf16(&[*unit])))
                     .collect(),
                 _ => Vec::new(),
             }),
@@ -146,9 +185,15 @@ impl Run<'_> {
             return Ok(Vec::new());
         }
         let s = convert_to_string(first);
+        // A pair split into halves is matched by unit, as Java matches it.
+        let by_unit = has_lone(&s) || has_lone(&sw);
         Ok(vec![match function {
+            Function::StartsWith if by_unit => boolean(utf16(&s).starts_with(&utf16(&sw))),
             Function::StartsWith => boolean(s.starts_with(&sw)),
             // `focus.size() == 1 && !noString(sw)`, else `false`.
+            Function::EndsWith if by_unit => {
+                boolean(focus.len() == 1 && utf16(&s).ends_with(&utf16(&sw)))
+            }
             Function::EndsWith => boolean(focus.len() == 1 && s.ends_with(&sw)),
             _ => Value::Integer(index_of(&utf16(&s), &utf16(&sw))),
         }])
@@ -175,7 +220,12 @@ impl Run<'_> {
             return Ok(Vec::new());
         }
         let st = convert_to_string(one);
-        Ok(vec![boolean(!st.is_empty() && st.contains(&sw))])
+        let found = if has_lone(&st) || has_lone(&sw) {
+            index_of(&utf16(&st), &utf16(&sw)) >= 0
+        } else {
+            st.contains(&sw)
+        };
+        Ok(vec![boolean(!st.is_empty() && found)])
     }
 
     /// `funcSubstring`.
