@@ -551,7 +551,12 @@ impl Run<'_> {
             return Ok(Vec::new());
         };
         let cnt = text_of(self.model, one);
-        let (Some(cnt), Some(sep)) = (cnt, sep) else {
+        // `Utilities.simpleSplit` (`Utilities.java:1979`) answers an empty
+        // array for a null text, before the separator is touched.
+        let Some(cnt) = cnt else {
+            return Ok(Vec::new());
+        };
+        let Some(sep) = sep else {
             return Err(npe("length", at));
         };
         if sep.is_empty() {
