@@ -34,6 +34,7 @@ mod compare;
 mod equality;
 mod error;
 mod filter;
+mod logic;
 mod navigate;
 mod operand;
 mod temporal;
@@ -191,6 +192,16 @@ impl Run<'_> {
                 if last == id && node.kind() == Kind::Unary {
                     let right = self.execute(context, focus, next_id, true)?;
                     work = self.unary_sign(op, &right, id)?;
+                } else if let Some(decided) = self.pre_operate(&work, op, id)? {
+                    work = decided;
+                } else if matches!(op, Operation::Is | Operation::As) {
+                    // `executeTypeName` reads the right operand as a type
+                    // name, not as an expression; the type operators are a
+                    // later task's.
+                    return Err(EvalError::unsupported(
+                        format!("the operator {}", op.to_code()),
+                        last_node.op_start(),
+                    ));
                 } else {
                     let right = self.execute(context, focus, next_id, true)?;
                     work = self.operate(&work, op, &right, last)?;
@@ -274,6 +285,7 @@ impl Run<'_> {
             Some(Function::Distinct) => self.func_distinct(focus, id),
             Some(Function::Count) => Ok(self.func_count(focus)),
             Some(Function::HasValue) => Ok(self.func_has_value(focus)),
+            Some(Function::Iif) => self.func_iif(context, focus, id),
             Some(Function::Union) => self.func_union(context, focus, id),
             Some(Function::Combine) => self.func_combine(context, focus, id),
             Some(Function::Where) => self.func_where(context, focus, id),
@@ -401,6 +413,9 @@ impl Run<'_> {
             Operation::Union => self.op_union(left, right, offset),
             Operation::In => self.op_in(left, right, offset),
             Operation::Contains => self.op_contains(left, right, offset),
+            Operation::And | Operation::Or | Operation::Xor | Operation::Implies => {
+                self.op_logic(left, op, right, holder)
+            }
             other => Err(EvalError::unsupported(
                 format!("the operator {}", other.to_code()),
                 offset,

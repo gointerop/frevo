@@ -63,7 +63,9 @@ impl std::fmt::Display for EngineError {
                 "the stage or feature this case needs is not bound to the oracle harness yet \
                  -- parse and check are bound, evaluate is bound for navigation, the \
                  collection predicates, filtering, subsetting, combining and membership \
-                 (tasks 31-34) and `=`/`!=`; convert_to_boolean is not \
+                 (tasks 31-34), equality, equivalence and ordered comparison, boolean \
+                 logic and arithmetic over numbers, strings and quantities (tasks 35-37), \
+                 and convert_to_boolean \
                  (crates/frevo-path/tests/oracle/engine.rs::engine_under_test)",
             ),
         }
@@ -206,15 +208,16 @@ pub trait SuiteEngine {
 /// real. Task 31 built the evaluator core, so `evaluate` is bound -- for what
 /// the evaluator implements (navigation, and since tasks 32-34 the collection
 /// predicates, filtering and projection, subsetting, combining and membership,
-/// and `=` and `!=`) and nothing else: every function, operator and
+/// and since tasks 35-37 equality, equivalence, ordered comparison, boolean
+/// logic, `iif`, `hasValue` and arithmetic) and nothing else: every function, operator and
 /// environment variable it does not implement yet comes back as
 /// [`frevo_path::EvalError::Unsupported`], which this seam turns into
 /// [`EngineError::NotImplemented`]. Task 50 built the static check pass, so
 /// `check` is bound too, over the same type model, with anything the pass
 /// cannot type yet -- a host-supplied function, an extension definition's
 /// element model -- answered as [`frevo_path::CheckError::NotImplemented`]
-/// and so as `NotImplemented` here. `convert_to_boolean` still answers
-/// `NotImplemented`.
+/// and so as `NotImplemented` here. `convert_to_boolean` is
+/// `FHIRPathEngine.convertToBoolean`, which needs no evaluator.
 ///
 /// All of that is `did-not-run` and never a pass. Returning an empty result or
 /// a default from a stage or a feature that does not exist would turn a
@@ -350,8 +353,17 @@ impl SuiteEngine for FrontEndEngine {
         Ok(values.iter().map(|v| result_item(model, v)).collect())
     }
 
+    /// `FHIRPathEngine.convertToBoolean` (`FHIRPathEngine.java:914`): one
+    /// boolean item is its value, anything else is whether the list is
+    /// non-empty. A boolean element goes through `Boolean.valueOf(text)`,
+    /// which is true only for `true` in any case.
     fn convert_to_boolean(&mut self, items: &[ResultItem]) -> Result<bool, EngineError> {
-        self.unbound.convert_to_boolean(items)
+        Ok(match items {
+            [ResultItem::Primitive { fhir_type, value }] if fhir_type == "boolean" => {
+                value.eq_ignore_ascii_case("true")
+            }
+            _ => !items.is_empty(),
+        })
     }
 
     fn has_log(&self) -> bool {

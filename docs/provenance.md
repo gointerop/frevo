@@ -87,7 +87,9 @@ comparison — `src/eval/{equality,compare,operand,temporal}.rs`
 `isPrimitive`, `BaseDateTimeType.java`'s `equalsUsingFhirPathRules`,
 `compareTimes` and `getHighEdge`, `TimeType.java`'s field readers, and
 `Utilities.java`'s `equivalent` and `equivalentNumber`) — extend the first
-two. Each file
+two, and boolean logic — `src/eval/logic.rs` (`preOperate`, `opAnd`,
+`opOr`, `opXor`, `opImplies`, `isBoolean`, `funcIif`) — extends the same.
+Each file
 carries the required header naming the upstream path, the pinned SHA and what
 was modified. Every
 other row is updated by the change that first ports into that crate;
