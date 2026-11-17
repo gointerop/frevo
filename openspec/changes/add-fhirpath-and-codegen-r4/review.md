@@ -1,4 +1,10 @@
-CHANGES_REQUESTED
+APPROVED
+
+Twentieth review (commit `2419520`, 2026-11-17) resolves all three findings of
+the nineteenth review. Detail is in the dated section at the end. The earlier
+findings follow, kept for the record.
+
+## Nineteenth-review findings as raised (commit `fd47948`)
 
 Nineteenth review (commit `fd47948`, 2026-11-17). `ENGINE` is
 `org.hl7.fhir.r4/.../fhirpath/FHIRPathEngine.java` at `73c432b5`. DEV-0019 and
@@ -1092,3 +1098,68 @@ No other "unicode scalar" wording remains outside DEV-0020 and `string.022`.
 Neither looks like a weakened assertion. Both are outside the proposer's write
 set (constitution, Roles), and they should land under the oracle-builder or
 the implementer.
+
+## Twentieth review - commit `2419520` (2026-11-17)
+
+Each example the spec now states was traced through the pinned source. Tests
+will be written from them.
+
+**`path.mathfn.004`: decimal rendering, each example checked.**
+
+The rendering path: `DecimalType(double)` is
+`setValue(BigDecimal.valueOf(d))` (`DecimalType.java:66-69`).
+`BigDecimal.valueOf` parses `Double.toString(d)`, and `encode` is
+`getValue().toString()` (`:101-102`). The stated rule for
+`BigDecimal.toString` is Java's: plain when the scale is at least 0 and the
+adjusted exponent is at least -6, otherwise scientific with a signed exponent.
+
+| Example | Trace | Result |
+|---|---|---|
+| `12345.round(-2)` | `funcRound` takes the integer branch. `new BigDecimal("12345").setScale(-2, HALF_UP)` (`ENGINE:4411-4412`) gives unscaled 123, scale -2. | `1.23E+4` |
+| `1234.5.round(-3)` | `1234.5` rounds `HALF_UP` to unscaled 1, scale -3. | `1E+3` |
+| `10000000000.abs()` | The literal has 11 digits, so `Utilities.isInteger` rejects it (`Utilities.java:97-98`) and it is a `DecimalType` (`ENGINE:1326-1329`). `Double.toString` gives `1.0E10`, which is unscaled 10, scale -9. | `1.0E+10` |
+| `0.0000001.abs()` | `Double.toString` gives `1.0E-7`: unscaled 10, scale 8, adjusted exponent -7. | `1.0E-7` |
+| `0.0001.abs()` | `Double.toString` gives `1.0E-4`: unscaled 10, scale 5, adjusted exponent -4. | `0.00010` |
+| `12345678.abs()` | `Double.toString` gives `1.2345678E7`, which is scale 0. | `12345678` |
+
+The `-2` and `-3` arguments raise no check error. A leading `-` is parsed as
+`Unary` (`ENGINE:1081-1102`), whose type set includes `integer` (`:1604-1607`).
+`Minus` over `integer` and `integer` is typed `integer` (`:2067-2071`), so
+`checkParamTypes(… integer)` passes. At evaluation the value is `0 - 2`, which
+is `-2`.
+
+**`path.string.002`: correct.** `funcToChars` iterates `s.toCharArray()`
+(`ENGINE:5835-5837`), so `'a😀'.toChars()` is `a`, U+D83D, U+DE00, and
+`count()` is 3.
+
+**`path.string.022`: correct.**
+- `length` is `s.length()` (`:5771`), so `'a😀b'.length()` is 4.
+- `indexOf` is `s.indexOf` (`:5858`), so `indexOf('b')` is 3.
+- `substring(1, 1)` is `sw.substring(1, min(4, 2))`, which is U+D83D.
+- `substring(2)` is `sw.substring(2)` (`:5884-5886`), which is U+DE00 then
+  `b`.
+- Neither result is empty, so `:5888` keeps both.
+
+**`path.string.004`: correct.** The clause now says that offsets count
+UTF-16 units and that a surrogate pair can be split.
+
+**DEV-0020: withdrawn.**
+- The preamble says eighteen and lists DEV-0013, DEV-0015, DEV-0017,
+  DEV-0018 and DEV-0019 as pending.
+- `check-registries.sh` reports "registers agree" (18 deviations, 12 debt
+  entries).
+- `DEV-0020` appears nowhere else in the repository (outside this file).
+- Task 40 (`tasks.md:845-848`) now requires the UTF-16 behaviour.
+
+**Scenario IDs.** No `#### Scenario:` heading changed. `path` has 363
+headings.
+
+**Notes (not findings).**
+- `crates/frevo-path/tests/path_string.rs:868` still labels `path.string.022`
+  "unicode scalar values, not bytes". It is a test comment, so the
+  oracle-builder should refresh it.
+- The scenarios fix the engine's value: a one-unit string holding a lone
+  surrogate. They do not say how such a value is serialized when it leaves the
+  server, because no response surface in this change emits one. Whoever adds
+  an endpoint that returns FHIRPath results should give it a differential
+  case.
