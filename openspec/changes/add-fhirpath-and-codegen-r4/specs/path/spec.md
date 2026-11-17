@@ -1529,7 +1529,28 @@ The engine SHALL implement the string functions `FHIRPathEngine` implements, inc
   already turned into `"1<2"`) and `testEscapeJson` pass
 - **AND** `escape` and `unescape` also accept `url` and `md`
   (`FHIRPathEngine.java:4492-4495`, `4513-4516`), and any other format yields an
-  empty collection
+  empty collection. No pinned suite case grades either, so they are
+  differential-only:
+  - `escape('url')` is Java's `URLEncoder.encode(s, "UTF-8")`
+    (`Utilities.java:880-886`), the form-urlencoded rule: ASCII letters, digits
+    and `.` `-` `*` `_` are kept; a space becomes `+`; every other character is
+    its UTF-8 bytes as `%XX` with upper-case hex. So `'a b&c=d/é~'` escapes
+    to `a+b%26c%3Dd%2F%C3%A9%7E` (the `~` is encoded)
+  - `unescape('url')` is `URLDecoder.decode(s, "UTF-8")` (`:889-895`): `+`
+    becomes a space and `%XX` sequences are decoded as UTF-8, so `a+b%20c`
+    gives `a b c`; a malformed `%` sequence such as `%zz` raises
+    `IllegalArgumentException`, an execution error
+  - `escape('md')` is `MarkDownProcessor.makeStringSafeAsMarkdown`
+    (`MarkDownProcessor.java:254-274`): a backslash is inserted before each of
+    exactly seven characters, `*` `&` `#` `[` `>` `<` and the backtick, and
+    before nothing else (not `]`, `_`, `(`, `)` or a backslash). So
+    `a*b&c#d[e>f<g` followed by a backtick and `h` escapes to the same text with
+    a backslash before each of those seven characters
+  - `unescape('md')` is `makeMarkdownForString` (`:280-288`): a backslash is
+    dropped when, and only when, the next character is one of those seven and
+    the backslash is not the last character; every other backslash is kept. So
+    `a\*b` gives `a*b`, while `a\xb` and a trailing backslash are unchanged, and
+    `\\*` (two backslashes then `*`) gives a single backslash then `*`
 - **AND** the specification requires `\"` to unescape to a quote and a `\u`
   escape to consume its four digits; recorded as `DEV-0022` and resolved as
   HAPI's behaviour
@@ -1549,6 +1570,21 @@ The engine SHALL implement the string functions `FHIRPathEngine` implements, inc
   (`FHIRPathEngine.java:4523-4529`, `4532-4545`, `4547-4565`): they use the
   item's primitive value, so `1.trim()` is `'1'`, `1.split(',')` is the one
   item `'1'`, and `1.join(',')` is `'1'`
+- **AND** on a **complex** (non-primitive) focus the primitive value is `null`
+  (`Base.primitiveValue()` returns `null`) and, evaluated with no focus-type
+  check in the way (the static check passes it, `:3622-3630`):
+  - `Patient.name.first().trim()` fails at **evaluation** with a
+    `NullPointerException` on `cnt.trim()` (`:4527`), an execution error in
+    Frevo (`path.errors.003`)
+  - `Patient.name.first().split(',')` yields an empty collection, because
+    `simpleSplit` returns no segments for a `null` string (`Utilities.java:1979-1981`)
+  - `Patient.name.join(',')` yields one empty string `''`: each `null` item is
+    skipped, with no separator added for it (`CommaSeparatedStringBuilder`
+    `commit`, `append`)
+- **AND** `join` with a second argument uses it as the separator before the
+  **last** item only: `(1 | 2 | 3).join(',', ' and ')` is `1,2 and 3`
+  (`:4548-4560`, `CommaSeparatedStringBuilder(sep, lastSep)`); with a single
+  argument both separators are that argument
 - **AND** this differs from the FHIRPath specification, which makes a
   type-mismatched focus an error; the divergence is recorded as `DEV-0006` and
   resolved as HAPI's behaviour
