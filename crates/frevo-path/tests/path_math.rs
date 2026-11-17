@@ -106,6 +106,64 @@ fn expect_group(group: &str, expected_cases: usize) {
     );
 }
 
+/// Assert the group's cases are graded as HAPI's own recorded run grades them
+/// (`oracles/fhirpath/hapi-8.12.0-results.json`): `passed` for every case except
+/// the named ones, which must be `failed` (parity under `path.oracle.012`). A
+/// `did-not-run` case satisfies neither, so an unbuilt feature never passes
+/// vacuously, and a Frevo pass on a named case is `ahead-of-hapi`, not accepted.
+fn expect_group_except(group: &str, expected_cases: usize, failing: &[&str]) {
+    let (suite, report) = pinned();
+    let g = suite
+        .groups
+        .iter()
+        .find(|g| g.name == group)
+        .unwrap_or_else(|| panic!("the pinned suite has a group named {group}"));
+    assert_eq!(
+        g.cases.len(),
+        expected_cases,
+        "the pinned {group} group is {expected_cases} cases; a different count means it          was re-pinned without this test being updated"
+    );
+    for name in failing {
+        assert!(
+            g.cases.iter().any(|c| c.address.name == *name),
+            "{group}/{name} must be a case of the group"
+        );
+    }
+
+    let mut problems = Vec::new();
+    for case in &g.cases {
+        let r = report
+            .get(&case.address.to_string())
+            .unwrap_or_else(|| panic!("{} must appear in the run report", case.address));
+        let want = if failing.iter().any(|n| case.address.name == *n) {
+            CaseStatus::Failed
+        } else {
+            CaseStatus::Passed
+        };
+        if r.status != want {
+            problems.push(format!(
+                "{} ({:?}): {} (wanted {}) -- {}",
+                case.address,
+                case.expression,
+                r.status.as_str(),
+                want.as_str(),
+                r.reason
+            ));
+        }
+    }
+    assert!(
+        problems.is_empty(),
+        "{} of {} cases in {group} are not graded as HAPI grades them; the first few:
+  {}",
+        problems.len(),
+        g.cases.len(),
+        problems[..problems.len().min(5)].join(
+            "
+  "
+        )
+    );
+}
+
 fn fresh_engine() -> Box<dyn SuiteEngine> {
     let mut engine = engine_under_test();
     engine
@@ -193,7 +251,7 @@ fn empty() -> Vec<ResultItem> {
 // covers: path.math.001
 #[test]
 fn addition_works_on_integers_decimals_strings_and_quantities() {
-    expect_group("testPlus", 29);
+    expect_group_except("testPlus", 29, &["testPlusDate23", "testPlusDate24"]);
 
     // The four arms of `opPlus` (FHIRPathEngine.java:2698-2709), each named by
     // the scenario, with the result type each produces.
@@ -235,10 +293,28 @@ fn the_concatenation_operator_treats_an_empty_operand_as_the_empty_string() {
 // covers: path.math.003
 #[test]
 fn subtraction_works_on_integers_decimals_and_quantities() {
-    expect_group("testMinus", 7);
+    expect_group_except("testMinus", 7, &["testMinus7"]);
 
     assert_eq!(eval("1 - 1"), integer("0"));
     assert_eq!(eval("1.8 - 1.2"), primitive("decimal", "0.6"));
+
+    // Quirks of the pinned engine (`FHIRPathEngine.java:2953`, `:2965-2970`),
+    // recorded as DEV-0017 and resolved as HAPI's behaviour: when the left is
+    // the number `0` the result is the right quantity made absolute, not
+    // negated.
+    assert_eq!(eval("(0 - 5 'mg') = 5 'mg'"), boolean(true));
+    assert_eq!(eval("(0 - (-5 'mg')) = 5 'mg'"), boolean(true));
+    // When the left is a Quantity the branch adds nothing: `q - q` is empty,
+    // not a difference.
+    assert_eq!(eval("5 'mg' - 3 'mg'"), empty());
+    // A Quantity on the right is accepted only when the left is a date,
+    // dateTime, instant, Quantity, or a number whose string value is exactly
+    // `0`; `5 - 3 'mg'` fails with a wrong-type error.
+    let (_, message) = expect_failure("5 - 3 'mg'");
+    assert!(
+        !message.is_empty(),
+        "the wrong-type error must carry a message"
+    );
 
     // The group's `'a'-'b'` case is `invalid="execution"`: unlike `+`, `-` has
     // no string arm.
@@ -271,7 +347,7 @@ fn multiplication_works_on_integers_decimals_and_quantities() {
 // covers: path.math.005
 #[test]
 fn division_always_yields_a_decimal() {
-    expect_group("testDivide", 7);
+    expect_group_except("testDivide", 7, &["testDivide7"]);
 
     // `opDivideBy`'s numeric arm produces a DecimalType whatever the operand
     // types (FHIRPathEngine.java:3012-3016), so dividing two integers that
@@ -293,7 +369,7 @@ fn division_always_yields_a_decimal() {
 // covers: path.math.006
 #[test]
 fn div_truncates_toward_zero() {
-    expect_group("testDiv", 6);
+    expect_group_except("testDiv", 6, &["testDiv6"]);
 
     // Integer `div` is Java's `/` on two ints (FHIRPathEngine.java:3047-3050),
     // which truncates toward zero rather than flooring, so a negative
@@ -315,7 +391,7 @@ fn div_truncates_toward_zero() {
 // covers: path.math.007
 #[test]
 fn mod_returns_the_remainder() {
-    expect_group("testMod", 8);
+    expect_group_except("testMod", 8, &["testMod6", "testMod7", "testMod8"]);
 
     assert_eq!(eval("5 mod 2"), integer("1"));
     assert_eq!(eval("4 mod 2"), integer("0"));
@@ -335,7 +411,7 @@ fn mod_returns_the_remainder() {
 
 // covers: path.math.008
 #[test]
-fn division_by_zero_yields_empty() {
+fn division_by_zero_yields_empty_only_where_the_pinned_engine_says_so() {
     // Three different mechanisms reach the same answer: `opDivideBy` catches
     // the UcumException `Decimal.divide` raises and returns nothing
     // (FHIRPathEngine.java:3017-3019), while `opDiv` and `opMod` guard the
@@ -344,25 +420,53 @@ fn division_by_zero_yields_empty() {
     assert_eq!(eval("1 div 0"), empty());
     assert_eq!(eval("1 mod 0"), empty());
 
-    // Empty and not an error, and empty for the decimal spellings too -- the
-    // suite grades `0.0 / 0`, `0 div 0.0`, `5.5 mod 0`, `5 mod 0.0` and
-    // `0.0 mod 0`.
-    assert_eq!(eval("0.0 / 0"), empty());
-    assert_eq!(eval("0 div 0.0"), empty());
-    assert_eq!(eval("5.5 mod 0"), empty());
+    // Integer divisors: also `5 div 0` and `5 mod 0` (:3051-3054, :3092-3095).
+    assert_eq!(eval("5 div 0"), empty());
+    assert_eq!(eval("5 mod 0"), empty());
     assert_eq!(eval("(1 / 0).empty()"), boolean(true));
 
-    for (group, name) in [
-        ("testDivide", "testDivide6"),
-        ("testDivide", "testDivide7"),
-        ("testDiv", "testDiv5"),
-        ("testDiv", "testDiv6"),
-        ("testMod", "testMod5"),
-        ("testMod", "testMod6"),
-        ("testMod", "testMod7"),
-        ("testMod", "testMod8"),
+    // `0.0 / 0`, `0 div 0.0` and `0.0 mod 0` yield ONE item, not an empty
+    // collection (testDivide7, testDiv6, testMod8, recorded `failed` by HAPI,
+    // DEV-0017). The value is `org.fhir.ucum.Decimal`'s and is not stated by
+    // the spec, so only the count is asserted.
+    for expr in ["0.0 / 0", "0 div 0.0", "0.0 mod 0"] {
+        let items = eval(expr);
+        assert_eq!(items.len(), 1, "{expr} must yield one item, got {items:?}");
+    }
+
+    // `5.5 mod 0` and `5 mod 0.0` fail with an execution error (testMod6,
+    // testMod7, recorded `failed` by HAPI).
+    expect_evaluation_error("5.5 mod 0");
+    expect_evaluation_error("5 mod 0.0");
+
+    // The suite cases at the status HAPI records: `failed` for the five the
+    // spec names, `passed` for their neighbours.
+    for (group, name, want) in [
+        ("testDivide", "testDivide6", CaseStatus::Passed),
+        ("testDivide", "testDivide7", CaseStatus::Failed),
+        ("testDiv", "testDiv5", CaseStatus::Passed),
+        ("testDiv", "testDiv6", CaseStatus::Failed),
+        ("testMod", "testMod5", CaseStatus::Passed),
+        ("testMod", "testMod6", CaseStatus::Failed),
+        ("testMod", "testMod7", CaseStatus::Failed),
+        ("testMod", "testMod8", CaseStatus::Failed),
     ] {
-        expect_case(group, name);
+        let (suite, report) = pinned();
+        let case = suite
+            .case(group, name)
+            .unwrap_or_else(|| panic!("{group}/{name} must resolve to exactly one case"));
+        let r = report
+            .get(&case.address.to_string())
+            .unwrap_or_else(|| panic!("{} must appear in the run report", case.address));
+        assert_eq!(
+            r.status,
+            want,
+            "{}: {:?} is {} -- {}",
+            r.address,
+            r.expression,
+            r.status.as_str(),
+            r.reason
+        );
     }
 }
 

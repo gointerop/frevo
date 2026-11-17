@@ -142,6 +142,50 @@ fn expect_evaluation_error(expr: &str) -> String {
     }
 }
 
+/// Evaluate with the static check skipped, as `FhirPathR4` does
+/// (`path.check.013`). `iif`'s check needs a focus type and raises a
+/// `NullPointerException` in HAPI when there is no input resource
+/// (`FHIRPathEngine.java:3441-3443`, `3839-3840`), so `iif` without an input is
+/// evaluated unchecked (`path.logic.008`).
+fn eval_unchecked(expr: &str) -> Vec<ResultItem> {
+    let mut engine = fresh_engine();
+    let context = CaseContext::default();
+    let parsed = engine
+        .parse(expr)
+        .unwrap_or_else(|e| panic!("{expr:?} must parse: {e}"));
+    engine
+        .evaluate(parsed, None, &context, StrictnessFlags::EVALUATE)
+        .unwrap_or_else(|e| panic!("{expr:?} must evaluate with the check skipped: {e}"))
+}
+
+/// As `expect_evaluation_error`, with the static check skipped.
+fn expect_unchecked_evaluation_error(expr: &str) -> String {
+    let mut engine = fresh_engine();
+    let context = CaseContext::default();
+    let parsed = engine
+        .parse(expr)
+        .unwrap_or_else(|e| panic!("{expr:?} must parse before it can fail at evaluation: {e}"));
+    match engine.evaluate(parsed, None, &context, StrictnessFlags::EVALUATE) {
+        Ok(items) => panic!("{expr:?} must fail at evaluation, but it returned {items:?}"),
+        Err(EngineError::Diagnostic { message, .. }) => message,
+        Err(e) => panic!("{expr:?} must fail with a diagnostic, not: {e}"),
+    }
+}
+
+/// The static check of an input-less `iif` must report an error (HAPI's raises
+/// a `NullPointerException`; Frevo's reports a diagnostic, `path.logic.008`).
+fn expect_input_less_iif_check_error(expr: &str) {
+    let mut engine = fresh_engine();
+    let context = CaseContext::default();
+    let parsed = engine
+        .parse(expr)
+        .unwrap_or_else(|e| panic!("{expr:?} must parse: {e}"));
+    match engine.check(parsed, &context, StrictnessFlags::CHECK) {
+        Err(EngineError::Diagnostic { .. }) => {}
+        other => panic!("the check of {expr:?} must report an error, not {other:?}"),
+    }
+}
+
 fn boolean(value: bool) -> Vec<ResultItem> {
     vec![ResultItem::Primitive {
         fhir_type: "boolean".to_string(),
@@ -347,21 +391,28 @@ fn iif_selects_one_branch_and_leaves_the_other_unevaluated() {
     // observes that the branch was not taken.
     expect_group("testIif", 11);
 
+    // `iif` without an input resource: HAPI's check raises a
+    // `NullPointerException` (`checkSingleton` dereferences the missing focus
+    // type, FHIRPathEngine.java:3441-3443, 3839-3840) and Frevo's check reports
+    // an error. The statements below therefore run with the check skipped, as
+    // `FhirPathR4` does (`path.check.013`).
+    expect_input_less_iif_check_error("iif(true, 1, 2)");
+
     // Stated at the seam too, with the failing operand this file uses
     // throughout: the unselected branch is not evaluated.
     assert_eq!(
-        eval(&format!("iif(true, 1, {FAILING_OPERAND})")),
+        eval_unchecked(&format!("iif(true, 1, {FAILING_OPERAND})")),
         integer("1")
     );
     assert_eq!(
-        eval(&format!("iif(false, {FAILING_OPERAND}, 2)")),
+        eval_unchecked(&format!("iif(false, {FAILING_OPERAND}, 2)")),
         integer("2")
     );
 
     // And the selected branch is evaluated, so the above is not a blanket
     // suppression either.
-    expect_evaluation_error(&format!("iif(true, {FAILING_OPERAND}, 2)"));
-    expect_evaluation_error(&format!("iif(false, 1, {FAILING_OPERAND})"));
+    expect_unchecked_evaluation_error(&format!("iif(true, {FAILING_OPERAND}, 2)"));
+    expect_unchecked_evaluation_error(&format!("iif(false, 1, {FAILING_OPERAND})"));
 }
 
 // ---------------------------------------------------------------------------
@@ -374,16 +425,18 @@ fn iif_with_an_empty_condition_yields_the_else_branch() {
     // `funcIif` compares `asBool(n1, exp)` against `Equality.True` only, so an
     // empty condition takes the same path as a false one
     // (FHIRPathEngine.java:3435-3443).
-    assert_eq!(eval("iif({}, 1, 2)"), integer("2"));
+    // Evaluated with the check skipped (`path.logic.008`): there is no input
+    // resource and the check of `iif` needs a focus type.
+    assert_eq!(eval_unchecked("iif({}, 1, 2)"), integer("2"));
 
     // Which is the same answer a false condition gives, and a different one
     // from what a true condition gives.
-    assert_eq!(eval("iif(false, 1, 2)"), integer("2"));
-    assert_eq!(eval("iif(true, 1, 2)"), integer("1"));
+    assert_eq!(eval_unchecked("iif(false, 1, 2)"), integer("2"));
+    assert_eq!(eval_unchecked("iif(true, 1, 2)"), integer("1"));
 
     // The else branch is really evaluated rather than returned as a literal:
     // an expression there is computed.
-    assert_eq!(eval("iif({}, 1, 1 + 1)"), integer("2"));
+    assert_eq!(eval_unchecked("iif({}, 1, 1 + 1)"), integer("2"));
 }
 
 // ---------------------------------------------------------------------------
@@ -395,12 +448,13 @@ fn iif_with_an_empty_condition_yields_the_else_branch() {
 fn iif_with_no_else_branch_and_a_false_condition_yields_empty() {
     // `exp.getParameters().size() < 3` returns an empty list rather than
     // raising about the missing parameter (FHIRPathEngine.java:3439-3440).
-    assert_eq!(eval("iif(false, 1)"), empty());
-    assert_eq!(eval("iif({}, 1)"), empty());
+    // Evaluated with the check skipped (`path.logic.008`).
+    assert_eq!(eval_unchecked("iif(false, 1)"), empty());
+    assert_eq!(eval_unchecked("iif({}, 1)"), empty());
 
     // The two-parameter form still returns the then branch when the condition
     // holds, so the arity is legal and not merely tolerated.
-    assert_eq!(eval("iif(true, 1)"), integer("1"));
+    assert_eq!(eval_unchecked("iif(true, 1)"), integer("1"));
 
     // The suite grades the `.empty()` form of the same case.
     expect_case("testIif", "testIif5");

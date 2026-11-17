@@ -27,7 +27,9 @@ mod oracle;
 
 use std::sync::OnceLock;
 
-use oracle::engine::{CaseContext, EngineConfig, StrictnessFlags, SuiteEngine, engine_under_test};
+use oracle::engine::{
+    CaseContext, EngineConfig, EngineError, StrictnessFlags, SuiteEngine, engine_under_test,
+};
 use oracle::input::{self, SuiteInput};
 use oracle::run::{self, CaseStatus, RunReport};
 use oracle::suite::Suite;
@@ -99,6 +101,64 @@ fn expect_case(group: &str, name: &str) {
     );
 }
 
+/// Assert the group's cases are graded as HAPI's own recorded run grades them
+/// (`oracles/fhirpath/hapi-8.12.0-results.json`): `passed` for every case except
+/// the named ones, which must be `failed` (parity under `path.oracle.012`). A
+/// `did-not-run` case satisfies neither, so an unbuilt feature never passes
+/// vacuously, and a Frevo pass on a named case is `ahead-of-hapi`, not accepted.
+fn expect_group_except(group: &str, expected_cases: usize, failing: &[&str]) {
+    let (suite, report) = pinned();
+    let g = suite
+        .groups
+        .iter()
+        .find(|g| g.name == group)
+        .unwrap_or_else(|| panic!("the pinned suite has a group named {group}"));
+    assert_eq!(
+        g.cases.len(),
+        expected_cases,
+        "the pinned {group} group is {expected_cases} cases; a different count means it          was re-pinned without this test being updated"
+    );
+    for name in failing {
+        assert!(
+            g.cases.iter().any(|c| c.address.name == *name),
+            "{group}/{name} must be a case of the group"
+        );
+    }
+
+    let mut problems = Vec::new();
+    for case in &g.cases {
+        let r = report
+            .get(&case.address.to_string())
+            .unwrap_or_else(|| panic!("{} must appear in the run report", case.address));
+        let want = if failing.iter().any(|n| case.address.name == *n) {
+            CaseStatus::Failed
+        } else {
+            CaseStatus::Passed
+        };
+        if r.status != want {
+            problems.push(format!(
+                "{} ({:?}): {} (wanted {}) -- {}",
+                case.address,
+                case.expression,
+                r.status.as_str(),
+                want.as_str(),
+                r.reason
+            ));
+        }
+    }
+    assert!(
+        problems.is_empty(),
+        "{} of {} cases in {group} are not graded as HAPI grades them; the first few:
+  {}",
+        problems.len(),
+        g.cases.len(),
+        problems[..problems.len().min(5)].join(
+            "
+  "
+        )
+    );
+}
+
 fn fresh_engine() -> Box<dyn SuiteEngine> {
     let mut engine = engine_under_test();
     engine
@@ -163,7 +223,7 @@ fn empty() -> Vec<ResultItem> {
 // covers: path.combine.001
 #[test]
 fn the_union_operator_unions_and_removes_duplicates() {
-    expect_group("testUnion", 12);
+    expect_group_except("testUnion", 12, &["testUnion12"]);
 
     // `funcUnion` (FHIRPathEngine.java:5036) adds an item only when it is not
     // already present, so the operator is set union and not concatenation.
@@ -171,12 +231,26 @@ fn the_union_operator_unions_and_removes_duplicates() {
     assert_eq!(eval_over("(1 | 2 | 2).count()", None), integer("2"));
     assert_eq!(eval_over("(1|1).count()", None), integer("1"));
 
-    // Deduplication uses the same equality as `=`, so two dateTimes written
-    // identically at minute precision are one item -- which is `testUnion12`.
-    assert_eq!(
-        eval_over("(@2015-02-04T10:00 | @2015-02-04T10:00).count()", None),
-        integer("1")
-    );
+    // `testUnion12` (`(@2015-02-04T10:00 | @2015-02-04T10:00).count()`) is
+    // `failed` in HAPI and required `failed` above: `DateTimeType.copy()`
+    // rejects a minute-precision dateTime, so evaluation fails (DEV-0017). The
+    // check passes; evaluation raises an execution error.
+    {
+        let expr = "(@2015-02-04T10:00 | @2015-02-04T10:00).count()";
+        let mut engine = fresh_engine();
+        let context = CaseContext::default();
+        let parsed = engine
+            .parse(expr)
+            .unwrap_or_else(|e| panic!("{expr:?} must parse: {e}"));
+        engine
+            .check(parsed, &context, StrictnessFlags::CHECK)
+            .unwrap_or_else(|e| panic!("{expr:?} must pass the static check: {e}"));
+        match engine.evaluate(parsed, None, &context, StrictnessFlags::EVALUATE) {
+            Ok(items) => panic!("{expr:?} must fail at evaluation, but it returned {items:?}"),
+            Err(EngineError::Diagnostic { .. }) => {}
+            Err(e) => panic!("{expr:?} must fail with a diagnostic, not: {e}"),
+        }
+    }
 
     // It is associative over the operator and the function spelling alike.
     assert_eq!(eval_over("1.union(2).union(3).count()", None), integer("3"));

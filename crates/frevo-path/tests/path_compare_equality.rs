@@ -70,9 +70,12 @@ fn expect_case(group: &str, name: &str) -> &'static CaseReport {
     r
 }
 
-/// Assert every case in a suite group passed, and that the group still has the
-/// size the scenario was written against.
-fn expect_group(group: &str, expected_cases: usize) {
+/// Assert the group's cases are graded as HAPI's own recorded run grades them
+/// (`oracles/fhirpath/hapi-8.12.0-results.json`): `passed` for every case except
+/// the named ones, which must be `failed` (parity under `path.oracle.012`). A
+/// `did-not-run` case satisfies neither, so an unbuilt feature never passes
+/// vacuously, and a Frevo pass on a named case is `ahead-of-hapi`, not accepted.
+fn expect_group_except(group: &str, expected_cases: usize, failing: &[&str]) {
     let (suite, report) = pinned();
     let g = suite
         .groups
@@ -82,31 +85,46 @@ fn expect_group(group: &str, expected_cases: usize) {
     assert_eq!(
         g.cases.len(),
         expected_cases,
-        "the pinned {group} group is {expected_cases} cases; a different count means it \
-         was re-pinned without this test being updated"
+        "the pinned {group} group is {expected_cases} cases; a different count means it          was re-pinned without this test being updated"
     );
+    for name in failing {
+        assert!(
+            g.cases.iter().any(|c| c.address.name == *name),
+            "{group}/{name} must be a case of the group"
+        );
+    }
 
-    let mut failures = Vec::new();
+    let mut problems = Vec::new();
     for case in &g.cases {
         let r = report
             .get(&case.address.to_string())
             .unwrap_or_else(|| panic!("{} must appear in the run report", case.address));
-        if r.status != CaseStatus::Passed {
-            failures.push(format!(
-                "{} ({:?}): {} -- {}",
+        let want = if failing.iter().any(|n| case.address.name == *n) {
+            CaseStatus::Failed
+        } else {
+            CaseStatus::Passed
+        };
+        if r.status != want {
+            problems.push(format!(
+                "{} ({:?}): {} (wanted {}) -- {}",
                 case.address,
                 case.expression,
                 r.status.as_str(),
+                want.as_str(),
                 r.reason
             ));
         }
     }
     assert!(
-        failures.is_empty(),
-        "{} of {} cases in {group} did not pass; the first few:\n  {}",
-        failures.len(),
+        problems.is_empty(),
+        "{} of {} cases in {group} are not graded as HAPI grades them; the first few:
+  {}",
+        problems.len(),
         g.cases.len(),
-        failures[..failures.len().min(5)].join("\n  ")
+        problems[..problems.len().min(5)].join(
+            "
+  "
+        )
     );
 }
 
@@ -215,15 +233,25 @@ const FHIR_TYPES_STRING: [&str; 12] = [
 // covers: path.compare.001
 #[test]
 fn the_less_than_operator_accepts_a_narrower_numeric_type_set_than_the_other_three() {
-    // NOTE FOR REVIEW: one of these 33, `testLessThan/testLessThan33`, cannot
-    // pass against the pinned R4 engine. `opLessThan` identifies a quantity's
+    // HAPI fails four of these 33 (`testLessThan28`, `29`, `30`, `33`); each is
+    // required `failed` below (path.compare.001, `path.oracle.012` parity).
+    // `testLessThan33` cannot pass against the pinned R4 engine. `opLessThan` identifies a quantity's
     // unit by its `code` child while its three siblings use `unit`, and the
     // case's left operand has unit text and no code -- so the units are judged
     // to differ, `qtyToCanonicalDecimal` returns null for a quantity with no
     // UCUM system (FHIRPathEngine.java:2301-2303), and the null is
     // dereferenced at :2413. The full evidence is in the module note of
     // `path_quantity.rs`, whose `path.quantity.013` owns that case.
-    expect_group("testLessThan", 33);
+    expect_group_except(
+        "testLessThan",
+        33,
+        &[
+            "testLessThan28",
+            "testLessThan29",
+            "testLessThan30",
+            "testLessThan33",
+        ],
+    );
 
     // The list the operator's string branch accepts is the same twelve for all
     // four operators, and it is a closed list rather than "anything primitive".
@@ -287,7 +315,11 @@ fn the_less_than_operator_accepts_a_narrower_numeric_type_set_than_the_other_thr
 // covers: path.compare.002
 #[test]
 fn the_less_or_equal_operator_accepts_the_extended_numeric_type_set() {
-    expect_group("testLessOrEqual", 30);
+    expect_group_except(
+        "testLessOrEqual",
+        30,
+        &["testLessOrEqual28", "testLessOrEqual29"],
+    );
 
     // Its numeric branch lists all four numeric types
     // (FHIRPathEngine.java:2512-2513), so a positiveInt operand is compared
@@ -313,7 +345,11 @@ fn the_less_or_equal_operator_accepts_the_extended_numeric_type_set() {
 // covers: path.compare.003
 #[test]
 fn the_greater_than_operator_accepts_the_extended_numeric_type_set() {
-    expect_group("testGreaterThan", 30);
+    expect_group_except(
+        "testGreaterThan",
+        30,
+        &["testGreaterThan28", "testGreaterThan29"],
+    );
 
     // FHIRPathEngine.java:2468-2469.
     let patient = load_input("patient-example.xml");
@@ -337,7 +373,11 @@ fn the_greater_than_operator_accepts_the_extended_numeric_type_set() {
 // covers: path.compare.004
 #[test]
 fn the_greater_or_equal_operator_accepts_the_extended_numeric_type_set() {
-    expect_group("testGreatorOrEqual", 29);
+    expect_group_except(
+        "testGreatorOrEqual",
+        29,
+        &["testGreatorOrEqual28", "testGreatorOrEqual29"],
+    );
 
     // FHIRPathEngine.java:2560-2561.
     let patient = load_input("patient-example.xml");
@@ -700,7 +740,20 @@ fn numeric_comparison_goes_through_binary_floating_point() {
 // covers: path.equality.001
 #[test]
 fn the_equality_operator_compares_values_of_the_same_type() {
-    expect_group("testEquality", 40);
+    expect_group_except(
+        "testEquality",
+        40,
+        &[
+            "testEquality31",
+            "testEquality32",
+            "testEquality33",
+            "testEquality35",
+            "testEquality37",
+            "testEquality38",
+            "testEquality39",
+            "testEquality40",
+        ],
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -710,7 +763,7 @@ fn the_equality_operator_compares_values_of_the_same_type() {
 // covers: path.equality.002
 #[test]
 fn the_inequality_operator_is_the_negation_of_equality() {
-    expect_group("testNEquality", 27);
+    expect_group_except("testNEquality", 27, &["testNEquality27"]);
 
     // Negation includes the empty case: where `=` is empty, `!=` is empty too
     // rather than true.
@@ -746,7 +799,19 @@ fn equality_with_an_empty_operand_yields_empty() {
 // covers: path.equality.004
 #[test]
 fn the_equivalence_operator_ignores_case_and_whitespace_for_strings() {
-    expect_group("testEquivalent", 31);
+    expect_group_except(
+        "testEquivalent",
+        31,
+        &[
+            "testEquivalent24",
+            "testEquivalent25",
+            "testEquivalent26",
+            "testEquivalent27",
+            "testEquivalent28",
+            "testEquivalent29",
+            "testEquivalent30",
+        ],
+    );
 
     // `doEquivalent`'s string branch goes through `Utilities.equivalent`
     // (FHIRPathEngine.java:2223-2225), which folds case and collapses
@@ -762,7 +827,11 @@ fn the_equivalence_operator_ignores_case_and_whitespace_for_strings() {
 // covers: path.equality.005
 #[test]
 fn the_non_equivalence_operator_is_the_negation_of_equivalence() {
-    expect_group("testNotEquivalent", 24);
+    expect_group_except(
+        "testNotEquivalent",
+        24,
+        &["testNotEquivalent23", "testNotEquivalent24"],
+    );
 
     // Including on the empty cases, where both answers are booleans.
     assert_eq!(eval("{} !~ {}"), boolean(false));
@@ -948,7 +1017,7 @@ fn equivalence_on_dates_of_differing_precision_is_what_the_pinned_engine_compute
 // covers: path.equality.012
 #[test]
 fn has_value_distinguishes_a_primitive_with_a_value_from_one_without() {
-    expect_group("testHasValue", 3);
+    expect_group_except("testHasValue", 3, &["testHasCodingValue2"]);
 
     // The distinguishing pair from that group, stated here: a primitive with a
     // value has one, and a complex element does not.
@@ -959,7 +1028,7 @@ fn has_value_distinguishes_a_primitive_with_a_value_from_one_without() {
     );
     assert_eq!(
         eval_over("name.first().hasValue()", Some(&patient)),
-        boolean(false),
-        "a HumanName is not a primitive, so it has no value"
+        boolean(true),
+        "HAPI answers true for a HumanName (`funcHasValue` is `!noString(convertToString(item))`,          and a HumanName's string is its `toString()`): `testHasCodingValue2` is `failed`, DEV-0017"
     );
 }
