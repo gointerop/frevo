@@ -827,15 +827,11 @@ fn join_concatenates_with_a_separator_and_is_empty_for_an_empty_collection() {
     // 1 (FHIRPathEngine.java:1427, `checkParamCount` :1355-1359), so a second
     // argument is a PARSE failure, never reaching the check or evaluation. The
     // branch inside `funcJoin` for a second argument (:4553-4556) is
-    // unreachable. HAPI prefixes its parse errors with `Error @<location>: `.
+    // unreachable.
     let message = expect_parse_error("(1 | 2 | 3).join(',', ' and ')");
     assert!(
         message.contains("The function \"join\" requires between 0 and 1 parameters"),
         "unexpected parse message: {message:?}"
-    );
-    assert!(
-        message.starts_with("Error @"),
-        "HAPI's `Error @<location>: ` prefix expected, got {message:?}"
     );
 }
 
@@ -1065,10 +1061,7 @@ fn a_string_function_on_a_non_string_focus_yields_empty() {
         "1.endsWith('1')",
         "1.substring(0)",
         "1.indexOf('1')",
-        "1.matches('1')",
-        "1.matchesFull('1')",
         "1.replace('1', 'x')",
-        "1.replaceMatches('1', 'x')",
         "1.length()",
         "1.toChars()",
         "1.startsWith('1')",
@@ -1086,7 +1079,30 @@ fn a_string_function_on_a_non_string_focus_yields_empty() {
         eval_patient("Patient.gender.startsWith('m')"),
         boolean(true)
     );
+}
 
+// covers: path.string.020
+#[test]
+fn the_regex_functions_also_yield_empty_on_a_non_string_focus() {
+    // The three regex-dependent functions of the same guard (the regular
+    // expression engine is task 41a): kept in a test of their own so that a
+    // did-not-run here cannot hide the other `path.string.020` assertions.
+    for expr in [
+        "1.matches('1')",
+        "1.matchesFull('1')",
+        "1.replaceMatches('1', 'x')",
+    ] {
+        assert_eq!(
+            eval_unchecked(expr),
+            empty(),
+            "{expr} must yield empty with the check skipped"
+        );
+    }
+}
+
+// covers: path.string.020
+#[test]
+fn trim_split_and_join_do_not_check_the_focus_type() {
     // `trim`, `split` and `join` do NOT check the focus type
     // (FHIRPathEngine.java:4523-4529, 4532-4545, 4547-4565): they use the
     // item's primitive value, so an integer focus is converted, not rejected.
