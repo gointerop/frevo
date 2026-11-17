@@ -247,7 +247,7 @@ The engine SHALL navigate a resource through the node trait, addressing a polymo
 - **WHEN** `Patient.name.given.first()` is evaluated over `patient-example.xml`
 - **THEN** the result is `Peter`
 - **AND** `testBasics/testEscapedIdentifierUnicode`
-  (``Patient.`name`.given.first()``, expecting `Peter`) is **not** a pass,
+  (``Patient.`\u006eame`.given.first()``, expecting `Peter`) is **not** a pass,
   and is parity: HAPI does decode the escape, but in **base 32**
   (`FHIRLexer.java:511`, `Integer.parseInt(s.substring(i, i+4), 32)`), so
   `006e` is U+00CE and the name looked up is `Îame`. The case fails **at the

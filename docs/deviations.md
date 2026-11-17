@@ -600,12 +600,16 @@ Recorded so the reasoning is not re-derived:
   `1 'a\\b'` is rejected as an unknown escape `\b`; `FHIRLexer.processFixedName`
   (a backtick-delimited name) reads `\u` in **base 32**
   (`FHIRLexer.java:511`) and knows no `` \` `` escape (so
-  ``Patient.`name` `` looks up `Îame` and fails the check, as
+  ``Patient.`\u006eame` `` looks up `Îame` and fails the check, as
   `testBasics/testEscapedIdentifierUnicode` does on HAPI, `path.navigation.001`); only
   `FHIRPathEngine.processConstantString`, which is what a string literal goes
-  through, is self-consistent. All three are reproduced as they are. None is
-  reachable from an expression that is not already pathological, and matching
-  them costs nothing.
+  through, is self-consistent. All three are reproduced as they are. The
+  `processFixedName` one is reachable and observable: HAPI decodes
+  `\u006e` as U+00CE, the name is `Îame`, and
+  `testBasics/testEscapedIdentifierUnicode` fails at the check on HAPI;
+  Frevo's lexer matches, so the case is `failed` on both sides. The other two
+  need a quantity unit or a delimited name that no real expression writes, and
+  matching all three costs nothing.
 - **The `@` prefix on a temporal expectation in the FHIRPath suite.** The
   pinned suite writes `<output type="date">@1974-12-25</output>`, and the pinned
   harness compares against `PrimitiveType.fpValue()`, which prepends `@` for a
