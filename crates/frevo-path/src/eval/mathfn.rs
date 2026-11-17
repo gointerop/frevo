@@ -11,8 +11,9 @@
 //! Original work Copyright HL7, Inc. and contributors, licensed under the
 //! Apache License, Version 2.0.
 //! Modified by the Frevo authors: the binary `double` is Rust's `f64`; the
-//! `BigDecimal` of `BigDecimal.valueOf(double)` is a [`Decimal`] written in
-//! plain notation, never in `E+n` form, which the decimal type cannot carry.
+//! `BigDecimal` of `BigDecimal.valueOf(double)` is a [`Decimal`] written as
+//! `BigDecimal.toString` writes it, including the `E+n` form; a negative scale
+//! survives in that text only, the numeric fields holding the value at scale 0.
 //!
 //! What the pinned engine does here and the specification does not say, and
 //! what is kept:
@@ -31,7 +32,7 @@
 use crate::seam::value::{Decimal, Value};
 use crate::syntax::ast::{Function, NodeId};
 
-use super::arith::{make_decimal, too_wide};
+use super::arith::too_wide;
 use super::operand::{self, has_type, int_of, qty_of, text_of};
 use super::{Context, EvalError, Run};
 
@@ -109,22 +110,9 @@ fn decimal_of_double(d: f64, at: usize) -> Result<Option<Value>, EvalError> {
         let n = i64::try_from(digits.len()).unwrap_or(i64::MAX);
         (digits, n - 1 - exponent)
     };
-    let mut text = String::new();
-    if d < 0.0 {
-        text.push('-');
-    }
-    if scale <= 0 {
-        text.push_str(&unscaled);
-        text.push_str(&"0".repeat(usize::try_from(-scale).unwrap_or(0)));
-    } else {
-        let scale = usize::try_from(scale).unwrap_or(0);
-        let padded = format!("{unscaled:0>width$}", width = scale + 1);
-        let split = padded.len() - scale;
-        text.push_str(&padded[..split]);
-        text.push('.');
-        text.push_str(&padded[split..]);
-    }
-    Decimal::parse(&text)
+    let signed: i128 = unscaled.parse().map_err(|_| too_wide(at))?;
+    let signed = if d < 0.0 { -signed } else { signed };
+    Decimal::from_unscaled(signed, scale)
         .map(|v| Some(Value::Decimal(v)))
         .ok_or_else(|| too_wide(at))
 }
@@ -143,7 +131,7 @@ fn set_scale_half_up(d: &Decimal, scale: i32, at: usize) -> Result<Decimal, Eval
         let scaled = pow10(shift)
             .and_then(|f| mantissa.checked_mul(f))
             .ok_or_else(|| too_wide(at))?;
-        return make_decimal(scaled, u32::try_from(target).map_err(|_| too_wide(at))?, at);
+        return Decimal::from_unscaled(scaled, target).ok_or_else(|| too_wide(at));
     }
     let shift = u32::try_from(current - target).map_err(|_| too_wide(at))?;
     let magnitude = mantissa.unsigned_abs();
@@ -158,15 +146,8 @@ fn set_scale_half_up(d: &Decimal, scale: i32, at: usize) -> Result<Decimal, Eval
     };
     let quotient = i128::try_from(quotient).map_err(|_| too_wide(at))?;
     let signed = if mantissa < 0 { -quotient } else { quotient };
-    if target >= 0 {
-        make_decimal(signed, u32::try_from(target).map_err(|_| too_wide(at))?, at)
-    } else {
-        let lift = u32::try_from(-target).map_err(|_| too_wide(at))?;
-        let widened = pow10(lift)
-            .and_then(|f| signed.checked_mul(f))
-            .ok_or_else(|| too_wide(at))?;
-        make_decimal(widened, 0, at)
-    }
+    // A negative scale renders in scientific form, as `BigDecimal` does.
+    Decimal::from_unscaled(signed, target).ok_or_else(|| too_wide(at))
 }
 
 impl Run<'_> {

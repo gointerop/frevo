@@ -63,6 +63,20 @@ impl Decimal {
             scale = u32::try_from(at - frac_start).ok()?;
             digits.push_str(&text[frac_start..at]);
         }
+        // `BigDecimal(String)` also reads an exponent: `1.23E+4`.
+        let mut exponent: i64 = 0;
+        if matches!(bytes.get(at), Some(b'e' | b'E')) {
+            let exp_text = &text[at + 1..];
+            let digits_only = exp_text.trim_start_matches(['-', '+']);
+            if digits_only.is_empty()
+                || exp_text.len() - digits_only.len() > 1
+                || !digits_only.bytes().all(|c| c.is_ascii_digit())
+            {
+                return None;
+            }
+            exponent = exp_text.trim_start_matches('+').parse().ok()?;
+            at = bytes.len();
+        }
         if at != bytes.len() {
             return None;
         }
@@ -70,8 +84,69 @@ impl Decimal {
         if negative {
             mantissa = -mantissa;
         }
+        // The value `mantissa * 10^-(scale - exponent)`, held at a
+        // non-negative scale.
+        let net = i64::from(scale) - exponent;
+        if net < 0 {
+            let lift = u32::try_from(-net).ok()?;
+            mantissa = mantissa.checked_mul(10i128.checked_pow(lift)?)?;
+            scale = 0;
+        } else {
+            scale = u32::try_from(net).ok()?;
+        }
         Some(Self {
             lexical: text.to_string(),
+            mantissa,
+            scale,
+        })
+    }
+
+    /// The decimal `unscaled * 10^-scale`, written as Java's
+    /// `BigDecimal.toString` writes it (`DecimalType.encode`,
+    /// `DecimalType.java:101-102`): plain digits when `scale >= 0` and the
+    /// adjusted exponent is at least -6, otherwise scientific with a signed
+    /// exponent. A negative `scale` is carried in the lexical form only; the
+    /// numeric fields hold the value at scale 0. `None` when the value does not
+    /// fit.
+    pub fn from_unscaled(unscaled: i128, scale: i64) -> Option<Self> {
+        let digits = unscaled.unsigned_abs().to_string();
+        let len = i64::try_from(digits.len()).ok()?;
+        let adjusted = len - 1 - scale;
+        let mut text = String::new();
+        if unscaled < 0 {
+            text.push('-');
+        }
+        if scale == 0 {
+            text.push_str(&digits);
+        } else if scale > 0 && adjusted >= -6 {
+            let scale = usize::try_from(scale).ok()?;
+            let padded = format!("{digits:0>width$}", width = scale + 1);
+            let split = padded.len() - scale;
+            text.push_str(&padded[..split]);
+            text.push('.');
+            text.push_str(&padded[split..]);
+        } else {
+            text.push_str(&digits[..1]);
+            if digits.len() > 1 {
+                text.push('.');
+                text.push_str(&digits[1..]);
+            }
+            if adjusted != 0 {
+                text.push('E');
+                if adjusted > 0 {
+                    text.push('+');
+                }
+                text.push_str(&adjusted.to_string());
+            }
+        }
+        let (mantissa, scale) = if scale < 0 {
+            let lift = u32::try_from(-scale).ok()?;
+            (unscaled.checked_mul(10i128.checked_pow(lift)?)?, 0)
+        } else {
+            (unscaled, u32::try_from(scale).ok()?)
+        };
+        Some(Self {
+            lexical: text,
             mantissa,
             scale,
         })
