@@ -1,5 +1,30 @@
 CHANGES_REQUESTED
 
+Seventeenth review (commit `9fea32e`, 2026-11-17). All six findings of the
+sixteenth review are resolved in the scenario text, and the two new scenarios
+are justified. What remains is that the new IDs are not wired into the
+change's index or its task graph. Detail is in the dated section at the end.
+The earlier findings follow, kept for the record.
+
+1. **`path.compare.013` and `.014` belong to no task, and the change index
+   does not list them.**
+   - `tasks.md:812-813` says task "Satisfies ... `path.compare.001` through
+     `path.compare.012`". No task claims the two new IDs, so no implementer
+     is assigned the behaviour they specify.
+   - The `spec.md` count table still reads `path.compare.*` | 12 |
+     `001`-`012` (`spec.md:96`), with a **Total** of 493 (`spec.md:13`). It should
+     read 14 and 495.
+   - The scenario list (`spec.md:512-523`) has no entries for `013` and `014`.
+   - The same list still gives the pre-`bdfc6dd` title for `path.math.008`
+     (`spec.md:547`, "division by zero yields empty"). That title is the
+     behaviour `bdfc6dd` reversed for `0.0 / 0`, `0 div 0.0`, `0.0 mod 0`,
+     `5.5 mod 0` and `5 mod 0.0`, so a reader of the index gets the wrong
+     answer.
+   - Extend the `Satisfies` range at `tasks.md:812-813`, and correct the
+     table, the total and the list.
+
+## Sixteenth-review findings as raised (commit `bdfc6dd`)
+
 Sixteenth review (commit `bdfc6dd`, 2026-11-17). `ENGINE` is
 `org.hl7.fhir.r4/.../fhirpath/FHIRPathEngine.java` and `BDT` is
 `org.hl7.fhir.r4/.../model/BaseDateTimeType.java`, both at `73c432b5`. Detail
@@ -805,3 +830,82 @@ These are citation errors, not behaviour.
 
 **Blocker entry.** The `tasks/blockers.md` entry (2026-11-17,
 `org.fhir.ucum.Decimal`) cites accurate lines and states the decision needed.
+
+## Seventeenth review - commit `9fea32e` (2026-11-17)
+
+I checked each change against `FHIRPathEngine.java` (`ENGINE`) and
+`BaseDateTimeType.java` (`BDT`) at `73c432b5`, and against
+`hapi-8.12.0-results.json`.
+
+**Sixteenth-review finding 1: resolved.**
+- `compare.001` now gives each failed case its own outcome.
+  - `testLessThan29`: equal empty `code` lists (`ENGINE:1131`, `:2438-2440`)
+    lead to a raw `1 < 2`, which is `true`. Matches `results:627`.
+  - `testLessThan30`: the codes differ, so canonical decimals are compared
+    (`:2447-2450`), giving `false`. Matches `results:628`.
+  - `testLessThan33`: an NPE on `isPrimitive()`. Matches `results:631`. The
+    dereference is at `:2413`, not `:2414` (a citation nit).
+- The new `path.compare.013` states the in-place Zulu rewrite
+  (`ENGINE:636-648`; `BDT:690-694`). Its THEN is right: the birth-time value
+  (`-05:00`, second precision) is a `DateTimeType`, so it is mutated, and
+  `1974-12-25T19:35:45Z < 1975-01-01T00:00:00Z` is `true`.
+- **Justified and non-duplicative.** No earlier scenario states the mutation.
+  `compare.001` now only refers to it.
+
+**Sixteenth-review finding 2: resolved.**
+- `testLessOrEqual29` and `testGreatorOrEqual29` now give the null-`unit`
+  raw-value mechanism (`ENGINE:1131`, `:2533-2537`, `:2583-2585`) and the
+  `true` outcome. Matches `results:668` and `698`.
+- `LessOrEqual28`, `GreaterThan28`/`29` and `GreatorOrEqual28` now give the
+  NPE (`:2301-2304`, `:2494-2496`, `:2544-2546`, `:2592-2594`). Matches
+  `results:667`, `726`, `727` and `697`.
+- The new `path.compare.014` (`1 'kg' <= 1 year`) is right: `lunit` is null and
+  `runit` is `"year"`, so `(null && null)` is false and `lunit.equals` raises
+  (`:2537`).
+- **Justified and non-duplicative.** Only `opLessOrEqual` has this form.
+  `<`, `>` and `>=` use `Base.compareDeep` (`:2440`, `:2487`, `:2586`), so the
+  scenario is specific to `<=`. `compare.002` refers to it rather than
+  restating it.
+
+**Sixteenth-review finding 3: resolved.**
+- The two messages are now given: `BDT:797` with no offset, and `BDT:103-106`
+  with an offset.
+- `copy()` is cited correctly in `equality.001`, `math.001` and DEV-0017:
+  `DateTimeType.java:164-165`, called at `BDT:924` and `ENGINE:2716`.
+
+**Sixteenth-review finding 4: resolved.**
+- DEV-0018 and `datetime.004` now cover `<`, `>`, `<=` and `>=` through
+  `ENGINE:643-648`.
+- The scenario-ID field stays `path.datetime.004`, which is where the
+  behaviour is stated, so that is consistent.
+
+**Sixteenth-review finding 5: resolved.** `0.0 - 5 'mg'` now raises
+the right-value wrong-type error (`ENGINE:2953-2954`).
+
+**Sixteenth-review finding 6: resolved.**
+- The preamble says seventeen and lists DEV-0013, DEV-0015, DEV-0017 and
+  DEV-0018 as pending.
+- `check-registries.sh` reports "registers agree" (17 deviations, 12 debt
+  entries).
+- DEV-0017's scenario list adds `compare.013` and `.014`.
+
+**Scenario IDs.** `9fea32e` adds two headings, `path.compare.013` and `.014`.
+Neither collides, and no ID in `specs/` is duplicated. No existing heading
+changed. The stale index and task range are finding 1.
+
+**Stale-text grep.** No hits remain in `specs/path/spec.md` or
+`docs/deviations.md` for any of the following: "raises, or answers",
+`BaseDateTimeType.java:916`, `java:2440` as the sole `<` mechanism, and
+"is not matched". `spec.md:492` now cites `:3830`. The two test-file `:3828`
+citations are being fixed by the builder, as instructed, and were not
+re-checked.
+
+**Note for the owner (not a finding).** The mutation in `compare.013` is not
+confined to one evaluation in HAPI. `compareDateTimeElements` rewrites the
+model object itself. So a `<`, `>`, `<=` or `>=` over a resource's dateTime,
+inside an invariant or a search expression, leaves the in-memory resource in
+Zulu form for whatever reads it next. Frevo serves stored bytes (constitution
+section 6), so it cannot reproduce that past the evaluation. The spec's
+"in the same evaluation" is the right scope for Frevo. Whether HAPI's
+in-memory rewrite ever reaches a response body is a question for the
+differential harness, not this spec.
