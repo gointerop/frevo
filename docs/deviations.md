@@ -46,7 +46,8 @@ decision.
 ## Entries
 
 All thirteen entries below come from `add-fhirpath-and-codegen-r4`;
-`DEV-0012` and `DEV-0013` are pending the owner's review (see their entries).
+`DEV-0013` is pending the owner's review (see its entry); `DEV-0012` was ruled
+for HAPI on 2026-11-17.
 `DEV-0001` through `DEV-0010` are the same kind of case: the pinned R4
 `FHIRPathEngine` does something the FHIRPath specification does not describe. In
 every one of those the chosen behaviour is **HAPI's**, because the point of the
@@ -390,7 +391,7 @@ file, so its prose is not redistributable here (see `oracles/PINS.md`).
   tasks 28-30 of `add-fhirpath-and-codegen-r4`; accepted as a new-deviation
   checkpoint, separately from DEV-0001..0010.
 
-### DEV-0012 — a negative index selects nothing instead of raising
+### DEV-0012 — a negative index raises instead of selecting nothing
 
 - **Area:** path
 - **Scenario IDs:** path.navigation.010
@@ -405,21 +406,19 @@ file, so its prose is not redistributable here (see `oracles/PINS.md`).
 - **Specification requirement:** FHIRPath 2.0.0, Indexer — an index outside
   the collection yields an empty collection; the approved scenario
   `path.navigation.010` states empty for a negative index.
-- **Chosen behaviour:** specification — the scenario as approved: empty.
+- **Chosen behaviour:** HAPI — a negative index is an execution error, as a
+  returned error and not a panic (`path.errors.003`), consistent with
+  `skip(-1)` (`DEV-0014`). Supersedes the earlier choice of empty.
 - **Configuration flag:** none
 - **Debt:** none
-- **Rationale:** `path.errors.003` forbids ending a call with a panic, which is
-  what matching the Java exception would mean, and the only non-crashing answer
-  the suite grades is empty. Frevo passing `testIndexer3` is `ahead-of-hapi`
-  under `path.oracle.012`. No expression that works on HAPI today can rely on
-  the crash.
-- **Normalizer impact:** none on stored bytes. An expression using a negative
-  index fails on HAPI and evaluates on Frevo, so a differential case built on
-  one differs by design.
-- **Reviewed:** pending owner review. Raised 2026-11-12 by the implementation
-  of task 31 of `add-fhirpath-and-codegen-r4`, which implemented the approved
-  scenario and its test; recorded in `tasks/blockers.md` the same day. A new
-  deviation is a checkpoint and does not inherit an earlier decision.
+- **Rationale:** owner ruling, 2026-11-17: follow HAPI everywhere for a negative
+  index. `testIndexer3` is `failed` on both sides, so it is parity under
+  `path.oracle.012`, not `ahead-of-hapi`. The only residual difference from
+  HAPI is that the failure is a typed error rather than a Java exception.
+- **Normalizer impact:** none on stored bytes. Expressions using a negative
+  index fail on both.
+- **Reviewed:** owner, 2026-11-17 (ruled for HAPI). Raised 2026-11-12 by task
+  31 of `add-fhirpath-and-codegen-r4`.
 
 ### DEV-0013 — a non-integer index is an execution error instead of empty
 

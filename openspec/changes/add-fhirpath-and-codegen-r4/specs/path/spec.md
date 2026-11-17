@@ -294,10 +294,19 @@ The engine SHALL navigate a resource through the node trait, addressing a polymo
 - **WHEN** `Patient.name[99]` is evaluated over `patient-example.xml`
 - **THEN** the result is an empty collection
 
-#### Scenario: [path.navigation.010] a negative index yields empty
+#### Scenario: [path.navigation.010] a negative index raises
 
 - **WHEN** `Patient.name[-1]` is evaluated over `patient-example.xml`
-- **THEN** the result is an empty collection
+- **THEN** evaluation fails with an execution error, as `skip(-1)` does
+  (`path.subset.006`): `funcItem` (`FHIRPathEngine.java:6277-6283`) guards only
+  the upper bound, `Utilities.isInteger("-1")` is true and `-1 < 3`, so
+  `focus.get(-1)` is reached and HAPI ends the call with an unchecked
+  `IndexOutOfBoundsException`
+- **AND** the failure is a returned error, never a panic (`path.errors.003`)
+- **AND** the pinned suite's `testIndexer/testIndexer3` expects empty and
+  carries no `invalid` attribute, so HAPI fails its own case and Frevo matches:
+  `failed` on both sides, parity under `path.oracle.012`. This is `DEV-0012`,
+  ruled for HAPI by the owner on 2026-11-17
 
 #### Scenario: [path.navigation.011] a non-integer index is an execution error
 
