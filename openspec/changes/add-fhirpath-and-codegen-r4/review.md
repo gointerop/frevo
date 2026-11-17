@@ -1,4 +1,10 @@
-CHANGES_REQUESTED
+APPROVED
+
+Twelfth review (commit `305d4df`, 2026-11-17) resolves both findings of the
+eleventh review. Detail is in the dated section at the end. The earlier
+findings follow, kept for the record.
+
+## Eleventh-review findings as raised (commits `2f07196`, `5425f6c`)
 
 Findings of the eleventh review (commits `2f07196`, `5425f6c`, 2026-11-17;
 detail in the dated section at the end). `ENGINE` is the same file at
@@ -306,3 +312,56 @@ added, removed, renumbered or duplicated.
 
 **Registers.** `harness/scripts/check-registries.sh` reports "registers agree"
 (15 deviations, 12 debt entries).
+
+## Twelfth review — commit `305d4df` (2026-11-17)
+
+This commit changes `specs/path/spec.md`, the `spec.md` index, `tasks.md` and
+`docs/deviations.md`. I checked each claim against `ENGINE` at `73c432b5`.
+
+**Eleventh-review finding 1: resolved.**
+- `path.filter.002`, check skipped, now yields two names:
+  - `asBool` returns `True` for a single non-boolean item (`ENGINE:6891-6892`);
+  - `funcWhere` keeps an item on `True` (`:6255-6257`);
+  - `name[1]` has no second given name, so it is empty and `Null`
+    (`:6888-6889`) and is dropped;
+  - this matches the fixture (`patient-example.xml:50-65`) and agrees with
+    `path.filter.003`.
+- The new examples are correct:
+  - `name[0].given = 'Peter'`: `name` is the proximal first term. The indexer
+    moves `focus` to `item` (`:1188-1197`). `.given` becomes `item`'s inner,
+    parsed non-proximal (`:1201-1203`). The operator goes on `item`
+    (`:1206-1213`), which `execute` ignores (`:1508`). So the result is
+    `Peter, James`.
+  - `(1 | 2)[0] = 5`: the group's content is a proximal parse (`:1138`), so
+    the union works. The indexer on the group then drops `= 5`, giving `1`.
+  - `$this.given[1] = 'James'`: `$this` has no indexer, so `focus` stays the
+    proximal head. `.given[1]` is parsed non-proximal, and the operator
+    attaches to `$this`, so this is a real comparison.
+- Each example has a concrete WHEN and THEN.
+
+**Eleventh-review finding 2: resolved.**
+- `spec.md:424` and `:454` now match `navigation.010` and `collection.013`.
+- DEV-0012's specification-requirement field is corrected.
+- The `## Entries` preamble says fifteen and names DEV-0013 and DEV-0015 as
+  pending. `check-registries.sh` reports "registers agree" (15 deviations,
+  12 debt entries).
+- `tasks.md:779` is updated.
+- DEV-0015's normalizer-impact text is narrowed to the first term.
+
+**Grep for other stale statements.** I searched the change directory, `docs/`
+and `tasks/blockers.md` for negative index, first/last occurrence, and an
+operator after or following an indexer. The only remaining hits are:
+- `tasks/blockers.md:1281`, `:1562` and `:1578`. These are dated historical
+  log entries, not requirements.
+- DEV-0015's heading (`docs/deviations.md:483`), which still reads "an
+  operator that follows an indexer is silently dropped". Its body states the
+  first-term scope precisely, so this is wording, not a finding. The owner's
+  re-confirmation should be read against the body.
+
+**Scenario IDs.** No scenario heading changed in `305d4df`. No ID is added,
+removed, renumbered or duplicated.
+
+**Notes for the owner (not findings).**
+- DEV-0015 and DEV-0013 remain pending owner review.
+- DEV-0014 and DEV-0015 still have no referencing test. That is the
+  oracle-builder's work.
