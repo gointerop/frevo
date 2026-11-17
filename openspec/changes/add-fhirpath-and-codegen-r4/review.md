@@ -1,5 +1,27 @@
 CHANGES_REQUESTED
 
+Twenty-fourth review (commit `8a7b868`, 2026-11-17). Both findings of the
+twenty-third review are resolved, except for one new claim that HAPI does not
+honour. Detail is in the dated section at the end. The earlier findings follow,
+kept for the record.
+
+1. **`join` with two arguments is a parse error in HAPI, not `1,2 and 3`.**
+   - `specs/path/spec.md:1584-1587` (`path.string.020`) states that
+     `(1 | 2 | 3).join(',', ' and ')` is `1,2 and 3`. `tasks.md:860-861`
+     carries "`join` with its separate last separator".
+   - But the parser checks arity on every function call
+     (`FHIRPathEngine.java:1182`, `checkParameters`). For `Join`,
+     `checkParamCount(lexer, location, exp, 0, 1)` (`:1427`) allows at most
+     one argument. With two, it raises `The function "join" requires between 0
+     and 1 parameters` (`:1355-1358`).
+   - So the two-argument branch in `funcJoin` (`:4554-4557`) and the
+     `CommaSeparatedStringBuilder` last-separator path are unreachable from an
+     expression. The case is a syntax error.
+   - Replace the clause with that parse failure and its message. Also remove
+     the last-separator wording from task 41.
+
+## Twenty-third-review findings as raised (commit `a06bc4f`)
+
 Twenty-third review (commit `a06bc4f`, 2026-11-17). `ENGINE` is
 `org.hl7.fhir.r4/.../fhirpath/FHIRPathEngine.java` and `UTIL` is
 `org.hl7.fhir.utilities/.../utilities/Utilities.java`, both at `73c432b5`. Every
@@ -1432,3 +1454,47 @@ These match the spec's per-case lists exactly.
 - The `spec.md:192` and `:1241` hits are other scenarios.
 - The commit stat shows `tasks.md` was **not** changed, contrary to its
   description. Task 41 is finding 2.
+
+## Twenty-fourth review - commit `8a7b868` (2026-11-17)
+
+**`url` (`Utilities.java:880-895`): correct.**
+- `URLEncoder.encode(s, "UTF-8")` keeps `[A-Za-z0-9.*_-]`, turns a space into
+  `+`, and writes everything else as upper-case `%XX` of its UTF-8 bytes. So
+  `'a b&c=d/é~'` becomes `a+b%26c%3Dd%2F%C3%A9%7E`. Java encodes `~`.
+- `URLDecoder.decode(s, "UTF-8")` turns `+` into a space and decodes `%XX`, so
+  `a+b%20c` is `a b c`. `%zz` raises `IllegalArgumentException`.
+
+**`md` (`MarkDownProcessor.java:254-289`): correct.**
+- `isEscableMarkdownChar` (`:265-278`) is exactly `*` `&` `#` `[` `>` `<` and
+  the backtick: seven characters, with none of `]`, `_`, `(`, `)` or `\`.
+- `makeStringSafeAsMarkdown` (`:254-263`) puts a backslash before each of
+  them.
+- `makeMarkdownForString` (`:280-289`) keeps a character unless it is a `\`
+  that is not last and is followed by one of the seven (`:284`). So:
+  - `a\*b` gives `a*b`;
+  - `a\xb` and a trailing `\` are unchanged;
+  - `\*` keeps the first `\` (its successor `\` is not in the set), drops the
+    second, and gives `\*`.
+- The direction (escape inserts, unescape removes) is right. The escape
+  citation `:254-274` overlaps the set's lines. That is a nit.
+
+**Complex focus: correct.**
+- `Base.primitiveValue()` is `null` (`Base.java:145-147`), and the check does
+  not type the focus (`FHIRPathEngine.java:3622-3630`).
+- `trim` then dereferences `null` at `:4527`, giving an NPE.
+- `simpleSplit(null, …)` returns no parts (`Utilities.java:1979-1981`), so
+  `split` is empty.
+- `CommaSeparatedStringBuilder.commit` skips a `null` pending value
+  (`:72-84`), so `join` is `''`.
+
+**`join(sep, lastSep)`: wrong (finding 1).** The builder semantics as described
+are accurate: the last separator goes before the final item. But HAPI's parser
+never admits the second argument.
+
+**Scenario IDs.** No `#### Scenario:` heading changed.
+
+**Registers.** `check-registries.sh` reports "registers agree" (20
+deviations, 14 debt entries).
+
+**Stale text.** The only last-separator mentions are the two in finding 1.
+Task 41 otherwise now lists `url` and `md`.
