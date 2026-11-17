@@ -12,8 +12,7 @@
 //! Original work Copyright HL7, Inc. and contributors, licensed under the
 //! Apache License, Version 2.0.
 //! Modified by the Frevo authors: type questions go through the `Model` trait
-//! instead of `IWorkerContext.fetchTypeDefinition`, and `skip` and `take`
-//! differ from the pinned engine where the approved scenarios say so (below).
+//! instead of `IWorkerContext.fetchTypeDefinition`.
 //!
 //! What is the pinned engine's, kept:
 //!
@@ -29,15 +28,8 @@
 //! - `ofType` names a type that is not known as an execution error, and
 //!   compares a primitive's own type name, never its base.
 //!
-//! What is not, because the approved scenarios (`path.subset.006`,
-//! `path.subset.008`, over `testSkip5`, `testSkip7`, `testSkip8`, `testTake8`
-//! and `testTake9`) state it, and HAPI fails those cases (`ahead-of-hapi`
-//! under `path.oracle.012`):
-//!
-//! - `skip(n)` with a negative `n` returns the focus unchanged, where
-//!   upstream indexes `focus.get(-1)` and raises;
-//! - `skip({})` and `take({})` are empty, where upstream reads
-//!   `n1.get(0)` of an empty list and raises.
+//! `skip` and `take` are ported as written: a negative `skip` count and an
+//! empty count for either raise, and a negative `take` count is empty.
 
 use crate::seam::value::Value;
 use crate::syntax::ast::NodeId;
@@ -237,21 +229,25 @@ impl Run<'_> {
         ))
     }
 
-    /// The count argument of `skip` and `take`: `None` for an empty argument,
-    /// otherwise the integer (`Integer.parseInt(n1.get(0).primitiveValue())`).
+    /// The count argument of `skip` and `take`:
+    /// `Integer.parseInt(n1.get(0).primitiveValue())`. An empty argument is
+    /// `n1.get(0)` on an empty list, which raises.
     fn count_argument(
         &self,
         context: Context<'_>,
         focus: &[Value],
         id: NodeId,
-    ) -> Result<Option<i32>, EvalError> {
+    ) -> Result<i32, EvalError> {
         let p = self.param(id, 0)?;
         let n1 = self.execute(context, focus, p, true)?;
         let Some(first) = n1.first() else {
-            return Ok(None);
+            return Err(EvalError::execution(
+                "Index 0 out of bounds for length 0",
+                self.expr.node(id).start(),
+            ));
         };
         let text = primitive_text(self.model, first).unwrap_or_default();
-        text.parse::<i32>().map(Some).map_err(|_| {
+        text.parse::<i32>().map_err(|_| {
             EvalError::execution(
                 format!("For input string: \"{text}\""),
                 self.expr.node(p).start(),
@@ -259,31 +255,33 @@ impl Run<'_> {
         })
     }
 
-    /// `funcSkip`, with the two departures in the module notes.
+    /// `funcSkip`. The loop starts at `i1`, so a negative count reaches
+    /// `focus.get(-1)` and raises, even over an empty focus.
     pub(super) fn func_skip(
         &self,
         context: Context<'_>,
         focus: &[Value],
         id: NodeId,
     ) -> Result<Vec<Value>, EvalError> {
-        let Some(n) = self.count_argument(context, focus, id)? else {
-            return Ok(Vec::new());
+        let n = self.count_argument(context, focus, id)?;
+        let Ok(from) = usize::try_from(n) else {
+            return Err(EvalError::execution(
+                format!("Index {n} out of bounds for length {}", focus.len()),
+                self.expr.node(id).start(),
+            ));
         };
-        let from = usize::try_from(n).unwrap_or(0);
         Ok(focus.iter().skip(from).cloned().collect())
     }
 
-    /// `funcTake`, with the departure in the module notes. A count of zero or
-    /// less takes nothing.
+    /// `funcTake`. `Math.min(focus.size(), i1)` bounds the loop, so a count of
+    /// zero or less takes nothing.
     pub(super) fn func_take(
         &self,
         context: Context<'_>,
         focus: &[Value],
         id: NodeId,
     ) -> Result<Vec<Value>, EvalError> {
-        let Some(n) = self.count_argument(context, focus, id)? else {
-            return Ok(Vec::new());
-        };
+        let n = self.count_argument(context, focus, id)?;
         let count = usize::try_from(n).unwrap_or(0);
         Ok(focus.iter().take(count).cloned().collect())
     }

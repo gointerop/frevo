@@ -304,9 +304,8 @@ impl Run<'_> {
     /// the approved scenarios, with the conflict recorded in
     /// `tasks/blockers.md` and `docs/deviations.md` (`DEV-0012`, `DEV-0013`):
     ///
-    /// - a **negative** index selects nothing (`path.navigation.010`), where
-    ///   upstream's `Integer.parseInt(s) < focus.size()` admits it and
-    ///   `focus.get(-1)` raises `IndexOutOfBoundsException`;
+    /// - a **negative** index raises (`focus.get(-1)` throws
+    ///   `IndexOutOfBoundsException` upstream, `DEV-0012`), as a typed error;
     /// - an index that is **not an integer** is an execution error
     ///   (`path.navigation.011`), where upstream's `Utilities.isInteger` test
     ///   fails and it returns empty — including for the string `'1'`, which
@@ -350,12 +349,15 @@ impl Run<'_> {
                 ));
             }
         };
-        Ok(usize::try_from(position)
-            .ok()
-            .and_then(|p| focus.get(p))
-            .cloned()
-            .into_iter()
-            .collect())
+        // `Integer.parseInt(s) < focus.size()` admits a negative index and
+        // `focus.get(-1)` then raises; raise a typed error rather than panic.
+        let Ok(position) = usize::try_from(position) else {
+            return Err(EvalError::execution(
+                format!("Index {position} out of bounds for length {}", focus.len()),
+                self.expr.node(param).start(),
+            ));
+        };
+        Ok(focus.get(position).cloned().into_iter().collect())
     }
 
     /// `operate(context, left, operation, right, holder)`
