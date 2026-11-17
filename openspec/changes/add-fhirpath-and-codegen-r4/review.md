@@ -1,4 +1,68 @@
-APPROVED
+CHANGES_REQUESTED
+
+Nineteenth review (commit `fd47948`, 2026-11-17). `ENGINE` is
+`org.hl7.fhir.r4/.../fhirpath/FHIRPathEngine.java` at `73c432b5`. DEV-0019 and
+the `math.012`, `mathfn.010`, `string.004` and `string.023` amendments are
+correct. The three findings below are all in DEV-0020 and the scenarios it
+touches. Detail is in the dated section at the end. The eighteenth review was
+`APPROVED`; earlier findings follow, kept for the record.
+
+1. **DEV-0020's chosen behaviour departs from HAPI on a false premise. The
+   spec should require HAPI's behaviour.**
+   - Constitution section 1: HAPI 8.12.0 defines correct. Where it disagrees
+     with the specification, "choose HAPI's behaviour". `docs/deviations.md`
+     is the only exception mechanism. So recording a Frevo departure there is
+     the right *place*. But the entry chooses the specification's answer
+     against HAPI, and both of its reasons for doing so are wrong.
+   - **`toChars`.** HAPI iterates `s.toCharArray()` (`ENGINE:5835-5837`) and
+     yields one `StringType` per UTF-16 unit. "A lone surrogate cannot be a
+     Rust `String`" is true of `String`, but it is not a limit of the engine.
+     A string value carried as UTF-16 (`Vec<u16>`), as WTF-8, or as a
+     dedicated item variant for an unpaired unit holds it exactly. That is a
+     representation choice, and HAPI's observable output is matchable.
+   - **Exponent rendering.**
+     - `new DecimalType(double)` is `setValue(BigDecimal.valueOf(d))`
+       (`DecimalType.java:66-69`), and `encode` is
+       `getValue().toString()` (`:101-102`). So `abs`, `sqrt`, `ceiling`,
+       `floor`, `exp`, `ln`, `log` and `power` (`ENGINE:4104`, `:4124`, …)
+       render `1.0E+10`. `round` renders `1.23E+4` for `12345.round(-2)`,
+       because `setScale` takes a negative scale (`:4411-4412`).
+     - `BigDecimal.toString` is a fixed function of the unscaled value and the
+       scale: scientific when the scale is below zero or the adjusted exponent
+       is below -6.
+     - Frevo's decimal already carries a mantissa and a scale (`design.md`
+       section 6; `DEBT-0011`). So "its decimal type carries no exponent" is
+       not an obstacle to producing the same string.
+     - The rendering is observable through `toString()`, implicit string
+       conversion and the serialized result. "Changes the string and not the
+       value" is the very difference a differential sees.
+   - **My view.** Require HAPI's behaviour in the spec: `toChars` per UTF-16
+     unit, and Java `BigDecimal.toString` rendering. Withdraw DEV-0020, or
+     reduce it to whatever residue the owner explicitly accepts.
+   - If the owner does accept a departure, "Debt: none" is wrong. The entry's
+     own rationale names what would then be owed ("an exponent-capable decimal
+     rendering is due"). That belongs in `docs/tech-debt.md` with its trigger.
+
+2. **`substring` can split a surrogate pair, and no scenario or entry says
+   so.** `path.string.022` now requires UTF-16 counting, which matches HAPI.
+   `funcSubstring` slices with `String.substring` (`ENGINE:5884-5886`), so
+   `'😀x'.substring(1)` or `'😀'.substring(0, 1)` yields a lone surrogate
+   in HAPI. That is the same unpaired-unit case as `toChars`. Neither DEV-0020
+   nor `string.022` (which says only that a BMP character "is never split")
+   states the outcome for a supplementary character. Whatever finding 1
+   resolves to, state the `substring` result for a supplementary character,
+   with a WHEN and a THEN.
+
+3. **The exponent rendering is in no scenario.** DEV-0020 lists
+   `path.mathfn.004`, but `mathfn.004` (`spec.md:1286-1289`) says only "every
+   `testRound` case yields its stated output". No suite case exercises an
+   exponent. So, whichever rendering is chosen, a tester has no concrete
+   input or output. Add a differential-only scenario with concrete cases, for
+   example `12345.round(-2)` → `1.23E+4` and `(1e20).abs()`-style
+   double-derived values → `1.0E+20`, each stated as the string HAPI
+   produces. Also correct DEV-0020's scenario-ID field to name it.
+
+## Eighteenth review header as issued (commit `c35959a`)
 
 Eighteenth review (commit `c35959a`, 2026-11-17) resolves the one finding of
 the seventeenth review. Detail is in the dated section at the end. The earlier
@@ -953,3 +1017,78 @@ differential harness, not this spec.
   refresh it.
 
 **Scenario IDs.** `c35959a` changes no `#### Scenario:` heading.
+
+## Nineteenth review - commit `fd47948` (2026-11-17)
+
+**Results file: every case in the three named groups, checked.**
+- **`testSubstring`** has 16 cases (`results:344-359`). `1`-`5` and `7`-`9`
+  are `passed`. `11`-`18` are `failed`. That is "8 of 16", as stated.
+- **`testMinus`**: `1`-`6` `passed` and `7` `failed` (`:829-835`).
+- **`testPlus`**: 27 `passed`. `testPlusDate23` and `24` are `failed`
+  (`:823-824`).
+- **Messages.** `testMinus7`, `testPlusDate23` and `testPlusDate24` all fail
+  with "does not support MINUTE precision", as `math.012` now states.
+  `testMinus6` is `invalid="execution"`, and it passes because HAPI raises.
+
+**`path.string.004` / DEV-0019 substring half: correct.** I traced each case
+through `funcSubstring` (`ENGINE:5864-5895`) and the reason text in the
+results.
+- `11` and `12`: `n1.get(0)` on an empty list (`:5867`). The reason is
+  "Index 0 out of bounds for length 0".
+- `13`, `14` and `15`: the end is `min(len, i1+i2)` (`:5884`), giving
+  `[3,2)`, `[0,-1)` and the overflowed `[1,-2147483648)`.
+- `16`: `""` is dropped (`:5888`).
+- `17` and `18`: an empty `n2` returns empty (`:5871-5872`).
+- `string.021`'s `{}.substring(0)` stays empty, because `i1` parses and the
+  focus guard returns nothing. That is consistent.
+
+**`path.mathfn.010` / DEV-0019 math half: correct.**
+- `if (focus.size() != 1) throw makeExceptionPlural(...)` opens `funcSqrt`
+  `:4096`, `funcAbs` `:4116`, `funcCeiling` `:4139`, `funcFloor` `:4157`,
+  `funcLn` `:4201`, `funcLog` `:4221`, `funcPower` `:4249`, `funcTruncate`
+  `:4273` and `funcRound` `:4397`.
+- `funcExp` alone returns empty for size 0 (`:4177-4179`) and raises for more
+  than one (`:4180-4182`).
+- The requirement sentence (`spec.md:1269`) is updated to match.
+
+**`path.string.023`: correct.**
+- `case Round` calls `checkContextDecimal` (`ENGINE:3690`). It throws
+  `FHIRPATH_DECIMAL_ONLY` for a typed non-numeric focus (`:3890-3892`). The
+  message template is `Messages.properties:313` (`org.hl7.fhir.utilities`).
+- With the check skipped, the else arm of `funcRound` calls `makeException`
+  without `throw` (`:4414`), so the result is empty.
+- Not in this commit: the same unthrown pattern is in `sqrt`, `abs`,
+  `ceiling`, `floor`, `exp`, `ln`, `log`, `power` and `truncate` (`:4109`,
+  `:4132`, `:4151`, `:4170`, `:4194`, `:4214`, `:4239`, `:4267`, `:4285`).
+
+**`path.string.022` counting: correct.** `length` is `s.length()` (`:5771`),
+`indexOf` is `s.indexOf` (`:5858`) and `substring` is `String.substring`
+(`:5884`). All three count UTF-16 code units. The gaps are findings 1 and 2.
+
+**`path.math.012`: correct**, given the statuses above.
+
+**Scenario IDs.** Two titles change: `path.mathfn.010` and `path.string.022`.
+The index (`spec.md:568`, `:596`) carries the new titles. No ID is added,
+removed or renumbered. `path` has 363 headings, unchanged.
+
+**DEV format and preamble.**
+- DEV-0019 and DEV-0020 carry every field.
+- The preamble says nineteen and lists DEV-0013, DEV-0015 and DEV-0017 to
+  DEV-0020 as pending.
+- `check-registries.sh` reports "registers agree" (19 deviations, 12 debt
+  entries). DEV-0020's "Debt: none" is finding 1.
+
+**Stale text.** `tasks.md:845-846` (task 40) now says UTF-16 code units, and
+says `toChars` follows DEV-0020. It must follow whatever finding 1 resolves to.
+No other "unicode scalar" wording remains outside DEV-0020 and `string.022`.
+
+**Process note for the coordinator (not a spec finding).** `fd47948` is a
+`docs(openspec)` commit, but it also changes
+`crates/frevo-path/src/eval/tests.rs` and
+`crates/frevo-path/tests/oracle/engine.rs`. The edits are:
+- the evaluation-zone wiring in the oracle harness;
+- removal of now-implemented functions from the "unsupported" lists.
+
+Neither looks like a weakened assertion. Both are outside the proposer's write
+set (constitution, Roles), and they should land under the oracle-builder or
+the implementer.
