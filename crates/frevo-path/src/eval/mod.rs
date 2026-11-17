@@ -44,6 +44,7 @@ mod navigate;
 mod operand;
 mod strext;
 mod strfn;
+mod strregex;
 mod temporal;
 
 #[cfg(test)]
@@ -373,6 +374,9 @@ impl Run<'_> {
                 | Function::Escape
                 | Function::Unescape),
             ) => self.func_string_ext(context, focus, id, f),
+            Some(f @ (Function::Matches | Function::MatchesFull | Function::ReplaceMatches)) => {
+                self.func_regex(context, focus, id, f)
+            }
             Some(
                 f @ (Function::ToInteger
                 | Function::ToDecimal

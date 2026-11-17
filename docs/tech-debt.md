@@ -384,3 +384,36 @@ them is the whole reason that decision is safe to make.
 - **Size:** small; best done with DEBT-0011.
 - **Status:** open
 - **Reviewed:** not yet. Raised 2026-11-17.
+
+### DEBT-0015 — the regular-expression functions differ from `java.util.regex` in corners where Frevo answers rather than errors
+
+- **Area:** path
+- **Origin:** change `add-fhirpath-and-codegen-r4`, task 41a, ADR 0005
+- **Owed:** a closer match to Java in the places the `regex` crate cannot be
+  made exact by rewriting the pattern:
+  - `$` without `(?m)` does not match before a final line terminator (Java
+    does) in all three functions;
+  - `(?i)` folds Unicode case (`K` U+212A matches `k`); Java's default is ASCII;
+  - `.` in `replaceMatches` is rewritten to exclude Java's five line
+    terminators only when the pattern has no inline flag group; with one, Rust's
+    `.` (excluding only `\n`) applies;
+  - `\u` escapes and other escapes `regex` accepts that Java rejects (`\U`)
+    are accepted;
+  - a lone surrogate carried as a private-use code point (DEBT-0013) is an
+    ordinary character to the engine;
+  - there is no compiled-pattern cache beyond a 64-entry per-thread one, and
+    `replace_all` iteration can be O(m*n^2) on an adversarial pattern.
+  Constructs Java has and `regex` lacks (backreferences, lookaround, atomic
+  groups, `\Q..\E`, `\R`, `\G`, `\Z`, `(?d)`), and the ones Frevo rejects as
+  silently different (`(?u)`, `(?U)`, `(?x)`, `\v`, possessive quantifiers,
+  POSIX `\p{..}`, `--` and `~~` in a class), are errors, not answers; they are
+  not hazards. A pattern HAPI times out on gets an answer.
+- **Why deferred:** each needs either an unavailable engine feature or a
+  Java-exact engine (ADR 0005 option (c)); no suite case or consumer uses
+  them. No flag is added (constitution section 1).
+- **Cost if unpaid:** a wrong answer, not an error, for the cases above.
+- **Trigger:** a differential diff, corpus search parameter or IG invariant
+  that uses them; or fuzzing finding the O(m*n^2) case.
+- **Size:** small each; large if a Java-exact engine is needed.
+- **Status:** open
+- **Reviewed:** not yet. Raised 2026-11-17.

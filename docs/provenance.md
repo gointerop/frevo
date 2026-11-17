@@ -99,6 +99,9 @@ precision check and string rendering), and the math functions —
 `DecimalType(double)`), and the base string functions — `src/eval/strfn.rs`
 (`funcUpper`, `funcLower`, `funcToChars`, `funcIndexOf`, `funcSubstring`,
 `funcStartsWith`, `funcEndsWith`, `funcContains`, `funcLength`), and the
+regular-expression functions — `src/eval/strregex.rs` (`funcMatches`,
+`funcMatchesFull`, `funcReplaceMatches`; the `regex` crate stands in for
+`java.util.regex`, ADR 0005), and the
 string functions that need no regular-expression engine —
 `src/eval/strext.rs` (`funcReplace`, `funcTrim`, `funcSplit`, `funcJoin`,
 `funcEncode`, `funcDecode`, `funcEscape`, `funcUnescape`, `bytesToHex`,

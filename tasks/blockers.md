@@ -1936,3 +1936,18 @@ Also in this task: `split` with an empty separator loops forever in
 execution error instead. `testSplit/testSplit3` needs `trace()`, not part of
 this task. `replace_substitutes_literal_substrings` also asserts
 `replaceMatches`, which is 41a.
+
+## add-fhirpath-and-codegen-r4, task 41a: `{}.matchesFull('b')` is `false` in HAPI, the test says empty
+
+`crates/frevo-path/tests/path_string.rs:645`
+(`matches_full_requires_the_whole_string_to_match`, `path.string.009`) asserts
+`eval("{}.matchesFull('b')") == empty()`. The pinned `funcMatchesFull`
+(`FHIRPathEngine.java:5711-5735`) has no empty-propagation branch (unlike
+`funcMatches`, `:5683`, whose first branch is `focus.size() == 0 || swb.size()
+== 0`): with an empty focus `focus.size() == 1` is false and the `else` adds
+`BooleanType(false)`. So HAPI answers `false`, which ADR 0005 also states.
+Frevo follows HAPI (`strregex.rs`), so this one assertion is red and so is the
+test; the `{}.matches('b')` line above it (empty) passes. Decision needed:
+amend the test's last line to `boolean(false)` (and the spec scenario if it
+says otherwise; `path.string.009` as written does not mention it), or record a
+deviation. Not edited here.
