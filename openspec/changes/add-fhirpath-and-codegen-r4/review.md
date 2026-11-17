@@ -1,4 +1,40 @@
-APPROVED
+CHANGES_REQUESTED
+
+Twenty-first review (commit `65aeb76`, 2026-11-17). `ENGINE` is
+`org.hl7.fhir.r4/.../fhirpath/FHIRPathEngine.java` at `73c432b5`. Every factual
+claim in the commit checks out against the source and the results file. Two
+gaps remain. Detail is in the dated section at the end. The twentieth review
+was `APPROVED`; earlier findings follow, kept for the record.
+
+1. **The Type conversion requirement sentence contradicts the amended
+   scenarios.** `specs/path/spec.md:1543` still says the engine implements
+   "the `toX` functions the R4 engine implements ... so that a failed
+   conversion yields an empty collection".
+   - `toDateTime` and `toTime` are now specified as raising
+     `FHIRPATH_NOT_IMPLEMENTED` for every focus (`path.convert.011`, `.013`;
+     `ENGINE:4976-4987`).
+   - So the requirement-level SHALL is false for two of the `toX` functions.
+   - Name the two stubs as the exception in the requirement sentence,
+     pointing at DEV-0021.
+
+2. **The check-stage message for a non-primitive focus is unstated, and HAPI
+   spells the function name differently from every other function.**
+   - `case ToDateTime` calls `checkContextPrimitive(focus, "ToDateTime", ...)`
+     (`ENGINE:3651`), and `case ToTime` passes `"ToTime"` (`:3655`). Both
+     have a capital `T`.
+   - Every other conversion passes the lower-case code, either as a literal
+     (`"toQuantity"` `:3643`, `"toBoolean"` `:3647`) or through
+     `exp.getFunction().toCode()` (`:3669`).
+   - The template is `FHIRPATH_PRIMITIVE_ONLY` (`Messages.properties:353`).
+     HAPI therefore reports "The function ToDateTime can only be used on
+     primitives", and "The function ToTime ..." likewise.
+   - `convert.011` and `.013` say only "a non-primitive focus is rejected by
+     the check". An implementer following the pattern of the other functions
+     would emit `toDateTime`, and the differential would diff.
+   - State the message, with its capital `T`, and a concrete non-primitive
+     focus, for example `Patient.name.toDateTime()`.
+
+## Twentieth review header as issued (commit `2419520`)
 
 Twentieth review (commit `2419520`, 2026-11-17) resolves all three findings of
 the nineteenth review. Detail is in the dated section at the end. The earlier
@@ -1163,3 +1199,73 @@ headings.
   server, because no response surface in this change emits one. Whoever adds
   an endpoint that returns FHIRPath results should give it a differential
   case.
+
+## Twenty-first review - commit `65aeb76` (2026-11-17)
+
+**`toDateTime` / `toTime` stubs: correct.**
+- `funcToDateTime` (`ENGINE:4976-4981`) and `funcToTime` (`:4983-4987`) have
+  commented-out bodies and an unconditional `throw makeException(...,
+  FHIRPATH_NOT_IMPLEMENTED, "toDateTime"|"toTime")` (`:4980`, `:4987`).
+- Dispatch is direct (`:3992-3993`), with no empty-focus short-circuit, so
+  `{}.toDateTime()` raises too.
+- The template is `Messages.properties:347`, which reads "Error evaluating
+  FHIRPath expression: The function {0} is not implemented".
+- The check (`:3650-3656`) calls `checkContextPrimitive`. That is a no-op for
+  a type-less focus such as `{}`, and passes a primitive focus (`:3872-3882`).
+  It types the result `dateTime` / `time`.
+- These are the only two `FHIRPATH_NOT_IMPLEMENTED` throws in the engine. No
+  other conversion stub was missed.
+- `toDate` has no `Function` value (`ExpressionNode.java:53`), which is
+  consistent with the requirement.
+
+**`convertsToDateTime` / `convertsToTime`: correct.**
+- `funcIsDateTime` (`:5942-5955`) matches strings against `DATE_TIME_REGEX`,
+  which is true for any `DateType` or `DateTimeType` and false for a size
+  other than 1.
+- `funcIsTime` (`:5986-5990`) uses the inline time regex, exactly as quoted.
+  `'14'`, `'14:34'`, `'14:34:28'` and `'14:34:28.123'` match, and `'abc'`
+  does not.
+
+**`path.convert.004`: correct, each example traced.**
+- `funcIsDate` uses `DATE_TIME_REGEX` with the upstream `FIXME` (`:5957-5965`).
+- `DATE_TIME_REGEX` is defined at `RegexConstants.java:27-30`
+  (`org.hl7.fhir.utilities`).
+- `'2015-02-04T14'`, `'2015-02-04T14:34'` and `'2015-02-04T14:34:28+10:00'`
+  match. The minutes and seconds are optional, and `+10:00` matches
+  `(0[0-9]|1[0-3]):[0-5][0-9]`.
+- `'2015-13'` fails, because the month is `0[1-9]|1[0-2]` and `matches` needs a
+  full match. `'2015-02-04T25'` fails, because the hour is
+  `[01][0-9]|2[0-3]`. `'abc'` fails.
+- The "correct" `DATE_REGEX` (`:21-23`) requires a full date, which is why the
+  `FIXME` says "Tests fail" (the suite's year and month cases).
+
+**`path.convert.008`: correct.**
+- `testTypes` has 101 cases: 99 `passed` and 2 `failed`. The two failures are
+  exactly `testStringQuantityMonthToQuantityEquivalent` and
+  `testStringQuantityYearToQuantityEquivalent` (`results:192-193`). Both are
+  the `qtyEquivalent` null-unboxing NPE of `path.equality.004`.
+- `funcToQuantity` gives an `IntegerType` or `DecimalType` the system UCUM and
+  code `1` (`:4957-4973`).
+
+**DEV-0021 framing: correct.** FHIRPath 2.0.0 defines `toDateTime()` and
+`toTime()` as real conversions, and limits `convertsToDate` to date forms.
+HAPI stubs the first two and widens the third. This is a genuine
+specification-against-HAPI difference, resolved for HAPI as constitution
+section 1 requires, in the same direction as DEV-0009. Every field is present.
+
+**Registers and counts.**
+- The preamble says nineteen and lists DEV-0021 as pending.
+- `check-registries.sh` reports "registers agree" (19 deviations, 14 debt
+  entries).
+- The `spec.md` index carries the three new titles (`path.convert.004`,
+  `.011`, `.013`).
+- No `#### Scenario:` ID was added, removed or renumbered. `path` has 363
+  headings.
+
+**Stale text.**
+- No "widens precision", "toTime converts" or "year, month and day precision"
+  wording remains outside history.
+- `tasks.md` (task 42, `:862-872`) is updated.
+- `crates/frevo-path/tests/path_convert.rs:473-477` and `:561-566` already
+  assert the stub behaviour.
+- The remaining stale sentence is the requirement line (finding 1).
