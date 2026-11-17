@@ -30,10 +30,13 @@
 
 mod collection;
 mod combine;
+mod compare;
 mod equality;
 mod error;
 mod filter;
 mod navigate;
+mod operand;
+mod temporal;
 
 #[cfg(test)]
 mod tests;
@@ -41,6 +44,7 @@ mod tests;
 pub use error::EvalError;
 
 use self::collection::Tri;
+use self::compare::Ordered;
 use crate::seam::model::Model;
 use crate::seam::value::{Decimal, Value};
 use crate::syntax::ast::{Constant, Expression, Function, Kind, NodeId, Operation};
@@ -189,7 +193,7 @@ impl Run<'_> {
                     work = self.unary_sign(op, &right, id)?;
                 } else {
                     let right = self.execute(context, focus, next_id, true)?;
-                    work = self.operate(&work, op, &right, last_node.op_start())?;
+                    work = self.operate(&work, op, &right, last)?;
                 }
                 last = next_id;
                 next = self.expr.node(next_id).op_next();
@@ -269,6 +273,7 @@ impl Run<'_> {
             Some(Function::IsDistinct) => self.func_is_distinct(focus, id),
             Some(Function::Distinct) => self.func_distinct(focus, id),
             Some(Function::Count) => Ok(self.func_count(focus)),
+            Some(Function::HasValue) => Ok(self.func_has_value(focus)),
             Some(Function::Union) => self.func_union(context, focus, id),
             Some(Function::Combine) => self.func_combine(context, focus, id),
             Some(Function::Where) => self.func_where(context, focus, id),
@@ -362,6 +367,8 @@ impl Run<'_> {
 
     /// `operate(context, left, operation, right, holder)`
     /// (`FHIRPathEngine.java:1843`), for the operators implemented so far.
+    /// `holder` is the node whose operator this is; a failure is attributed to
+    /// its start, as `makeException(holder, ...)` does.
     /// Every other operator is [`EvalError::Unsupported`].
     ///
     /// `Is` and `As` take their right operand as a type name rather than an
@@ -373,11 +380,24 @@ impl Run<'_> {
         left: &[Value],
         op: Operation,
         right: &[Value],
-        offset: usize,
+        holder: NodeId,
     ) -> Result<Vec<Value>, EvalError> {
+        let node = self.expr.node(holder);
+        let (at, offset) = (node.start(), node.op_start());
+        let model = self.model;
         match op {
-            Operation::Equals => equality::op_equals(self.model, left, right, false, offset),
-            Operation::NotEquals => equality::op_equals(self.model, left, right, true, offset),
+            Operation::Equals => equality::op_equals(model, left, right, false, offset),
+            Operation::NotEquals => equality::op_equals(model, left, right, true, offset),
+            Operation::Equivalent => equality::op_equivalent(model, left, right, false, offset),
+            Operation::NotEquivalent => equality::op_equivalent(model, left, right, true, offset),
+            Operation::LessThan => compare::op_ordered(model, left, right, Ordered::Less, at),
+            Operation::Greater => compare::op_ordered(model, left, right, Ordered::Greater, at),
+            Operation::LessOrEqual => {
+                compare::op_ordered(model, left, right, Ordered::LessOrEqual, at)
+            }
+            Operation::GreaterOrEqual => {
+                compare::op_ordered(model, left, right, Ordered::GreaterOrEqual, at)
+            }
             Operation::Union => self.op_union(left, right, offset),
             Operation::In => self.op_in(left, right, offset),
             Operation::Contains => self.op_contains(left, right, offset),
