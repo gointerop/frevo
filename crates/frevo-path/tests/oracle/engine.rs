@@ -321,9 +321,10 @@ impl SuiteEngine for FrontEndEngine {
         _context: &CaseContext<'_>,
         _flags: StrictnessFlags,
     ) -> Result<Vec<ResultItem>, EngineError> {
-        // The case context and the strictness flags are read by the check
-        // pass and by the type operators, neither of which is bound yet; the
-        // evaluator core reads neither. `FHIRPathTests.test` evaluates with
+        // The strictness flags are read by the type operators, which are not
+        // bound yet; the evaluator core reads neither them nor the case
+        // context's types (see the `context` handling below).
+        // `FHIRPathTests.test` evaluates with
         // `fp.evaluate(res, node)`: the input resource is the focus and
         // `$this`, and there is no application context.
         //
@@ -355,7 +356,31 @@ impl SuiteEngine for FrontEndEngine {
         let zone = self.config.map_or(SUITE_TIME_ZONE_OFFSET_MINUTES, |c| {
             c.time_zone_offset_minutes
         });
-        let values = evaluate_over_in_zone(expr, root.as_ref(), zone)?;
+        // Frevo's run honours the case's `context` attribute, which the pinned
+        // Java harness reads nowhere (`path.oracle.002`, `path.oracle.016`):
+        // the expression is evaluated once per item the context path selects
+        // from the resource, with that item as the focus and `$this`, and the
+        // results are concatenated. Without a `context` the resource is the
+        // focus, as upstream's `fp.evaluate(res, node)`.
+        let values = match (_context.context, root.as_ref()) {
+            (Some(path), Some(resource)) => {
+                let context_expr =
+                    frevo_path::Expression::parse(path).map_err(|e| EngineError::Diagnostic {
+                        message: format!(
+                            "the case context {path:?} does not parse: {}",
+                            e.message()
+                        ),
+                        offset: Some(e.offset()),
+                    })?;
+                let focus_items = evaluate_over_in_zone(&context_expr, Some(resource), zone)?;
+                let mut out = Vec::new();
+                for item in &focus_items {
+                    out.extend(evaluate_over_in_zone(expr, Some(item), zone)?);
+                }
+                out
+            }
+            _ => evaluate_over_in_zone(expr, root.as_ref(), zone)?,
+        };
         Ok(values.iter().map(|v| result_item(model, v)).collect())
     }
 

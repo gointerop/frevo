@@ -608,10 +608,10 @@ fn a_time_literal_with_an_offset_is_an_execution_error() {
 fn every_unimplemented_function_is_unsupported_and_never_empty() {
     let p = patient();
     for text in [
-        "Patient.name.given.toInteger()",
         "Patient.name.aggregate($this, 0)",
         "Patient.birthDate.extension('x')",
         "Patient.name.given.join(',')",
+        "Patient.name.given.trim()",
     ] {
         let feature = unsupported(text, Some(&p));
         assert!(feature.contains("function"), "{text}: {feature}");
