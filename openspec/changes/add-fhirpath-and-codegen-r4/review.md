@@ -1,4 +1,10 @@
-CHANGES_REQUESTED
+APPROVED
+
+Fifteenth review (commits `16d970c` and `eb10763`, 2026-11-17) resolves all
+three findings of the fourteenth review. Detail is in the dated section at the
+end. The earlier findings follow, kept for the record.
+
+## Fourteenth-review findings as raised (commit `cbe278c`)
 
 Fourteenth review (commit `cbe278c`, 2026-11-17). Thirteenth-review finding 3
 is resolved. Findings 1 and 2 are only partly resolved, and the same area has
@@ -562,3 +568,49 @@ three places. The `throw` is at `:3830`.
 
 **Registers.** `check-registries.sh` reports "registers agree" (15
 deviations, 12 debt entries).
+
+## Fifteenth review — commits `16d970c` and `eb10763` (2026-11-17)
+
+**Fourteenth-review finding 1: resolved.** I compared the bytes with `od -c`:
+
+- `specs/path/spec.md:250` contains ``Patient.`name`.given.first()``.
+- `docs/deviations.md:603` contains ``Patient.`name` ``.
+- Both are the literal sequence backslash, `u`, `0`, `0`, `6`, `e`, with no
+  decoded character in place of the escape.
+- This is byte-identical to `oracles/fhirpath/tests-fhir-r4.xml:100`.
+
+**Fourteenth-review finding 2: resolved.** The "not reachable" sentence is
+replaced.
+
+- The new text says the `processFixedName` base-32 defect is reachable and
+  observable, decoding `n` as U+00CE. This matches `FHIRLexer.java:511`
+  at `73c432b5`.
+- It confines the claim of non-reachability to the other two defects: the
+  quantity-unit missing advance, and the missing `` \` `` escape in a
+  delimited name. No real expression reaches either.
+
+**Fourteenth-review finding 3: resolved.**
+`crates/frevo-path/tests/path_navigation.rs:487-490` no longer cites DEV-0016.
+It states the base-32 decode (`FHIRLexer.java:511`, `006e` -> U+00CE). The
+assertion is unchanged.
+
+**Stale-text grep.** I searched the change directory, `docs/`,
+`crates/frevo-path` and `tasks/graph.yaml` for `DEV-0016`, "does not decode"
+and "already pathological". There are no hits outside this file. The hits for
+"not reachable" in `tasks.md` are unrelated: they describe task reachability
+in codegen.
+
+**Registers.** `check-registries.sh` reports "registers agree" (15
+deviations, 12 debt entries).
+
+**Coverage since `a53fc9a`.** Four commits have touched the spec delta or the
+registers since the last `APPROVED`: `fa4b9be`, `ade70c6`, `cbe278c` and
+`16d970c`. Their combined diff touches only `specs/path/spec.md` (39 lines),
+`docs/deviations.md` and this file. Every hunk falls in `navigation.001`,
+`.003`, `.008`, `.011` or `.019`, or in the DEV-0016 entry and the escape
+bullet. The thirteenth to fifteenth reviews cover all of them. `tasks.md`,
+`design.md`, `proposal.md` and the other spec files are unchanged since
+`a53fc9a`. Nothing is left unreviewed.
+
+**Note (not a finding).** The `:3828` `checkParamTypes` citation nits from the
+fourteenth review's note remain.
