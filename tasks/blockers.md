@@ -1649,3 +1649,65 @@ already faithful. Tasks 32-34 stay **unticked**.
    `fhirpath_oracle` is `did-not-run`: `iif`, `trace`, `type()`, `is`,
    `substring`, `join`, `sort`, `aggregate`, `extension()`, `convert_to_boolean`
    and date/quantity equality are later tasks (35+).
+
+## 2026-11-17 — `add-fhirpath-and-codegen-r4` — tasks 35-37 implemented; tests that contradict HAPI or the check pass
+
+**Raised by** the implementer. Tasks 35, 36 and 37 are committed and **unticked**.
+Each failure below is a test that disagrees with the pinned engine (evidence from
+`FHIRPathEngine.java` at `73c432b5`, and from `oracles/fhirpath/hapi-8.12.0-results.json`,
+which is HAPI's own run of the same suite). The implementation follows HAPI.
+Decision needed from the oracle-builder or owner for each.
+
+1. **Suite groups that HAPI itself fails, asserted as all-pass.** `expect_group`
+   requires every case; HAPI's results mark these `failed`:
+   - `testEquality31`-`33`, `35` (`100 = 1.0` etc.): `removeTrailingZeros`
+     (`:2152`) strips zeros from a number with no decimal point, so `100 = 1.0`
+     is true and `10 = 10.0` false. Already ported as written.
+   - `testEquality37`-`40`, `testNEquality27`, `testEquivalent30`, `testPlusDate23`/`24`,
+     `testMinus7`, `testUnion12`: a **minute-precision** `DateTimeType` is
+     rejected by `DateTimeType.copy()` (`Invalid date/time format`), which
+     `equalsUsingFhirPathRules` (`BaseDateTimeType.java:916`) and `dateAdd` call.
+     Frevo raises the same execution error.
+   - `testEquivalent24`-`29`, `testNotEquivalent23`/`24` (`1 year ~ 1 'a'`, ...):
+     `qtyEquivalent` returns `null` and `doEquivalent` unboxes it (`:2166`);
+     HAPI raises a `NullPointerException`, Frevo an execution error.
+   - `testLessThan29`, `testLessOrEqual28`/`29`, `testGreaterThan28`/`29`,
+     `testGreatorOrEqual28`/`29`, `testLessThan33`: `1 year < 2 months` compares
+     `code` lists that are both empty and so compares the values (`:2437`);
+     `<=`, `>` and `>=` compare `unit`, and `qtyToCanonicalDecimal` returns
+     `null` for a quantity with no UCUM system, so `isPrimitive()` is called on
+     null (`:2556`). Ported as written (NPE becomes an execution error).
+   - `testHasValue/testHasCodingValue2`: `funcHasValue` (`:5776`) is
+     `!noString(convertToString(item))`, and a `HumanName`'s string is its
+     `toString()`, so `name.first().hasValue()` is true.
+   - `testDivide7`, `testDiv6`, `testMod8` (`0.0 / 0`, `0 div 0.0`, `0.0 mod 0`):
+     the decimal arm goes through `org.fhir.ucum.Decimal`, whose `divide`
+     returns zero for a zero dividend **before** it checks the divisor; HAPI
+     answers one item. `testMod6`/`7` (`5.5 mod 0`, `5 mod 0.0`): `modulo`
+     calls `divide`, which throws `UcumException("Attempt to divide 5.5 by
+     zero")`, and `opMod` rethrows it; HAPI fails the case with that exception.
+     `path.math.008`'s test asserts all of these are empty. Frevo follows HAPI.
+2. **Check stage on a function with no focus.** `path.logic.008`/`.009`/`.010`
+   call `iif(...)` with no input resource, and require the static check to pass.
+   The check pass answers `NotImplemented` for a function over a null focus
+   (`pass.rs:148`, "on which the pinned engine raises a NullPointerException"),
+   so the harness reports `did-not-run`. That is the pass's documented stance, not
+   something tasks 35-37 own; the tests need the check pass changed or the
+   scenario given an input.
+3. **Four in-crate unit tests in `src/eval/tests.rs` encode "unimplemented" for
+   things that now exist**, and fail: `every_unimplemented_function_is_unsupported_and_never_empty`
+   (`iif`), `every_binary_operator_is_unsupported_and_never_empty` (`~`, `<`, `+`,
+   `and`, `&`), `a_unary_sign_over_a_non_number_is_unsupported` (`-'a'` is now the
+   incompatible-types error, as `0 - 'a'` is upstream) and
+   `equality_reaches_the_decimal_rule_and_leaves_dates_and_quantities_unsupported`
+   (`@2015 = @2015` is now `true`). I may not edit tests. Decision needed:
+   permission to replace the operators and functions they list with ones still
+   unimplemented (`is`, `as`, `memberOf`, `upper()`...).
+4. **`org.fhir.ucum.Decimal` is not in `reference/`.** `/` over decimals is
+   exact when the quotient terminates and `Unsupported` otherwise, because the
+   library's digit count for a non-terminating quotient (`1 / 3`) cannot be
+   ported without its source. Needed: vendor `fhir-ucum` at the version the pin
+   resolves, or accept the gap in `docs/known-gaps.md`.
+5. **Frevo reads a missing UTC offset as UTC** where the pinned engine reads
+   the JVM default zone (`couldBeTheSameTime`, `setTimeZoneZulu`). Identical on a
+   UTC JVM; recorded here rather than silently chosen.

@@ -11,7 +11,7 @@
 //! `Quantity`" reads either the literal variant or an element's children.
 
 use crate::seam::model::Model;
-use crate::seam::value::Value;
+use crate::seam::value::{Decimal, Quantity, Value};
 
 use super::EvalError;
 use super::equality::primitive_value_of;
@@ -52,6 +52,41 @@ pub(super) fn text_of(model: &dyn Model, value: &Value) -> Option<String> {
     primitive_value_of(model, value).flatten()
 }
 
+/// A decimal from a primitive that holds a number, or the error
+/// `new BigDecimal(text)` raises.
+pub(super) fn decimal_of(
+    model: &dyn Model,
+    value: &Value,
+    offset: usize,
+) -> Result<Decimal, EvalError> {
+    if let Value::Decimal(d) = value {
+        return Ok(d.clone());
+    }
+    let text = text_of(model, value).unwrap_or_default();
+    Decimal::parse(&text).ok_or_else(|| {
+        EvalError::execution(
+            format!("Character array is missing \"exponent\" mark 'e' or 'E': {text}"),
+            offset,
+        )
+    })
+}
+
+/// A 32-bit integer as `Integer.parseInt(primitiveValue())` reads it.
+pub(super) fn int_of(model: &dyn Model, value: &Value, offset: usize) -> Result<i32, EvalError> {
+    let text = match value {
+        Value::Integer(i) => {
+            return i32::try_from(*i).map_err(|_| number_format(&i.to_string(), offset));
+        }
+        other => text_of(model, other).unwrap_or_default(),
+    };
+    text.parse::<i32>()
+        .map_err(|_| number_format(&text, offset))
+}
+
+fn number_format(text: &str, offset: usize) -> EvalError {
+    EvalError::execution(format!("For input string: \"{text}\""), offset)
+}
+
 /// The fields of a quantity that `FHIRPathEngine` reads.
 #[derive(Debug, Clone)]
 pub(super) struct Qty {
@@ -59,6 +94,19 @@ pub(super) struct Qty {
     pub(super) unit: Option<String>,
     pub(super) code: Option<String>,
     pub(super) system: Option<String>,
+}
+
+impl Qty {
+    /// `Quantity.copy().setValue(...)` and the other places a quantity result
+    /// is built from an operand.
+    pub(super) fn to_value(&self, value: Decimal) -> Value {
+        Value::Quantity(Quantity {
+            value,
+            unit: self.unit.clone(),
+            system: self.system.clone(),
+            code: self.code.clone(),
+        })
+    }
 }
 
 /// `instanceof Quantity`, which an `Age` or a `Duration` satisfies.

@@ -17,8 +17,10 @@
 //! Task 31 of `add-fhirpath-and-codegen-r4`: navigation. What exists here is
 //! the walk itself — names, the leading type name, flattening, groups,
 //! literals, `$this`, `$index` and `$total`, the indexer, `children()` and
-//! `descendants()`, and the unary sign that a negative index needs. Every
-//! other function and every binary operator answers
+//! `descendants()`. Tasks 32-37 added the collection functions, equality,
+//! equivalence, ordered comparison, boolean logic, `iif`, `hasValue` and
+//! arithmetic; the unary sign is `0 - x` or `0 + x` through the arithmetic, as
+//! upstream. Every other function and operator answers
 //! [`EvalError::Unsupported`], which is **not** an empty collection: the
 //! oracle grades that as a case that did not run, never as one that matched
 //! nothing.
@@ -28,6 +30,7 @@
 //! parsed form and allocates no string; a focus collection is borrowed by
 //! every step that reads it.
 
+mod arith;
 mod collection;
 mod combine;
 mod compare;
@@ -44,10 +47,11 @@ mod tests;
 
 pub use error::EvalError;
 
+use self::arith::Arith;
 use self::collection::Tri;
 use self::compare::Ordered;
 use crate::seam::model::Model;
-use crate::seam::value::{Decimal, Value};
+use crate::seam::value::Value;
 use crate::syntax::ast::{Constant, Expression, Function, Kind, NodeId, Operation};
 use crate::syntax::literal::process_date_constant;
 
@@ -189,10 +193,7 @@ impl Run<'_> {
                 let Some(op) = last_node.operation() else {
                     break;
                 };
-                if last == id && node.kind() == Kind::Unary {
-                    let right = self.execute(context, focus, next_id, true)?;
-                    work = self.unary_sign(op, &right, id)?;
-                } else if let Some(decided) = self.pre_operate(&work, op, id)? {
+                if let Some(decided) = self.pre_operate(&work, op, id)? {
                     work = decided;
                 } else if matches!(op, Operation::Is | Operation::As) {
                     // `executeTypeName` reads the right operand as a type
@@ -284,8 +285,8 @@ impl Run<'_> {
             Some(Function::IsDistinct) => self.func_is_distinct(focus, id),
             Some(Function::Distinct) => self.func_distinct(focus, id),
             Some(Function::Count) => Ok(self.func_count(focus)),
-            Some(Function::HasValue) => Ok(self.func_has_value(focus)),
             Some(Function::Iif) => self.func_iif(context, focus, id),
+            Some(Function::HasValue) => Ok(self.func_has_value(focus)),
             Some(Function::Union) => self.func_union(context, focus, id),
             Some(Function::Combine) => self.func_combine(context, focus, id),
             Some(Function::Where) => self.func_where(context, focus, id),
@@ -381,12 +382,15 @@ impl Run<'_> {
     /// (`FHIRPathEngine.java:1843`), for the operators implemented so far.
     /// `holder` is the node whose operator this is; a failure is attributed to
     /// its start, as `makeException(holder, ...)` does.
-    /// Every other operator is [`EvalError::Unsupported`].
     ///
     /// `Is` and `As` take their right operand as a type name rather than an
-    /// evaluated expression (`executeTypeName`), and `And`, `Or` and
-    /// `Implies` are short-circuited by `preOperate` first; none of them is
-    /// here, so none reaches this match.
+    /// evaluated expression (`executeTypeName`), so they never reach here, and
+    /// `MemberOf` needs a terminology service: both are
+    /// [`EvalError::Unsupported`].
+    ///
+    /// The unary sign is `0 - x` or `0 + x` through `Minus` and `Plus`, as it
+    /// is upstream, so `-5 'mg'` is the quantity's absolute value and `-'a'` is
+    /// the same incompatible-types error `0 - 'a'` is.
     fn operate(
         &self,
         left: &[Value],
@@ -416,36 +420,17 @@ impl Run<'_> {
             Operation::And | Operation::Or | Operation::Xor | Operation::Implies => {
                 self.op_logic(left, op, right, holder)
             }
+            Operation::Plus => arith::op_arith(model, left, Arith::Plus, right, at),
+            Operation::Minus => arith::op_arith(model, left, Arith::Minus, right, at),
+            Operation::Times => arith::op_arith(model, left, Arith::Times, right, at),
+            Operation::DivideBy => arith::op_arith(model, left, Arith::DivideBy, right, at),
+            Operation::Div => arith::op_arith(model, left, Arith::Div, right, at),
+            Operation::Mod => arith::op_arith(model, left, Arith::Mod, right, at),
+            Operation::Concatenate => arith::op_concatenate(model, left, right, at),
             other => Err(EvalError::unsupported(
                 format!("the operator {}", other.to_code()),
                 offset,
             )),
-        }
-    }
-
-    /// `0 + x` and `0 - x` for the unary node, over a single integer or
-    /// decimal. Anything else is arithmetic, which is task 37's, and so is
-    /// [`EvalError::Unsupported`] here rather than a guess.
-    fn unary_sign(
-        &self,
-        op: Operation,
-        right: &[Value],
-        id: NodeId,
-    ) -> Result<Vec<Value>, EvalError> {
-        let node = self.expr.node(id);
-        let unsupported =
-            || EvalError::unsupported(format!("the operator {}", op.to_code()), node.start());
-        match (op, right) {
-            (Operation::Plus, [Value::Integer(i)]) => Ok(vec![Value::Integer(*i)]),
-            (Operation::Plus, [Value::Decimal(d)]) => Ok(vec![Value::Decimal(d.clone())]),
-            (Operation::Minus, [Value::Integer(i)]) => match i.checked_neg() {
-                Some(n) => Ok(vec![Value::Integer(n)]),
-                None => Err(unsupported()),
-            },
-            (Operation::Minus, [Value::Decimal(d)]) => negate_decimal(d)
-                .map(|n| vec![Value::Decimal(n)])
-                .ok_or_else(unsupported),
-            _ => Err(unsupported()),
         }
     }
 }
@@ -465,16 +450,6 @@ fn integer_of(value: &Value) -> Option<i64> {
         "integer" | "positiveInt" | "unsignedInt" => primitive.lexical.parse().ok(),
         _ => None,
     }
-}
-
-/// `0 - d`, keeping the written scale: `-1.50` for `1.50`.
-fn negate_decimal(d: &Decimal) -> Option<Decimal> {
-    let lexical = d.lexical();
-    let negated = match lexical.strip_prefix('-') {
-        Some(rest) => rest.to_string(),
-        None => format!("-{}", lexical.strip_prefix('+').unwrap_or(lexical)),
-    };
-    Decimal::parse(&negated)
 }
 
 /// `funcChildren` (`FHIRPathEngine.java:4830`): every child of every focus

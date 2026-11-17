@@ -88,8 +88,9 @@ comparison — `src/eval/{equality,compare,operand,temporal}.rs`
 `compareTimes` and `getHighEdge`, `TimeType.java`'s field readers, and
 `Utilities.java`'s `equivalent` and `equivalentNumber`) — extend the first
 two, and boolean logic — `src/eval/logic.rs` (`preOperate`, `opAnd`,
-`opOr`, `opXor`, `opImplies`, `isBoolean`, `funcIif`) — extends the same.
-Each file
+`opOr`, `opXor`, `opImplies`, `isBoolean`, `funcIif`) — extends the same,
+and arithmetic — `src/eval/arith.rs` (`opPlus`, `opMinus`, `opTimes`,
+`opDivideBy`, `opDiv`, `opMod`, `opConcatenate`) — extends it again. Each file
 carries the required header naming the upstream path, the pinned SHA and what
 was modified. Every
 other row is updated by the change that first ports into that crate;
