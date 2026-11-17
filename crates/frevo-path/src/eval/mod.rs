@@ -93,12 +93,28 @@ impl Context<'_> {
 #[derive(Clone, Copy)]
 pub struct Evaluator<'m> {
     model: &'m dyn Model,
+    /// The evaluation time zone, minutes east of UTC (`DEV-0018`).
+    zone_minutes: i32,
 }
 
 impl<'m> Evaluator<'m> {
-    /// An evaluator that answers type questions from `model`.
+    /// An evaluator that answers type questions from `model`, in UTC.
     pub fn new(model: &'m dyn Model) -> Self {
-        Self { model }
+        Self {
+            model,
+            zone_minutes: 0,
+        }
+    }
+
+    /// The evaluation time zone as a fixed offset in minutes east of UTC.
+    /// `today()` and `now()` are read in it, and a `dateTime` with no offset
+    /// is placed in it when compared with one that has an offset. The default
+    /// is UTC; the pinned engine reads the JVM's default zone instead, which
+    /// the suite sets to `UTC+1100`.
+    #[must_use]
+    pub fn with_time_zone_offset_minutes(mut self, minutes: i32) -> Self {
+        self.zone_minutes = minutes;
+        self
     }
 
     /// `FHIRPathEngine.evaluate(Base, ExpressionNode)`: evaluate `expr` with
@@ -118,6 +134,7 @@ impl<'m> Evaluator<'m> {
             index: 0,
             total: None,
         };
+        let _zone = temporal::ZoneGuard::set(self.zone_minutes);
         Run {
             model: self.model,
             expr,
@@ -303,6 +320,10 @@ impl Run<'_> {
             Some(Function::Take) => self.func_take(context, focus, id),
             Some(Function::Intersect) => self.func_intersect(context, focus, id),
             Some(Function::Exclude) => self.func_exclude(context, focus, id),
+            // `funcToday` and `funcNow` read the clock on every call; no
+            // evaluation instant is cached (`DEV-0008`).
+            Some(Function::Today) => Ok(vec![temporal::today()]),
+            Some(Function::Now) => Ok(vec![temporal::now()]),
             Some(Function::Custom) | None => Err(EvalError::unsupported(
                 format!("the host function {}()", node.name().unwrap_or("?")),
                 node.start(),

@@ -90,7 +90,10 @@ comparison — `src/eval/{equality,compare,operand,temporal}.rs`
 two, and boolean logic — `src/eval/logic.rs` (`preOperate`, `opAnd`,
 `opOr`, `opXor`, `opImplies`, `isBoolean`, `funcIif`) — extends the same,
 and arithmetic — `src/eval/arith.rs` (`opPlus`, `opMinus`, `opTimes`,
-`opDivideBy`, `opDiv`, `opMod`, `opConcatenate`) — extends it again. Each file
+`opDivideBy`, `opDiv`, `opMod`, `opConcatenate`) — extends it again, and
+date arithmetic and the clock — `src/eval/temporal.rs` (`dateAdd`,
+`funcToday`, `funcNow`, and `BaseDateTimeType.java`'s `add`, `copy`
+precision check and string rendering). Each file
 carries the required header naming the upstream path, the pinned SHA and what
 was modified. Every
 other row is updated by the change that first ports into that crate;

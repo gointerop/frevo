@@ -24,8 +24,9 @@
 //! - `0 - q` for a quantity `q` is `q` with its value's absolute value, which
 //!   is how a unary minus on a quantity literal is evaluated, and `q - q` is
 //!   empty because the branch yields nothing unless the left operand is `0`;
-//! - date and dateTime arithmetic is task 38's, and quantity arithmetic that
-//!   goes through UCUM is task 43's: both are [`EvalError::Unsupported`].
+//! - date and dateTime plus or minus a quantity is `dateAdd` (task 38,
+//!   `temporal::date_add`); quantity arithmetic that goes through UCUM is
+//!   task 43's and is [`EvalError::Unsupported`].
 //!
 //! The one place this module is not a port: `org.fhir.ucum.Decimal.divide`
 //! decides how many digits a non-terminating quotient carries, and that
@@ -39,6 +40,7 @@ use crate::seam::value::{Decimal, Value};
 use super::EvalError;
 use super::navigate::fhir_type;
 use super::operand::{self, STRING_TYPES, has_type, int_of, is_primitive, is_quantity, text_of};
+use super::temporal;
 
 /// Which operator.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -288,7 +290,8 @@ pub(super) fn op_arith(
                 return Ok(dec_value(make_decimal(sum, scale, at)?));
             }
             if has_type(r, &["Quantity"]) && is_date_time_type(l) {
-                return Err(EvalError::unsupported("date and dateTime arithmetic", at));
+                let q = operand::qty_of(r)?;
+                return Ok(vec![temporal::date_add(l, &q, false, at)?]);
             }
             Err(incompatible(op, l, r, at))
         }
@@ -318,7 +321,8 @@ pub(super) fn op_arith(
                 return Ok(vec![q.to_value(abs)]);
             }
             if has_type(r, &["Quantity"]) && is_date_time_type(l) {
-                return Err(EvalError::unsupported("date and dateTime arithmetic", at));
+                let q = operand::qty_of(r)?;
+                return Ok(vec![temporal::date_add(l, &q, true, at)?]);
             }
             Err(incompatible(op, l, r, at))
         }

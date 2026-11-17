@@ -1742,3 +1742,28 @@ and `path_navigation.rs:766`. Decision needed: spec-reviewer re-review of
 `9fea32e` to `APPROVED`, then re-run this batch. Two scenario ids
 (path.compare.013, .014) currently have no test, so scenario-coverage.sh will
 report them uncovered until then.
+
+## 2026-11-17 — `add-fhirpath-and-codegen-r4` — task 38 cannot be ticked: one test contradicts HAPI, the oracle binding cannot carry the time zone, and three scenarios need later functions
+
+**Raised by** the implementer (task 38). Implemented: `dateAdd`, `today()`,
+`now()`, the evaluation zone (`Evaluator::with_time_zone_offset_minutes`,
+`DEV-0018`) and the DEV-0017 minute-precision messages. Open items:
+
+1. `path_math.rs:629` (`path.math.012`) asserts `expect_case("testMinus",
+   "testMinus7")` is **Passed**. HAPI's recorded run has it `failed`
+   (`oracles/fhirpath/hapi-8.12.0-results.json:835`: `Invalid date/time string
+   (datatype DateTimeType does not support MINUTE precision)`), `DEV-0017` and
+   spec.md (`testMinus7` is "the failed case") say it fails, and Frevo now
+   fails it identically. The assertion should be "failed with that message",
+   like `testPlusDate23/24`. Needs the oracle-builder.
+2. The oracle seam `tests/oracle/engine.rs::SuiteEngine::evaluate` calls
+   `Evaluator::new(model)` and ignores `EngineConfig::time_zone_offset_minutes`,
+   so the suite still runs in UTC. One-line fix, which the permission system
+   refused me: `Evaluator::new(model).with_time_zone_offset_minutes(
+   self.config.unwrap_or_default().time_zone_offset_minutes)`.
+   `fhirpath_oracle::the_harness_fixes_the_evaluation_time_zone_at_utc_plus_1100`
+   (`path.datetime.004`) stays red until then.
+3. `path.datetime.001`/`002`/`007` and `path.math.013` call `toString()` and
+   `precision()` (tasks 42 and 44), and `path.compare.013` needs `toString()`
+   plus a per-evaluation overlay that rewrites an operand's stored string to
+   Zulu. Not built; not faked.

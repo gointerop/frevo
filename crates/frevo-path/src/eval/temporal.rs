@@ -14,20 +14,55 @@
 //! the conversion to UTC is integer arithmetic over a proleptic Gregorian day
 //! count.
 //!
+//! Task 38 adds `dateAdd` (`FHIRPathEngine.java:2715`, over
+//! `BaseDateTimeType.add` at `:117`), `funcNow` and `funcToday` (`:4772`,
+//! `:4779`), and the evaluation time zone.
+//!
 //! Where the pinned engine reads the JVM's default time zone -- a dateTime with
 //! **no** offset is a `Date` in that zone, so it matters when such a value is
 //! compared with one that has an offset, in `couldBeTheSameTime` and in the
-//! conversion to Zulu -- this port reads a missing offset as UTC. The answer
-//! is the pinned engine's on a JVM whose default zone is UTC and differs from
-//! it by at most the zone's offset otherwise; two values that both lack an
-//! offset compare identically in any zone.
+//! conversion to Zulu, and `today()` and `now()` are read in it -- this port
+//! reads the **evaluation zone** the [`super::Evaluator`] was configured with,
+//! a fixed offset, UTC when none is configured (`DEV-0018`). A zone with
+//! daylight saving is not modelled: the offset is fixed for an evaluation.
+//! Two values that both lack an offset compare identically in any zone.
 
+use std::cell::Cell;
 use std::cmp::Ordering;
+use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::seam::value::{TemporalPrecision, Value};
+use crate::seam::value::{PartialDate, PartialDateTime, TemporalPrecision, Value};
 
 use super::EvalError;
 use super::navigate::fhir_type;
+use super::operand::Qty;
+
+thread_local! {
+    /// The evaluation zone, minutes east of UTC, for the evaluation running on
+    /// this thread. Held here rather than threaded through every equality and
+    /// membership helper that can end in a date comparison.
+    static EVAL_ZONE: Cell<i32> = const { Cell::new(0) };
+}
+
+/// The evaluation zone in minutes east of UTC.
+fn zone() -> i32 {
+    EVAL_ZONE.with(Cell::get)
+}
+
+/// Sets the evaluation zone for its lifetime and restores the previous one.
+pub(super) struct ZoneGuard(i32);
+
+impl ZoneGuard {
+    pub(super) fn set(minutes: i32) -> Self {
+        Self(EVAL_ZONE.with(|z| z.replace(minutes)))
+    }
+}
+
+impl Drop for ZoneGuard {
+    fn drop(&mut self) {
+        EVAL_ZONE.with(|z| z.set(self.0));
+    }
+}
 
 /// A date or dateTime as `BaseDateTimeType` sees it.
 #[derive(Debug, Clone)]
@@ -43,6 +78,9 @@ pub(super) struct Dt {
     /// Minutes east of UTC; `None` for no time zone at all
     /// (`BaseDateTimeType.hasTimezone`).
     pub(super) offset: Option<i32>,
+    /// The zone designator as written (`Z`, `+10:00`), so a result renders it
+    /// back exactly.
+    zone_text: Option<String>,
     /// Whether this is a `dateTime` or `instant`, as opposed to a `date`.
     /// `DateTimeType` rejects a minute-precision value on `copy()`.
     pub(super) is_date_time: bool,
@@ -109,6 +147,7 @@ impl Dt {
         };
         let (mut hour, mut minute, mut second, mut milli) = (0, 0, 0, 0);
         let mut offset = None;
+        let mut zone_text = None;
         if let Some(time) = time {
             if precision != TemporalPrecision::Day {
                 return None;
@@ -117,6 +156,7 @@ impl Dt {
                 Some(at) => (&time[..at], Some(&time[at..])),
                 None => (time, None),
             };
+            zone_text = zone.map(str::to_string);
             offset = match zone {
                 None => None,
                 Some("Z") => Some(0),
@@ -158,6 +198,7 @@ impl Dt {
             milli,
             precision,
             offset,
+            zone_text: offset.and(zone_text),
             is_date_time,
         })
     }
@@ -169,7 +210,7 @@ impl Dt {
         if self.precision <= TemporalPrecision::Day {
             return self.clone();
         }
-        let offset = i64::from(self.offset.unwrap_or(0));
+        let offset = i64::from(self.offset.unwrap_or_else(zone));
         let days = days_from_civil(self.year, self.month, self.day);
         let minutes = days * 1440 + self.hour * 60 + self.minute - offset;
         let (y, m, d) = civil_from_days(minutes.div_euclid(1440));
@@ -276,7 +317,7 @@ impl Dt {
     /// The instant in milliseconds since the epoch, with no offset read as UTC.
     fn instant_ms(&self) -> i64 {
         let days = days_from_civil(self.year, self.month, self.day);
-        ((days * 24 + self.hour) * 60 + self.minute - i64::from(self.offset.unwrap_or(0)))
+        ((days * 24 + self.hour) * 60 + self.minute - i64::from(self.offset.unwrap_or_else(zone)))
             * MS_PER_MINUTE
             + self.second * 1000
             + self.milli
@@ -344,12 +385,223 @@ pub(super) fn compare_ordered(l: &Dt, r: &Dt) -> Option<Ordering> {
 /// an error upstream (`Invalid date/time format`).
 pub(super) fn check_copyable(d: &Dt, text_of: &str, offset: usize) -> Result<(), EvalError> {
     if d.is_date_time && d.precision == TemporalPrecision::Minute {
-        return Err(EvalError::execution(
-            format!("Invalid date/time format: \"{text_of}\""),
-            offset,
-        ));
+        // `copy()` re-parses the string. With **no** zone the parse itself
+        // fails (`BaseDateTimeType.java:797`); with one it succeeds and the
+        // precision check then raises (`:103-106`) (`DEV-0017`).
+        let message = if d.offset.is_some() {
+            format!(
+                "Invalid date/time string (datatype DateTimeType does not support MINUTE \
+                 precision): {text_of}"
+            )
+        } else {
+            format!("Invalid date/time format: \"{text_of}\"")
+        };
+        return Err(EvalError::execution(message, offset));
     }
     Ok(())
+}
+
+/// `Math.floorMod`-style month arithmetic: the last day of a month.
+fn days_in_month(year: i64, month: i64) -> i64 {
+    let next = if month == 12 {
+        days_from_civil(year + 1, 1, 1)
+    } else {
+        days_from_civil(year, month + 1, 1)
+    };
+    next - days_from_civil(year, month, 1)
+}
+
+impl Dt {
+    /// `DateUtils.addYears` / `addMonths`: whole months, the day clamped to the
+    /// last day of the target month.
+    fn add_months(&mut self, months: i64) {
+        let total = self.year * 12 + (self.month - 1) + months;
+        self.year = total.div_euclid(12);
+        self.month = total.rem_euclid(12) + 1;
+        self.day = self.day.min(days_in_month(self.year, self.month));
+    }
+
+    /// `addDays` through `addMilliseconds`: a fixed-offset shift of the local
+    /// fields by `ms` milliseconds.
+    fn add_ms(&mut self, ms: i64) {
+        let local = ((days_from_civil(self.year, self.month, self.day) * 24 + self.hour) * 60
+            + self.minute)
+            * MS_PER_MINUTE
+            + self.second * 1000
+            + self.milli
+            + ms;
+        let days = local.div_euclid(MS_PER_DAY);
+        let of_day = local.rem_euclid(MS_PER_DAY);
+        let (y, m, d) = civil_from_days(days);
+        self.year = y;
+        self.month = m;
+        self.day = d;
+        self.hour = of_day / (60 * MS_PER_MINUTE);
+        self.minute = of_day / MS_PER_MINUTE % 60;
+        self.second = of_day / 1000 % 60;
+        self.milli = of_day % 1000;
+    }
+
+    /// `setValue(Date, precision)`: the value written at its precision, with
+    /// the zone designator it had.
+    fn render(&self) -> String {
+        use TemporalPrecision as P;
+        let mut text = format!("{:04}", self.year);
+        if self.precision >= P::Month {
+            text.push_str(&format!("-{:02}", self.month));
+        }
+        if self.precision >= P::Day {
+            text.push_str(&format!("-{:02}", self.day));
+        }
+        if self.precision > P::Day {
+            text.push_str(&format!("T{:02}:{:02}", self.hour, self.minute));
+            if self.precision >= P::Second {
+                text.push_str(&format!(":{:02}", self.second));
+            }
+            if self.precision == P::Millisecond {
+                text.push_str(&format!(".{:03}", self.milli));
+            }
+            if let Some(z) = &self.zone_text {
+                text.push_str(z);
+            }
+        }
+        text
+    }
+
+    fn into_value(self) -> Value {
+        let lexical = self.render();
+        if self.is_date_time {
+            Value::DateTime(PartialDateTime {
+                lexical,
+                precision: self.precision,
+                offset_minutes: self.offset,
+            })
+        } else {
+            Value::Date(PartialDate {
+                lexical,
+                precision: self.precision,
+            })
+        }
+    }
+}
+
+/// `BigDecimal.intValue()` of a quantity's value: the integer part, low 32
+/// bits.
+fn int_value(text: &str) -> i32 {
+    let integer_part = text.split('.').next().unwrap_or("0");
+    let (negative, digits) = match integer_part.strip_prefix('-') {
+        Some(d) => (true, d),
+        None => (false, integer_part.trim_start_matches('+')),
+    };
+    let magnitude: i128 = digits.parse().unwrap_or(0);
+    let signed = if negative { -magnitude } else { magnitude };
+    signed as i32
+}
+
+/// `dateAdd(d, q, negate, holder)` (`FHIRPathEngine.java:2715`).
+///
+/// The unit is the quantity's code when it has one, else its unit text, so
+/// `1 year` (unit only) and `1 'd'` (code) both reach a calendar arm while
+/// `1 'a'` and `1 'mo'` are refused.
+pub(super) fn date_add(
+    value: &Value,
+    q: &Qty,
+    negate: bool,
+    at: usize,
+) -> Result<Value, EvalError> {
+    let Some(mut dt) = from_value(value, at)? else {
+        return Err(EvalError::execution(
+            format!("{} is not a date or dateTime", fhir_type(value)),
+            at,
+        ));
+    };
+    check_copyable(&dt, &super::collection::convert_to_string(value), at)?;
+    let amount = int_value(q.value.as_deref().unwrap_or("0"));
+    let amount = i64::from(if negate {
+        0i32.wrapping_sub(amount)
+    } else {
+        amount
+    });
+    let unit = q.code.as_deref().or(q.unit.as_deref());
+    let shown = q.code.as_deref().unwrap_or("null");
+    match unit {
+        Some("years" | "year") => dt.add_months(amount * 12),
+        Some("a") => {
+            return Err(EvalError::execution(
+                format!(
+                    "Error in date arithmetic: attempt to add a definite quantity duration \
+                     time unit {shown}"
+                ),
+                at,
+            ));
+        }
+        Some("months" | "month") => dt.add_months(amount),
+        Some("mo") => {
+            return Err(EvalError::execution(
+                format!(
+                    "Error in date arithmetic: attempt to add a definite quantity duration \
+                     time unit {shown}"
+                ),
+                at,
+            ));
+        }
+        Some("weeks" | "week" | "wk") => dt.add_ms(amount * 7 * MS_PER_DAY),
+        Some("days" | "day" | "d") => dt.add_ms(amount * MS_PER_DAY),
+        Some("hours" | "hour" | "h") => dt.add_ms(amount * 60 * MS_PER_MINUTE),
+        Some("minutes" | "minute" | "min") => dt.add_ms(amount * MS_PER_MINUTE),
+        Some("seconds" | "second" | "s") => dt.add_ms(amount * 1000),
+        Some("milliseconds" | "millisecond" | "ms") => dt.add_ms(amount),
+        _ => {
+            return Err(EvalError::execution(
+                format!("Error in date arithmetic: unrecognized time unit {shown}"),
+                at,
+            ));
+        }
+    }
+    Ok(dt.into_value())
+}
+
+/// The current instant as milliseconds since the epoch.
+fn now_ms() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |d| i64::try_from(d.as_millis()).unwrap_or(i64::MAX))
+}
+
+/// `funcToday`: `new DateType(new Date(), DAY)`, the date in the evaluation
+/// zone.
+pub(super) fn today() -> Value {
+    let local = now_ms() + i64::from(zone()) * MS_PER_MINUTE;
+    let (year, month, day) = civil_from_days(local.div_euclid(MS_PER_DAY));
+    Value::Date(PartialDate {
+        lexical: format!("{year:04}-{month:02}-{day:02}"),
+        precision: TemporalPrecision::Day,
+    })
+}
+
+/// `funcNow`: `DateTimeType.now()`, millisecond precision in the evaluation
+/// zone with its numeric offset. Read afresh on every call (`DEV-0008`).
+pub(super) fn now() -> Value {
+    let offset = zone();
+    let local = now_ms() + i64::from(offset) * MS_PER_MINUTE;
+    let (year, month, day) = civil_from_days(local.div_euclid(MS_PER_DAY));
+    let of_day = local.rem_euclid(MS_PER_DAY);
+    let sign = if offset < 0 { '-' } else { '+' };
+    let magnitude = offset.abs();
+    let lexical = format!(
+        "{year:04}-{month:02}-{day:02}T{:02}:{:02}:{:02}.{:03}{sign}{:02}:{:02}",
+        of_day / (60 * MS_PER_MINUTE),
+        of_day / MS_PER_MINUTE % 60,
+        of_day / 1000 % 60,
+        of_day % 1000,
+        magnitude / 60,
+        magnitude % 60,
+    );
+    Value::DateTime(PartialDateTime {
+        lexical,
+        precision: TemporalPrecision::Millisecond,
+        offset_minutes: Some(offset),
+    })
 }
 
 /// `BaseDateTimeType.equalsUsingFhirPathRules`.
