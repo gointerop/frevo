@@ -1,5 +1,40 @@
 CHANGES_REQUESTED
 
+Fourteenth review (commit `cbe278c`, 2026-11-17). Thirteenth-review finding 3
+is resolved. Findings 1 and 2 are only partly resolved, and the same area has
+one new defect. Detail is in the dated section at the end. The earlier findings
+follow, kept for the record.
+
+1. **The escaped expression is printed without its escape.** The pinned case is
+   ``Patient.`name`.given.first()`` (`oracles/fhirpath/tests-fhir-r4.xml:100`).
+   Two places print it wrongly:
+   - `specs/path/spec.md:250` writes ``Patient.`name`.given.first()``;
+   - `docs/deviations.md:602` writes "``Patient.`name` `` looks up `Îame`".
+
+   Both read `` `name` ``, with no `n`. As written, the claim is false:
+   `` `name` `` has no escape, so it looks up `name` and yields `Peter`. A test
+   written from the scenario text would therefore assert a check failure for
+   an expression that passes. Write `` `name` `` in both places.
+
+2. **The register bullet still says the defect is unreachable
+   (thirteenth-review finding 2, partly resolved).** `docs/deviations.md:605-606`
+   still reads "None is reachable from an expression that is not already
+   pathological". The same bullet now cites a pinned suite case that reaches
+   it. A `\u` escape in a delimited identifier is the specification's own
+   example, not a pathological input. Narrow the sentence to the other two
+   decoders, or drop it.
+
+3. **A test comment still cites the withdrawn DEV-0016 and the wrong
+   mechanism.** `crates/frevo-path/tests/path_navigation.rs:487-489` reads
+   "is NOT a pass (DEV-0016): HAPI does not decode the escape to `n`". DEV-0016
+   no longer exists, and HAPI does decode the escape, in base 32
+   (`FHIRLexer.java:511`). The assertion at `:491` (`"Îame"`) is right. Only
+   the comment is stale, but it names a register entry that does not exist,
+   which is the dangling reference `check-registries.sh` exists to prevent.
+   This is in a test file, so the oracle-builder must fix it.
+
+## Thirteenth-review findings as raised (commits `fa4b9be`, `ade70c6`)
+
 Thirteenth review (commits `fa4b9be` and `ade70c6`, 2026-11-17). `ENGINE` is
 `org.hl7.fhir.r4/src/main/java/org/hl7/fhir/r4/fhirpath/FHIRPathEngine.java`
 and `LEXER` is `FHIRLexer.java` in the same directory, at `73c432b5`. Detail is
@@ -486,3 +521,44 @@ entries).
 
 **Note (not a finding).** `crates/frevo-path/tests/zz_tmp_verify.rs` is
 untracked in this worktree. It is not part of either commit.
+
+## Fourteenth review — commit `cbe278c` (2026-11-17)
+
+**Thirteenth-review finding 1: resolved in the spec, but not in the test
+comment (new finding 3).** `navigation.001` now states the base-32 decode
+(`FHIRLexer.java:511`, `parseInt(..., 32)`), which I verified at `73c432b5`.
+`006e` in base 32 is 206, which is U+00CE. It also states the check-stage
+failure, and gives parity under `path.oracle.012`. The expression text is
+wrong (new finding 1).
+
+**Thirteenth-review finding 2: partly resolved (finding 2).** DEV-0016 is
+withdrawn, and the "Considered and not recorded" bullet now cites the suite
+case. Withdrawal fits constitution section 1, because that section of
+`docs/deviations.md` records the HAPI-vs-specification difference. The bullet's
+"not reachable" sentence remains.
+
+**Thirteenth-review finding 3: resolved.** `navigation.003` now names
+`Observation`, through `executeType` (`ENGINE:3231-3238`) and `:1591-1593`.
+I re-verified this against the pin.
+
+**`navigation.011`: resolved.** The citation is now `:3830`, which is the
+`throw`.
+
+**Stale-text grep** (change directory, `docs/`, `tasks/`, `crates/frevo-path`):
+- `DEV-0016` appears only at `crates/frevo-path/tests/path_navigation.rs:487`
+  (finding 3).
+- "does not decode" appears in that same comment and nowhere else.
+- "`value` not valid" appears nowhere.
+- The deviations preamble says fifteen and lists DEV-0013 and DEV-0015 as
+  pending.
+
+**Note (not a finding).** `:3828` remains as a `checkParamTypes` citation in
+three places. The `throw` is at `:3830`.
+- `specs/path/spec.md:492` (`subsetOf`);
+- `crates/frevo-path/tests/path_collection.rs:479`;
+- `crates/frevo-path/tests/path_navigation.rs:766`.
+
+**Scenario IDs.** No `#### Scenario:` heading changed in `cbe278c`.
+
+**Registers.** `check-registries.sh` reports "registers agree" (15
+deviations, 12 debt entries).
