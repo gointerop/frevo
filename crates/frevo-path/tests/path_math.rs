@@ -253,6 +253,26 @@ fn empty() -> Vec<ResultItem> {
 fn addition_works_on_integers_decimals_strings_and_quantities() {
     expect_group_except("testPlus", 29, &["testPlusDate23", "testPlusDate24"]);
 
+    // The two failed cases carry an offset (`Z`), so `dateAdd`'s
+    // `DateTimeType.copy()` (FHIRPathEngine.java:2716) raises `Invalid
+    // date/time string (datatype DateTimeType does not support MINUTE
+    // precision)` (BaseDateTimeType.java:103-106) and not `Invalid date/time
+    // format`. Evaluation fails.
+    for expr in [
+        "@2015-02-04T10:00Z + 1 hour = @2015-02-04T11:00Z",
+        "@2015-02-04T10Z + 1 hour = @2015-02-04T11Z",
+    ] {
+        let message = expect_evaluation_error(expr);
+        assert!(
+            message.contains("does not support"),
+            "{expr}: offset wording expected, got {message:?}"
+        );
+        assert!(
+            !message.contains("Invalid date/time format"),
+            "{expr}: not the no-offset wording, got {message:?}"
+        );
+    }
+
     // The four arms of `opPlus` (FHIRPathEngine.java:2698-2709), each named by
     // the scenario, with the result type each produces.
     assert_eq!(eval("1 + 1"), integer("2"));
@@ -313,6 +333,13 @@ fn subtraction_works_on_integers_decimals_and_quantities() {
     let (_, message) = expect_failure("5 - 3 'mg'");
     assert!(
         !message.is_empty(),
+        "the wrong-type error must carry a message"
+    );
+    // `0.0 - 5 'mg'` fails the guard at :2953 (its string value is not `0`)
+    // and raises the same right-value wrong-type error (:2954).
+    let (_, decimal_message) = expect_failure("0.0 - 5 'mg'");
+    assert!(
+        !decimal_message.is_empty(),
         "the wrong-type error must carry a message"
     );
 

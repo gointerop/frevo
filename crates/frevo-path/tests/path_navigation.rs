@@ -763,7 +763,7 @@ fn a_non_integer_index_is_an_execution_error() {
     let patient = load_input("patient-example.xml");
 
     // Check stage: `case Item` (FHIRPathEngine.java:3363-3367) types the
-    // argument against a singleton `integer` and `checkParamTypes` (:3828)
+    // argument against a singleton `integer` and `checkParamTypes` (:3830)
     // raises `FHIRPATH_WRONG_PARAM_TYPE` for `string`.
     let check = expect_check_failure("Patient.name['x']", &patient, StrictnessFlags::CHECK);
     assert!(

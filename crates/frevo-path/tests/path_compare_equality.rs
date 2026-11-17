@@ -235,13 +235,19 @@ const FHIR_TYPES_STRING: [&str; 12] = [
 fn the_less_than_operator_accepts_a_narrower_numeric_type_set_than_the_other_three() {
     // HAPI fails four of these 33 (`testLessThan28`, `29`, `30`, `33`); each is
     // required `failed` below (path.compare.001, `path.oracle.012` parity).
-    // `testLessThan33` cannot pass against the pinned R4 engine. `opLessThan` identifies a quantity's
-    // unit by its `code` child while its three siblings use `unit`, and the
-    // case's left operand has unit text and no code -- so the units are judged
-    // to differ, `qtyToCanonicalDecimal` returns null for a quantity with no
-    // UCUM system (FHIRPathEngine.java:2301-2303), and the null is
-    // dereferenced at :2413. The full evidence is in the module note of
-    // `path_quantity.rs`, whose `path.quantity.013` owns that case.
+    // Each with its outcome (path.compare.001):
+    //  - 28: the comparison is true but the operand's string was rewritten to
+    //    Zulu, so the second conjunct is false (`path.compare.013`);
+    //  - 29 (`1 year < 2 months`): a calendar duration sets `unit` and no
+    //    `code`, both `code` lists are empty and equal (:2438-2440), the raw
+    //    values compare: `1 < 2` is true, one item;
+    //  - 30 (`1 'kg' < 2 'm'`): the `code` lists differ, canonical decimals are
+    //    compared (:2447-2450): one item, false;
+    //  - 33: unit text only versus a coded quantity, so the lists differ;
+    //    `qtyToCanonicalDecimal` returns null for the quantity with no UCUM
+    //    system (:2301-2304) and the recursive `opLessThan` calls
+    //    `isPrimitive()` on it (:2414): evaluation fails.
+    //    `path_quantity.rs` owns that case as `path.quantity.013`.
     expect_group_except(
         "testLessThan",
         33,
@@ -306,6 +312,23 @@ fn the_less_than_operator_accepts_a_narrower_numeric_type_set_than_the_other_thr
     );
     assert_eq!(eval("@T10:30 < @T11:30"), boolean(true));
     assert_eq!(eval("1 'cm' < 2 'cm'"), boolean(true));
+
+    // The per-case outcomes of the failed cases, at the engine seam.
+    assert_eq!(
+        eval_over("1 year < 2 months", Some(&patient)),
+        boolean(true),
+        "testLessThan29: both code lists are empty and equal, so the raw values compare"
+    );
+    assert_eq!(
+        eval_over("1 'kg' < 2 'm'", Some(&patient)),
+        boolean(false),
+        "testLessThan30: the code lists differ, so the canonical decimals compare"
+    );
+    let parameters = load_input("parameters-quantity-unit-text.xml");
+    expect_evaluation_error_over(
+        "Parameters.parameter[0].value < Parameters.parameter[1].value",
+        Some(&parameters),
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -336,6 +359,19 @@ fn the_less_or_equal_operator_accepts_the_extended_numeric_type_set() {
 
     assert_eq!(eval("1 <= 1"), boolean(true));
     assert_eq!(eval("2 <= 1"), boolean(false));
+
+    // testLessOrEqual28 (`1 year <= 2 days`): the units differ and
+    // `qtyToCanonicalDecimal` returns null for the calendar duration
+    // (:2301-2304), so `isPrimitive()` is called on it (:2544-2546): evaluation
+    // fails.
+    expect_evaluation_error_over("1 year <= 2 days", Some(&patient));
+    // testLessOrEqual29 (`1 'kg' <= 999 'g'`): a UCUM-quoted literal leaves
+    // `unit` null, null equals null, and the raw values compare (:2533-2537):
+    // one item, true, where the suite expects false.
+    assert_eq!(
+        eval_over("1 'kg' <= 999 'g'", Some(&patient)),
+        boolean(true)
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -364,6 +400,13 @@ fn the_greater_than_operator_accepts_the_extended_numeric_type_set() {
 
     assert_eq!(eval("2 > 1"), boolean(true));
     assert_eq!(eval("1 > 1"), boolean(false));
+
+    // testGreaterThan28 (`1 year > 1 'a'`) and 29 (`1 year > 2 months`): `>`
+    // compares `unit` (:2485-2487), the units differ, `qtyToCanonicalDecimal`
+    // returns null for the calendar duration (:2301-2304) and `isPrimitive()` is
+    // called on it (:2494-2496): evaluation fails.
+    expect_evaluation_error_over("1 year > 1 'a'", Some(&patient));
+    expect_evaluation_error_over("1 year > 2 months", Some(&patient));
 }
 
 // ---------------------------------------------------------------------------
@@ -392,6 +435,82 @@ fn the_greater_or_equal_operator_accepts_the_extended_numeric_type_set() {
 
     assert_eq!(eval("1 >= 1"), boolean(true));
     assert_eq!(eval("1 >= 2"), boolean(false));
+
+    // testGreatorOrEqual28 (`2 years >= 2 year`): the units differ and the
+    // calendar duration has no UCUM system (:2301-2304, 2583-2594): evaluation
+    // fails.
+    expect_evaluation_error_over("2 years >= 2 year", Some(&patient));
+    // testGreatorOrEqual29 (`2 'kg' >= 1 'm'`): both `unit`s are null, so the
+    // raw values compare (:1131, :2583-2585): one item, true, where the suite
+    // expects none.
+    assert_eq!(eval_over("2 'kg' >= 1 'm'", Some(&patient)), boolean(true));
+}
+
+// ---------------------------------------------------------------------------
+// path.compare.013 -- an ordered comparison rewrites the operand's stored string
+// ---------------------------------------------------------------------------
+
+// covers: path.compare.013
+#[test]
+fn an_ordered_comparison_of_a_datetime_rewrites_the_operands_stored_string_to_zulu() {
+    // `compareDateTimeElements` calls `setTimeZoneZulu(true)` on the operand
+    // itself when it is a `DateTimeType` finer than a day
+    // (FHIRPathEngine.java:636-648), which rewrites the stored string
+    // (BaseDateTimeType.java:690-694). HAPI records `testLessThan28` as
+    // `failed`; Frevo matches it (`path.oracle.012`).
+    let patient = load_input("patient-example.xml");
+    let value = "Patient.birthDate.extension('http://hl7.org/fhir/StructureDefinition/patient-birthTime').value";
+
+    // The comparison is true.
+    assert_eq!(
+        eval_over(&format!("{value} < @1975-01-01T00:00:00Z"), Some(&patient)),
+        boolean(true)
+    );
+    // Read before any comparison, the string is as written.
+    assert_eq!(
+        eval_over(
+            &format!("{value}.toString() = '1974-12-25T14:35:45-05:00'"),
+            Some(&patient)
+        ),
+        boolean(true)
+    );
+    // Read after the comparison in the same evaluation, it is the Zulu form and
+    // not the original: `<`, `>`, `<=` and `>=` all reach the rewrite.
+    for op in ["<", ">", "<=", ">="] {
+        let expr = format!(
+            "({value} {op} @1975-01-01T00:00:00Z).exists() and \
+             {value}.toString() = '1974-12-25T14:35:45-05:00'"
+        );
+        assert_eq!(
+            eval_over(&expr, Some(&patient)),
+            boolean(false),
+            "{op} must rewrite the operand's stored string to Zulu"
+        );
+    }
+
+    // And the suite case itself is `failed`, not `passed`.
+    let (suite, report) = pinned();
+    let case = suite
+        .case("testLessThan", "testLessThan28")
+        .expect("testLessThan/testLessThan28 must resolve to exactly one case");
+    let r = report
+        .get(&case.address.to_string())
+        .expect("the case must appear in the run report");
+    assert_eq!(r.status, CaseStatus::Failed, "{}: {}", r.address, r.reason);
+}
+
+// ---------------------------------------------------------------------------
+// path.compare.014 -- `<=` with a unit-less left quantity and a unit right
+// ---------------------------------------------------------------------------
+
+// covers: path.compare.014
+#[test]
+fn less_or_equal_with_a_unit_less_left_quantity_and_a_unit_bearing_right_fails() {
+    // `opLessOrEqual` evaluates `lunit.equals(runit)` with a null `lunit`
+    // (FHIRPathEngine.java:2537): a NullPointerException in HAPI, an execution
+    // error in Frevo (`path.errors.003`). No live case grades it.
+    let patient = load_input("patient-example.xml");
+    expect_evaluation_error_over("1 'kg' <= 1 year", Some(&patient));
 }
 
 // ---------------------------------------------------------------------------
@@ -753,6 +872,36 @@ fn the_equality_operator_compares_values_of_the_same_type() {
             "testEquality39",
             "testEquality40",
         ],
+    );
+
+    // Decimal arm (`removeTrailingZeros`, FHIRPathEngine.java:2161-2182,
+    // DEV-0017): `100 = 1.0` is true and `10 = 10.0` is false.
+    assert_eq!(eval("100 = 1.0"), boolean(true));
+    assert_eq!(eval("10 = 10.0"), boolean(false));
+
+    // Minute-precision dateTimes: `DateTimeType.copy()` rejects them
+    // (DateTimeType.java:164-165, BaseDateTimeType.java:924). With no offset
+    // (testEquality37-39) the message is `Invalid date/time format`
+    // (BaseDateTimeType.java:797); with an offset (testEquality40) parsing
+    // succeeds and the precision check raises `Invalid date/time string
+    // (datatype DateTimeType does not support MINUTE precision)`
+    // (BaseDateTimeType.java:103-106).
+    for expr in [
+        "@2015-02-04T10:00 = @2015-02-04T10:00",
+        "@2015-02-04T10:00 = @2015-02-04T11:00",
+        "@2015-02-04T10:00:00 = @2015-02-04T10:00",
+    ] {
+        let message = expect_evaluation_error_over(expr, None);
+        assert!(
+            message.contains("Invalid date/time format"),
+            "{expr}: no-offset wording expected, got {message:?}"
+        );
+    }
+    let message =
+        expect_evaluation_error_over("@2015-02-04T10:00-05:00 = @2015-02-04T10:00-05:00", None);
+    assert!(
+        message.contains("does not support MINUTE precision"),
+        "testEquality40: offset wording expected, got {message:?}"
     );
 }
 

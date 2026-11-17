@@ -476,7 +476,7 @@ fn subset_of_compares_by_equality() {
     // `{}.subsetOf(1 | 2)` **fails the static check**, naming `subsetOf`
     // parameter 1: `case SubsetOf` (:3316) types the argument against the
     // focus's type set, an empty focus has no types, and `checkParamTypes`
-    // (:3828) raises `FHIRPATH_WRONG_PARAM_TYPE` for `integer`.
+    // (:3830) raises `FHIRPATH_WRONG_PARAM_TYPE` for `integer`.
     let message = expect_check_failure("{}.subsetOf(1 | 2)", None);
     assert!(
         message.contains("subsetOf"),

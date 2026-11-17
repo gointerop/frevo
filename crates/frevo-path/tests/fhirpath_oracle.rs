@@ -1193,6 +1193,42 @@ fn the_harness_fixes_the_evaluation_time_zone_at_utc_plus_1100() {
             "today() and now() read the engine's configured time zone",
         );
     }
+
+    // Ordered comparison is zone-dependent too (DEV-0018):
+    // `compareDateTimeElements` converts both operands to Zulu when finer than a
+    // day (FHIRPathEngine.java:643-648), so an offset-less dateTime is placed in
+    // the configured zone, UTC+11:00. 10:00:00 at +11:00 is 23:00Z on the
+    // previous day, before 05:30Z.
+    for (op, want) in [
+        ("<", "true"),
+        (">", "false"),
+        ("<=", "true"),
+        (">=", "false"),
+    ] {
+        let expr = format!("@2015-02-04T10:00:00 {op} @2015-02-04T05:30:00Z");
+        let mut engine = oracle::engine::engine_under_test();
+        engine
+            .configure(&EngineConfig::default())
+            .unwrap_or_else(|e| panic!("the engine must configure: {e}"));
+        let context = CaseContext::default();
+        let parsed = engine
+            .parse(&expr)
+            .unwrap_or_else(|e| panic!("{expr:?} must parse: {e}"));
+        engine
+            .check(parsed, &context, StrictnessFlags::CHECK)
+            .unwrap_or_else(|e| panic!("{expr:?} must pass the static check: {e}"));
+        let items = engine
+            .evaluate(parsed, None, &context, StrictnessFlags::EVALUATE)
+            .unwrap_or_else(|e| panic!("{expr:?} must evaluate: {e}"));
+        assert_eq!(
+            items,
+            vec![ResultItem::Primitive {
+                fhir_type: "boolean".to_string(),
+                value: want.to_string(),
+            }],
+            "{expr}"
+        );
+    }
 }
 
 // ---------------------------------------------------------------------------
