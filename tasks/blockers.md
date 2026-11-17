@@ -1723,3 +1723,22 @@ and `path.math.008` say so) and were not invented. Decision needed from the
 owner: vendor `fhir-ucum` at the version the pin resolves under `reference/`
 (or `oracles/`), after which the spec states the rule; or accept the gap in
 `docs/known-gaps.md`.
+
+## 2026-11-17 — `add-fhirpath-and-codegen-r4` — test re-alignment to 9fea32e is blocked: review.md is `CHANGES_REQUESTED`
+
+**Raised by** the oracle-builder. The PreToolUse hook now refuses edits under
+`crates/` because `review.md` reads `CHANGES_REQUESTED` (sixteenth review, of
+`bdfc6dd`; the spec fix `9fea32e` has not been re-reviewed). Nothing was
+committed for this batch. Pending test work, all assertion-only in
+`crates/frevo-path/tests/`: path.compare.001-.004 per-case outcomes (LT29 true,
+LT30 false, LT33/LE28/GT28/GT29/GOE28 raise, LE29/GOE29 true), new tests for
+path.compare.013 (Zulu rewrite, `testLessThan28`) and path.compare.014
+(`1 'kg' <= 1 year` raises), path.datetime.004 ordered comparison
+(`@2015-02-04T10:00:00 < @2015-02-04T05:30:00Z` at UTC+1100), path.math.003
+(`0.0 - 5 'mg'` raises wrong-type), path.equality.001/path.math.001 message
+wording (offset: `does not support MINUTE precision`; no offset:
+`Invalid date/time format`), and `:3828` -> `:3830` in `path_collection.rs:479`
+and `path_navigation.rs:766`. Decision needed: spec-reviewer re-review of
+`9fea32e` to `APPROVED`, then re-run this batch. Two scenario ids
+(path.compare.013, .014) currently have no test, so scenario-coverage.sh will
+report them uncovered until then.
