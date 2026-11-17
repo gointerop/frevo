@@ -1,5 +1,53 @@
 CHANGES_REQUESTED
 
+Findings of the eleventh review (commits `2f07196`, `5425f6c`, 2026-11-17;
+detail in the dated section at the end). `ENGINE` is the same file at
+`73c432b5`. The tenth review's findings follow, kept for the record.
+
+1. **`path.filter.002` gives the wrong answer with the check skipped, and
+   contradicts `path.filter.003`.** The amendment says that
+   `Patient.name.where(given[1] = 'James')` with the check skipped "is neither
+   true nor false, so no name is kept". `asBool` (`ENGINE:6886-6894`) returns
+   `Equality.True` for any single non-boolean item (`:6891-6892`), and
+   `funcWhere` (`ENGINE:6249-6260`) keeps the item on `True`. Over
+   `patient-example.xml` (`oracles/fhir-test-cases/fetched/r4/examples/patient-example.xml:50-65`),
+   `name[0]` (`Peter, James`) and `name[2]` (`Peter, James`) give the single
+   string `James`, so both are kept. `name[1]` (`Jim`) gives empty, which is
+   `Null`, so it is dropped. The answer is therefore two names, not none.
+   `path.filter.003` (`:538-541`) already states the same `asBool` rule
+   ("answers `True` for any single non-boolean item"), so the two scenarios
+   now disagree. The differential observes the check-skipped answer
+   (`FhirPathR4`, `path.check.013`), so a test written from this text would
+   encode a diff. Also still missing from tenth-review finding 1: the
+   first-term examples that prove the rule on each side. These are
+   `name[0].given = 'Peter'` (Patient context), which yields the given names,
+   and `(1 | 2)[0] = 5`, which yields `1` because the group's content and the
+   indexed group are both a proximal first term (`ENGINE:1135-1138`,
+   `1188-1213`). The scenario names "expression, argument or group" but
+   exemplifies only the argument case, so the expression and group cases have
+   no testable THEN.
+
+2. **Left-over text still contradicts the amendments.**
+   - `openspec/changes/add-fhirpath-and-codegen-r4/spec.md:424` (the index)
+     still reads "`path.navigation.010` — a negative index yields empty".
+   - `spec.md:454` still says that `path.collection.013` "keeps
+     first-occurrence order". The scenario title (`specs/path/spec.md:477`)
+     and `ENGINE:5665-5676` say last occurrence. This one dates from
+     `d8d783b` and the tenth review missed it.
+   - `docs/deviations.md:406-408`: DEV-0012's "Specification requirement"
+     field still says that "the approved scenario `path.navigation.010` states
+     empty for a negative index", which is no longer true.
+   - The `## Entries` preamble (`docs/deviations.md:48`) still says "All
+     thirteen entries". There are fifteen (`check-registries.sh`: 15). It
+     names DEV-0013 as the only pending entry, although DEV-0015 is now
+     "pending owner re-confirmation" (`:510-511`). This was part of
+     tenth-review finding 2 and is unresolved.
+   - `tasks.md:779` still lists DEV-0012 as "pending the owner".
+
+---
+
+## Tenth-review findings as raised (commit `d8d783b`)
+
 Findings of the tenth review (commit `d8d783b`, 2026-11-14; detail in the dated
 section at the end). `ENGINE` = `reference/org.hl7.fhir.core/org.hl7.fhir.r4/src/main/java/org/hl7/fhir/r4/fhirpath/FHIRPathEngine.java` at `73c432b5`.
 
@@ -213,3 +261,48 @@ require one before the entry is complete. That is for the oracle-builder.
 
 **Not findings:** `subset.012` cites `testUnion3` (`(1|1).count() = 1`).
 `testUnion2` is the closer case, but both grade the deduplication.
+
+## Eleventh review — commits `2f07196` and `5425f6c` (2026-11-17)
+
+The scope is `specs/path/spec.md` and `docs/deviations.md` from `e6e6a96`
+through `5425f6c`; no other file changed. Every claim was checked against
+`ENGINE` at `73c432b5`, `Utilities.java:83-100`, and
+`oracles/fhirpath/hapi-8.12.0-results.json`.
+
+**Tenth-review finding 1 (DEV-0015 scope): partly resolved.**
+- The rule is now proximal-first-term-only in both the spec and DEV-0015, and
+  the mechanism is correct. A group's content is parsed proximal
+  (`ENGINE:1138`). The indexer moves `focus` to `item` (`:1188-1197`). A
+  `.`-chained segment is parsed with `proximal = false` (`:1201-1203`), so its
+  indexer is never followed by the operator loop. The loop runs only when
+  `proximal` (`:1205-1213`) and attaches the operator to `focus`. `execute`
+  applies the operation only on a proximal node (`:1508`).
+- The later-term counter-examples (`testIndexer1/2`, `testSort9`,
+  `testQuantityUnitTextEqual`) are stated, and this agrees with
+  `path.navigation.008`. DEV-0015 is correctly re-marked as pending the
+  owner's re-confirmation.
+- Still open: the check-skipped answer is wrong, and the expression and group
+  examples are missing (new finding 1).
+
+**Tenth-review finding 2 (negative index): resolved in substance.**
+- `path.navigation.010` now raises. This is correct: `funcItem`
+  (`ENGINE:6277-6283`) guards only the upper bound, and `Utilities.isInteger`
+  strips a leading `-` (`Utilities.java:87`), so `focus.get(-1)` is reached.
+  HAPI records `testIndexer3` as failed with "Index -1 out of bounds for
+  length 3" (results `:283`), the same form as `testSkip5` (`:294`).
+- DEV-0012 now matches DEV-0014 and `path.subset.006`: an error, not a panic
+  (`path.errors.003`), and parity under `path.oracle.012`. The Subsetting
+  requirement sentence (`specs/path/spec.md:595`) and `subset.006/.008/.009`
+  remain consistent.
+- Left-over text is new finding 2.
+
+**Tenth-review finding 3 (distinct): resolved.** The null-equality exit
+(`ENGINE:5668-5670`) is stated and marked differential-only. The
+`size <= 1` early return (`:5660-5661`) is not observable separately, because
+a single item has no pair to compare, so it needs no clause.
+
+**Scenario IDs.** Only the title of `path.navigation.010` changes. No ID is
+added, removed, renumbered or duplicated.
+
+**Registers.** `harness/scripts/check-registries.sh` reports "registers agree"
+(15 deviations, 12 debt entries).
