@@ -624,9 +624,40 @@ fn date_arithmetic_adds_and_subtracts_calendar_durations() {
     // `testMinus/testMinus6` (`@1974-12-25 - 1 'cm'`).
     expect_case("testMinus", "testMinus6");
 
-    // And the suite's own date-arithmetic cases.
+    // And the suite's own date-arithmetic cases, graded as HAPI ran them
+    // (`hapi-8.12.0-results.json`): `testMinus5` and `testMinus6` pass, while
+    // `testMinus7` (`@2015-02-04T10:00Z - 1 day = ...`) is `failed`, as are
+    // `testPlusDate23` and `testPlusDate24`, with the message
+    // `Invalid date/time string (datatype DateTimeType does not support MINUTE
+    // precision)` (DEV-0017).
     expect_case("testMinus", "testMinus5");
-    expect_case("testMinus", "testMinus7");
+    for (group, name) in [
+        ("testMinus", "testMinus7"),
+        ("testPlus", "testPlusDate23"),
+        ("testPlus", "testPlusDate24"),
+    ] {
+        let (suite, report) = pinned();
+        let case = suite
+            .case(group, name)
+            .unwrap_or_else(|| panic!("{group}/{name} must resolve to exactly one case"));
+        let r = report
+            .get(&case.address.to_string())
+            .unwrap_or_else(|| panic!("{} must appear in the run report", case.address));
+        assert_eq!(
+            r.status,
+            CaseStatus::Failed,
+            "{}: {:?} is {} -- {}",
+            r.address,
+            r.expression,
+            r.status.as_str(),
+            r.reason
+        );
+    }
+    let message = expect_evaluation_error("@2015-02-04T10:00Z - 1 day = @2015-02-03T10:00Z");
+    assert!(
+        message.contains("does not support MINUTE precision"),
+        "testMinus7: offset wording expected, got {message:?}"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -764,6 +795,22 @@ fn round_rounds_to_the_requested_number_of_digits() {
     // HALF_UP, not half-even: 2.5 rounds to 3 and not to 2.
     assert_eq!(eval("2.5.round(0)"), primitive("decimal", "3"));
     assert_eq!(eval("3.5.round(0)"), primitive("decimal", "4"));
+
+    // Decimal rendering, differential-only: written against HAPI's recorded
+    // expectations (`DecimalType.encode`, DecimalType.java:101-102, which is
+    // `BigDecimal.toString`), not against any suite case. Plain digits when the
+    // scale is zero or positive and the adjusted exponent is at least -6,
+    // otherwise scientific with a signed exponent. `round` with a negative
+    // digit count uses `setScale` (FHIRPathEngine.java:4412).
+    assert_eq!(eval("12345.round(-2)"), primitive("decimal", "1.23E+4"));
+    assert_eq!(eval("1234.5.round(-3)"), primitive("decimal", "1E+3"));
+    // The `double`-based functions build the result with
+    // `BigDecimal.valueOf(double)` (DecimalType.java:66-69), which parses
+    // `Double.toString`. A pinned-engine rendering, not the specification's.
+    assert_eq!(eval("10000000000.abs()"), primitive("decimal", "1.0E+10"));
+    assert_eq!(eval("0.0000001.abs()"), primitive("decimal", "1.0E-7"));
+    assert_eq!(eval("0.0001.abs()"), primitive("decimal", "0.00010"));
+    assert_eq!(eval("12345678.abs()"), primitive("decimal", "12345678"));
 }
 
 // ---------------------------------------------------------------------------
@@ -875,32 +922,40 @@ fn truncate_discards_the_fractional_part() {
 // covers: path.mathfn.010
 #[test]
 fn a_math_function_on_an_empty_collection_yields_empty() {
-    // NOTE FOR REVIEW -- scenario against pinned source.
-    //
-    // The scenario says `{}.abs()`, `{}.sqrt()` and `{}.round(2)` each yield an
-    // empty collection. In the pinned engine all three raise: their guard is
-    // `if (focus.size() != 1) throw makeExceptionPlural(...)`, which covers
-    // zero as well as many --
-    //   funcSqrt  FHIRPathEngine.java:4095-4097
-    //   funcAbs   FHIRPathEngine.java:4115-4117
-    //   funcRound FHIRPathEngine.java:4396-4398
-    // and the same guard appears in funcCeiling (:4139), funcFloor (:4157),
-    // funcLn (:4201), funcLog (:4221), funcPower (:4249), funcTruncate (:4273)
-    // and funcPrecision (:4379). `funcExp` alone guards with
-    // `if (focus.size() == 0) return new ArrayList<Base>()` (:4177-4179), and
-    // it is the only one of the ten the suite grades on an empty focus
+    // Only `{}.exp()` is empty: `funcExp` guards an empty focus
+    // (FHIRPathEngine.java:4177-4179), and it is the one the suite grades
     // (`testExp/testExp3`, `{}.exp().empty() = true`).
-    //
-    // Written to the scenario as stated. If the scenario is wrong this test is
-    // the thing that says so, which is better than a test that quietly encodes
-    // the opposite.
-    assert_eq!(eval("{}.abs()"), empty());
-    assert_eq!(eval("{}.sqrt()"), empty());
-    assert_eq!(eval("{}.round(2)"), empty());
-
-    // `exp`, where the scenario and the pinned engine agree.
     assert_eq!(eval("{}.exp()"), empty());
     expect_case("testExp", "testExp3");
+
+    // The other nine raise with the check skipped: each opens with
+    // `if (focus.size() != 1) throw makeExceptionPlural(...)`, which covers
+    // zero (funcAbs :4116, funcCeiling :4139, funcFloor :4157, funcSqrt :4096,
+    // funcLn :4201, funcLog :4221, funcPower :4249, funcRound :4397,
+    // funcTruncate :4273). The specification says empty; HAPI raises
+    // (DEV-0019). No live case grades it, so it is differential-only.
+    for expr in [
+        "{}.abs()",
+        "{}.ceiling()",
+        "{}.floor()",
+        "{}.sqrt()",
+        "{}.ln()",
+        "{}.log(2)",
+        "{}.power(2)",
+        "{}.round(2)",
+        "{}.truncate()",
+    ] {
+        let mut engine = fresh_engine();
+        let context = CaseContext::default();
+        let parsed = engine
+            .parse(expr)
+            .unwrap_or_else(|e| panic!("{expr:?} must parse: {e}"));
+        match engine.evaluate(parsed, None, &context, StrictnessFlags::EVALUATE) {
+            Ok(items) => panic!("{expr:?} must fail at evaluation, but it returned {items:?}"),
+            Err(EngineError::Diagnostic { .. }) => {}
+            Err(e) => panic!("{expr:?} must fail with a diagnostic, not: {e}"),
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------

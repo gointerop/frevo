@@ -156,6 +156,85 @@ fn expect_group(group: &str, expected: usize) {
     );
 }
 
+/// Assert the group's cases are graded as HAPI's own recorded run grades them
+/// (`oracles/fhirpath/hapi-8.12.0-results.json`): `passed` except the named
+/// cases, which must be `failed` (parity under `path.oracle.012`). `did-not-run`
+/// satisfies neither, so an unbuilt feature never passes vacuously.
+fn expect_group_except(group: &str, expected: usize, failing: &[&str]) {
+    let (suite, report) = pinned();
+    let g = suite
+        .groups
+        .iter()
+        .find(|g| g.name == group)
+        .unwrap_or_else(|| panic!("the pinned suite has a group named {group}"));
+    assert_eq!(
+        g.cases.len(),
+        expected,
+        "{group} must have {expected} case(s), not {}",
+        g.cases.len()
+    );
+    for name in failing {
+        assert!(
+            g.cases.iter().any(|c| c.address.name == *name),
+            "{group}/{name} must be a case of the group"
+        );
+    }
+    let mut problems = Vec::new();
+    for case in &g.cases {
+        let r = report
+            .get(&case.address.to_string())
+            .unwrap_or_else(|| panic!("{} must appear in the run report", case.address));
+        let want = if failing.iter().any(|n| case.address.name == *n) {
+            CaseStatus::Failed
+        } else {
+            CaseStatus::Passed
+        };
+        if r.status != want {
+            problems.push(format!(
+                "{} ({:?}): {} (wanted {}) -- {}",
+                case.address,
+                case.expression,
+                r.status.as_str(),
+                want.as_str(),
+                r.reason
+            ));
+        }
+    }
+    assert!(
+        problems.is_empty(),
+        "{} of {} cases in {group} are not graded as HAPI grades them; the first few:\n  {}",
+        problems.len(),
+        g.cases.len(),
+        problems[..problems.len().min(5)].join("\n  ")
+    );
+}
+
+/// `expr` evaluated with the static check **skipped**.
+fn eval_unchecked(expr: &str) -> Vec<ResultItem> {
+    let mut engine = fresh_engine();
+    let context = context_for(None);
+    let parsed = engine
+        .parse(expr)
+        .unwrap_or_else(|e| panic!("{expr:?} must parse: {e}"));
+    engine
+        .evaluate(parsed, None, &context, StrictnessFlags::EVALUATE)
+        .unwrap_or_else(|e| panic!("{expr:?} must evaluate with the check skipped: {e}"))
+}
+
+/// `expr` must fail the static check with a real diagnostic.
+fn expect_check_failure(expr: &str) -> String {
+    let mut engine = fresh_engine();
+    let context = context_for(None);
+    let parsed = engine
+        .parse(expr)
+        .unwrap_or_else(|e| panic!("{expr:?} must parse: {e}"));
+    match engine.check(parsed, &context, StrictnessFlags::CHECK) {
+        Ok(()) => panic!("{expr:?} must fail the static check, but the check passed"),
+        Err(EngineError::Diagnostic { message, .. }) => message,
+        Err(e) => panic!("{expr:?} must fail the check with a diagnostic, not: {e}"),
+    }
+}
+
 /// Assert every case in `group` whose name contains `needle` passed, and that
 /// the subset still has the size this test was written against.
 fn expect_cases_matching(group: &str, needle: &str, expected: usize) {
@@ -348,6 +427,22 @@ fn to_chars_splits_a_string_into_single_characters() {
     );
     assert_eq!(eval("'abc'.toChars().count()"), integer("3"));
     assert_eq!(eval("''.toChars()"), empty());
+
+    // One item per UTF-16 code unit (`for (char c : s.toCharArray())`,
+    // FHIRPathEngine.java:5835): `'a😀'` (U+1F600) yields THREE items, `a`, the
+    // high surrogate U+D83D and the low surrogate U+DE00, each a one-unit
+    // string. A lone surrogate cannot be held in a Rust `String`, so the two
+    // halves are asserted through FHIRPath: three items, the first is `a`, and
+    // the two halves are distinct one-unit strings.
+    assert_eq!(eval("'a😀'.toChars().count()"), integer("3"));
+    assert_eq!(eval("'a😀'.toChars()[0]"), string("a"));
+    assert_eq!(eval("'a😀'.toChars()[1].length()"), integer("1"));
+    assert_eq!(eval("'a😀'.toChars()[2].length()"), integer("1"));
+    assert_eq!(
+        eval("'a😀'.toChars()[1] = 'a😀'.toChars()[2]"),
+        boolean(false),
+        "the high and low surrogate halves are different one-unit strings"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -379,7 +474,42 @@ fn index_of_returns_a_zero_based_position_or_minus_one() {
 // covers: path.string.004
 #[test]
 fn substring_takes_a_start_and_an_optional_length() {
-    expect_group("testSubstring", 16);
+    // HAPI passes 8 of 16 (`hapi-8.12.0-results.json:352-359`): required
+    // `failed` (parity, `path.oracle.012`) for `testSubstring11` to `18`,
+    // `passed` for the rest (DEV-0019).
+    expect_group_except(
+        "testSubstring",
+        16,
+        &[
+            "testSubstring11",
+            "testSubstring12",
+            "testSubstring13",
+            "testSubstring14",
+            "testSubstring15",
+            "testSubstring16",
+            "testSubstring17",
+            "testSubstring18",
+        ],
+    );
+
+    // The eight failures, in `funcSubstring` (FHIRPathEngine.java:5864-5895).
+    // 11, 12: the start argument has no emptiness guard (:5867), an
+    // index-out-of-bounds failure, so evaluation fails.
+    expect_evaluation_failure("{}.substring({})", None);
+    expect_evaluation_failure("'string'.substring({})", None);
+    // 13, 14, 15: the end is `min(length, start + count)` with an `int` sum
+    // (:5884), which falls before the start or overflows, so evaluation fails.
+    expect_evaluation_failure("'abcdefg'.substring(3, -1)", None);
+    expect_evaluation_failure("'abcdefg'.substring(0, -1)", None);
+    expect_evaluation_failure("'abcdefg'.substring(1, 2147483647)", None);
+    // 16: a zero count's empty result is dropped (:5888), so the answer is
+    // empty and `= ''` is empty, not true.
+    assert_eq!(eval("'abcdefg'.substring(3, 0)"), empty());
+    assert_eq!(eval("'abcdefg'.substring(3, 0) = ''"), empty());
+    // 17, 18: an empty length argument returns empty (:5871-5872), not the rest
+    // of the string.
+    assert_eq!(eval("'abcdefg'.substring(3, {})"), empty());
+    assert_eq!(eval("'abcdefg'.substring(0, {})"), empty());
 
     // `funcSubstring` (FHIRPathEngine.java:5864): one argument takes the rest
     // of the string, two arguments clamp the end at the string's length.
@@ -865,7 +995,7 @@ fn a_string_function_on_an_empty_collection_yields_empty() {
 }
 
 // ---------------------------------------------------------------------------
-// path.string.022 -- unicode scalar values, not bytes
+// path.string.022 -- UTF-16 code units, not bytes
 // ---------------------------------------------------------------------------
 
 // covers: path.string.022
@@ -896,6 +1026,26 @@ fn string_functions_operate_on_unicode_scalar_values() {
         eval_patient("Patient.contact.name.family.length()"),
         integer("9")
     );
+
+    // Above the Basic Multilingual Plane a character is two UTF-16 code units
+    // (FHIRPathEngine.java:5771, 5884): `'a😀b'` (U+1F600) is four units.
+    assert_eq!(eval("'a😀b'.length()"), integer("4"));
+    assert_eq!(eval("'a😀b'.indexOf('b')"), integer("3"));
+    // `substring` slices by unit and can split a surrogate pair (:5884-5886):
+    // `substring(1, 1)` is the one-unit high surrogate U+D83D and
+    // `substring(2)` is the low surrogate U+DE00 followed by `b`. A lone
+    // surrogate cannot be held in a Rust `String`, so these are asserted
+    // through FHIRPath: lengths 1 and 2, the tail after the low surrogate is
+    // `b`, and the two halves are distinct (a lossy replacement would make them
+    // equal). A byte count is never used.
+    assert_eq!(eval("'a😀b'.substring(1, 1).length()"), integer("1"));
+    assert_eq!(eval("'a😀b'.substring(2).length()"), integer("2"));
+    assert_eq!(eval("'a😀b'.substring(3)"), string("b"));
+    assert_eq!(
+        eval("'a😀b'.substring(1, 1) = 'a😀b'.substring(2, 1)"),
+        boolean(false),
+        "the high and low surrogate halves are different one-unit strings"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -916,21 +1066,19 @@ fn the_functions_that_reject_a_bad_focus_reject_it_with_an_error() {
         );
     }
 
-    // Contradiction with the pinned engine, recorded rather than silently
-    // accommodated. The scenario's second half says `'abc'.round(2)` fails on
-    // the focus *type*. It does not: `funcRound`'s else arm at
-    // FHIRPathEngine.java:4414 is
-    //
-    //     makeException(expr, FHIRPATH_WRONG_PARAM_TYPE, "round", ...);
-    //
-    // with **no `throw`** -- the exception object is built and discarded, so the
-    // function returns an empty collection. `funcTruncate` has the identical
-    // defect at :4285. The assertion below is the scenario's.
-    let message = expect_evaluation_failure("'abc'.round(2)", None);
+    // `'abc'.round(2)` is rejected by the **check** on the focus type:
+    // `checkContextDecimal` (FHIRPathEngine.java:3690, 3890-3892) raises
+    // `FHIRPATH_DECIMAL_ONLY`, "The function round can only be used on a
+    // decimal but found [System.String]".
+    let message = expect_check_failure("'abc'.round(2)");
     assert!(
-        message.to_lowercase().contains("round") || message.to_lowercase().contains("decimal"),
-        "the focus-type rejection must name the function or the wanted type: {message}"
+        message.contains("round") && message.contains("can only be used on a decimal"),
+        "the check must name the function and the wanted type: {message}"
     );
+    // With the check skipped it does NOT fail at evaluation: `funcRound`'s else
+    // arm builds an exception and never throws it (:4414), so the result is
+    // empty. (`funcTruncate` has the same defect at :4285.)
+    assert_eq!(eval_unchecked("'abc'.round(2)"), empty());
 }
 
 // ---------------------------------------------------------------------------
