@@ -1891,3 +1891,15 @@ and `014` pass (10 of 14 tests in `path_convert.rs`). The signatures in
 6. Two fidelity notes, no action needed: a digit is an ASCII digit where Java's
    `Character.isDigit` takes any Unicode decimal digit; and a decimal beyond
    `i128` mantissa range is an execution error rather than a value.
+
+## 2026-11-17 — `add-fhirpath-and-codegen-r4` — task 41 split by owner decision; the regex half is 41a, blocked on ADR 0005
+
+**Raised by** the proposer, recording the owner's decision. Task 41 now covers
+the string functions that need no regular-expression engine (`replace`, `trim`,
+`split`, `join`, `encode`, `decode`, `escape`, `unescape`:
+`path.string.011`, `013`-`019`). Task 41a covers `matches`, `matchesFull` and
+`replaceMatches` (`path.string.008`-`010`, and those functions' legs of
+`path.string.020`/`021`) and is **BLOCKED** until an ADR 0005 on a `chore/`
+branch chooses the engine and the owner approves the dependency (constitution
+section 5). No crate is added meanwhile. Supersedes the open question in the
+earlier task 41 entry.

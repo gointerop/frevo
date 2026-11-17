@@ -852,12 +852,27 @@ checkpoint because it changes what a gate measures.
   Satisfies `path.string.001` through `path.string.007`, `path.string.012`,
   `path.string.020` through `path.string.024`.
 
-- [ ] **41. Implement string functions: regular expressions and the R3
-  additions.** `matches`, `matchesFull`, `replaceMatches`, `replace`, `trim`,
-  `split` with its empty segments, `join`, `encode` and `decode` for base64,
-  urlbase64 and hex, `escape` and `unescape` for html and json.
-  Satisfies `path.string.008` through `path.string.011`, `path.string.013`
-  through `path.string.019`.
+- [ ] **41. Implement string functions: the R3 additions that need no regular
+  expression engine.** `replace` (a literal substitution: the pinned
+  `funcReplace` calls `String.replace`, not `java.util.regex`), `trim`, `split`
+  with its empty segments, `join`, `encode` and `decode` for base64, urlbase64
+  and hex, `escape` and `unescape` for html and json. No crate is added.
+  Satisfies `path.string.011`, `path.string.013` through `path.string.019`.
+
+- [ ] **41a. Implement string functions: the regular-expression functions.**
+  **BLOCKED on ADR 0005**, a `chore/` branch ADR choosing the regular-expression
+  engine; the owner approves the dependency (constitution section 5), and until
+  then no crate is added and this task is not started. Split from task 41 by
+  owner decision. Only three functions in the pinned engine use
+  `java.util.regex`, through `RegexTimeout`: `matches`
+  (`FHIRPathEngine.java:5683`, `5698`), `matchesFull` (`:5711`, `5725`, the
+  pattern prefixed `(?s)`) and `replaceMatches` (`:4879`); the engine's 500 ms
+  regex timeout (`regexTimeoutMillis`, `:186`) is part of the behaviour. Any
+  pattern in the pinned suite's `testMatches` or `testReplaceMatches` that the
+  chosen engine cannot express is recorded as a deviation.
+  Satisfies `path.string.008`, `path.string.009`, `path.string.010`. The
+  `matches`, `matchesFull` and `replaceMatches` legs of `path.string.020` and
+  `path.string.021`, which task 40 otherwise satisfies, are satisfied here.
 
 - [ ] **42. Implement type conversion.** Each `toX` the R4 engine has and each
   `convertsToX`, including every date, dateTime and time precision string, the
