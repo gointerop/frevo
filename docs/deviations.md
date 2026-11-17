@@ -45,8 +45,8 @@ decision.
 
 ## Entries
 
-All nineteen entries below come from `add-fhirpath-and-codegen-r4`;
-`DEV-0013`, `DEV-0015`, `DEV-0017`, `DEV-0018`, `DEV-0019` and `DEV-0021` are pending the owner's review (see their entries);
+All twenty entries below come from `add-fhirpath-and-codegen-r4`;
+`DEV-0013`, `DEV-0015`, `DEV-0017`, `DEV-0018`, `DEV-0019`, `DEV-0021` and `DEV-0022` are pending the owner's review (see their entries);
 `DEV-0012` and `DEV-0014` were ruled for HAPI (2026-11-17 and 2026-11-14).
 `DEV-0001` through `DEV-0010` are the same kind of case: the pinned R4
 `FHIRPathEngine` does something the FHIRPath specification does not describe. In
@@ -633,6 +633,37 @@ file, so its prose is not redistributable here (see `oracles/PINS.md`).
   live HAPI.
 - **Normalizer impact:** none on stored bytes; no search-parameter expression
   is known to call these functions (not checked against the generated table).
+- **Reviewed:** pending owner.
+
+### DEV-0022 — `join` on an empty focus, `unescape('json')` and `split` with an empty separator
+
+- **Area:** path
+- **Scenario IDs:** path.string.014, path.string.015, path.string.019
+- **HAPI 8.12.0 behaviour:** `funcJoin` adds `b.toString()` outside any
+  emptiness test (`ENGINE:4547-4565`), so `name.prefix.join(',')` is one empty
+  string (`testJoinEmpty`, `hapi-8.12.0-results.json:457`).
+  `Utilities.unescapeJson` (`Utilities.java:481-525`) turns `\"` into the letter
+  `b` (`:492-494`) and, after `\u`, does not skip the four hex digits
+  (`:516-519`, `:525`): `testUnescapeJson2`, `3`, `4` fail
+  (`results.json:439-441`). `split` with an empty separator never terminates and
+  grows a list until memory is exhausted (`Utilities.java:1985-1994`), so HAPI
+  has no result for it.
+- **Specification requirement:** FHIRPath 2.0.0 — `join` over an empty input is
+  empty; `\"` unescapes to a quote and a unicode escape consumes its digits.
+  Neither the specification nor HAPI defines a result for an empty `split`
+  separator.
+- **Chosen behaviour:** HAPI for `join` and `unescape('json')` (the four cases are
+  `failed` on both sides, parity under `path.oracle.012`). For the empty
+  separator Frevo returns an execution error, because the specification's bounds
+  requirement (`path.errors.004`) forbids an unbounded evaluation; this is a
+  departure from HAPI's non-termination, not a difference in a defined result.
+- **Configuration flag:** none
+- **Debt:** none
+- **Rationale:** owner ruling, 2026-11-17: HAPI 8.12.0's observable behaviour is
+  the reference. The empty-separator error is the implementer's choice and
+  needs the owner's confirmation. Established from the pinned source; not
+  confirmed against a live HAPI.
+- **Normalizer impact:** none on stored bytes.
 - **Reviewed:** pending owner.
 
 ## Considered and not recorded as deviations

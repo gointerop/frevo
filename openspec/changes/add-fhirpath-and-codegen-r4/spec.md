@@ -584,7 +584,7 @@ Every allocated ID, grouped as it is grouped in the delta files.
 - `path.string.012` — `length` counts characters
 - `path.string.013` — `trim` removes leading and trailing whitespace
 - `path.string.014` — `split` keeps empty segments
-- `path.string.015` — `join` concatenates with a separator and yields empty for an empty collection
+- `path.string.015` — `join` concatenates with a separator and yields an empty string for an empty collection
 - `path.string.016` — `encode` supports base64, urlbase64 and hex
 - `path.string.017` — `decode` reverses `encode` for each supported form
 - `path.string.018` — `encode` and `decode` with an unsupported format yield empty or fail as the pinned engine does

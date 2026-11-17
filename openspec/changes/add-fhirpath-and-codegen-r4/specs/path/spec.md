@@ -1430,6 +1430,12 @@ The engine SHALL implement the string functions `FHIRPathEngine` implements, inc
 
 - **WHEN** the `testReplace` group's cases are evaluated
 - **THEN** every case yields its stated output
+- **AND** the substitution is Java's `String.replace` (`FHIRPathEngine.java:4854`),
+  with no pattern: an empty target inserts the replacement between every
+  character and at both ends (`'abc'.replace('', '-')` is `-a-b-c-`); an empty
+  focus string yields `''` whatever the arguments (`:4851-4852`); an empty focus
+  collection or an empty argument yields empty (`:4846`); a focus of more than
+  one item is an execution error (`:4859`)
 
 #### Scenario: [path.string.012] `length` counts characters
 
@@ -1440,17 +1446,41 @@ The engine SHALL implement the string functions `FHIRPathEngine` implements, inc
 
 - **WHEN** the `testTrim` group's cases are evaluated
 - **THEN** every case yields its stated output
+- **AND** the characters removed are those Java's `String.trim` removes, every
+  character up to and including U+0020 (`FHIRPathEngine.java:4527`), so a
+  U+00A0 no-break space is **not** removed
 
 #### Scenario: [path.string.014] `split` keeps empty segments
 
 - **WHEN** the `testSplit` group's cases are evaluated, including
   `'A,,C'.split(',').join(',') = 'A,,C'` and the nine-segment `[stop]` case
 - **THEN** every case yields its stated output
+- **AND** `split` is `Utilities.simpleSplit` (`Utilities.java:1978-1996`): the
+  separator is a literal, not a pattern, and a trailing separator yields a
+  trailing empty segment
+- **WHEN** `'abc'.split('')` is evaluated (an empty separator)
+- **THEN** HAPI never terminates: `simpleSplit` finds a match of length zero at
+  every cursor, does not advance the cursor, and appends an empty segment to an
+  unbounded list on each pass until memory is exhausted
+  (`Utilities.java:1985-1994`, `1998-2007`). There is no defined HAPI result
+- **AND** Frevo returns an execution error, as `path.errors.004` requires of an
+  expression that would otherwise run unbounded and `path.errors.003` of a
+  failure; recorded as `DEV-0022`. A differential test cannot run this case
+  against HAPI and grades Frevo's error alone
 
-#### Scenario: [path.string.015] `join` concatenates with a separator and yields empty for an empty collection
+#### Scenario: [path.string.015] `join` concatenates with a separator and yields an empty string for an empty collection
 
 - **WHEN** the `testJoin` group's cases are evaluated
-- **THEN** every case yields its stated output
+- **THEN** every case HAPI passes yields its stated output
+- **AND** the failed case is `testJoinEmpty` (`name.prefix.join(',')`, expected
+  empty): `funcJoin` ends with `result.add(new StringType(b.toString()))` outside
+  any emptiness test (`FHIRPathEngine.java:4547-4565`), so an empty focus
+  yields **one empty string**, not an empty collection
+  (`hapi-8.12.0-results.json:457`). Frevo's required status is `failed`
+  (parity under `path.oracle.012`); a Frevo pass would be listed
+  `ahead-of-hapi`
+- **AND** the FHIRPath specification yields empty for an empty input; recorded as
+  `DEV-0022` and resolved as HAPI's behaviour
 
 #### Scenario: [path.string.016] `encode` supports base64, urlbase64 and hex
 
@@ -1465,15 +1495,44 @@ The engine SHALL implement the string functions `FHIRPathEngine` implements, inc
 
 #### Scenario: [path.string.018] `encode` and `decode` with an unsupported format yield empty or fail as the pinned engine does
 
-- **WHEN** `'x'.encode('rot13')` is evaluated
-- **THEN** the engine behaves as it does at the pinned SHA, and the harness
-  records which behaviour that is
+- **WHEN** `'x'.encode('rot13')` and `'x'.decode('rot13')` are evaluated
+- **THEN** each yields an empty collection: the format is compared to `hex`,
+  `base64` and `urlbase64` in turn and nothing is added when none matches
+  (`FHIRPathEngine.java:4440-4481`)
+- **AND** `'!!'.decode('base64')` fails with an execution error, because
+  `Base64.Decoder.decode` raises `IllegalArgumentException` on malformed input
+- **AND** text is converted to bytes with the JVM default charset
+  (`getBytes()`); Frevo uses UTF-8, which is identical wherever the default is
+  UTF-8
 
 #### Scenario: [path.string.019] `escape` and `unescape` support `html` and `json`
 
-- **WHEN** the `testEscapeUnescape` group's cases are evaluated, including
-  `unescape('json')` turning a unicode escape into its character
-- **THEN** every case yields its stated output
+- **WHEN** the `testEscapeUnescape` group's cases are evaluated
+- **THEN** every case HAPI passes yields its stated output
+- **AND** Frevo's required status per case follows HAPI's recorded run
+  (`oracles/fhirpath/hapi-8.12.0-results.json:439-441`): `failed` (parity under
+  `path.oracle.012`) for `testUnescapeJson2`, `3` and `4`, `passed` for the rest
+- **AND** the failures come from `Utilities.unescapeJson`
+  (`Utilities.java:481-525`):
+  - `case '"'` appends the letter `b`, not a quote (`:492-494`): the string
+    `\"1<2\"` (a backslash before each quote) unescapes to `b1<2b`. That is the
+    outcome of `testUnescapeJson2`, whose escape step produces exactly that
+    string, and of `testUnescapeJson4`, whose literal `'\\"1<2\\"'` is that
+    string
+  - after `\u` the cursor advances one place and not past the four hex digits
+    (`:516-519`, `:525`), so they are appended as text: the string
+    made of a backslash then `u0041B` (suite literal `'\\u0041B'`, `testUnescapeJson3`) unescapes to
+    `A0041B`, not `AB`
+  - an unknown escape such as `\x` raises `Unknown JSON escape` (`:521`), an
+    execution error; a trailing lone backslash raises an index error
+- **AND** `testUnescapeJson` (the literal `'\"1<2\"'`, which the lexer has
+  already turned into `"1<2"`) and `testEscapeJson` pass
+- **AND** `escape` and `unescape` also accept `url` and `md`
+  (`FHIRPathEngine.java:4492-4495`, `4513-4516`), and any other format yields an
+  empty collection
+- **AND** the specification requires `\"` to unescape to a quote and a `\u`
+  escape to consume its four digits; recorded as `DEV-0022` and resolved as
+  HAPI's behaviour
 
 #### Scenario: [path.string.020] a string function on a non-string yields empty
 
@@ -1485,7 +1544,11 @@ The engine SHALL implement the string functions `FHIRPathEngine` implements, inc
   switched on
 - **AND** the same guard governs `upper`, `lower`, `contains`, `endsWith`,
   `substring`, `indexOf`, `matches`, `matchesFull`, `replace`,
-  `replaceMatches`, `length`, `toChars`, `trim`, `split` and `join`
+  `replaceMatches`, `length` and `toChars`
+- **AND** `trim`, `split` and `join` do **not** check the focus type
+  (`FHIRPathEngine.java:4523-4529`, `4532-4545`, `4547-4565`): they use the
+  item's primitive value, so `1.trim()` is `'1'`, `1.split(',')` is the one
+  item `'1'`, and `1.join(',')` is `'1'`
 - **AND** this differs from the FHIRPath specification, which makes a
   type-mismatched focus an error; the divergence is recorded as `DEV-0006` and
   resolved as HAPI's behaviour
