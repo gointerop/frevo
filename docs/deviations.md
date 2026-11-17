@@ -45,8 +45,8 @@ decision.
 
 ## Entries
 
-All fifteen entries below come from `add-fhirpath-and-codegen-r4`;
-`DEV-0013` and `DEV-0015` are pending the owner's review (see their entries);
+All sixteen entries below come from `add-fhirpath-and-codegen-r4`;
+`DEV-0013`, `DEV-0015` and `DEV-0016` are pending the owner's review (see their entries);
 `DEV-0012` and `DEV-0014` were ruled for HAPI (2026-11-17 and 2026-11-14).
 `DEV-0001` through `DEV-0010` are the same kind of case: the pinned R4
 `FHIRPathEngine` does something the FHIRPath specification does not describe. In
@@ -509,6 +509,31 @@ file, so its prose is not redistributable here (see `oracles/PINS.md`).
   specification on HAPI and on Frevo alike; none is known (not checked against the generated table).
 - **Reviewed:** pending owner re-confirmation. Ruled for HAPI on 2026-11-14 for
   the broader wording; narrowed after review the same day.
+
+### DEV-0016 — a unicode escape in a delimited identifier is not decoded
+
+- **Area:** path
+- **Scenario IDs:** path.navigation.001
+- **HAPI 8.12.0 behaviour:** ``Patient.`name`.given.first()``
+  (`testBasics/testEscapedIdentifierUnicode`) fails at the check stage: HAPI
+  looks up the name `Îame`, not `name`, and reports "The name 'Îame' is not
+  valid for any of the possible types"
+  (`oracles/fhirpath/hapi-8.12.0-results.json:20`, status `failed`). HAPI fails
+  its own case. Not diagnosed to a lexer line here.
+- **Specification requirement:** FHIRPath 2.0.0, Identifiers — a delimited
+  identifier may contain unicode escapes, and `n` is `n`; the case expects
+  `Peter`.
+- **Chosen behaviour:** HAPI — the escape is not decoded to `n`, and the check
+  fails the expression.
+- **Configuration flag:** none
+- **Debt:** none
+- **Rationale:** HAPI 8.12.0's observable behaviour is the reference (owner,
+  2026-11-17). The case is `failed` on both sides, so it is parity under
+  `path.oracle.012`.
+- **Normalizer impact:** none on stored bytes; no search-parameter expression
+  uses an escaped identifier.
+- **Reviewed:** pending owner review. Raised 2026-11-17 from the implementer's
+  report of the tasks 32-34 blocker.
 
 ## Considered and not recorded as deviations
 

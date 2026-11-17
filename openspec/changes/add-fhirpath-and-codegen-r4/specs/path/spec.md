@@ -246,6 +246,14 @@ The engine SHALL navigate a resource through the node trait, addressing a polymo
 
 - **WHEN** `Patient.name.given.first()` is evaluated over `patient-example.xml`
 - **THEN** the result is `Peter`
+- **AND** `testBasics/testEscapedIdentifierUnicode`
+  (``Patient.`name`.given.first()``, expecting `Peter`) is **not** a pass:
+  HAPI does not decode the escape inside a delimited identifier to `n`, the
+  name it looks up is `Îame`, and the case fails **at the check stage** with
+  "The name 'Îame' is not valid for any of the possible types"
+  (`oracles/fhirpath/hapi-8.12.0-results.json:20`, status `failed`). Frevo's
+  lexer matches, so the case is `failed` on both sides and is parity under
+  `path.oracle.012`. This is `DEV-0016`
 
 #### Scenario: [path.navigation.002] the resource type name may be omitted
 
@@ -255,7 +263,16 @@ The engine SHALL navigate a resource through the node trait, addressing a polymo
 #### Scenario: [path.navigation.003] a leading type name that is not the focus type yields empty
 
 - **WHEN** `Observation.value` is evaluated over `patient-example.xml`
-- **THEN** the result is an empty collection
+- **THEN** the result is an empty collection, when the check is skipped as
+  `FhirPathR4` does (`path.check.013`): the leading-name special case adds the
+  focus only when a type in its hierarchy matches
+- **AND** the **check** rejects it first, at `executeType`
+  (`FHIRPathEngine.java:1590-1593`): `FHIRPATH_UNKNOWN_NAME`, `value` not valid
+  for any of the possible types. HAPI records the equivalent suite case
+  `testBasics/testSimpleWithWrongContext` as `passed`
+  (`oracles/fhirpath/hapi-8.12.0-results.json:24`). A test must therefore
+  grade the empty answer with the check skipped, and the check failure
+  separately
 
 #### Scenario: [path.navigation.004] navigation flattens across a repeating element
 
@@ -315,6 +332,10 @@ The engine SHALL navigate a resource through the node trait, addressing a polymo
 
 - **WHEN** `Patient.name['x']` is evaluated
 - **THEN** evaluation fails
+- **AND** the static check rejects it before evaluation is reached: `case Item`
+  (`FHIRPathEngine.java:3363-3367`) types the argument against a singleton
+  `integer` and `checkParamTypes` (`:3828`) raises `FHIRPATH_WRONG_PARAM_TYPE`
+  for `string`. A test of the execution error must skip the check
 
 #### Scenario: [path.navigation.012] a contained resource's elements are navigable
 
@@ -362,7 +383,11 @@ The engine SHALL navigate a resource through the node trait, addressing a polymo
 #### Scenario: [path.navigation.019] navigation over an empty focus yields empty
 
 - **WHEN** `{}.name.given` is evaluated
-- **THEN** the result is an empty collection
+- **THEN** the result is an empty collection, when the check is skipped
+- **AND** the **check** rejects it: the empty literal has no type, so `name`
+  resolves against no types and `executeType` raises `FHIRPATH_UNKNOWN_NAME`
+  (`FHIRPathEngine.java:1590-1593`, with `canBeNone` false). A test must skip
+  the check to grade the empty answer
 
 #### Scenario: [path.navigation.020] `children()` returns the immediate children
 
