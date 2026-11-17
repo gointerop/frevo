@@ -9,3 +9,4 @@ repository.workspace = true
 description = "FHIRPath parser and evaluation engine."
 
 [dependencies]
+regex.workspace = true

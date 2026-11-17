@@ -50,6 +50,9 @@ serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1" }
 serde_yaml_ng = { version = "0.10" }
 
+# Text
+regex = { version = "1.13", default-features = false, features = ["std", "perf", "unicode"] }
+
 # Errors / logging
 thiserror = "2"
 anyhow = "1"
