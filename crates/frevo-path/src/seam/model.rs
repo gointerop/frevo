@@ -4,6 +4,8 @@
 
 use std::fmt;
 
+use super::value::Value;
+
 /// A set of FHIR or System type names, as the check pass propagates them.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct TypeSet(Vec<String>);
@@ -187,6 +189,28 @@ pub trait Model: Send + Sync {
     /// Defaulted, so a model that does not carry extension definitions still
     /// compiles.
     fn extension_value_types(&self, _url: &str) -> Option<Vec<String>> {
+        None
+    }
+
+    /// `worker.fetchResource(ValueSet.class, url)`: the `ValueSet` resource
+    /// with canonical URL `url`, as a node. `memberOf` reads it when no host
+    /// service is installed (`FHIRPathEngine.java:2605`, `:4793`,
+    /// `path.utility.025`).
+    ///
+    /// `Some(None)` is "this model has no such value set", which `memberOf`
+    /// answers as empty (the function) or `false` (the operator). `None` is
+    /// "this model cannot say", which evaluation answers as
+    /// `EvalError::Unsupported` rather than as either of those. Defaulted, so
+    /// a model that carries no terminology still compiles.
+    fn value_set(&self, _url: &str) -> Option<Option<Value>> {
+        None
+    }
+
+    /// `worker.fetchResource(CodeSystem.class, url)`: the `CodeSystem`
+    /// resource with canonical URL `url`, as a node, which the engine's
+    /// in-memory code validation reads for a value set that includes a whole
+    /// code system. The same three answers as [`Model::value_set`].
+    fn code_system(&self, _url: &str) -> Option<Option<Value>> {
         None
     }
 }

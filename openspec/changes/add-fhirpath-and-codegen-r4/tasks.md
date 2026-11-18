@@ -1003,6 +1003,13 @@ checkpoint because it changes what a gate measures.
   With the hook implemented the host-service surface is complete; a missing
   method there is a host integration that silently cannot be written.
   Satisfies `path.utility.012` through `path.utility.028`.
+  **Implemented, not ticked.** `path_utility` is 26 of 28: the engine is
+  `crates/frevo-path/src/eval/{hostfn,terminology}.rs` and the check pass's
+  `custom_function_type`, with `Model::value_set`/`code_system` as the worker
+  context. `012` needs the oracle seam's `evaluate` to install the suite's
+  host service, and `025` needs the harness model to carry the package's value
+  sets and code systems -- both in `tests/oracle/engine.rs`, owed by the
+  oracle-builder (`tasks/blockers.md`, 2026-11-18, "task 49").
 
 - [ ] **50. Implement the static type-check pass.** Separate from evaluation;
   27 of the 29 `invalid="semantic"` cases failing it with the offending path

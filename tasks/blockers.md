@@ -2245,3 +2245,68 @@ the HighBoundary exponent cases and the untested behaviours listed above.
 Spec-prose differences are `DEV-0025`; wrong answers are `DEBT-0016`. Owed next:
 the oracle-builder amends `crates/frevo-path/tests/path_boundary.rs` and the two
 `src/eval/tests.rs` lib tests, then the spec-reviewer re-reviews the delta.
+
+## 2026-11-18 — `add-fhirpath-and-codegen-r4`, task 49: engine done; two `path_utility` tests wait on the oracle seam
+
+**Raised by** the implementer of task 49. `conformsTo`, both `memberOf` forms,
+`resolve()` and host-supplied functions (evaluation and check) are in
+`crates/frevo-path/src/eval/{hostfn,terminology}.rs` and
+`src/check/pass.rs::custom_function_type`; the `trace` hook (the tenth
+host-service method) was already in `eval/utility.rs::log_entry`. `Model`
+gained two defaulted worker-context methods, `value_set(url)` and
+`code_system(url)` (`None` = cannot say, `Some(None)` = no such resource).
+`path_utility` is 26 of 28; task 49 is **not** ticked.
+
+Both remaining failures need `crates/frevo-path/tests/oracle/engine.rs`, which
+is test code and was not edited:
+
+1. **`path.utility.012`** (`conforms_to_asks_the_host_service`): the seam's
+   `SuiteEngine::evaluate` passes `None` as the host service, so the three
+   `testConformsTo` cases evaluate with no host and raise the
+   no-host-services error. Upstream installs `FHIRPathTestEvaluationServices`
+   before every case (`FHIRPathTests.java:176`). Owed: pass
+   `Some(&SuiteHostServices)` when `EngineConfig::install_test_host_services`
+   is set (`engine.rs` `evaluate`, the `evaluate_host_aware(..., None, false)`
+   call), and make `SuiteHostServices::resolve_value_set` answer from the
+   model as upstream's answers from `TestingUtilities.context()`.
+2. **`path.utility.025`** (`member_of_falls_back_to_the_worker_context_...`):
+   with no host service the engine asks `Model::value_set`, and the harness's
+   `SdModel` does not implement it, so the answer is `Unsupported`
+   (did-not-run), as it must be. Owed: `SdModel::value_set` and
+   `SdModel::code_system` over the pinned package's `ValueSet-*.json` /
+   `CodeSystem-*.json` (core canonical URLs end in the file id), built as typed
+   nodes with the existing `TreeBuilder::json_resource`.
+
+**Lib tests that now contradict task 49 (oracle-builder).**
+`src/eval/tests.rs` `every_unimplemented_function_is_unsupported_and_never_empty`
+and `every_binary_operator_is_unsupported_and_never_empty` use `memberOf`,
+`conformsTo` and `resolve()` as examples of unbuilt features. They are built
+now: `Patient.gender.memberOf('http://x')` over a patient with no gender is
+empty by HAPI's singleton rule (`FHIRPathEngine.java:4788-4790`), and
+`Patient.conformsTo(...)` with no host service is the no-host-services
+execution error. Only `comparable()` and the operator's model-without-value-sets
+case are still unsupported.
+
+**Not covered by the spec (proposal defects, for the proposer).**
+
+- `worker.validateCode` semantics. No scenario states how membership is
+  decided; HAPI's answer depends on the installed worker. Frevo's in-memory
+  subset (`eval/terminology.rs`) is: include union minus exclude; an include's
+  `concept` list matched by code (system compared only when both sides have
+  one); a whole-code-system include matched against a `complete` code
+  system's concept tree; `expansion.contains` when there is no `compose`.
+  `filter`, `valueSet` imports, an incomplete or unknown code system and a
+  `Coding` with no system are `Unsupported`. `path.utility.015` needs the
+  face-value match of a system-less include, which `ValueSetCheckerSimple`
+  would reject (`inComponent`, `:350-351`).
+- `resolve()` of a `Reference` with an `identifier` and no `reference`:
+  upstream calls `resolveReference` with a null URL; `HostServices::resolve_reference`
+  takes `url: &str`, so the call cannot be expressed. It is `Unsupported`.
+- `paramIsType` is consulted for index 0 only, upstream and here
+  (`FHIRPathEngine.java:3276`, `:4022`); when true, only the first argument is
+  passed (as a `code` naming the type) and later arguments are dropped.
+  `path.utility.027` says "an argument the host service declares to be a type
+  name", which reads as any index.
+- A `#id` reference with no root resource, and a custom function evaluated or
+  checked with no host service, dereference null upstream; Frevo raises a typed
+  execution / check error.

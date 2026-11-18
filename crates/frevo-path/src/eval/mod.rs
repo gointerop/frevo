@@ -40,6 +40,7 @@ mod env;
 mod equality;
 mod error;
 mod filter;
+mod hostfn;
 mod logic;
 mod mathfn;
 mod navigate;
@@ -48,6 +49,7 @@ mod strext;
 mod strfn;
 mod strregex;
 mod temporal;
+mod terminology;
 mod types;
 mod utility;
 
@@ -544,8 +546,12 @@ impl Run<'_> {
             Some(Function::Precision) => self.func_precision(focus, id),
             Some(Function::Today) => Ok(vec![temporal::today()]),
             Some(Function::Now) => Ok(vec![temporal::now()]),
-            Some(Function::Custom) | None => Err(EvalError::unsupported(
-                format!("the host function {}()", node.name().unwrap_or("?")),
+            Some(Function::ConformsTo) => self.func_conforms_to(context, focus, id),
+            Some(Function::MemberOf) => self.func_member_of(context, focus, id),
+            Some(Function::Resolve) => self.func_resolve(focus, id),
+            Some(Function::Custom) => self.func_custom(context, focus, id),
+            None => Err(EvalError::unsupported(
+                format!("the function {}()", node.name().unwrap_or("?")),
                 node.start(),
             )),
             Some(other) => Err(EvalError::unsupported(
@@ -625,9 +631,8 @@ impl Run<'_> {
     /// its start, as `makeException(holder, ...)` does.
     ///
     /// `Is` and `As` take their right operand as a type name rather than an
-    /// evaluated expression (`executeTypeName`), so they never reach here, and
-    /// `MemberOf` needs a terminology service: both are
-    /// [`EvalError::Unsupported`].
+    /// evaluated expression (`executeTypeName`), so they never reach here;
+    /// reaching here with either is [`EvalError::Unsupported`].
     ///
     /// The unary sign is `0 - x` or `0 + x` through `Minus` and `Plus`, as it
     /// is upstream, so `-5 'mg'` is the quantity's absolute value and `-'a'` is
@@ -668,6 +673,7 @@ impl Run<'_> {
             Operation::Div => arith::op_arith(model, left, Arith::Div, right, at),
             Operation::Mod => arith::op_arith(model, left, Arith::Mod, right, at),
             Operation::Concatenate => arith::op_concatenate(model, left, right, at),
+            Operation::MemberOf => self.op_member_of(left, right, holder),
             other => Err(EvalError::unsupported(
                 format!("the operator {}", other.to_code()),
                 offset,

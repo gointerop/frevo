@@ -29,7 +29,7 @@ use super::types::{
     is_backbone, is_system, url_of,
 };
 use crate::seam::host::{ConstantMode, HostServices};
-use crate::seam::model::{ElementInfo, Model};
+use crate::seam::model::{ElementInfo, Model, TypeSet};
 use crate::seam::value::Value;
 use crate::syntax::ast::{Constant, Expression, Function, Kind, NodeId, Operation};
 
@@ -913,6 +913,9 @@ impl<'a> Pass<'a> {
                 node.start(),
             ));
         };
+        if function == Function::Custom {
+            return self.custom_function_type(context, focus, id);
+        }
         let Some(sig) = signature::signature(function) else {
             return Err(CheckError::not_implemented(
                 format!(
@@ -1006,6 +1009,49 @@ impl<'a> Pass<'a> {
              does not terminate",
             self.start(id),
         ))
+    }
+
+    /// A host-supplied function (`Function.Custom`): the first parameter is a
+    /// `System.String` type name when `paramIsType(name, 0)` says so, and
+    /// otherwise every parameter is typed as an ordinary one; the result type
+    /// is the host service's `checkFunction` answer
+    /// (`FHIRPathEngine.java:3276`, `:3738`-`:3740`).
+    fn custom_function_type(
+        &mut self,
+        context: &TypeContext,
+        focus: Option<&Types>,
+        id: NodeId,
+    ) -> CheckResult<Types> {
+        let node = self.expr.node(id);
+        let name = node.name().unwrap_or("").to_string();
+        let start = node.start();
+        let Some(host) = self.host else {
+            // Upstream dereferences a null host service here; the parser only
+            // produces `Custom` through one, so this is a parse and a check
+            // made with different host services.
+            return Err(CheckError::failed(
+                "FHIRPATH_HO_HOST_SERVICES",
+                format!(
+                    "Internal Error evaluating FHIRPath expression: No host services are provided \
+                     ({name}())"
+                ),
+                start,
+            ));
+        };
+        let mut params: Vec<Types> = Vec::new();
+        if host.param_is_type(&name, 0) {
+            params.push(Types::single(&[SYSTEM_STRING]));
+        } else {
+            self.evaluate_parameters(context, focus, id, Function::Custom, &mut params, false)?;
+        }
+        let focus_set = focus.map_or_else(TypeSet::empty, Types::to_type_set);
+        let param_sets: Vec<TypeSet> = params.iter().map(Types::to_type_set).collect();
+        match host.check_function(&name, &focus_set, &param_sets) {
+            Ok(t) => Ok(Types::single(
+                &t.names().iter().map(String::as_str).collect::<Vec<_>>(),
+            )),
+            Err(e) => Err(CheckError::failed("HOST_SERVICE", e.message, start)),
+        }
     }
 
     fn check_focus(&self, rule: Focus, focus: &Types, id: NodeId) -> CheckResult<()> {

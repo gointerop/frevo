@@ -36,7 +36,7 @@ against the specification and the oracles, not from upstream source), `empty`
 |---|---|---|---|---|
 | `frevo-codegen` | empty | — | — | — |
 | `frevo-model` | empty | — | (will be `generated` from R4 StructureDefinitions) | — |
-| `frevo-path` | derived | `org.hl7.fhir.core` | `org.hl7.fhir.r4/.../r4/fhirpath/{FHIRLexer,ExpressionNode,FHIRPathEngine,FHIRPathConstant,TypeDetails}.java`, `org.hl7.fhir.r4/.../r4/model/{IdType,Base,BaseDateTimeType,TimeType}.java`, `org.hl7.fhir.utilities/.../Utilities.java` | `73c432b5f43ddbce979978a760ec4aa81e929094` |
+| `frevo-path` | derived | `org.hl7.fhir.core` | `org.hl7.fhir.r4/.../r4/fhirpath/{FHIRLexer,ExpressionNode,FHIRPathEngine,FHIRPathConstant,TypeDetails}.java`, `org.hl7.fhir.r4/.../r4/model/{IdType,Base,BaseDateTimeType,TimeType}.java`, `org.hl7.fhir.r4/.../r4/terminologies/ValueSetCheckerSimple.java`, `org.hl7.fhir.utilities/.../Utilities.java` | `73c432b5f43ddbce979978a760ec4aa81e929094` |
 | `frevo-convert` | empty | — | — | — |
 | `frevo-package` | empty | — | — | — |
 | `frevo-validator` | empty | — | — | — |
@@ -129,7 +129,14 @@ functions — `src/eval/utility.rs` (`log`, `hasLog`, `takeLog`, `funcTrace`,
 `getDecimalPrecision`, and `DateTimeUtil.java`'s `lowBoundaryForDate`,
 `highBoundaryForDate`, `lowBoundaryForTime`, `highBoundaryForTime`,
 `applyDatePrecision`, `applyTimePrecision`, `splitTimezone`,
-`getDatePrecision`, `getTimePrecision` and `dayCount`) — and the
+`getDatePrecision`, `getTimePrecision` and `dayCount`), the host-service
+functions — `src/eval/hostfn.rs` (`funcConformsTo`, `funcMemberOf`,
+`opMemberOf`, `funcResolve`, `makeIdentifier` and the `Custom` arm of
+`evaluateFunction`, with the check pass's `Custom` arm of
+`evaluateFunctionType` in `src/check/pass.rs`), the in-memory code
+validation behind `memberOf` — `src/eval/terminology.rs` (the
+include/exclude loop, `findCodeInConcept` and `checkExpansion` of
+`org.hl7.fhir.r4/.../r4/terminologies/ValueSetCheckerSimple.java`) — and the
 server-facing host service, `src/seam/server.rs`, from `hapi-fhir`'s
 `FhirPathR4.setEvaluationContext` at `7ab4c7c7c49281496faa1b3c2498a652457669ae`.
 Each file
