@@ -2177,3 +2177,63 @@ Harness note for the oracle-builder (optional precision, no test needs it):
 `SdModel` excludes profiles, so it does not implement
 `Model::extension_value_types`; the default makes a known extension a plain
 `Extension` whose `.value` is the whole choice.
+
+## 2026-11-18 — `add-fhirpath-and-codegen-r4`, task 45: boundary functions implemented as HAPI behaves; six `path.boundary` tests contradict HAPI
+
+**Raised by** the implementer of task 45. `lowBoundary`, `highBoundary` and
+`precision` are in `crates/frevo-path/src/eval/boundary.rs`, a port of
+`funcLowBoundary`/`funcHighBoundary`/`funcPrecision` (`FHIRPathEngine.java:4290-4392`),
+`Utilities.lowBoundaryForDecimal`/`highBoundaryForDecimal`/`applyPrecision`/`minusOne`
+(`Utilities.java:1631-1731`) and `DateTimeUtil` (`:65-226`) at `73c432b5`. The
+tests were not touched. Task 45 is **not** ticked.
+
+`path_boundary`: 4 pass (`path.boundary.002`, `.003`, `.008`, `.010`), 6 fail.
+
+1. **Decimal carry, borrow and exponent (`path.boundary.001`, `.004`, `.005`,
+   `.006`, `.007`).** The pinned decimal boundary is string surgery with no
+   carry and no normalisation. `applyPrecision` rounds up with
+   `(char)(nv.charAt(ld-1)+1)`, so a `9` becomes `:` and `new DecimalType`
+   throws; `minusOne` keeps leading zeros (`10` -> `09`); only a lower-case `e`
+   is split off, and its digits are appended with no `e` (`9.5e2` -> `92`).
+   HAPI's own recorded run fails exactly these 18 suite cases
+   (`oracles/fhirpath/hapi-8.12.0-results.json:954-962`, `:987-995`):
+   `LowBoundaryDecimalCarry1-3`, `Borrow1-2`, `Exponent1-4`,
+   `HighBoundaryDecimalCarry1-4`, `Exponent1-5`. Frevo now fails the same 18,
+   with the same values (`09`, `099.50`, `92`, `-92`, `1.5`, `1.6`,
+   `9.550000002`) or the same `Character : / Character - is neither a decimal
+   digit number...` error. The other 52 boundary cases pass, as they do in
+   HAPI. `.001` and `.006` fail only because their `expect_subject(...Decimal...)`
+   counts include these cases. The spec's scenarios state the correct numbers,
+   no `DEV-` entry records the difference, and the owner's ruling of
+   2026-11-17 (`DEV-0019`) is to match HAPI where it fails its own suite.
+2. **The type of a date boundary (`path.boundary.009`).** All 10 temporal suite
+   cases pass. The seam assertions at `path_boundary.rs:574-575` and `:626`
+   expect `primitive("date", ...)`; upstream builds every date and dateTime
+   boundary with `new DateTimeType(...)` (`FHIRPathEngine.java:4318-4320`,
+   `:4362-4364`), so its `fhirType()` is `dateTime` even for `2014-01`, and
+   `type()` and `is` see a dateTime. Frevo returns `Value::DateTime`.
+
+**Decision needed.** Either amend `path.boundary.001`/`.004`-`.007`/`.009` and
+their tests to HAPI's outcomes (`path.oracle.012` parity, as was done for
+`path.convert.*` and `path.env.*`), or rule them ahead of HAPI with a `DEV-`
+entry. If ruled ahead of HAPI, the change is confined to `apply_precision`
+(carry), `minus_one` (strip a leading zero), `split_exponent` (accept `E`; scale
+the result by the exponent) and `date_time_type` (a `date` when the text has no
+time).
+
+**Also owed (oracle-builder).** `src/eval/tests.rs`
+`every_unimplemented_function_is_unsupported_and_never_empty` and
+`an_unsupported_feature_deep_inside_navigation_still_surfaces` use
+`lowBoundary`, `highBoundary` and `precision` as examples of unbuilt
+functions; they are built now, so those two lib tests fail (lib 108/2) and need
+retargeting to functions that are still unbuilt (`memberOf`, `conformsTo`,
+`resolve`, `comparable`), as `f10729c` did after task 48.
+
+**Not covered by the spec (proposal defect, for the proposer).** Kept as
+upstream, untested: a quantity's precision is **not** range-checked
+(`1.587 'cm'.lowBoundary(-1)` cuts the text to nothing and is an error, not
+empty); `precision()` raises on an empty focus, its message naming
+`highBoundary`; `precision()` of an integer is empty; a date precision other
+than 4, 6, 7, 8, 10, 14 or 17 (time: 2, 4, 6, 9) is an execution error, and
+14 yields an invalid dateTime (`2014-01-01T08:00:+14:00`), also an error;
+`@T10:30.lowBoundary(2)` is the time `10:`.

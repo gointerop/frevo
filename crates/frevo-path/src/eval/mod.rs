@@ -31,6 +31,7 @@
 //! every step that reads it.
 
 mod arith;
+mod boundary;
 mod collection;
 mod combine;
 mod compare;
@@ -537,6 +538,10 @@ impl Run<'_> {
                 | Function::ConvertsToDate
                 | Function::ConvertsToTime),
             ) => self.func_convert(focus, id, f),
+            Some(f @ (Function::LowBoundary | Function::HighBoundary)) => {
+                self.func_boundary(context, focus, id, f)
+            }
+            Some(Function::Precision) => self.func_precision(focus, id),
             Some(Function::Today) => Ok(vec![temporal::today()]),
             Some(Function::Now) => Ok(vec![temporal::now()]),
             Some(Function::Custom) | None => Err(EvalError::unsupported(

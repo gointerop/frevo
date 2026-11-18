@@ -122,7 +122,14 @@ name-step overload of `execute` with its two implicit host-service lookups,
 `funcDefineVariable` and `ExecutionContext.setDefinedVariable`), the utility
 functions — `src/eval/utility.rs` (`log`, `hasLog`, `takeLog`, `funcTrace`,
 `funcCheck`, `funcAggregate`, `funcExtension`, `funcSort`,
-`FHIRPathBaseSorter` and `convertToBoolean`) — and the
+`FHIRPathBaseSorter` and `convertToBoolean`), the boundary functions —
+`src/eval/boundary.rs` (`funcLowBoundary`, `funcHighBoundary`,
+`funcPrecision`, `Utilities.java`'s `lowBoundaryForDecimal`,
+`highBoundaryForDecimal`, `applyPrecision`, `minusOne`, `isZero` and
+`getDecimalPrecision`, and `DateTimeUtil.java`'s `lowBoundaryForDate`,
+`highBoundaryForDate`, `lowBoundaryForTime`, `highBoundaryForTime`,
+`applyDatePrecision`, `applyTimePrecision`, `splitTimezone`,
+`getDatePrecision`, `getTimePrecision` and `dayCount`) — and the
 server-facing host service, `src/seam/server.rs`, from `hapi-fhir`'s
 `FhirPathR4.setEvaluationContext` at `7ab4c7c7c49281496faa1b3c2498a652457669ae`.
 Each file
