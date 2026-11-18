@@ -607,11 +607,11 @@ fn a_time_literal_with_an_offset_is_an_execution_error() {
 #[test]
 fn every_unimplemented_function_is_unsupported_and_never_empty() {
     let p = patient();
+    // `memberOf`, `conformsTo` and `resolve()` are built (task 49); these two
+    // are the only functions of the R4 table the evaluator does not dispatch.
     for text in [
-        "Patient.gender.memberOf('http://x')",
-        "Patient.conformsTo('http://x')",
-        "Patient.resolve()",
         "Patient.birthDate.comparable(Patient.birthDate)",
+        "Patient.hasTemplateIdOf('http://x')",
     ] {
         let feature = unsupported(text, Some(&p));
         assert!(feature.contains("function"), "{text}: {feature}");
@@ -620,12 +620,15 @@ fn every_unimplemented_function_is_unsupported_and_never_empty() {
 
 #[test]
 fn every_binary_operator_is_unsupported_and_never_empty() {
+    // Every operator is built now (`memberOf` was the last, task 49), so none
+    // can be Unsupported as an operator. The property that survives is the
+    // same guard against a silent empty result: a built operator applied to
+    // operands whose rule is not is still Unsupported, never empty, and the
+    // message names the missing rule.
     let p = patient();
     let text = "Patient.gender memberOf 'http://x'";
     let feature = unsupported(text, Some(&p));
-    assert!(feature.contains("operator"), "{text}: {feature}");
-    // Operators that are built, applied to operands whose rule is not: still
-    // Unsupported, never empty, though the message names the missing rule.
+    assert!(feature.contains("value sets"), "{text}: {feature}");
     for text in ["1 / 3", "1 'mg' < 2 'g'", "1 'mg' ~ 1 'mg'"] {
         unsupported(text, Some(&p));
     }

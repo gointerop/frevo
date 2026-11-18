@@ -14,6 +14,7 @@
 //! nothing at all.
 
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::{Arc, OnceLock};
 
 use frevo_path::{
@@ -372,8 +373,17 @@ impl SuiteEngine for FrontEndEngine {
             .clone()
             .ok_or(EngineError::NotImplemented)?
             .with_time_zone_offset_minutes(zone);
+        // `FHIRPathTests.test` installs `FHIRPathTestEvaluationServices`
+        // before every case (`FHIRPathTests.java:176`), so evaluation sees the
+        // suite's host service whenever the configuration installs it.
+        let install = self.config.unwrap_or_default().install_test_host_services;
+        let host: Option<&dyn HostServices> = if install {
+            Some(&SuiteHostServices)
+        } else {
+            None
+        };
         let values =
-            evaluate_host_aware(&base, expr, root.as_ref(), _context.context, None, false)?;
+            evaluate_host_aware(&base, expr, root.as_ref(), _context.context, host, false)?;
         Ok(values.iter().map(|v| result_item(model, v)).collect())
     }
 
@@ -646,11 +656,12 @@ pub fn evaluate_host_aware(
 ///
 /// The evaluation-side methods answer as upstream's where upstream's answer
 /// needs nothing the harness lacks — `conforms_to_profile`, `log` — and
-/// otherwise raise as upstream raises. `resolve_value_set` is the exception:
-/// upstream answers from its worker context, which the harness does not have,
-/// so this one is not a faithful answer and must not be relied on. The seam's
-/// `evaluate` installs no host service, so nothing calls it today; the task
-/// that binds host services into evaluation (49) replaces it.
+/// otherwise raise as upstream raises. `resolve_value_set` answers as
+/// upstream's does, from the worker context
+/// (`TestingUtilities.context().fetchResource(ValueSet.class, url)`), which
+/// here is the pinned package through [`Model::value_set`]. The seam's
+/// `evaluate` installs it whenever `install_test_host_services` is set, as
+/// `FHIRPathTests.test` does before every case (`FHIRPathTests.java:176`).
 struct SuiteHostServices;
 
 impl SuiteHostServices {
@@ -692,9 +703,13 @@ impl HostServices for SuiteHostServices {
     }
 
     fn resolve_value_set(&self, url: &str) -> Result<Option<Value>, HostError> {
-        Err(HostError::new(format!(
-            "the harness has no worker context to resolve {url} from"
-        )))
+        // `fetchResource` answers null for an unknown URL; only a missing
+        // package -- no worker context at all -- is an error.
+        sd_model().and_then(|m| m.value_set(url)).ok_or_else(|| {
+            HostError::new(format!(
+                "the harness has no worker context to resolve {url} from"
+            ))
+        })
     }
 
     fn resolve_function(&self, _name: &str) -> Option<FunctionDetails> {
@@ -836,6 +851,31 @@ struct SdModel {
     /// The canonical URL of every StructureDefinition in the package,
     /// profiles and extensions included, for `extension(url)`.
     urls: std::collections::HashSet<String>,
+    /// The package's `ValueSet-*.json` and `CodeSystem-*.json` files, by the
+    /// id in the file name.
+    terminology_files: TerminologyIndex,
+    /// The same files by declared canonical URL, read on first need: 2,400-odd
+    /// files that no test without terminology reads.
+    terminology_by_url: OnceLock<TerminologyIndex>,
+}
+
+/// A file per ValueSet and per CodeSystem, keyed by id or by canonical URL.
+#[derive(Debug, Default)]
+struct TerminologyIndex {
+    value_sets: HashMap<String, PathBuf>,
+    code_systems: HashMap<String, PathBuf>,
+}
+
+/// The canonical URL a terminology file declares and its parsed content, when
+/// the file holds a `resource_type` resource.
+fn declared_url(path: &PathBuf, resource_type: &str) -> Option<(String, json::Value)> {
+    let text = std::fs::read_to_string(path).ok()?;
+    let v = json::parse(&text).ok()?;
+    if v.get("resourceType").and_then(json::Value::as_str) != Some(resource_type) {
+        return None;
+    }
+    let url = v.get("url").and_then(json::Value::as_str)?.to_string();
+    Some((url, v))
 }
 
 /// The model, loaded once per test binary; `None` when the package is not
@@ -849,8 +889,27 @@ fn load_sd_model() -> Option<SdModel> {
     let dir = input::repo_path(R4_PACKAGE_DIR);
     let mut types = HashMap::new();
     let mut urls = std::collections::HashSet::new();
+    let mut terminology_files = TerminologyIndex::default();
     for entry in std::fs::read_dir(&dir).ok()?.flatten() {
         let file = entry.file_name().to_string_lossy().into_owned();
+        if let Some(id) = file
+            .strip_prefix("ValueSet-")
+            .and_then(|f| f.strip_suffix(".json"))
+        {
+            terminology_files
+                .value_sets
+                .insert(id.to_string(), entry.path());
+            continue;
+        }
+        if let Some(id) = file
+            .strip_prefix("CodeSystem-")
+            .and_then(|f| f.strip_suffix(".json"))
+        {
+            terminology_files
+                .code_systems
+                .insert(id.to_string(), entry.path());
+            continue;
+        }
         let Some(id) = file
             .strip_prefix("StructureDefinition-")
             .and_then(|f| f.strip_suffix(".json"))
@@ -901,7 +960,12 @@ fn load_sd_model() -> Option<SdModel> {
     if types.is_empty() {
         None
     } else {
-        Some(SdModel { types, urls })
+        Some(SdModel {
+            types,
+            urls,
+            terminology_files,
+            terminology_by_url: OnceLock::new(),
+        })
     }
 }
 
@@ -975,6 +1039,56 @@ fn fhir_type_code(t: &json::Value, code: &str) -> String {
 }
 
 impl SdModel {
+    /// `worker.fetchResource(<type>.class, url)` over the package: the
+    /// resource whose canonical URL is `url`, as a typed node, or `Some(None)`
+    /// when the package has none.
+    ///
+    /// The core package names each file by the resource id, and a core
+    /// canonical URL usually ends in that id, so the file the last URL segment
+    /// names is tried first; its declared URL still decides. Only when that
+    /// guess misses is every file of the type read, once, into an index.
+    fn terminology_resource(&self, url: &str, value_set: bool) -> Option<Option<Value>> {
+        let (resource_type, by_id) = if value_set {
+            ("ValueSet", &self.terminology_files.value_sets)
+        } else {
+            ("CodeSystem", &self.terminology_files.code_systems)
+        };
+        let build = |v: &json::Value| TreeBuilder { model: self }.json_resource(v);
+        let tail = url.rsplit('/').next().unwrap_or(url);
+        if let Some((declared, v)) = by_id
+            .get(tail)
+            .and_then(|path| declared_url(path, resource_type))
+        {
+            if declared == url {
+                return Some(build(&v));
+            }
+        }
+        let index = self.terminology_by_url.get_or_init(|| {
+            let read = |files: &HashMap<String, PathBuf>, rt: &str| {
+                files
+                    .values()
+                    .filter_map(|p| declared_url(p, rt).map(|(u, _)| (u, p.clone())))
+                    .collect()
+            };
+            TerminologyIndex {
+                value_sets: read(&self.terminology_files.value_sets, "ValueSet"),
+                code_systems: read(&self.terminology_files.code_systems, "CodeSystem"),
+            }
+        });
+        let by_url = if value_set {
+            &index.value_sets
+        } else {
+            &index.code_systems
+        };
+        match by_url.get(url) {
+            None => Some(None),
+            Some(path) => {
+                let (_, v) = declared_url(path, resource_type)?;
+                Some(build(&v))
+            }
+        }
+    }
+
     /// The direct child definitions of `path` in StructureDefinition `sd`.
     fn children_of<'a>(
         &'a self,
@@ -1105,6 +1219,14 @@ impl Model for SdModel {
         Some(self.urls.contains(url))
     }
 
+    fn value_set(&self, url: &str) -> Option<Option<Value>> {
+        self.terminology_resource(url, true)
+    }
+
+    fn code_system(&self, url: &str) -> Option<Option<Value>> {
+        self.terminology_resource(url, false)
+    }
+
     fn is_primitive(&self, type_name: &str) -> bool {
         self.types
             .get(type_name)
@@ -1220,11 +1342,11 @@ fn choice_type<'e>(e: &'e ElementDef, key: &str) -> Option<&'e str> {
     })
 }
 
-struct TreeBuilder {
-    model: &'static SdModel,
+struct TreeBuilder<'m> {
+    model: &'m SdModel,
 }
 
-impl TreeBuilder {
+impl TreeBuilder<'_> {
     fn shape(&self, sd: &str, e: &ElementDef, chosen: &str) -> Shape {
         if let Some(r) = &e.content_reference {
             let (ref_sd, _) = SdModel::context_of(r);
