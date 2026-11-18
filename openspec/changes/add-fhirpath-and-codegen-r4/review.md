@@ -1,4 +1,45 @@
-APPROVED
+CHANGES_REQUESTED
+
+Twenty-ninth review (commit `5f37fc7`, 2026-11-17). `ENGINE` is
+`org.hl7.fhir.r4/.../fhirpath/FHIRPathEngine.java` at `73c432b5`. The env,
+trace-log, `is`/`as`/`ofType` and `types.013` amendments are correct (dated
+section). Two statements about the static check are not. The twenty-eighth
+review was `APPROVED`; earlier findings follow, kept for the record.
+
+1. **The static check rejects *every* boolean `check()` condition, not only
+   focus-relative ones.**
+   - `case Check` (`ENGINE:3544-3547`) is
+     `checkParamTypes(exp, "check", paramTypes, new TypeDetails(SINGLETON,
+     FP_String))`. That types the **first** parameter, the condition, against
+     `string`.
+   - A condition typed `boolean` therefore always raises
+     `FHIRPATH_WRONG_PARAM_TYPE` (`:3820-3830`), even when it resolves
+     against the context item. For example, `Patient.check(name.exists(),
+     'm')` passes the name lookup, then fails the check on parameter 1 being
+     `System.Boolean`.
+   - Only a condition with no types escapes.
+   - `path.utility.003` says a test "must therefore skip the check or use a
+     condition that resolves against the context item". The second option
+     does not exist. `tasks.md:961-962` repeats it ("or use a context-relative
+     condition").
+   - The `given.exists()` example is still right: it fails earlier, on the
+     unknown name, because parameters are typed before `checkParamTypes`
+     (`:3298`, then `:3545`).
+   - State that the check fails for any typed boolean condition, with the
+     wrong-parameter-type message, and that every `check()` evaluation test
+     skips the check.
+
+2. **The unknown-extension warning text is truncated.**
+   - `FHIRPATH_UNKNOWN_EXTENSION` is `Reference to an unknown extension -
+     double check that the URL '{0}' is correct` (`Messages.properties:368`).
+   - `path.utility.009` quotes only "Reference to an unknown extension". The
+     check-pass warnings are graded through the `path-check-warnings` oracle
+     (`path.check.015`-`019`), so the full text is the expected output.
+   - Also state the two result shapes: an unfound URL is typed
+     `SINGLETON Extension` (`ENGINE:3591`), and a found one
+     `ORDERED <profile url>` (`:3586`).
+
+## Twenty-eighth review header as issued (commit `9044efc`)
 
 Twenty-eighth review (commit `9044efc`, 2026-11-17) resolves all three findings
 of the twenty-seventh review. Detail is in the dated section at the end. The
@@ -1837,3 +1878,93 @@ shapes; `scratchpad/rx/Rx2.java`, outside the repository).
 
 **Scenario IDs.** No `#### Scenario:` heading changed. `path` has 368
 headings.
+
+## Twenty-ninth review - commit `5f37fc7` (2026-11-17)
+
+**`path.env.007`, `.009`, `.011`, `.014`: correct.**
+- The check's `resolveConstantType` throws `FHIRPATH_CANNOT_USE`:
+  - for `%resource` when `context.resource == null` (`ENGINE:3142-3145`);
+  - for `%rootResource` likewise (`:3147-3150`).
+- It throws `FHIRPATH_UNKNOWN_CONSTANT`:
+  - with no host service, after the defined-variable lookup (`:3163-3167`);
+  - when the host answers `null` (`:3170-3175`).
+- Evaluation throws the same messages: `:1761-1763`, `:1766-1768` and,
+  with no host service, `:1781-1782`.
+- The templates are `Messages.properties:302` and `:365`. The quoted text
+  matches, with the standard prefix.
+- `env.011` correctly conditions the evaluation error on "no host service".
+  With one, evaluation delegates to `hostServices.resolveConstant` (`:1784`).
+- `env.014`: the check's defined-variable table is scoped by
+  `contextForParameter`, so an out-of-scope variable falls to the same throw.
+
+**`path.utility.001`/`002` trace log: correct, and not additive.**
+- `takeLog` returns the log and replaces it (`:6692-6699`).
+- Every `evaluate` overload resets it (`log = new StringBuilder()` at `:702`,
+  `721`, `740`, `758`, `776`, `795`).
+- `log()` defers to `hostServices.log` (`:927-928`).
+- So "take clears" and "evaluate resets" are two separate rules, as now
+  written, and both hold.
+
+**`path.utility.003`/`004`.**
+- Arity is 2 (`:1411`).
+- `funcCheck` evaluates the condition against the focus, and on `false`
+  raises `FHIRPATH_CHECK_FAILED` with the second argument's value
+  (`:5649-5656`; `Messages.properties:304`).
+- `isExpressionParameter` (`:3804-3817`) is as listed, except that it also
+  answers `true` for `Sort` at every index (`:3805-3807`). That omission is a
+  nit.
+- Non-expression parameters are typed against `context.thisItem`
+  (`:3267`). The check outcome is finding 1.
+
+**`path.utility.009` / `.011`: correct apart from finding 2.**
+- `case Extension` (`:3556-3591`) never throws on the URL.
+- An absolute or non-Extension-focus URL goes through `findExtensionDefinition`
+  (`:3747-3765`):
+  - `worker.fetchResource(StructureDefinition, url)` for an absolute URL;
+  - otherwise, a fixed-value search of the focus type's snapshot.
+- A relative URL on an `Extension` focus walks the focus's profiles for
+  `Extension.extension:<url>` (`:3561-3577`).
+- `funcExtension` reads `extension` and `modifierExtension` on any item
+  (`:5464-5482`).
+- **Engine work owed: confirmed.** Typing a constant URL needs a
+  StructureDefinition lookup by canonical URL from the model, and, for the two
+  relative-URL paths, the snapshots of the focus type and its profiles. That
+  is what the blockers entry says. It should name the relative-URL lookups
+  too, but that belongs to the engine, not the spec.
+
+**`path.types.011` / DEV-0024: correct, and a legitimate deviation.**
+- **Operator `is` and `as` at check time.** The right operand is read by
+  `executeTypeName` (`:1627-1628`), which just wraps the name (`:1570-1571`).
+  `operateTypes` `case Is` returns boolean after `checkCardinalityForSingle`
+  (`:2013-2015`).
+- **Function forms at check time.** `as()`, `ofType()` and `is()` type the
+  parameter as `string` and at most add a `FHIRPATH_OFTYPE_IMPOSSIBLE`
+  warning (`checkType`, `:3368-3403`), so the check passes.
+- **Evaluation.**
+  - `opIs` compares names and walks base definitions, giving `false`
+    (`:1940-1962`).
+  - `funcIs` does not consult `isKnownType` (`:5095-5135`), and also gives
+    `false`.
+  - `opAs` (`:1881-1883`), `funcAs` (`:5163-5165`) and `funcOfType`
+    (`:5206-5208`) raise `FHIRPATH_INVALID_TYPE`. That message has no prefix
+    (`Messages.properties:336`).
+  - The function forms prefix `FHIR.`, as stated.
+- **Framing.** FHIRPath makes an unresolvable type identifier an error, and
+  HAPI does not for `is`. That is a specification-against-HAPI difference,
+  resolved for HAPI. It is legitimate, not parity.
+
+**`path.types.013`: correct.**
+- `testTypes` has 101 cases, with 2 `failed` (`results:192-193`).
+- `testType` (30) and `testInheritance` (24) have none failed.
+
+**Registers and counts.**
+- The preamble says twenty-two and lists DEV-0024 as pending. DEV-0024 has
+  every field.
+- `check-registries.sh` reports "registers agree" (22 deviations, 15 debt
+  entries).
+- Only the title of `path.types.011` changed, and the index carries it.
+  `path` has 368 headings.
+
+**Stale text.** No "unknown type … semantic error" text remains. The two
+"semantic error" hits (`navigation.007`, `check.003`) are other behaviours.
+The context-item wording is finding 1.
