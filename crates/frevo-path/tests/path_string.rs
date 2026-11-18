@@ -623,6 +623,30 @@ fn matches_tests_a_regular_expression_unanchored() {
     assert_eq!(eval("'abc'.matches('b')"), boolean(true));
     assert_eq!(eval("'abc'.matches('^b$')"), boolean(false));
     assert_eq!(eval("{}.matches('b')"), empty());
+
+    // `matches` prefixes the pattern with `(?s)` (FHIRPathEngine.java:5698), so
+    // `.` matches a line terminator.
+    assert_eq!(eval("'a\\nb'.matches('a.b')"), boolean(true));
+
+    // The edges of `funcMatches` (:5683-5707). An empty pattern COLLECTION
+    // yields an empty collection (:5688); an empty pattern STRING yields
+    // `false` (:5705-5706); an empty focus STRING yields `false` (:5693-5694).
+    assert_eq!(eval("'abc'.matches({})"), empty());
+    assert_eq!(eval("'abc'.matches('')"), boolean(false));
+    assert_eq!(eval("''.matches('a')"), boolean(false));
+    // A focus that is not string-like, with a non-empty pattern, is empty
+    // (DEV-0006); evaluated with the check skipped, which rejects the focus.
+    assert_eq!(eval_unchecked("1.matches('1')"), empty());
+    // A non-string pattern is converted to its string: the pattern `1` against
+    // `abc` is false.
+    assert_eq!(eval_unchecked("'abc'.matches(1)"), boolean(false));
+    // A focus of more than one item is `false`.
+    assert_eq!(eval_unchecked("('a' | 'b').matches('a')"), boolean(false));
+    // A pattern Java cannot compile is an execution error (an unbalanced
+    // parenthesis is one in HAPI too). HAPI's 500 ms regex timeout
+    // (`Timeout evaluating regex`, :5699-5700) is not testable here: Frevo has
+    // no wall-clock timeout (DEV-0023), so that edge is differential-only.
+    expect_evaluation_failure("'a'.matches('(a')", None);
 }
 
 // ---------------------------------------------------------------------------
@@ -642,7 +666,21 @@ fn matches_full_requires_the_whole_string_to_match() {
     assert_eq!(eval("'abc'.matchesFull('abc')"), boolean(true));
     assert_eq!(eval("'abc'.matches('abc')"), boolean(true));
     assert_eq!(eval("'abc'.matchesFull('a.c')"), boolean(true));
-    assert_eq!(eval("{}.matchesFull('b')"), empty());
+
+    // `funcMatchesFull` (:5711-5735) has NO empty-propagation branch, unlike
+    // `matches`: `{}.matchesFull('b')` is `false`, not empty, because
+    // `focus.size() == 1` is false and the else arm adds `false` (:5733-5734).
+    // The FHIRPath specification yields empty; DEV-0023.
+    assert_eq!(eval("{}.matchesFull('b')"), boolean(false));
+    // An empty pattern collection and an empty pattern string are `false` too,
+    // as is an empty focus string.
+    assert_eq!(eval("'abc'.matchesFull({})"), boolean(false));
+    assert_eq!(eval("'abc'.matchesFull('')"), boolean(false));
+    assert_eq!(eval("''.matchesFull('a')"), boolean(false));
+    // `matchesFull` prefixes `(?s)` too (RegexTimeout.matches, :5725).
+    assert_eq!(eval("'a\\nb'.matchesFull('a.b')"), boolean(true));
+    // A non-string focus is empty (DEV-0006); the check rejects the focus.
+    assert_eq!(eval_unchecked("1.matchesFull('1')"), empty());
 }
 
 // ---------------------------------------------------------------------------
@@ -660,6 +698,23 @@ fn replace_matches_substitutes_regular_expression_matches() {
     assert_eq!(eval("'12345'.replaceMatches('234', 'x')"), string("1x5"));
     assert_eq!(eval("'a1b2'.replaceMatches('[0-9]', 'x')"), string("axbx"));
     assert_eq!(eval("{}.replaceMatches('2', 'x')"), empty());
+
+    // `funcReplaceMatches` (:4865-4888): an empty pattern or replacement
+    // collection is empty (:4872); an empty pattern STRING returns the focus
+    // unchanged (`testReplaceMatches2`, :4885-4886); a focus of more than one
+    // item returns the FIRST item's string with no error; a non-string focus
+    // with a non-empty pattern is empty (DEV-0006).
+    assert_eq!(eval("'abc'.replaceMatches({}, 'x')"), empty());
+    assert_eq!(eval("'abc'.replaceMatches('a', {})"), empty());
+    assert_eq!(eval("'abc'.replaceMatches('', 'x')"), string("abc"));
+    assert_eq!(
+        eval_unchecked("('a' | 'b').replaceMatches('a', 'x')"),
+        string("a")
+    );
+    assert_eq!(eval_unchecked("1.replaceMatches('1', 'x')"), empty());
+    // `replaceMatches` does NOT add the `(?s)` prefix, so `.` does not match a
+    // line terminator in it (:4879): the string is unchanged.
+    assert_eq!(eval("'a\\nb'.replaceMatches('a.b', 'x')"), string("a\nb"));
 }
 
 // ---------------------------------------------------------------------------
@@ -1300,4 +1355,207 @@ fn implicit_string_conversion_changes_the_outcome_of_every_string_function() {
     // And the setting is reachable from the public surface, which is what makes
     // both outcomes testable at all.
     assert_ne!(off, on);
+}
+
+// ---------------------------------------------------------------------------
+// path.string.025 -- constructs whose meaning would silently differ (DEV-0023)
+// ---------------------------------------------------------------------------
+
+// covers: path.string.025
+#[test]
+fn a_pattern_construct_whose_meaning_would_differ_from_javas_is_an_execution_error() {
+    // DIFFERENTIAL-ONLY: no pinned suite case grades any of these. HAPI accepts
+    // every construct in `DEPARTURES` with Java's meaning; Frevo's engine is the
+    // `regex` crate behind a compatibility layer (ADR 0005), which raises an
+    // execution error rather than answer differently (DEV-0023). Each is tried
+    // through `matches`, `matchesFull` and `replaceMatches`.
+    //
+    // FHIRPath literals double the backslash, so `'\\v'` hands the engine `\v`.
+    const DEPARTURES: [&str; 8] = [
+        "(?u)a",
+        "(?U)a",
+        "(?x)a",
+        "\\\\v",
+        "a*+",
+        "\\\\p{Alpha}",
+        "[a-z--b]",
+        "[a-z~~b]",
+    ];
+    for pattern in DEPARTURES {
+        for expr in [
+            format!("'a'.matches('{pattern}')"),
+            format!("'a'.matchesFull('{pattern}')"),
+            format!("'a'.replaceMatches('{pattern}', 'x')"),
+        ] {
+            let message = expect_evaluation_failure(&expr, None);
+            assert!(
+                !message.is_empty(),
+                "{expr} must fail with a message naming the construct"
+            );
+        }
+    }
+
+    // Backreferences and lookaround are the other way round: Java accepts
+    // `'aa'.matches('(a)\\1')` (true) and `a(?=b)`, atomic groups and `\Q..\E`;
+    // the `regex` crate has no such construct, so Frevo raises (DEV-0023).
+    expect_evaluation_failure("'aa'.matches('(a)\\\\1')", None);
+    expect_evaluation_failure("'ab'.matches('a(?=b)')", None);
+
+    // NOT departures: an unbalanced parenthesis and an invalid range
+    // (`[a--b]`) are errors in Java too.
+    expect_evaluation_failure("'a'.matches('(a')", None);
+    expect_evaluation_failure("'a'.matches('[a--b]')", None);
+}
+
+// ---------------------------------------------------------------------------
+// path.string.026 -- ASCII \d \w \s \b
+// ---------------------------------------------------------------------------
+
+// covers: path.string.026
+#[test]
+fn d_w_s_and_b_mean_their_ascii_sets() {
+    // Java's default (non-Unicode-class) meaning; DIFFERENTIAL-ONLY.
+    assert_eq!(eval("'\u{663}'.matches('\\\\d')"), boolean(false));
+    assert_eq!(eval("'\u{e9}'.matches('\\\\w')"), boolean(false));
+    assert_eq!(eval("'\u{e9}'.matches('\\\\W')"), boolean(true));
+    assert_eq!(eval("'a\u{a0}b'.matches('a\\\\sb')"), boolean(false));
+    assert_eq!(eval("'7'.matches('\\\\d')"), boolean(true));
+    assert_eq!(eval("'_'.matches('\\\\w')"), boolean(true));
+    assert_eq!(eval("'a b'.matches('a\\\\sb')"), boolean(true));
+    assert_eq!(eval("'ab'.matches('\\\\bab\\\\b')"), boolean(true));
+    // The same inside a character class.
+    assert_eq!(eval("'\u{e9}'.matches('[\\\\w]')"), boolean(false));
+    // `\D`, `\W`, `\S` and `\B` are the complements.
+    assert_eq!(eval("'a'.matches('\\\\D')"), boolean(true));
+    assert_eq!(eval("'7'.matches('\\\\D')"), boolean(false));
+    assert_eq!(eval("'a'.matches('\\\\S')"), boolean(true));
+    assert_eq!(eval("' '.matches('\\\\S')"), boolean(false));
+    assert_eq!(eval("'ab'.matches('a\\\\Bb')"), boolean(true));
+}
+
+// ---------------------------------------------------------------------------
+// path.string.027 -- replacement syntax
+// ---------------------------------------------------------------------------
+
+// covers: path.string.027
+#[test]
+fn the_replace_matches_replacement_uses_javas_syntax() {
+    // DIFFERENTIAL-ONLY. `$n`, `${name}` and backslash, as `Matcher.replaceAll`.
+    assert_eq!(eval("'abc'.replaceMatches('(b)', '[$1]')"), string("a[b]c"));
+    assert_eq!(
+        eval("'abc'.replaceMatches('(?<x>b)', '<${x}>')"),
+        string("a<b>c")
+    );
+    // The literals pass `\$` and two backslashes to the engine.
+    assert_eq!(eval("'abc'.replaceMatches('b', '\\\\$')"), string("a$c"));
+    assert_eq!(
+        eval("'a.c'.replaceMatches('\\\\.', '\\\\\\\\')"),
+        string("a\\c")
+    );
+    // `$n` takes further digits only while the number still names a group.
+    assert_eq!(
+        eval("'abcdefghij'.replaceMatches('(a)(b)(c)(d)(e)(f)(g)(h)(i)(j)', '$10')"),
+        string("j")
+    );
+    assert_eq!(eval("'a'.replaceMatches('(a)', '$10')"), string("a0"));
+    // A group that did not participate contributes nothing.
+    assert_eq!(
+        eval("'ac'.replaceMatches('(a)(b)?c', '[$2]')"),
+        string("[]")
+    );
+    // A missing group, `${nope}`, a trailing `$` and a trailing `\` are
+    // execution errors, and so is the engine's own `$$` (an error in Java, not
+    // `a$c`).
+    for expr in [
+        "'abc'.replaceMatches('(b)', '$2')",
+        "'abc'.replaceMatches('b', '${nope}')",
+        "'abc'.replaceMatches('b', 'x$')",
+        "'abc'.replaceMatches('b', 'x\\\\')",
+        "'abc'.replaceMatches('b', '$$')",
+    ] {
+        expect_evaluation_failure(expr, None);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// path.string.028 -- empty-match iteration
+// ---------------------------------------------------------------------------
+
+// covers: path.string.028
+#[test]
+fn replace_matches_finds_empty_matches_as_javas_matcher_find_does() {
+    // DIFFERENTIAL-ONLY. An empty match is found at every position including the
+    // end, and after one the search steps one UTF-16 code UNIT forward.
+    assert_eq!(eval("'abc'.replaceMatches('x*', '-')"), string("-a-b-c-"));
+    assert_eq!(eval("'abc'.replaceMatches('b*', '-')"), string("-a--c-"));
+    assert_eq!(eval("'abc'.replaceMatches('', 'x')"), string("abc"));
+
+    // That step can split a surrogate pair. `'😀'` (U+1F600) is two units, so
+    // the result is FIVE units: `-`, the high surrogate U+D83D, `-`, the low
+    // surrogate U+DE00, `-`. A lone surrogate cannot be held in a Rust
+    // `String`, so the units are asserted by length and by position: the
+    // separators are `-`, and the two halves are one-unit strings that differ.
+    let smile = "'\u{1F600}'.replaceMatches('x*', '-')";
+    assert_eq!(eval(&format!("{smile}.length()")), integer("5"));
+    for at in [0, 2, 4] {
+        assert_eq!(
+            eval(&format!("{smile}.substring({at}, 1)")),
+            string("-"),
+            "unit {at} is a separator"
+        );
+    }
+    assert_eq!(
+        eval(&format!("{smile}.substring(1, 1).length()")),
+        integer("1")
+    );
+    assert_eq!(
+        eval(&format!("{smile}.substring(3, 1).length()")),
+        integer("1")
+    );
+    assert_eq!(
+        eval(&format!(
+            "{smile}.substring(1, 1) = {smile}.substring(3, 1)"
+        )),
+        boolean(false),
+        "the high and low surrogate halves are different one-unit strings"
+    );
+
+    // `'a😀'`: `-`, `a`, `-`, U+D83D, `-`, U+DE00, `-` -- seven units.
+    let a_smile = "'a\u{1F600}'.replaceMatches('x*', '-')";
+    assert_eq!(eval(&format!("{a_smile}.length()")), integer("7"));
+    for at in [0, 2, 4, 6] {
+        assert_eq!(
+            eval(&format!("{a_smile}.substring({at}, 1)")),
+            string("-"),
+            "unit {at} is a separator"
+        );
+    }
+    assert_eq!(eval(&format!("{a_smile}.substring(1, 1)")), string("a"));
+    assert_eq!(
+        eval(&format!(
+            "{a_smile}.substring(3, 1) = {a_smile}.substring(5, 1)"
+        )),
+        boolean(false),
+        "the two surrogate halves differ"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// path.string.029 -- compiled-size and nesting limits
+// ---------------------------------------------------------------------------
+
+// covers: path.string.029
+#[test]
+fn a_pattern_over_the_size_or_nesting_limit_is_an_execution_error() {
+    // DIFFERENTIAL-ONLY. HAPI compiles both with `java.util.regex` and answers;
+    // Frevo's compiled-program `size_limit` (2 MiB) and `nest_limit` (100) make
+    // each an execution error, never a panic (`path.errors.003`; DEV-0023).
+    expect_evaluation_failure("'a'.matches('(?:a{1000}){1000}')", None);
+    let deep = format!("{}a{}", "(".repeat(200), ")".repeat(200));
+    expect_evaluation_failure(&format!("'a'.matches('{deep}')"), None);
+
+    // A pattern nested 50 deep and a small pattern evaluate normally.
+    let fifty = format!("{}a{}", "(".repeat(50), ")".repeat(50));
+    assert_eq!(eval(&format!("'a'.matches('{fifty}')")), boolean(true));
+    assert_eq!(eval("'a'.matches('a')"), boolean(true));
 }
