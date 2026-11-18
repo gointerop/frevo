@@ -1,4 +1,10 @@
-CHANGES_REQUESTED
+APPROVED
+
+Twenty-eighth review (commit `9044efc`, 2026-11-17) resolves all three findings
+of the twenty-seventh review. Detail is in the dated section at the end. The
+earlier findings follow, kept for the record.
+
+## Twenty-seventh-review findings as raised (commit `12bb026`)
 
 Twenty-seventh review (commit `12bb026`, 2026-11-17). The new scenarios'
 Java-side claims were probed with `java.util.regex` (Temurin JDK 25.0.1),
@@ -1785,3 +1791,49 @@ appropriate.
 
 **Scenario IDs.** Five headings are added (`.025`-`.029`). No existing
 heading changed.
+
+## Twenty-eighth review - commit `9044efc` (2026-11-17)
+
+These were re-probed with `java.util.regex` (Temurin JDK 25.0.1, HAPI's call
+shapes; `scratchpad/rx/Rx2.java`, outside the repository).
+
+**Finding 1: resolved.**
+- Java reads `[a-z--b]` as `a-z`, `-` and `b`:
+  - it matches `a`, `b`, `-`, `z` and `c`;
+  - it does not match `~`;
+  - so `'-'` and `'b'` match, as the scenario says.
+- `[a-z~~b]` matches `a`, `b`, `z`, `c` and `~`, and does not match `-`. So
+  `~` is a literal, as stated.
+- The new clause makes `[a--b]` Java's `PatternSyntaxException`, which agrees
+  with the earlier probe.
+- The "class intersection" wording is gone (`grep` finds no remaining
+  hit).
+
+**Finding 2: resolved.**
+- `"😀".replaceAll("x*", "-")` is exactly U+002D U+D83D U+002D U+DE00
+  U+002D. The scenario's five-unit string is right.
+- `"a😀"` gives U+002D U+0061 U+002D U+D83D U+002D U+DE00 U+002D, which is
+  also right.
+- `Pattern.compile("x*").matcher(…).replaceAll("-")`, the call shape of
+  `RegexTimeout.replaceAll`, gives the same result.
+- "Whole code point" and "never a split one" no longer appear anywhere.
+- The current `strregex.rs:343-347` still steps a code point. The scenario now
+  requires the unit step, which is implementer work, not a spec gap.
+
+**Finding 3: resolved.**
+- DEV-0023 now lists backreferences, lookaround, atomic groups, `\Q..\E`,
+  `\R`, `\G`, `\Z` and `(?d)` as errors where HAPI answers. The probe gives
+  `true` for `(?<=a)b`, `(?>a)b`, `\Qa.\E` and `(?d)a`.
+- `path.string.025` cites DEV-0023.
+- `DEBT-0015` calls them departures recorded in DEV-0023.
+- A note, not a finding: ADR 0005 also names `\X` and `\h`, which DEV-0023's
+  list omits. Add them next time the entry is touched.
+
+**Linkage.**
+- DEV-0023 has `Debt: DEBT-0015` (`deviations.md:708`), and `DEBT-0015`'s
+  Origin cites DEV-0023 (`tech-debt.md:391-392`).
+- `check-registries.sh` reports "registers agree" (21 deviations, 15 debt
+  entries).
+
+**Scenario IDs.** No `#### Scenario:` heading changed. `path` has 368
+headings.
