@@ -1413,19 +1413,54 @@ The engine SHALL implement the string functions `FHIRPathEngine` implements, inc
 
 #### Scenario: [path.string.008] `matches` tests a regular expression unanchored
 
-- **WHEN** the `testMatches` group's cases are evaluated
+- **WHEN** the `testMatches` group's cases are evaluated (it includes the
+  `matchesFull` cases); HAPI passes all of them
 - **THEN** every case yields its stated output
+- **AND** `matches` prefixes the pattern with `(?s)`, so `.` matches a line
+  terminator, and finds it anywhere in the string
+  (`FHIRPathEngine.java:5698`)
+- **AND** on the edges, `funcMatches` (`:5683-5707`) gives: an empty focus
+  collection or an empty pattern **collection** yields an empty collection
+  (`:5688`); an empty pattern **string** (`'abc'.matches('')`) yields `false`
+  (`:5705-5706`); an empty focus **string** (`''.matches('a')`) yields `false`
+  (`:5693-5694`); a focus that is not string-like with a non-empty pattern
+  (`1.matches('1')`) yields an empty collection (`DEV-0006`); a non-string
+  pattern is converted to its string (`'abc'.matches(1)` tests the pattern `1`
+  and is `false`); a focus of more than one item yields `false`
+- **AND** a pattern Java cannot compile raises an execution error, as does a
+  match that exceeds HAPI's 500 ms regex timeout (`Timeout evaluating regex`,
+  `:5699-5700`); Frevo has no wall-clock timeout (`DEV-0023`)
 
 #### Scenario: [path.string.009] `matchesFull` requires the whole string to match
 
 - **WHEN** `'abc'.matches('b')` and `'abc'.matchesFull('b')` are evaluated
 - **THEN** the results are `true` and `false`
+- **AND** `matchesFull` prefixes `(?s)` and matches the whole string
+  (`RegexTimeout.matches`, `FHIRPathEngine.java:5725`)
+- **AND** `funcMatchesFull` (`:5711-5735`) has **no empty-propagation branch**,
+  unlike `matches`: `{}.matchesFull('b')` yields `false`, not an empty
+  collection, because `focus.size() == 1` is false and the else arm adds
+  `false` (`:5733-5734`); `'abc'.matchesFull({})` and `'abc'.matchesFull('')` yield
+  `false` (the pattern string is empty); `''.matchesFull('a')` yields `false`;
+  `1.matchesFull('1')` with a non-string focus yields an empty collection
+  (`DEV-0006`)
+- **AND** the FHIRPath specification yields empty for an empty input; the
+  difference is HAPI's and is recorded as `DEV-0023`
 
 #### Scenario: [path.string.010] `replaceMatches` substitutes regular-expression matches
 
 - **WHEN** the `testReplaceMatches` group's cases are evaluated
 - **THEN** every case yields its stated output
-
+- **AND** `replaceMatches` does **not** add the `(?s)` prefix, so `.` does not
+  match a line terminator in it (`:4879`), and the replacement uses Java's
+  `$n`, `${name}` and backslash syntax (`Matcher.replaceAll`)
+- **AND** on the edges, `funcReplaceMatches` (`FHIRPathEngine.java:4865-4888`):
+  an empty focus collection, empty pattern collection or empty replacement
+  collection yields an empty collection (`:4872`); an empty pattern **string**
+  (`'abc'.replaceMatches('', 'x')`) returns the focus string unchanged
+  (`testReplaceMatches2`, `:4885-4886`); a focus of more than one item returns the
+  **first** item's string with no error (`:4885-4886`); a focus that is not
+  string-like with a non-empty pattern yields an empty collection (`DEV-0006`)
 #### Scenario: [path.string.011] `replace` substitutes literal substrings
 
 - **WHEN** the `testReplace` group's cases are evaluated

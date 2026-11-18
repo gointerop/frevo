@@ -1951,3 +1951,14 @@ test; the `{}.matches('b')` line above it (empty) passes. Decision needed:
 amend the test's last line to `boolean(false)` (and the spec scenario if it
 says otherwise; `path.string.009` as written does not mention it), or record a
 deviation. Not edited here.
+
+**Resolved by the proposer, 2026-11-17.** `path.string.009` now states the
+`false` outcome (spec text, `DEV-0023`); the test's last line should be
+`boolean(false)`.
+
+**Owed to `design.md` (protected, so not written by the proposer).** The regex
+compatibility layer's resource limits belong in the design: compiled-program
+`size_limit` 2 MiB and group `nest_limit` 100 (`strregex.rs`), a per-thread
+cache of 64 compiled patterns, no wall-clock timeout, and the performance budget
+and `bench/` workload for a `matches`/`replaceMatches` search path if one is
+extracted. Needs the owner or the design's author.

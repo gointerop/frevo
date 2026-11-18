@@ -45,8 +45,8 @@ decision.
 
 ## Entries
 
-All twenty entries below come from `add-fhirpath-and-codegen-r4`;
-`DEV-0013`, `DEV-0015`, `DEV-0017`, `DEV-0018`, `DEV-0019`, `DEV-0021` and `DEV-0022` are pending the owner's review (see their entries);
+All twenty-one entries below come from `add-fhirpath-and-codegen-r4`;
+`DEV-0013`, `DEV-0015`, `DEV-0017`, `DEV-0018`, `DEV-0019`, `DEV-0021`, `DEV-0022` and `DEV-0023` are pending the owner's review (see their entries);
 `DEV-0012` and `DEV-0014` were ruled for HAPI (2026-11-17 and 2026-11-14).
 `DEV-0001` through `DEV-0010` are the same kind of case: the pinned R4
 `FHIRPathEngine` does something the FHIRPath specification does not describe. In
@@ -664,6 +664,39 @@ file, so its prose is not redistributable here (see `oracles/PINS.md`).
   needs the owner's confirmation. Established from the pinned source; not
   confirmed against a live HAPI.
 - **Normalizer impact:** none on stored bytes.
+- **Reviewed:** pending owner.
+
+### DEV-0023 — `matchesFull` on an empty focus is `false`, and the regex layer rejects constructs Java accepts
+
+- **Area:** path
+- **Scenario IDs:** path.string.008, path.string.009, path.string.010
+- **HAPI 8.12.0 behaviour:** `funcMatchesFull` has no empty-propagation branch
+  (`ENGINE:5711-5735`): `{}.matchesFull('b')` is `false`, where `funcMatches`
+  (`ENGINE:5688`) yields empty. The three functions run `java.util.regex` through
+  `RegexTimeout` with a 500 ms limit that raises `Timeout evaluating regex`
+  (`ENGINE:186`, `5699-5700`), and Java accepts possessive quantifiers, `\v`,
+  the inline flags `(?u)`, `(?U)` and `(?x)`, POSIX-named `\p{..}` properties,
+  and `--` and `~~` inside a class, each with Java's meaning.
+- **Specification requirement:** FHIRPath 2.0.0 — `matchesFull` over an empty
+  input is empty; a pattern is a regular expression in the platform's dialect
+  with no timeout.
+- **Chosen behaviour:** HAPI for the empty focus (`false`). For the pattern
+  dialect Frevo uses the `regex` crate behind a compatibility layer (ADR 0005,
+  on its `chore/` branch): the listed constructs, whose `regex` meaning would
+  silently differ, and an unbalanced parenthesis are **execution errors**, and
+  there is no wall-clock timeout because the engine is linear in the input.
+  Compiled-program size and group nesting are bounded (`size_limit` 2 MiB,
+  `nest_limit` 100); a pattern over either is an execution error. These are
+  departures from HAPI, which accepts them or times out; the remaining corners
+  are `DEBT-0015`.
+- **Configuration flag:** none
+- **Debt:** none
+- **Rationale:** owner decision, 2026-11-17 (ADR 0005): the dependency is the
+  `regex` crate. HAPI 8.12.0's behaviour is the reference where the crate can
+  match it. The departures need the owner's confirmation.
+- **Normalizer impact:** none on stored bytes; search-parameter expressions that
+  use `matches` are not known to use the rejected constructs (not checked
+  against the generated table).
 - **Reviewed:** pending owner.
 
 ## Considered and not recorded as deviations
