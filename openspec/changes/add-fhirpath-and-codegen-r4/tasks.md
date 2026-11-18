@@ -984,7 +984,7 @@ checkpoint because it changes what a gate measures.
   model (`path.utility.009`).
   Satisfies `path.utility.001` through `path.utility.011`.
 
-- [ ] **49. Implement the host-service functions.** `conformsTo` against the
+- [x] **49. Implement the host-service functions.** `conformsTo` against the
   harness's service, its unknown-profile error, `FhirPathR4`'s always-false
   default, and the distinct no-host-service error; both `memberOf` forms — the
   function returning empty unless focus and argument are singletons, the binary
@@ -1003,13 +1003,10 @@ checkpoint because it changes what a gate measures.
   With the hook implemented the host-service surface is complete; a missing
   method there is a host integration that silently cannot be written.
   Satisfies `path.utility.012` through `path.utility.028`.
-  **Implemented, not ticked.** `path_utility` is 26 of 28: the engine is
+  Done: `path_utility` is 28 of 28. The engine is
   `crates/frevo-path/src/eval/{hostfn,terminology}.rs` and the check pass's
   `custom_function_type`, with `Model::value_set`/`code_system` as the worker
-  context. `012` needs the oracle seam's `evaluate` to install the suite's
-  host service, and `025` needs the harness model to carry the package's value
-  sets and code systems -- both in `tests/oracle/engine.rs`, owed by the
-  oracle-builder (`tasks/blockers.md`, 2026-11-18, "task 49").
+  context; the oracle seam installs the suite's host service (`877538a`).
 
 - [ ] **50. Implement the static type-check pass.** Separate from evaluation;
   27 of the 29 `invalid="semantic"` cases failing it with the offending path
