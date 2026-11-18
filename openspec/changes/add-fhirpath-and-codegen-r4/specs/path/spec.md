@@ -2521,15 +2521,26 @@ The engine SHALL implement the utility and FHIR-specific functions `FHIRPathEngi
 - **AND** `check` takes two arguments (`FHIRPathEngine.java:1411`), the condition
   and a message, and `funcCheck` evaluates the condition with the **focus** as
   its context (`:5649-5651`)
-- **AND** the static check types the condition differently: `check` is **not** in
-  `isExpressionParameter` (`:3804-3817`, which lists `where`, `exists`, `all`,
-  `select`, `repeat` and `aggregate` at index 0 and `trace` and `defineVariable`
-  at index 1), so the condition is typed against the **context item**, not the
-  focus. `Patient.name.check(given.exists(), 'm')` therefore **fails the check**
-  ("The name 'given' is not valid for any of the possible types ... Patient"),
-  while `Patient.name.check(prefix.exists(), 'm')` evaluates correctly with the
-  check skipped. A test of the evaluation must skip the check or use a condition
-  that resolves against the context item
+- **AND** the static check **rejects every boolean condition**. `case Check`
+  (`FHIRPathEngine.java:3544-3547`) calls `checkParamTypes` with a singleton
+  `string` as the type of the **first** parameter, the condition, and
+  `checkParamTypes` raises `FHIRPATH_WRONG_PARAM_TYPE` for any other type
+  (`:3820-3831`): "The parameter type boolean is not legal for check parameter 1.
+  expecting ..." (`Messages.properties:371`). So `Patient.name.check(true, 'm')`
+  and `Patient.name.check(prefix.exists(), 'm')` both **fail the check**; the
+  second parameter is not type-checked. A condition that is not boolean-typed
+  (a `string`) passes it, but is then reduced to a boolean at evaluation
+- **AND** `check` is also **not** in `isExpressionParameter` (`:3804-3817`, which
+  lists `where`, `exists`, `all`, `select`, `repeat` and `aggregate` at index 0
+  and `trace` and `defineVariable` at index 1), so the condition is typed
+  against the **context item**, not the focus: a focus-relative name such as
+  `given` in `Patient.name.check(given.exists(), 'm')` fails earlier, with "The
+  name 'given' is not valid for any of the possible types ... Patient"
+- **AND** there is therefore **no boolean-condition form of `check` that passes
+  the static check**. The evaluation is graded with the check skipped (as
+  `FhirPathR4` does, `path.check.013`): `Patient.name.check(prefix.exists(),
+  'm')` then evaluates the condition with the focus (`Patient.name`) as its
+  context and returns the focus when the condition is true
 
 #### Scenario: [path.utility.004] `check` fails when the condition does not hold
 
@@ -2538,8 +2549,8 @@ The engine SHALL implement the utility and FHIR-specific functions `FHIRPathEngi
 - **THEN** evaluation fails with "Check failed with message '<message>'"
   (`FHIRPATH_CHECK_FAILED`, `FHIRPathEngine.java:5654`), the message being the
   second argument's value
-- **AND** the condition is typed against the context item by the static check
-  (`path.utility.003`), so this is graded with the check skipped
+- **AND** the static check rejects every boolean condition (`path.utility.003`),
+  so this is graded with the check skipped
 
 #### Scenario: [path.utility.005] `aggregate` folds with `$this` and `$total`
 
@@ -2575,7 +2586,9 @@ The engine SHALL implement the utility and FHIR-specific functions `FHIRPathEngi
   and for a constant URL it looks the extension definition up
   (`findExtensionDefinition`, `:3747-3765`); when found the result is the
   profiled `Extension` type, and when not found it adds the warning "Reference
-  to an unknown extension" and answers a plain `Extension` type. Typing a
+  to an unknown extension - double check that the URL '<url>' is correct"
+  (`FHIRPATH_UNKNOWN_EXTENSION`, `Messages.properties:368`) and answers a plain
+  `Extension` type. Typing a
   known absolute URL therefore needs the extension's StructureDefinition from the
   model, so the check cannot be completed without it
 

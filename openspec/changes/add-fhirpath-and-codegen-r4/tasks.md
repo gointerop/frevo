@@ -958,8 +958,9 @@ checkpoint because it changes what a gate measures.
   log**, as each `evaluate` overload does (`:702` ... `:795`); a static check
   does not touch it. The oracle harness drains the log after every case and the
   engine is shared across all 1,191 of them, so both behaviours are needed.
-  `check`'s condition is typed against the context item by the static check, so
-  its tests skip the check or use a context-relative condition (`path.utility.003`).
+  The static check rejects **every boolean condition** of `check` (it types the
+  condition as a `string`, `FHIRPathEngine.java:3544-3547`), so its tests
+  evaluate with the check skipped (`path.utility.003`, `path.utility.004`).
   The static check of `extension(url)` needs the extension definition from the
   model (`path.utility.009`).
   Satisfies `path.utility.001` through `path.utility.011`.
