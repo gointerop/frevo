@@ -1,4 +1,10 @@
-CHANGES_REQUESTED
+APPROVED
+
+Thirty-third review (commit `27615b7`, 2026-11-17) resolves the finding of the
+thirty-second review. Detail is in the dated section at the end. The earlier
+findings follow, kept for the record.
+
+## Thirty-second-review findings as raised (commit `3cc6bc9`)
 
 Thirty-second review (commit `3cc6bc9`, 2026-11-17). `ENGINE` is
 `org.hl7.fhir.r4/.../fhirpath/FHIRPathEngine.java` at `73c432b5`. The
@@ -2155,3 +2161,17 @@ deviations, 15 debt entries). No `#### Scenario:` heading changed. `path` has
 
 **Stale text.** The other "`testDollarResource` … previously named" sentence
 (`spec.md:410`) belongs to `path.navigation.021` and is accurate.
+
+## Thirty-third review - commit `27615b7` (2026-11-17)
+
+**Finding 1: resolved.**
+- `path.env.017` now says the check rejects an unknown leading name with
+  `FHIRPATH_UNKNOWN_NAME` (`FHIRPathEngine.java:1587-1593`).
+- It says the check consults the host only under `atEntry && focus == null`
+  (`:1585-1586`, the no-value mode), and that implicit-after is reachable only
+  with the check skipped. All three statements are correct.
+
+**Nits fixed.** `env.006` now cites `results:1057-1062` and `:3639`.
+
+**Registers.** `check-registries.sh` reports "registers agree" (22
+deviations, 15 debt entries). No `#### Scenario:` heading changed.
