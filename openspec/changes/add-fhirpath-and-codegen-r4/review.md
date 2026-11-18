@@ -1,4 +1,32 @@
-APPROVED
+CHANGES_REQUESTED
+
+Thirty-second review (commit `3cc6bc9`, 2026-11-17). `ENGINE` is
+`org.hl7.fhir.r4/.../fhirpath/FHIRPathEngine.java` at `73c432b5`. The
+`env.006`, `.008`, `.010`, `.015` and `.016` amendments are correct (dated
+section). One scenario has the check-first problem that `env.007`-`.014` had.
+The thirty-first review was `APPROVED`; earlier findings follow, kept for the
+record.
+
+1. **`path.env.017`: the static check rejects the expression before the host
+   is ever asked.**
+   - The scenario's expression has a leading name that "is not an element of
+     the focus resource".
+   - In the check pass, a `Name` at entry with a focus type goes to
+     `executeType(type, …)` (`ENGINE:1587-1589`, `:3231-3238`), which has no
+     host call. An unknown name then raises `FHIRPATH_UNKNOWN_NAME`
+     (`:1591-1593`).
+   - The check consults the host for a bare name only when the focus type is
+     absent: the `NOVALUE` call at `:1586`. The implicit modes exist only in
+     evaluation (`execute`, `:3184-3190`, `:3211-3214`).
+   - So both halves of the scenario fail the check with "The name '<n>' is not
+     valid for any of the possible types": the implicit-after result, and the
+     null-application-context result.
+   - The recorded-modes assertion `[ImplicitBefore, ImplicitAfter]` is
+     reachable only with the check skipped.
+   - State that, as `env.007`-`.014` now do. The same applies to any
+     `env.016` variant whose leading name the check cannot resolve.
+
+## Thirty-first review header as issued (commit `2ea4f92`)
 
 Thirty-first review (commit `2ea4f92`, 2026-11-17) resolves both findings of the
 thirtieth review. Detail is in the dated section at the end. The earlier
@@ -2056,3 +2084,74 @@ type failure:
 
 **Registers.** `check-registries.sh` reports "registers agree" (22
 deviations, 15 debt entries). No `#### Scenario:` heading changed.
+
+## Thirty-second review - commit `3cc6bc9` (2026-11-17)
+
+**`path.env.006`: correct.** Results lines `1057`-`1062` (the scenario cites
+`:1057-1061`, which is one short):
+
+| Case | Status |
+|---|---|
+| `isGuardAndOtherImplies` | `failed` |
+| `isGuardOtherAndImplies` | `failed` |
+| `isGuardOrOtherImpliesBad` | `passed` |
+| `isGuardOrOtherImpliesNoParensBad` | `passed` |
+| `isGuardOrInnerImplies` | `hapi-cannot-pass` |
+| `isGuardOrInnerImpliesBad` | `hapi-cannot-pass` |
+
+- The two failures' reason is "The function toString can only be used on
+  primitives". That agrees with `path.check.005`'s message.
+- The two `hapi-cannot-pass` cases are among the 13 in `path.oracle.016`'s
+  list (the `isGuardOrInnerImplies` pair), with the same expression and
+  differing `contextType` (`tests-fhir-r4.xml:1745-1751`).
+- Two citation nits:
+  - "`executeType` has no guard logic, `:3631`": line `:3631` is
+    `toInteger`'s check. The rejecting call is
+    `checkContextPrimitive(focus, "toString", …)` at `:3639`.
+  - HAPI's recorded run checks against the resource root, not
+    `Observation.effective` (`path.oracle.016`), so in HAPI's own run the
+    failure is `toString` on `Observation`. In Frevo's context-aware run it is
+    `toString` on the un-narrowed `Period`. Both are `failed`, so the parity
+    holds.
+
+**`path.env.008` / `.010`: correct.**
+- `getChildrenByName` calls `item.listChildrenByName(name, false)`
+  (`ENGINE:255-278`).
+- With `checkValid = false`, an unknown name falls to `Base.getProperty`,
+  which returns `null` (`Base.java:992-996`). `Resource.getProperty` knows
+  only `id`, `meta`, `implicitRules` and `language` (`Resource.java:354-364`).
+- So `.resourceType` is empty, and the check rejects it as an unknown name
+  first, as stated.
+
+**`path.env.015`: correct.**
+- The check's explicit call passes `s` with its `%` (`:3173`).
+- The no-value call passes the bare name (`:1586`, `executeContextType`).
+- Evaluation strips the `%` (`:1784`, `s.substring(1)`; the scenario cites
+  the `else` at `:1783`).
+- The implicit calls pass `exp.getName()` (`:3186`, `:3214`).
+- A host keyed only on the bare name returns `null` to the check, so
+  `:3175` throws "Invalid FHIRPath Constant %owned". Correct.
+
+**`path.env.016`: correct.** Implicit-before is asked first, under
+`atEntry && appInfo != null && hostServices != null` (`:3184-3190`). A
+non-empty answer returns at once, so `Patient.name` with a string for
+`Patient` navigates `.name` on the string and is empty. `Patient` alone is the
+string.
+
+**`path.env.017`: the evaluation half is correct.** Implicit-after happens
+only when navigation is empty (`:3211-3214`), and a host that answers in
+implicit-before short-circuits. The check half is finding 1.
+
+**Other env scenarios.**
+- `env.001`-`.005` are built-in constants that the check types
+  (`:3134-3162`).
+- `env.012` and `.013` resolve through the host or the defined-variable
+  table at both stages.
+- None has the check-first issue.
+
+**Registers and IDs.** `check-registries.sh` reports "registers agree" (22
+deviations, 15 debt entries). No `#### Scenario:` heading changed. `path` has
+368 headings.
+
+**Stale text.** The other "`testDollarResource` … previously named" sentence
+(`spec.md:410`) belongs to `path.navigation.021` and is accurate.
