@@ -610,9 +610,8 @@ fn every_unimplemented_function_is_unsupported_and_never_empty() {
     for text in [
         "Patient.name.aggregate($this, 0)",
         "Patient.birthDate.extension('x')",
-        "Patient.name.given.matches('P.*')",
-        "Patient.name.given.matchesFull('Peter')",
-        "Patient.name.given.replaceMatches('P', 'p')",
+        "Patient.name.given.trace('x')",
+        "Patient.birthDate.lowBoundary()",
     ] {
         let feature = unsupported(text, Some(&p));
         assert!(feature.contains("function"), "{text}: {feature}");
