@@ -2102,3 +2102,31 @@ with the `020`/`021` regex legs (task 41a, ADR 0005 accepted on
 `chore/adr-0005-regex`) pass. The earlier entries above that name tests of
 these tasks as contradicting HAPI were resolved by the test and spec amendments
 that followed them.
+
+## 2026-11-17 — `add-fhirpath-and-codegen-r4` — tasks 46-48: spec amended to HAPI; engine and harness work owed
+
+**Raised by** the proposer. Spec amended (`path.env.007`, `009`, `011`, `014`,
+`path.utility.001`-`004`, `009`, `011`, `path.types.006`, `011`, `013`; `DEV-0024`).
+For the check pass and the harness:
+
+1. **Check-stage `extension(url)` (engine/model work owed).** HAPI's check never
+   fails on an extension URL: an unknown URL adds a warning and types the result
+   as a plain `Extension`; a known absolute URL types it as the profiled
+   `Extension` (`FHIRPathEngine.java:3556-3591`, `3747-3765`). The check pass
+   returning `NotImplemented` for a known URL (`check/pass.rs:1389`) is therefore
+   a **missing engine piece, not a spec question**: the `Model` seam needs an
+   extension-definition lookup (or the harness model must carry the extension
+   definitions), and the pass should type an unfound URL as plain `Extension`
+   with a warning. It blocks `path.utility.009`, `011`, `path.env.004` and
+   `path.types.006`.
+2. **Tests (oracle-builder).** `path.env.007`, `009`, `011`, `014` and
+   `path.utility.003`, `004` must evaluate with the check skipped (the check
+   rejects them first, as the spec now states); `path.types.011` becomes `false`
+   at evaluation, with `as`/`ofType` raising; `path.utility.001`/`002` need the
+   harness to bind `has_log`/`take_log` to a retained evaluator.
+3. **Trace log (engine).** Both behaviours are HAPI's: `take_log` clears, and
+   every evaluation starts with an empty log (`:702`-`:795`); the implementer's
+   `evaluate` already does so.
+4. **`path.types.013`:** the 8 `toQuantity` cases wait for tasks 43/44; two
+   `testTypes` cases (`testString{Month,Year}QuantityToQuantityEquivalent`) are
+   `failed` in HAPI (results:192-193), so `failed` is their required status.

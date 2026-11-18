@@ -2222,6 +2222,10 @@ The engine SHALL implement `is`, `as`, `ofType` and `type()` over both the `Syst
   `observation-example.xml`
 - **THEN** the results are `true`, `true`, `false`
   (`testInheritance/testFHIRPathIsFunction8` through `10`)
+- **AND** the static check of `extension('...')` (an absolute URL) resolves the
+  extension's definition from the model and, when it is not found, adds a
+  warning and types the result as a plain `Extension` rather than failing
+  (`FHIRPathEngine.java:3556-3591`, `path.utility.009`)
 
 #### Scenario: [path.types.007] `as` yields the value when the type matches and empty when it does not
 
@@ -2251,10 +2255,23 @@ The engine SHALL implement `is`, `as`, `ofType` and `type()` over both the `Syst
 - **WHEN** `Patient.gender is code` and `Patient.gender.is(code)` are evaluated
 - **THEN** both yield `true`
 
-#### Scenario: [path.types.011] `is` with an unknown type name is a semantic error
+#### Scenario: [path.types.011] `is` with an unknown type name passes the check and is `false`; `as` and `ofType` raise
 
-- **WHEN** `Patient.gender is NoSuchType` is checked
-- **THEN** the static check fails as a semantic error
+- **WHEN** `Patient.gender is NoSuchType` is checked and then evaluated
+- **THEN** the static check **passes**: the right operand of `is` and `as` is
+  read by `executeTypeName`, which consults nothing
+  (`FHIRPathEngine.java:1627-1628`), and `operateTypes` `case Is` returns a
+  boolean after a cardinality warning (`:2013-2015`)
+- **AND** evaluation yields `false` (`opIs`, `:1940`; the function form `is()`
+  likewise, `:5095`)
+- **WHEN** `Patient.gender as NoSuchType`, `Patient.gender.as(NoSuchType)` and
+  `Patient.gender.ofType(NoSuchType)` are evaluated
+- **THEN** each fails at **evaluation** with "The type <name> is not valid"
+  (`FHIRPATH_INVALID_TYPE`, raised after `isKnownType` fails: `:1881-1883`,
+  `:5163-5165`, `:5206-5208`); the function forms name `FHIR.NoSuchType` and the
+  operator form the name as written
+- **AND** the FHIRPath specification makes an unknown type an error in every
+  form; recorded as `DEV-0024` and resolved as HAPI's behaviour
 
 #### Scenario: [path.types.012] `is` on an empty collection yields empty
 
@@ -2265,7 +2282,15 @@ The engine SHALL implement `is`, `as`, `ofType` and `type()` over both the `Syst
 
 - **WHEN** the `testTypes`, `testType` and `testInheritance` groups' cases are
   evaluated
-- **THEN** every case yields its stated output
+- **THEN** every case HAPI passes yields its stated output
+- **AND** the two cases HAPI fails stay `failed` in Frevo (parity under
+  `path.oracle.012`): `testStringQuantityMonthToQuantityEquivalent` and
+  `testStringQuantityYearToQuantityEquivalent`
+  (`hapi-8.12.0-results.json:192-193`, `qtyEquivalent` returning `null`,
+  `path.equality.004`, `DEV-0017`); every other case in the three groups passes
+  in HAPI's recorded run
+- **AND** the `toQuantity` cases need the quantity equality and UCUM algebra of
+  tasks 43 and 44, and are graded when those land
 
 ### Requirement: Environment variables
 
@@ -2319,7 +2344,13 @@ The engine SHALL resolve the environment variables `FHIRPathEngine` resolves int
 #### Scenario: [path.env.007] `%resource` with no focus resource is an execution error
 
 - **WHEN** `%resource` is evaluated with no focus resource
-- **THEN** evaluation fails, naming `%resource`
+- **THEN** evaluation fails, naming `%resource`: "Cannot use %resource in this
+  context because no focus resource" (`FHIRPATH_CANNOT_USE`,
+  `FHIRPathEngine.java:1763`)
+- **AND** the static **check** rejects the same expression first, with the same
+  message (`:3143-3145`), so a test of the evaluation error evaluates with the
+  check skipped, as `FhirPathR4` does (`path.check.013`); an expression that
+  passes the check and is then evaluated never reaches this error
 
 #### Scenario: [path.env.008] `%rootResource` is the outermost resource
 
@@ -2329,7 +2360,11 @@ The engine SHALL resolve the environment variables `FHIRPathEngine` resolves int
 #### Scenario: [path.env.009] `%rootResource` with no root resource is an execution error
 
 - **WHEN** `%rootResource` is evaluated with no root resource
-- **THEN** evaluation fails, naming `%rootResource`
+- **THEN** evaluation fails, naming `%rootResource`: "Cannot use %rootResource
+  in this context because no focus rootResource" (`FHIRPATH_CANNOT_USE`,
+  `FHIRPathEngine.java:1768`)
+- **AND** the static **check** rejects it first with the same message
+  (`:3148-3150`); test the evaluation error with the check skipped
 
 #### Scenario: [path.env.010] `%context` is the node evaluation started from
 
@@ -2339,7 +2374,12 @@ The engine SHALL resolve the environment variables `FHIRPathEngine` resolves int
 #### Scenario: [path.env.011] an unknown environment variable with no host service is an execution error
 
 - **WHEN** `%nosuchvariable` is evaluated with no host service configured
-- **THEN** evaluation fails, naming the constant
+- **THEN** evaluation fails, naming the constant: "Invalid FHIRPath Constant
+  %nosuchvariable" (`FHIRPATH_UNKNOWN_CONSTANT`, `FHIRPathEngine.java:1782`)
+- **AND** the static **check** rejects it first with the same message when
+  there is no host service (`:3167-3168`) and when the host service answers
+  `null` for the name (`:3175`); test the evaluation error with the check
+  skipped
 
 #### Scenario: [path.env.012] a host service may supply an environment variable, including a collection
 
@@ -2430,7 +2470,12 @@ The engine SHALL resolve the environment variables `FHIRPathEngine` resolves int
 
 - **WHEN** a variable defined inside one argument of an expression is
   referenced outside that argument's scope
-- **THEN** evaluation fails, naming the constant
+- **THEN** evaluation fails, naming the constant ("Invalid FHIRPath Constant
+  %v", `FHIRPATH_UNKNOWN_CONSTANT`)
+- **AND** the static **check** rejects it first for the same reason as
+  `path.env.011`: the check keeps its own defined-variable table, which does not
+  hold a variable outside its scope (`FHIRPathEngine.java:3163-3168`); test the
+  evaluation error with the check skipped
 
 ### Requirement: Utility and FHIR-specific functions
 
@@ -2445,9 +2490,17 @@ The engine SHALL implement the utility and FHIR-specific functions `FHIRPathEngi
 - **AND** the engine exposes a has-log predicate and a take-log accessor, and
   **taking the log clears it**: a second take with no intervening `trace`
   returns the empty string and the has-log predicate is false
-- **AND** that is what lets the oracle harness drain the log after each case
-  without the previous case's lines leaking into the next one, which it must do
-  because the engine is reused across all 1,191 cases (`path.oracle.001`)
+- **AND** HAPI does both of these, separately: `takeLog` returns the log and
+  replaces it with an empty one (`FHIRPathEngine.java:6692-6698`), and **every
+  `evaluate` overload starts with an empty log** (`log = new StringBuilder()`,
+  `:702`, `721`, `740`, `758`, `776`, `795`), discarding entries that were never
+  taken. So in HAPI the next case's evaluation cannot see the previous case's
+  lines whether or not the harness took them; the clear-on-take requirement is
+  the take accessor's own behaviour, and the per-evaluation reset is the
+  evaluate path's. A static `check` does not touch the log
+- **AND** the oracle harness drains the log after each case, and the engine is
+  reused across all 1,191 cases (`path.oracle.001`), so both must hold:
+  evaluation starts with an empty log, and a take empties it
 - **AND** a log entry is the trace name, then `: `, then the traced items'
   string values joined by `,`; entries are joined by `; ` in evaluation order
 - **AND** `trace` is the only construct that writes to the log; no other
@@ -2458,17 +2511,35 @@ The engine SHALL implement the utility and FHIR-specific functions `FHIRPathEngi
 - **WHEN** `'[stop]ONE[stop]'.split('[stop]').trace('n').count()` is evaluated
 - **THEN** the count is as the suite states and the log is recorded under `n`
   (`testSplit/testSplit3`)
+- **AND** a host service whose `log` hook answers `true` suppresses the entry,
+  and the engine's own log stays empty (`FHIRPathEngine.java:927-928`)
 
 #### Scenario: [path.utility.003] `check` passes its input through when the condition holds
 
 - **WHEN** an expression using `check()` with a satisfied condition is evaluated
 - **THEN** the input is returned unchanged
+- **AND** `check` takes two arguments (`FHIRPathEngine.java:1411`), the condition
+  and a message, and `funcCheck` evaluates the condition with the **focus** as
+  its context (`:5649-5651`)
+- **AND** the static check types the condition differently: `check` is **not** in
+  `isExpressionParameter` (`:3804-3817`, which lists `where`, `exists`, `all`,
+  `select`, `repeat` and `aggregate` at index 0 and `trace` and `defineVariable`
+  at index 1), so the condition is typed against the **context item**, not the
+  focus. `Patient.name.check(given.exists(), 'm')` therefore **fails the check**
+  ("The name 'given' is not valid for any of the possible types ... Patient"),
+  while `Patient.name.check(prefix.exists(), 'm')` evaluates correctly with the
+  check skipped. A test of the evaluation must skip the check or use a condition
+  that resolves against the context item
 
 #### Scenario: [path.utility.004] `check` fails when the condition does not hold
 
 - **WHEN** an expression using `check()` with an unsatisfied condition is
   evaluated
-- **THEN** evaluation fails
+- **THEN** evaluation fails with "Check failed with message '<message>'"
+  (`FHIRPATH_CHECK_FAILED`, `FHIRPathEngine.java:5654`), the message being the
+  second argument's value
+- **AND** the condition is typed against the context item by the static check
+  (`path.utility.003`), so this is graded with the check skipped
 
 #### Scenario: [path.utility.005] `aggregate` folds with `$this` and `$total`
 
@@ -2499,6 +2570,14 @@ The engine SHALL implement the utility and FHIR-specific functions `FHIRPathEngi
 
 - **WHEN** the `testExtension` group's cases are evaluated
 - **THEN** every case yields its stated output
+- **AND** the static check of `extension(url)` (`FHIRPathEngine.java:3556-3591`)
+  never fails on an unknown URL: it types the argument as a singleton `string`,
+  and for a constant URL it looks the extension definition up
+  (`findExtensionDefinition`, `:3747-3765`); when found the result is the
+  profiled `Extension` type, and when not found it adds the warning "Reference
+  to an unknown extension" and answers a plain `Extension` type. Typing a
+  known absolute URL therefore needs the extension's StructureDefinition from the
+  model, so the check cannot be completed without it
 
 #### Scenario: [path.utility.010] `extension(url)` with no match yields empty
 
@@ -2511,6 +2590,10 @@ The engine SHALL implement the utility and FHIR-specific functions `FHIRPathEngi
 - **WHEN** `Patient.birthDate.extension(url)` is evaluated for an extension
   carried in `_birthDate`
 - **THEN** the extension is returned
+- **AND** `funcExtension` reads the item's `extension` and `modifierExtension`
+  children whatever the item's type, primitive included
+  (`FHIRPathEngine.java:5464-5482`); the check of the call is as in
+  `path.utility.009`
 
 #### Scenario: [path.utility.012] `conformsTo` asks the host service
 

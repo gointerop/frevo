@@ -673,7 +673,7 @@ Every allocated ID, grouped as it is grouped in the delta files.
 - `path.types.008` — `as` on a `string`-typed element does not match `code`
 - `path.types.009` — `type()` reports a namespace and a name
 - `path.types.010` — the `is` operator and the `is()` function agree
-- `path.types.011` — `is` with an unknown type name is a semantic error
+- `path.types.011` — `is` with an unknown type name passes the check and is `false`; `as` and `ofType` raise
 - `path.types.012` — `is` on an empty collection yields empty
 - `path.types.013` — the whole `testTypes`, `testType` and `testInheritance` surface holds
 

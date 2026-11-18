@@ -45,8 +45,8 @@ decision.
 
 ## Entries
 
-All twenty-one entries below come from `add-fhirpath-and-codegen-r4`;
-`DEV-0013`, `DEV-0015`, `DEV-0017`, `DEV-0018`, `DEV-0019`, `DEV-0021`, `DEV-0022` and `DEV-0023` are pending the owner's review (see their entries);
+All twenty-two entries below come from `add-fhirpath-and-codegen-r4`;
+`DEV-0013`, `DEV-0015`, `DEV-0017`, `DEV-0018`, `DEV-0019`, `DEV-0021`, `DEV-0022`, `DEV-0023` and `DEV-0024` are pending the owner's review (see their entries);
 `DEV-0012` and `DEV-0014` were ruled for HAPI (2026-11-17 and 2026-11-14).
 `DEV-0001` through `DEV-0010` are the same kind of case: the pinned R4
 `FHIRPathEngine` does something the FHIRPath specification does not describe. In
@@ -712,6 +712,27 @@ file, so its prose is not redistributable here (see `oracles/PINS.md`).
 - **Normalizer impact:** none on stored bytes; search-parameter expressions that
   use `matches` are not known to use the rejected constructs (not checked
   against the generated table).
+- **Reviewed:** pending owner.
+
+### DEV-0024 — `is` with an unknown type name is `false`, not an error
+
+- **Area:** path
+- **Scenario IDs:** path.types.011
+- **HAPI 8.12.0 behaviour:** the static check reads the right operand of `is`
+  and `as` with `executeTypeName`, which consults nothing
+  (`ENGINE:1627-1628`); `Patient.gender is NoSuchType` passes the check and
+  evaluates to `false` (`opIs`, `ENGINE:1940`; `funcIs`, `5095`). Only `as`,
+  `as()` and `ofType()` test `isKnownType`, at evaluation, and raise
+  `FHIRPATH_INVALID_TYPE` (`ENGINE:1881-1883`, `5163-5165`, `5206-5208`).
+- **Specification requirement:** FHIRPath 2.0.0 — an unknown type specifier is
+  an error.
+- **Chosen behaviour:** HAPI.
+- **Configuration flag:** none
+- **Debt:** none
+- **Rationale:** owner ruling, 2026-11-17: HAPI 8.12.0's observable behaviour is
+  the reference. Established from the pinned source; not confirmed against a
+  live HAPI.
+- **Normalizer impact:** none on stored bytes.
 - **Reviewed:** pending owner.
 
 ## Considered and not recorded as deviations

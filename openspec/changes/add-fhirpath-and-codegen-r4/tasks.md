@@ -917,7 +917,8 @@ checkpoint because it changes what a gate measures.
   `type()` across the `System` and `FHIR` namespaces; the FHIR type hierarchy;
   `uri` versus `url`; an extension value's concrete choice type; `as` yielding
   empty on mismatch; the operator and function forms agreeing; unknown type
-  names as a semantic error; the empty-focus rule.
+  names (`is` passes the check and is `false`, `as` and `ofType` raise at
+  evaluation: `path.types.011`, `DEV-0024`); the empty-focus rule.
   Satisfies `path.types.001` through `path.types.013`.
 
 - [ ] **47. Implement environment variables.** The built-in system URLs, the
@@ -951,10 +952,16 @@ checkpoint because it changes what a gate measures.
   including on a primitive. The log is `name`, `: `, then the traced items'
   string values joined by `,`, with entries joined by `; `; `trace` is the only
   construct that writes to it. Expose a has-log predicate and a take-log
-  accessor, and make **taking the log clear it** — a second take with no
-  intervening `trace` returns the empty string. The oracle harness drains the
-  log after every case and the engine is shared across all 1,191 of them, so
-  without the clear-on-take one case's lines leak into the next.
+  accessor, and make **taking the log clear it** (HAPI's `takeLog` does,
+  `FHIRPathEngine.java:6692-6698`) — a second take with no intervening `trace`
+  returns the empty string. Separately, **every evaluation starts with an empty
+  log**, as each `evaluate` overload does (`:702` ... `:795`); a static check
+  does not touch it. The oracle harness drains the log after every case and the
+  engine is shared across all 1,191 of them, so both behaviours are needed.
+  `check`'s condition is typed against the context item by the static check, so
+  its tests skip the check or use a context-relative condition (`path.utility.003`).
+  The static check of `extension(url)` needs the extension definition from the
+  model (`path.utility.009`).
   Satisfies `path.utility.001` through `path.utility.011`.
 
 - [ ] **49. Implement the host-service functions.** `conformsTo` against the
