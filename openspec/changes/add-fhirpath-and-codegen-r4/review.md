@@ -1,4 +1,129 @@
-APPROVED
+CHANGES_REQUESTED
+
+Thirty-fourth review (commit `bd08451`, 2026-11-18, diff against `6d38d35`).
+It covers the amended `path.boundary.*` scenarios, the counts in `spec.md`,
+task 45, `DEV-0025` and `DEBT-0016`. `ENGINE` is
+`org.hl7.fhir.r4/.../fhirpath/FHIRPathEngine.java` at `73c432b5`. `UTIL` is
+`org.hl7.fhir.utilities/.../Utilities.java`, `DTU` is `.../DateTimeUtil.java`,
+and `BDT` is `org.hl7.fhir.r4/.../model/BaseDateTimeType.java`, all at
+`73c432b5`.
+
+Most of the amendment is correct, and every decimal value and error in
+`.001`-`.011` checks out (re-derived by simulating `applyPrecision` and
+`minusOne`). Two scenarios state an error where HAPI returns a value, and four
+behaviours are missing. Detail is in the dated section at the end. The earlier
+findings follow, kept for the record.
+
+1. **`path.boundary.012`: a quantity at precision `-1` is a valueless
+   Quantity, not an error.**
+   - For `1.587 'cm'.lowBoundary(-1)`, `applyPrecision` (`UTIL:1653-1680`)
+     reaches `ld = 0`, so `s = nv.substring(0, 0)` is `""`, and
+     `lowBoundaryForDecimal` returns `""`. `highBoundary(-1)` also gives `""`:
+     `nv.charAt(0)` is `'1'`, which is below `'5'`, so there is no round-up.
+   - `new DecimalType("")` does not throw. `DecimalType.setValueAsString`
+     (`org.hl7.fhir.r4/.../model/DecimalType.java:153-157`) sets a null value
+     for a blank string.
+   - So `ENGINE:4326` / `:4370` set an empty `value` on the copy. The result
+     is one Quantity with unit, code and system copied and no value.
+   - The error does start one step further out. At `-2`, `ld = -1`, and
+     `nv.charAt(-1)` throws `StringIndexOutOfBoundsException` (the message
+     text depends on the JDK).
+   - A negative precision does not always wipe the value:
+     `12.5 'cm'.lowBoundary(-1)` gives `ld = 1` and the value `1`.
+   - Rewrite `.012`: `-1` on `1.587 'cm'` is a single valueless Quantity for
+     both functions, `-2` is an execution error, and add one multi-digit case
+     such as `12.5 'cm'.lowBoundary(-1)` → `1 'cm'`.
+   - Correct `DEV-0025`'s "so `1.587 'cm'.lowBoundary(-1)` is an error". The
+     valueless or truncated quantity is a wrong answer, not an error, so it
+     belongs in `DEBT-0016`.
+
+2. **`path.boundary.015`: `lowBoundary(14)` succeeds. Only the
+   `highBoundary(14)` default-offset case fails.**
+   - With precision 14, `@2014-01-01T08.lowBoundary(14)` builds
+     `2014-01-01T08:00:+14:00` (`DTU:65-89`, `:138`), and `new DateTimeType`
+     parses it.
+   - In `BDT.getOffsetIndex` (`BDT:330-341`), `+` is at 17, and the check
+     `17-2 == 17-1-1` holds. The time part is `08:00:` (length 6 > 5), so the
+     seconds are `value.substring(17, 19)`, which is `"+1"`.
+     `Integer.parseInt("+1")` is `1`, which lies in `0..60` (`BDT:537-552`).
+     The precision is SECOND, which `DateTimeType` allows.
+   - So the result is a `dateTime` whose lexical form is
+     `2014-01-01T08:00:+14:00`. `fromStringValue` keeps the input string.
+   - `@2014-01-01T08.highBoundary(14)` builds `2014-01-01T08:00:-12:00`, whose
+     seconds text is `"-1"`. That is out of range, so `throwBadDateFormat`
+     raises `Invalid date/time format: "2014-01-01T08:00:-12:00"`
+     (`BDT:796-798`).
+   - A stated offset whose hour starts with `0` parses in both directions:
+     `"+0"` and `"-0"` read as `0`. So
+     `@2014-01-01T08:05+08:00.lowBoundary(14)` is the dateTime
+     `2014-01-01T08:05:+08:00`.
+   - Rewrite the precision-14 bullet with these three results and the exact
+     message.
+   - Update `DEV-0025` ("a date precision of 14 … fails"), task 45 ("14 an
+     invalid dateTime") and `DEBT-0016`: a malformed dateTime that parses is
+     a wrong answer, like the time precisions of `.016`.
+
+3. **The zero branch of the decimal boundary is not specified.**
+   - `lowBoundaryForDecimal` and `highBoundaryForDecimal` test `isZero` first
+     (`UTIL:1638-1639`, `:1704-1705`, `:1718-1720`). The test strips `.`, `-`
+     and `0`, so `0`, `0.0`, `-0.0` and `0.000` all take it. They return a
+     fixed `-0.5…`/`0.5…` text instead of going through `minusOne`.
+   - A generic implementation of the `minusOne` path would give `9.5…` for
+     `0`, so this branch has to be stated.
+   - The values are:
+     - `0.lowBoundary()` is `-0.50000000`.
+     - `0.highBoundary()` is `0.50000000`.
+     - `0.lowBoundary(0)` is the decimal `-0`.
+     - `0.highBoundary(0)` is `1`, because the `'5'` rounds the leading `0` up.
+     - `(-0.0).lowBoundary(1)` is `-0.5`, the same as for `0`.
+   - No suite case grades this (`LowBoundaryDecimal14`/`15` are `0.0034`, not
+     zero). Add a differential-only scenario.
+
+4. **Dispatch is by exact `fhirType()`, so `instant`, `positiveInt` and
+   `unsignedInt` give empty.**
+   - `ENGINE:4309-4328`, `:4353-4372` and `:4384-4390` test
+     `base.hasType("decimal" | "integer" | "date" | "dateTime" | "time" |
+     "Quantity")`. `Base.hasType` (`org.hl7.fhir.r4/.../model/Base.java:159-165`)
+     compares `fhirType()` case-insensitively and does not follow subtypes.
+   - So model values typed `instant` (`Bundle.timestamp`,
+     `meta.lastUpdated`), `positiveInt` or `unsignedInt` (e.g.
+     `ImagingStudy.numberOfSeries`) fall through to the unthrown
+     `makeException` and give empty, for all three functions.
+   - `.014` covers only literals (`1`, `'abc'`, `true`, `1 'cm'`). This
+     requirement deliberately resolves types "through the model's type
+     hierarchy" (`path.types.*`), so an implementation that treats `instant`
+     as a dateTime, or `positiveInt` as an integer, would diff.
+   - Add model-element cases to `.014`: an `instant`, a `positiveInt`/
+     `unsignedInt` and a `code` element each give empty for `lowBoundary`,
+     `highBoundary` and `precision()`.
+
+5. **A Quantity with no `value` is unspecified.**
+   - For a Quantity element without a value, `getNamedValue`
+     (`ENGINE:4643-4649`) returns `null`.
+   - `lowBoundaryForDecimal(null, …)` then throws
+     `FHIRException("Unable to calculate lowBoundary for a null decimal
+     string")` (`UTIL:1632-1634`). `highBoundary` throws the same with
+     `highBoundary` (`UTIL:1698-1700`).
+   - This is reachable from ordinary data (an `Observation.valueQuantity`
+     carrying only `unit`/`code`). No scenario names it. Add it to `.008` or
+     `.012` with both messages.
+
+6. **`path.boundary.017`'s quoted message drops HAPI's prefix.**
+   - `FHIRPATH_WRONG_PARAM_TYPE` is `Error evaluating FHIRPath expression: The
+     parameter type {2} is not legal for {0} parameter {1}. expecting {3}`
+     (`Messages.properties:371`). `makeException` passes it through
+     unchanged (`ENGINE:584-594`).
+   - The scenario says the message "is" `The parameter type Multiple Values …
+     expecting integer`. This change quotes messages exactly elsewhere
+     (`path.check.005`, with the prefix), so an implementer following `.017`
+     literally would differ from HAPI.
+   - The same applies to `.013`. The plural template
+     (`Messages.properties:332`, arguments shifted by `I18nBase.formatMessagePlural`,
+     `I18nBase.java:228-240`) renders as `Error evaluating FHIRPath expression:
+     focus for highBoundary can only have one value, but has 0 values`.
+   - Quote the full texts, or say that the quoted text is a suffix.
+
+## Thirty-third review header as issued (commit `27615b7`)
 
 Thirty-third review (commit `27615b7`, 2026-11-17) resolves the finding of the
 thirty-second review. Detail is in the dated section at the end. The earlier
@@ -2175,3 +2300,86 @@ deviations, 15 debt entries). No `#### Scenario:` heading changed. `path` has
 
 **Registers.** `check-registries.sh` reports "registers agree" (22
 deviations, 15 debt entries). No `#### Scenario:` heading changed.
+
+## Thirty-fourth review - commit `bd08451` (2026-11-18)
+
+Scope: the diff `6d38d35..bd08451`, which covers `path.boundary.001`-`.017`,
+the `spec.md` counts and registry, task 45, `DEV-0025`, `DEBT-0016` and the
+`tasks/blockers.md` note. I read the upstream code before I read the delta:
+`ENGINE:4290-4392` (`funcLowBoundary`, `funcHighBoundary`, `funcPrecision`),
+`:3714-3732` and `:3896-3900` (the static check), `:1674-1735`
+(`processDateConstant`), `UTIL:1631-1736`, `DTU:65-215`, `BDT:90-106`,
+`:330-342`, `:432-552` and `:640-680`, `TimeType.java:59-146`,
+`DecimalType.java:82-160`, `PrimitiveType.java:102-118`, and `I18nBase.java:163-240`.
+The decimal arithmetic was checked with a line-for-line simulation of
+`applyPrecision`, `minusOne` and `isZero`.
+
+**Confirmed correct.**
+- **Suite counts.** LowBoundary has 31 decimal cases, of which HAPI passes 22
+  (`results.json:932-953`). The nine failures are at `:954-962`. HighBoundary
+  has 27 decimal cases, of which HAPI passes 18 (`:969-986`), with nine
+  failures at `:987-995`. All ten date, dateTime and time cases pass
+  (`:964-968`, `:997-1001`). The 18 failures in `DEV-0025` add up.
+- **`.001`-`.003`, `.006`, `.010`.** Every quoted value matches
+  `applyPrecision`. The range check is `precision >= 0 && precision < 17`, for
+  decimal and integer only (`ENGINE:4310`, `:4314`, `:4354`, `:4358`). The
+  defaults are 8 for a decimal, 10 for a date, 17 for a dateTime and 9 for a
+  time.
+- **`.004` and `.007`.** `9`+1 is `:`, and `new BigDecimal` raises the
+  quoted `Character : …` message. `minusOne("10")` is `"09"`, and
+  `DecimalType` keeps that representation. `1.lowBoundary(0)` is `0` and
+  `1.highBoundary(0)` is `2`.
+- **`.005` and `.011`.** The fixture's values are `9.5e2`, `1.5e-3`,
+  `-9.5e2` and `1.5E2` (`parameters-example-decimals.xml:7-19`). The results
+  are:
+  - `92`, then the `Character -` error on `1.45000000-3`, then `-:2`, which
+    raises the `Character :` error, then `1.5`;
+  - `:2`, which raises an error, then `9.550000002`, then the `Character -`
+    error, then `-92`, then `1.6`. In the last one, `'E'` (0x45) is at least
+    `'5'`, so the digit before it rounds up.
+- **`.008`.** `base.copy()` keeps the unit, code and system, and the value is
+  computed as for a decimal.
+- **`.009`.**
+  - The results are `DateTimeType` for both date and dateTime input.
+  - At precision 10 or less the offset is dropped. Otherwise a stated offset is
+    kept, or `+14:00`/`-12:00` is added.
+  - `@2014-01-01T08` is held as `2014-01-01T08:00` after `setPrecision(MINUTE)`,
+    hence `08:00:59.999-12:00`.
+  - `dayCount` applies the Gregorian leap-year rule.
+- **`.013`.** `funcPrecision` throws for `size != 1`, naming `highBoundary`.
+  Under English plural rules, 0 and 2 both take `_other`. The boundaries
+  return empty for an empty focus and name themselves for more than one item.
+- **`.014`.** Literals of other types give empty, because `makeException` is
+  not thrown. The static-check claims match `checkContextContinuous` and the
+  `allowInteger` flag (`true` for the boundaries, `false` for `precision`).
+- **`.015`, other than precision 14 (finding 2).** The precisions 4, 6, 7, 8,
+  10, 14 and 17 are accepted, and any other throws
+  `Unsupported Date precision for boundary operation: <n>`.
+- **`.016`.** Precisions 2, 4 and 6 give `10:`, `10:30:` and `10:30:00.`, and
+  `highBoundary(6)` gives `10:30:59.`. Other precisions throw
+  `Unsupported Time precision for boundary operation: <n>`. `TimeType(String)`
+  does not validate. `@T10:30` is held as `10:30`
+  (`TimeType.setPrecision(MINUTE)`), which is why `precision()` is 4.
+- **`.017`.** An argument with zero items or more than one raises the
+  `Multiple Values` error naming `lowBoundary` (`ENGINE:4301`, `:4345`).
+  `'2'` parses as 2. `1.5` raises `NumberFormatException`
+  `For input string: "1.5"`. The message prefix is finding 6.
+
+**Counts and IDs.**
+- The `#### Scenario: [` headings number codegen 49, model 83 and path 375 (368
+  at `6d38d35`, plus 7). That totals 507, as `spec.md` states.
+- There are 17 `path.boundary.*` headings. No ID is duplicated across the
+  three delta files, and no existing ID was renumbered or repurposed.
+- The "twenty-five without a live case" list gains `.012`-`.017`, and each of
+  those says so in its own text.
+
+**Registers.**
+- `harness/scripts/check-registries.sh` reports "registers agree" (23
+  deviations, 16 debt entries).
+- `DEV-0025` names `Debt: DEBT-0016`, and `DEBT-0016` names `Origin: DEV-0025`.
+- The linkage is coherent. The content of both entries needs the corrections
+  in findings 1 and 2.
+
+**Oracles.**
+- `.001`-`.011` name their suite group and cases.
+- `.012`-`.017` are marked differential-only, with seam assertions.
