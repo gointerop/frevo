@@ -321,9 +321,11 @@ them is the whole reason that decision is safe to make.
 - **Area:** path
 - **Origin:** change `add-fhirpath-and-codegen-r4`, task 50
   (`crates/frevo-path/src/check/`, `crates/frevo-path/src/seam/model.rs`)
-- **Owed:** implement the five `Model` methods the check pass added —
-  `elements`, `specializations`, `resource_type_names`, `type_names` and
-  `has_definition_url` — on `R4Model` in `crates/frevo-model/src/codec/nav.rs`,
+- **Owed:** implement the six `Model` methods the check pass added —
+  `elements`, `specializations`, `resource_type_names`, `type_names`,
+  `has_definition_url` and `extension_value_types` (the value types of the
+  extension a known `extension(url)` names; `None` types `.value` as the whole
+  `Extension` choice) — on `R4Model` in `crates/frevo-model/src/codec/nav.rs`,
   from the generated tables (which already carry each element's cardinality and
   types), producing backbone types named by path and both type lists
   (`ElementInfo::types` and `::codes`) as the harness's StructureDefinition

@@ -946,7 +946,7 @@ checkpoint because it changes what a gate measures.
   divergence from the FHIRPath grammar; match HAPI, no flag.
   Satisfies `path.env.016`, `path.env.017`.
 
-- [ ] **48. Implement the utility functions.** `trace` with its retrievable log,
+- [x] **48. Implement the utility functions.** `trace` with its retrievable log,
   `check`, `aggregate` with and without an initial value, `sort` with no
   argument, one key and several keys including descending, and `extension(url)`
   including on a primitive. The log is `name`, `: `, then the traced items'

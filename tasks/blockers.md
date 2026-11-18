@@ -2130,3 +2130,50 @@ For the check pass and the harness:
 4. **`path.types.013`:** the 8 `toQuantity` cases wait for tasks 43/44; two
    `testTypes` cases (`testString{Month,Year}QuantityToQuantityEquivalent`) are
    `failed` in HAPI (results:192-193), so `failed` is their required status.
+
+## 2026-11-17 — `add-fhirpath-and-codegen-r4`, tasks 46, 47, 47a: tests that contradict HAPI (implementer)
+
+`extension(url)` is now typed as HAPI does (`check/pass.rs`; new defaulted
+`Model::extension_value_types`), which turned `path.env.004`, `path.utility.009`,
+`.011` and `path.navigation` green. What remains in `path_env.rs` is the test
+contradicting the pinned source; the engine follows HAPI. Tests for the
+oracle-builder, with evidence:
+
+1. **`path.env.008`, `path.env.010`** (`root_resource_is_the_outermost_resource`
+   `:764`, `context_is_the_node_evaluation_started_from` `:838`) evaluate
+   `%rootResource.resourceType` / `%context.resourceType` and expect
+   `string:Patient`. `resourceType` is not a child in HAPI: `getChildrenByName`
+   (`FHIRPathEngine.java:255-278`) is `item.listChildrenByName(name, false)`,
+   `FHIRPathEngine.java` has no `resourceType` at all, and the R4 `Resource`
+   declares only `id`, `meta`, `implicitRules`, `language`. HAPI yields empty.
+   Identify the resource with `%rootResource.type().name` or `.id`.
+2. **`path.env.015`** (`:1045`): the check of `%owned` with a host keyed by
+   `owned` fails "Invalid FHIRPath Constant %owned". HAPI's check passes the name
+   **with** the `%` to `resolveConstantType` (`:3173`, `hostServices.resolveConstantType(this,
+   context.appInfo, s, mode)`, `s` unstripped) while evaluation strips it
+   (`:1783`, `s.substring(1)`). `RecordingHost::resolve_constant_type` must look
+   up `name.trim_start_matches('%')`.
+3. **`path.env.016`** (`:1138`): `Patient.name` with a host answering `Patient`
+   expects `["shadowed-type"]`. HAPI returns the host's answer for the entry
+   name `Patient` and then navigates `.name` on that `StringType`, which is
+   empty. The expression should be `Patient`.
+4. **`path.env.017`** (`:1219`): the host answers `nosuchelement` in **every**
+   mode, so the implicit-before answer is non-empty and is returned at once
+   (`:3184-3190`); implicit-after never fires. The test expects
+   `[ImplicitBefore, ImplicitAfter]`. The recording host must answer only in the
+   mode under test (answer empty for `ImplicitBefore`).
+5. **`path.env.006`** (`:361`) contradicts `path.check.005`: the six
+   `isGuard*` cases are checked with `contextType="Period"`, and the check
+   fails on `$this.toString()` because an `is` guard does not narrow
+   (`:3631` has no guard logic; HAPI's own run of `isGuardAndOtherImplies[15]` is
+   `failed` with exactly this message, results line 1057). Needs an owner
+   decision on the spec: either `path.env.006` selects cases checked without the
+   context type, or the cases are graded `failed` as in HAPI.
+6. **`path.types.013`** still waits on `toQuantity` (tasks 43/44).
+7. `path.utility.012`-`.0xx` (`conformsTo`, `memberOf`, `resolve`, custom
+   function) are task 49's; the custom-function check answers `NotImplemented`.
+
+Harness note for the oracle-builder (optional precision, no test needs it):
+`SdModel` excludes profiles, so it does not implement
+`Model::extension_value_types`; the default makes a known extension a plain
+`Extension` whose `.value` is the whole choice.

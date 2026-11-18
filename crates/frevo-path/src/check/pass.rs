@@ -6,7 +6,9 @@
 //! `executeContextType` at `:3224`, `executeType(String, ...)` at `:3231`,
 //! `evaluateParameters` and `evaluateFunctionType` at `:3261`-`:3745`,
 //! `checkType` at `:3767`, `checkParamTypes` at `:3820`,
-//! `getChildTypesByName` at `:6322`, `ExecutionTypeContext` at `:1022`.
+//! `getChildTypesByName` at `:6322`, `ExecutionTypeContext` at `:1022`,
+//! `case Extension` at `:3556` and `findExtensionDefinition` at `:3747`
+//! (with `Utilities.isAbsoluteUrl`).
 //! Original work Copyright HL7, Inc. and contributors, licensed under the
 //! Apache License, Version 2.0.
 //! Modified by the Frevo authors: the per-function `switch` is the table in
@@ -429,6 +431,23 @@ impl<'a> Pass<'a> {
         }
         if is_system(ty) {
             return Ok(());
+        }
+        if ty.contains("://") && !self.model.is_type(ty) {
+            // An extension's profile, as `extension(url)` types it: navigated
+            // as `Extension`, with `value` narrowed to the definition's value
+            // types when the model carries them.
+            if name == "value" {
+                if let Some(types) = self.model.extension_value_types(ty) {
+                    if types.len() > 1 {
+                        result.set_choice();
+                    }
+                    for t in &types {
+                        result.add_with_status(CollectionStatus::Singleton, t);
+                    }
+                    return Ok(());
+                }
+            }
+            return self.child_types_by_name("Extension", name, result, id);
         }
         let (owner, tail) = if is_backbone(ty) {
             match ty.find('.') {
@@ -1268,7 +1287,7 @@ impl<'a> Pass<'a> {
                 }
                 Ok(focus.clone())
             }
-            Special::Extension => self.extension_type(id),
+            Special::Extension => self.extension_type(id, focus),
             Special::Boundary => Ok(
                 if focus.has_type_plain("date")
                     || focus.has_type_plain("datetime")
@@ -1351,10 +1370,13 @@ impl<'a> Pass<'a> {
         !focus.contains(tn)
     }
 
-    /// `extension(url)` with a literal URL. Only the one answer that needs no
-    /// extension definition's element model is given: an absolute URL that
-    /// names no definition warns and is typed `Extension`.
-    fn extension_type(&mut self, id: NodeId) -> CheckResult<Types> {
+    /// `extension(url)` with a literal URL (`:3556`-`:3591`). It never fails:
+    /// a URL that names no definition warns and is typed a plain `Extension`;
+    /// a known absolute URL is typed as the extension's profile, which
+    /// `child_types_by_name` navigates as `Extension` with `value` narrowed to
+    /// the definition's value types. Type profiles on the focus are not
+    /// carried by this pass, so a relative URL finds none and warns.
+    fn extension_type(&mut self, id: NodeId, _focus: &Types) -> CheckResult<Types> {
         let Some(&p0) = self.expr.node(id).parameters().first() else {
             return Err(CheckError::not_implemented(
                 "extension() with no parameter",
@@ -1372,31 +1394,44 @@ impl<'a> Pass<'a> {
             // falls through into `case AnyTrue`.
             return Ok(Types::single(&[SYSTEM_BOOLEAN]));
         };
-        let absolute = ["http://", "https://", "urn:"]
-            .iter()
-            .any(|s| url.starts_with(s));
-        if !absolute {
-            // Both of upstream's relative-URL branches read what this pass
-            // does not carry: the focus's `Extension` type profiles, or the
-            // fixed values in the focus type's definition.
-            return Err(CheckError::not_implemented(
-                "extension() with a relative URL, which reads type profiles and fixed values",
-                self.start(id),
-            ));
-        }
-        match self.model.has_definition_url(&url) {
-            None => Err(self.model_cannot(&format!("whether {url} is defined"), id)),
-            Some(true) => Err(CheckError::not_implemented(
-                format!("the type of the extension {url}, which needs its definition's elements"),
-                self.start(id),
-            )),
-            Some(false) => {
-                let m = format!("The extension {url} is not known");
-                self.warn(WarningId::UnknownExtension, m);
-                Ok(Types::single(&["Extension"]))
+        let known = if is_absolute_url(&url) {
+            match self.model.has_definition_url(&url) {
+                None => return Err(self.model_cannot(&format!("whether {url} is defined"), id)),
+                Some(known) => known,
             }
+        } else {
+            // Upstream reads the focus's `Extension` type profiles, or the
+            // fixed values in the focus type's definition; this pass carries
+            // neither, and a base definition has no such fixed value.
+            false
+        };
+        if known {
+            return Ok(Types::of(CollectionStatus::Ordered, &[url.as_str()]));
         }
+        let m = format!(
+            "Reference to an unknown extension - double check that the URL '{url}' is correct"
+        );
+        self.warn(WarningId::UnknownExtension, m);
+        Ok(Types::single(&["Extension"]))
     }
+}
+
+/// `Utilities.isAbsoluteUrl`.
+fn is_absolute_url(s: &str) -> bool {
+    let Some((scheme, details)) = s.split_once(':') else {
+        return false;
+    };
+    let token = scheme
+        .chars()
+        .next()
+        .is_some_and(|c| c.is_ascii_alphabetic())
+        && scheme
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '[' | ']'))
+        && scheme == scheme.to_lowercase();
+    (matches!(scheme, "http" | "https" | "urn" | "file:") || token)
+        && !details.is_empty()
+        && !details.contains(' ')
 }
 
 /// `hashTail`: a URL's last segment, and nothing for a backbone.

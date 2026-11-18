@@ -177,4 +177,16 @@ pub trait Model: Send + Sync {
     fn has_definition_url(&self, _url: &str) -> Option<bool> {
         None
     }
+
+    /// The value types the extension defined at canonical URL `url` allows,
+    /// in declared order: what `findExtensionDefinition` finds and the
+    /// profiled `Extension` type it yields lets `.value` be typed as
+    /// (`FHIRPathEngine.java:3556`-`:3591`, `:3747`). `None` when the model
+    /// cannot say or has no such definition; the check pass then keeps the
+    /// extension a plain `Extension`, whose `value` is the whole choice.
+    /// Defaulted, so a model that does not carry extension definitions still
+    /// compiles.
+    fn extension_value_types(&self, _url: &str) -> Option<Vec<String>> {
+        None
+    }
 }
