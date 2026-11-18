@@ -392,35 +392,58 @@ trait HostAwareEngine {
 }
 
 fn host_engine_under_test() -> Box<dyn HostAwareEngine> {
-    Box::new(UnboundHostEngine)
+    Box::new(BoundHostEngine {
+        base: oracle::engine::host_base_evaluator(),
+    })
 }
 
-struct UnboundHostEngine;
+/// Bound to the real evaluator and checker over the pinned model, through the
+/// harness's host-aware seam (`oracle::engine`). The evaluator's `trace()` log
+/// is shared by every evaluation this engine makes and cleared by taking it,
+/// so a log read here is this engine's own. A missing type package is
+/// `NotImplemented` (did-not-run), never an answer.
+struct BoundHostEngine {
+    base: Option<frevo_path::Evaluator<'static>>,
+}
 
-impl HostAwareEngine for UnboundHostEngine {
-    fn evaluate(&mut self, _call: &Call<'_>) -> Result<Vec<Value>, EngineError> {
-        Err(EngineError::NotImplemented)
+impl HostAwareEngine for BoundHostEngine {
+    fn evaluate(&mut self, call: &Call<'_>) -> Result<Vec<Value>, EngineError> {
+        let base = self.base.as_ref().ok_or(EngineError::NotImplemented)?;
+        let expr = oracle::engine::parse_with_host(call.expr, call.host)?;
+        oracle::engine::evaluate_host_aware(
+            base,
+            &expr,
+            call.root.as_ref(),
+            call.context_path,
+            call.host,
+            false,
+        )
     }
 
-    fn parse(&mut self, _expr: &str, _host: Option<&dyn HostServices>) -> Result<(), EngineError> {
-        Err(EngineError::NotImplemented)
+    fn parse(&mut self, expr: &str, host: Option<&dyn HostServices>) -> Result<(), EngineError> {
+        oracle::engine::parse_with_host(expr, host).map(|_| ())
     }
 
     fn check(
         &mut self,
-        _expr: &str,
-        _context_type: &str,
-        _host: Option<&dyn HostServices>,
+        expr: &str,
+        context_type: &str,
+        host: Option<&dyn HostServices>,
     ) -> Result<TypeSet, EngineError> {
-        Err(EngineError::NotImplemented)
+        let parsed = oracle::engine::parse_with_host(expr, host)?;
+        oracle::engine::check_in_type(&parsed, Some(context_type), host)
     }
 
     fn has_log(&self) -> bool {
-        false
+        self.base
+            .as_ref()
+            .is_some_and(frevo_path::Evaluator::has_log)
     }
 
     fn take_log(&mut self) -> String {
-        String::new()
+        self.base
+            .as_ref()
+            .map_or_else(String::new, frevo_path::Evaluator::take_log)
     }
 }
 

@@ -261,23 +261,54 @@ trait HostAwareEngine {
 }
 
 fn host_engine_under_test() -> Box<dyn HostAwareEngine> {
-    Box::new(UnboundHostEngine)
+    Box::new(BoundHostEngine {
+        base: oracle::engine::host_base_evaluator(),
+    })
 }
 
-struct UnboundHostEngine;
+/// Bound to the real evaluator and checker over the pinned model, through the
+/// harness's host-aware seam (`oracle::engine`). A missing type package is
+/// `NotImplemented` (did-not-run); anything the evaluator does not build yet
+/// surfaces as `NotImplemented` too, never as an answer.
+struct BoundHostEngine {
+    base: Option<frevo_path::Evaluator<'static>>,
+}
 
-impl HostAwareEngine for UnboundHostEngine {
-    fn evaluate(&mut self, _req: &EvalRequest<'_>) -> Result<Vec<Value>, EngineError> {
-        Err(EngineError::NotImplemented)
+impl HostAwareEngine for BoundHostEngine {
+    fn evaluate(&mut self, req: &EvalRequest<'_>) -> Result<Vec<Value>, EngineError> {
+        let base = self.base.as_ref().ok_or(EngineError::NotImplemented)?;
+        let expr = oracle::engine::parse_with_host(req.expr, req.host)?;
+        let root =
+            match req.input {
+                None => None,
+                Some(input) => Some(oracle::engine::typed_input(input).ok_or_else(|| {
+                    EngineError::Diagnostic {
+                        message: format!(
+                            "{} has no resourceType to build a resource from",
+                            input.file
+                        ),
+                        offset: None,
+                    }
+                })?),
+            };
+        oracle::engine::evaluate_host_aware(
+            base,
+            &expr,
+            root.as_ref(),
+            req.context_path,
+            req.host,
+            req.app_context,
+        )
     }
 
     fn check(
         &mut self,
-        _expr: &str,
-        _context_type: Option<&str>,
-        _host: Option<&dyn HostServices>,
+        expr: &str,
+        context_type: Option<&str>,
+        host: Option<&dyn HostServices>,
     ) -> Result<TypeSet, EngineError> {
-        Err(EngineError::NotImplemented)
+        let parsed = oracle::engine::parse_with_host(expr, host)?;
+        oracle::engine::check_in_type(&parsed, context_type, host)
     }
 }
 

@@ -228,7 +228,7 @@ pub fn engine_under_test() -> Box<dyn SuiteEngine> {
         config: None,
         parsed: Vec::new(),
         trees: HashMap::new(),
-        unbound: UnboundEngine,
+        evaluator: host_base_evaluator(),
     })
 }
 
@@ -243,10 +243,11 @@ struct FrontEndEngine {
     /// shared by every case that names the file, as `FHIRPathTests` caches
     /// its parsed resources.
     trees: HashMap<String, Value>,
-    /// The stages that do not exist yet, answered by the binding below rather
-    /// than by a second copy of the same `NotImplemented`, so there is one
-    /// place in this file that says "not built yet".
-    unbound: UnboundEngine,
+    /// The one evaluator every case of the run goes through. It owns the
+    /// `trace()` log that `has_log`/`take_log` read, so the log is the
+    /// engine's and is cleared by taking it. `None` when the type package is
+    /// absent.
+    evaluator: Option<Evaluator<'static>>,
 }
 
 impl FrontEndEngine {
@@ -362,25 +363,17 @@ impl SuiteEngine for FrontEndEngine {
         // from the resource, with that item as the focus and `$this`, and the
         // results are concatenated. Without a `context` the resource is the
         // focus, as upstream's `fp.evaluate(res, node)`.
-        let values = match (_context.context, root.as_ref()) {
-            (Some(path), Some(resource)) => {
-                let context_expr =
-                    frevo_path::Expression::parse(path).map_err(|e| EngineError::Diagnostic {
-                        message: format!(
-                            "the case context {path:?} does not parse: {}",
-                            e.message()
-                        ),
-                        offset: Some(e.offset()),
-                    })?;
-                let focus_items = evaluate_over_in_zone(&context_expr, Some(resource), zone)?;
-                let mut out = Vec::new();
-                for item in &focus_items {
-                    out.extend(evaluate_over_in_zone(expr, Some(item), zone)?);
-                }
-                out
-            }
-            _ => evaluate_over_in_zone(expr, root.as_ref(), zone)?,
-        };
+        //
+        // One evaluator serves every case of the run, so its `trace()` log is
+        // the engine's log: `has_log`/`take_log` read it, and the harness
+        // drains it after every case (`path.utility.001`).
+        let base = self
+            .evaluator
+            .clone()
+            .ok_or(EngineError::NotImplemented)?
+            .with_time_zone_offset_minutes(zone);
+        let values =
+            evaluate_host_aware(&base, expr, root.as_ref(), _context.context, None, false)?;
         Ok(values.iter().map(|v| result_item(model, v)).collect())
     }
 
@@ -398,11 +391,15 @@ impl SuiteEngine for FrontEndEngine {
     }
 
     fn has_log(&self) -> bool {
-        self.unbound.has_log()
+        self.evaluator.as_ref().is_some_and(Evaluator::has_log)
     }
 
+    /// The accumulated `trace()` text, **cleared by taking it**: the evaluator's
+    /// own `takeLog`, shared by every evaluation this engine makes.
     fn take_log(&mut self) -> String {
-        self.unbound.take_log()
+        self.evaluator
+            .as_ref()
+            .map_or_else(String::new, Evaluator::take_log)
     }
 }
 
@@ -512,6 +509,129 @@ pub fn evaluate_over_in_zone(
         .map_err(engine_error)
 }
 
+// ---------------------------------------------------------------------------
+// The host-aware seam
+//
+// `path_env.rs` and `path_utility.rs` drive evaluation with a host service the
+// caller supplies, an application context flag, an evaluation that starts
+// partway down a resource, and the engine's own `trace()` log. These bind that
+// surface to the real evaluator over the same model the suite run uses.
+// ---------------------------------------------------------------------------
+
+/// An evaluator over the pinned model in the suite's time zone, with no host
+/// service. `None` when the type package is absent: a missing prerequisite,
+/// which the caller reports as `did-not-run`. Clones share the `trace()` log,
+/// so one base evaluator held by an engine gives clear-on-take semantics across
+/// every call that engine makes.
+#[allow(dead_code)]
+pub fn host_base_evaluator() -> Option<Evaluator<'static>> {
+    let model = sd_model()?;
+    Some(Evaluator::new(model).with_time_zone_offset_minutes(SUITE_TIME_ZONE_OFFSET_MINUTES))
+}
+
+/// The typed node tree for a suite input file.
+#[allow(dead_code)]
+pub fn typed_input(input: &SuiteInput) -> Option<Value> {
+    let model = sd_model()?;
+    let builder = TreeBuilder { model };
+    match &input.document {
+        Document::Xml(d) => Some(builder.xml_resource(&d.root)),
+        Document::Json(v) => builder.json_resource(v),
+    }
+}
+
+/// An evaluation failure as the harness grades it.
+#[allow(dead_code)]
+pub fn eval_error(e: EvalError) -> EngineError {
+    engine_error(e)
+}
+
+/// Parse with a host service consulted for function names the R4 table lacks.
+#[allow(dead_code)]
+pub fn parse_with_host(
+    text: &str,
+    host: Option<&dyn HostServices>,
+) -> Result<frevo_path::Expression, EngineError> {
+    frevo_path::Expression::parse_with(text, frevo_path::ParseOptions::default(), host).map_err(
+        |e| EngineError::Diagnostic {
+            message: e.message().to_string(),
+            offset: Some(e.offset()),
+        },
+    )
+}
+
+/// The check pass against a named context type (or none), with an optional
+/// host service.
+#[allow(dead_code)]
+pub fn check_in_type(
+    expr: &frevo_path::Expression,
+    context_type: Option<&str>,
+    host: Option<&dyn HostServices>,
+) -> Result<TypeSet, EngineError> {
+    let model = sd_model().ok_or(EngineError::NotImplemented)?;
+    let request = CheckRequest {
+        root_resource_type: context_type.map(|_| "Resource"),
+        resource_type: context_type,
+        focus: match context_type {
+            Some(t) => CheckFocus::Context(t),
+            None => CheckFocus::None,
+        },
+    };
+    let mut checker = Checker::new(model).with_options(CheckOptions {
+        allow_polymorphic_names: false,
+        emit_sql_on_fhir_warning: false,
+    });
+    if let Some(h) = host {
+        checker = checker.with_host_services(h);
+    }
+    match checker.check_with_warnings(expr, &request) {
+        Ok(outcome) => Ok(outcome.types),
+        Err(CheckError::NotImplemented { .. }) => Err(EngineError::NotImplemented),
+        Err(CheckError::Failed {
+            message, offset, ..
+        }) => Err(EngineError::Diagnostic { message, offset }),
+    }
+}
+
+/// Evaluate with a host service, an application-context flag and an optional
+/// context path, on a clone of `base` (so the `trace()` log is the base's).
+///
+/// With a `context_path` the expression is evaluated once per node the path
+/// selects from `root`, with that node as focus and `$this`, and `root` as
+/// `%resource` and `%rootResource`.
+#[allow(dead_code)]
+pub fn evaluate_host_aware(
+    base: &Evaluator<'static>,
+    expr: &frevo_path::Expression,
+    root: Option<&Value>,
+    context_path: Option<&str>,
+    host: Option<&dyn HostServices>,
+    app_context: bool,
+) -> Result<Vec<Value>, EngineError> {
+    let mut ev: Evaluator<'_> = base.clone().with_application_context(app_context);
+    if let Some(h) = host {
+        ev = ev.with_host_services(h);
+    }
+    match (context_path, root) {
+        (Some(path), Some(resource)) => {
+            let context_expr = parse_with_host(path, None)?;
+            let items = base
+                .clone()
+                .evaluate(&context_expr, Some(resource))
+                .map_err(engine_error)?;
+            let mut out = Vec::new();
+            for item in &items {
+                out.extend(
+                    ev.evaluate_in(expr, Some(item), Some(resource), Some(resource))
+                        .map_err(engine_error)?,
+                );
+            }
+            Ok(out)
+        }
+        _ => ev.evaluate(expr, root).map_err(engine_error),
+    }
+}
+
 /// `FHIRPathTests.FHIRPathTestEvaluationServices`
 /// (`FHIRPathTests.java:51-117`), for the methods the **check pass** calls:
 /// `resolve_constant_type` raises, as upstream's does, so an unknown `%name`
@@ -601,7 +721,10 @@ impl HostServices for SuiteHostServices {
     }
 }
 
-/// The binding used while `frevo-path` has no engine.
+/// The binding used while `frevo-path` has no engine. Nothing constructs it
+/// now that every stage is bound; it is kept as the reference for what an
+/// unbound stage answers (`EngineError::NotImplemented`).
+#[allow(dead_code)]
 struct UnboundEngine;
 
 impl SuiteEngine for UnboundEngine {

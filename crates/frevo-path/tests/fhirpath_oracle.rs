@@ -1091,9 +1091,16 @@ fn every_case_reports_one_of_four_distinct_statuses() {
         115,
         "the documentFunctions cases must be reported as out of scope"
     );
+    // The engine's log is real now and is drained after every case: a case
+    // that never calls `trace(` must have an empty drained log, so one case's
+    // lines cannot leak into the next (clear-on-take, `path.utility.001`).
     assert!(
-        report.cases.iter().all(|c| c.trace_log.is_empty()),
-        "no case in the pinned suite that ran left an undrained trace log"
+        report
+            .cases
+            .iter()
+            .filter(|c| !c.expression.contains("trace("))
+            .all(|c| c.trace_log.is_empty()),
+        "no case that does not call trace() may carry a trace log: it leaked from an earlier case"
     );
 
     // `skipped-for-licence` is reachable and is not a pass. No case in the
