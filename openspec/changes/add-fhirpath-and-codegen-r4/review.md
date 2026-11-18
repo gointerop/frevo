@@ -1,4 +1,10 @@
-CHANGES_REQUESTED
+APPROVED
+
+Thirty-first review (commit `2ea4f92`, 2026-11-17) resolves both findings of the
+thirtieth review. Detail is in the dated section at the end. The earlier
+findings follow, kept for the record.
+
+## Thirtieth-review findings as raised (commit `caf3579`)
 
 Thirtieth review (commit `caf3579`, 2026-11-17). Finding 2 of the twenty-ninth
 review is resolved, and finding 1 is resolved in substance. Two details of the
@@ -2023,6 +2029,30 @@ MessageFormat's escaped single quote around the URL.
 **Stale text.** `grep` for "context-relative" and "resolves against the
 context item" across the change directory, `docs/` and `tasks/` finds
 nothing.
+
+**Registers.** `check-registries.sh` reports "registers agree" (22
+deviations, 15 debt entries). No `#### Scenario:` heading changed.
+
+## Thirty-first review - commit `2ea4f92` (2026-11-17)
+
+**Finding 1: resolved.** The quoted text is exact:
+- `{2}` is `FP_Boolean`, which is `http://hl7.org/fhirpath/System.Boolean`
+  (`TypeDetails.java:66`).
+- `{3}` is `TypeDetails.toString()` (`:474-476`): the `CollectionStatus` enum
+  name, `SINGLETON` (`ExpressionNode.java:363-364`, no `toString` override),
+  followed by the `HashSet` rendering of `getTypes()` (`:395-400`). That gives
+  `SINGLETON[http://hl7.org/fhirpath/System.String]`.
+- The template and prefix are `Messages.properties:371`.
+
+**Finding 2: resolved.** `Patient.check(active.exists(), 'm')` reaches the
+type failure:
+- `Patient` resolves at entry.
+- The condition is typed against the context item `Patient` (`:3267`).
+- `active` is a `Patient` element, and `exists()` types as `boolean`.
+- `checkParamTypes` then rejects it (`:3545`, `:3828-3830`).
+- With the check skipped, `patient-example.xml` has
+  `<active value="true"/>` (line 48), so evaluation returns the `Patient`, as
+  stated.
 
 **Registers.** `check-registries.sh` reports "registers agree" (22
 deviations, 15 debt entries). No `#### Scenario:` heading changed.
