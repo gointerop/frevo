@@ -608,13 +608,10 @@ fn a_time_literal_with_an_offset_is_an_execution_error() {
 fn every_unimplemented_function_is_unsupported_and_never_empty() {
     let p = patient();
     for text in [
-        "Patient.birthDate.lowBoundary()",
-        "Patient.birthDate.highBoundary()",
         "Patient.gender.memberOf('http://x')",
         "Patient.conformsTo('http://x')",
         "Patient.resolve()",
         "Patient.birthDate.comparable(Patient.birthDate)",
-        "Patient.name.given.precision()",
     ] {
         let feature = unsupported(text, Some(&p));
         assert!(feature.contains("function"), "{text}: {feature}");
@@ -660,8 +657,8 @@ fn an_unknown_environment_variable_is_an_error_and_never_empty() {
 fn an_unsupported_feature_deep_inside_navigation_still_surfaces() {
     // Navigation that reaches nothing must not hide the unsupported step after
     // it: the error is raised whether or not the focus is empty.
-    unsupported("{}.name.lowBoundary()", None);
-    unsupported("Patient.name.prefix.lowBoundary()", Some(&patient()));
+    unsupported("{}.name.comparable(1 'mg')", None);
+    unsupported("Patient.name.prefix.comparable(1 'mg')", Some(&patient()));
 }
 
 // ---------------------------------------------------------------------------
