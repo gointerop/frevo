@@ -314,7 +314,11 @@ The layer:
    meanings, so they mean what they mean in Java's default mode.
 5. **Rejections.** Reject, as an evaluation error naming the construct, every
    construct whose `regex` meaning would silently differ from Java's:
-   - the inline flags `U` and `u`
+   - the inline flags `U`, `u` and `x` (both engines have a verbose `x` mode
+     with whitespace and `#` comments, but their details are not guaranteed
+     identical, so it is rejected rather than trusted; this item was added by
+     the task-41a implementer, not in the original proposal, and is recorded
+     here on 2026-11-17)
    - `\v`
    - possessive quantifiers
    - POSIX-named `\p{…}` properties
