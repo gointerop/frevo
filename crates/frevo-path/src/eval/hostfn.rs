@@ -56,11 +56,12 @@ fn no_host_services(what: &str, offset: usize) -> EvalError {
 }
 
 /// A primitive the engine makes itself: the `CodeType` a type-name argument
-/// of a custom function becomes.
+/// of a custom function becomes, or a field of a quantity a boundary function
+/// copies.
 #[derive(Debug)]
-struct MadePrimitive {
-    type_name: &'static str,
-    value: String,
+pub(super) struct MadePrimitive {
+    pub(super) type_name: &'static str,
+    pub(super) value: String,
 }
 
 impl Node for MadePrimitive {

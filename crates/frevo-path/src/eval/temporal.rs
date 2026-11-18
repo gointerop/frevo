@@ -93,6 +93,18 @@ fn digits(text: &str) -> Option<i64> {
     text.parse().ok()
 }
 
+/// `Integer.parseInt`: an optional `+` or `-`, then at least one ASCII
+/// digit.
+fn java_parse_int(text: &str) -> Option<i64> {
+    let (negative, body) = match text.as_bytes().first() {
+        Some(b'-') => (true, &text[1..]),
+        Some(b'+') => (false, &text[1..]),
+        _ => (false, text),
+    };
+    let magnitude = digits(body)?;
+    Some(if negative { -magnitude } else { magnitude })
+}
+
 /// Days since 1970-01-01 of a proleptic Gregorian date (Howard Hinnant's
 /// `days_from_civil`).
 fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
@@ -174,9 +186,21 @@ impl Dt {
             hour = digits(fields.next()?)?;
             minute = digits(fields.next()?)?;
             precision = TemporalPrecision::Minute;
-            if let Some(s) = fields.next() {
-                second = digits(s)?;
-                precision = TemporalPrecision::Second;
+            match (fields.next(), zone) {
+                // `hh:mm:` straight before the offset: `BaseDateTimeType.parse`
+                // reads the seconds positionally, as `Integer.parseInt` of the
+                // two characters after the `:` (`:489`-`:491`), so they are the
+                // offset's first two and `+1` or `-0` is a second. A boundary at
+                // precision 14 builds such a text (`path.boundary.015`).
+                (Some(""), Some(z)) if fraction.is_none() => {
+                    second = java_parse_int(z.get(..2)?).filter(|s| (0..=60).contains(s))?;
+                    precision = TemporalPrecision::Second;
+                }
+                (Some(s), _) => {
+                    second = digits(s)?;
+                    precision = TemporalPrecision::Second;
+                }
+                (None, _) => {}
             }
             if fields.next().is_some() {
                 return None;

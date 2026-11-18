@@ -34,7 +34,11 @@
 //!   digits are appended to the result with no `e` before them, so `9.5e2`
 //!   has a low boundary at scale 0 of `92`;
 //! - an out-of-range precision (below 0 or above 16) is empty for a decimal
-//!   or an integer, but a quantity's value is not range-checked;
+//!   or an integer, but a quantity's value is not range-checked, and a text
+//!   cut to nothing is a quantity with no value (`path.boundary.012`);
+//! - precision 14 leaves `hh:mm:` before the offset, whose first two
+//!   characters `new DateTimeType` reads as the seconds (`path.boundary.015`,
+//!   in [`super::temporal`]);
 //! - a date or dateTime boundary is always a `dateTime` (`new DateTimeType`),
 //!   even where the text has no time;
 //! - a focus of a type the function does not take is empty: the
@@ -46,11 +50,17 @@
 //! differ from what `path.boundary.001`, `.004`, `.005`, `.006`, `.007` and
 //! `.009` expect; the conflict is recorded in `tasks/blockers.md`.
 
-use crate::seam::value::{Decimal, PartialDateTime, PartialTime, TemporalPrecision, Value};
+use std::sync::Arc;
+
+use crate::seam::node::{Node, NodeError};
+use crate::seam::value::{
+    Decimal, PartialDateTime, PartialTime, Primitive, TemporalPrecision, Value,
+};
 use crate::syntax::ast::{Function, NodeId};
 
 use super::arith::too_wide;
-use super::operand::{has_type, int_of, qty_of, text_of};
+use super::hostfn::MadePrimitive;
+use super::operand::{Qty, has_type, int_of, qty_of, text_of};
 use super::temporal::Dt;
 use super::{Context, EvalError, Run};
 
@@ -282,19 +292,21 @@ fn decimal_type(s: &str, at: usize) -> Result<Decimal, EvalError> {
     if let Some(d) = Decimal::parse(s) {
         return Ok(d);
     }
-    // `applyPrecision` can cut the text to nothing, or to a bare sign, which
-    // `BigDecimal` rejects outright.
-    if !s.chars().any(|c| c.is_ascii_digit()) {
-        return Err(EvalError::execution(
-            format!("the boundary \"{s}\" is not a decimal"),
-            at,
-        ));
-    }
+    // A character `BigDecimal` does not read is named, whether or not a digit
+    // came before it: `9` rounded up is `:`, and `-:` fails on the `:`.
     if let Some(bad) = s
         .chars()
         .find(|c| !(c.is_ascii_digit() || matches!(c, '.' | 'e' | 'E' | '+' | '-')))
     {
         return Err(not_a_decimal_character(bad, at));
+    }
+    // `applyPrecision` can cut the text to a bare sign, which `BigDecimal`
+    // rejects outright.
+    if !s.chars().any(|c| c.is_ascii_digit()) {
+        return Err(EvalError::execution(
+            format!("the boundary \"{s}\" is not a decimal"),
+            at,
+        ));
     }
     // A sign after the first character with no exponent mark before it, as
     // `1.45000000-3` has: `BigDecimal` names the sign.
@@ -306,6 +318,83 @@ fn decimal_type(s: &str, at: usize) -> Result<Decimal, EvalError> {
     // Every character is one `BigDecimal` reads: a value wider than this
     // decimal type holds.
     Err(too_wide(at))
+}
+
+/// `base.copy()` with `setProperty("value", <a null DecimalType>)`: the
+/// quantity with every field but its value. A [`Value::Quantity`] always has a
+/// value, so the result is a `Quantity` node: an element's copy hides only its
+/// `value`, a literal's is built from its unit, code and system.
+fn valueless_quantity(base: &Value, q: Qty) -> Value {
+    let node = match base {
+        Value::Node(node) => ValuelessQuantity::Copy(Arc::clone(node)),
+        _ => ValuelessQuantity::Literal(q),
+    };
+    Value::Node(Arc::new(node))
+}
+
+/// A quantity whose value is null.
+#[derive(Debug)]
+enum ValuelessQuantity {
+    /// A `Quantity` (or `Age`, `Duration`, ...) element, less its `value`.
+    Copy(Arc<dyn Node>),
+    /// A quantity literal's fields.
+    Literal(Qty),
+}
+
+impl ValuelessQuantity {
+    fn literal_field(q: &Qty, name: &str) -> Option<Value> {
+        let (type_name, value) = match name {
+            "unit" => ("string", q.unit.as_ref()),
+            "system" => ("uri", q.system.as_ref()),
+            "code" => ("code", q.code.as_ref()),
+            _ => return None,
+        };
+        value.map(|v| {
+            Value::Node(Arc::new(MadePrimitive {
+                type_name,
+                value: v.clone(),
+            }))
+        })
+    }
+}
+
+impl Node for ValuelessQuantity {
+    fn type_name(&self) -> &str {
+        match self {
+            Self::Copy(node) => node.type_name(),
+            Self::Literal(_) => "Quantity",
+        }
+    }
+
+    fn is_resource(&self) -> bool {
+        false
+    }
+
+    fn children(&self, name: &str) -> Result<Vec<Value>, NodeError> {
+        match self {
+            Self::Copy(_) if name == "value" => Ok(Vec::new()),
+            Self::Copy(node) => node.children(name),
+            Self::Literal(q) => Ok(Self::literal_field(q, name).into_iter().collect()),
+        }
+    }
+
+    fn all_children(&self) -> Result<Vec<(String, Value)>, NodeError> {
+        match self {
+            Self::Copy(node) => Ok(node
+                .all_children()?
+                .into_iter()
+                .filter(|(name, _)| name != "value")
+                .collect()),
+            Self::Literal(q) => Ok(["unit", "system", "code"]
+                .into_iter()
+                .filter_map(|name| Self::literal_field(q, name).map(|v| (name.to_string(), v)))
+                .collect()),
+        }
+    }
+
+    fn primitive(&self) -> Option<Primitive> {
+        None
+    }
 }
 
 /// `DateTimeUtil.splitTimezone`: `(value, zone)`.
@@ -550,6 +639,11 @@ impl Run<'_> {
             // No range check on the precision here upstream.
             let q = qty_of(base)?;
             let s = decimal_boundary(q.value.as_deref(), precision.unwrap_or(8))?;
+            // `new DecimalType(s)` of a blank text is a null value
+            // (`DecimalType.setValueAsString`), and the copy keeps no value.
+            if s.trim().is_empty() {
+                return Ok(vec![valueless_quantity(base, q)]);
+            }
             return Ok(vec![q.to_value(decimal_type(&s, at)?)]);
         }
         // `makeException(...)` built and not thrown.

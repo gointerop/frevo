@@ -907,7 +907,7 @@ checkpoint because it changes what a gate measures.
   and non-UCUM-system behaviours.
   Satisfies `path.quantity.001` through `path.quantity.018`.
 
-- [ ] **45. Implement the boundary functions.** `lowBoundary`, `highBoundary` and
+- [x] **45. Implement the boundary functions.** `lowBoundary`, `highBoundary` and
   `precision` as the pinned engine computes them: decimal boundaries edited as
   text, with **no carry** (a `9` rounded up is `:` and the result is an
   execution error), **no borrow normalisation** (`10.lowBoundary(0)` is `09`),
