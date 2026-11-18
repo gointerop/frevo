@@ -135,7 +135,7 @@ impl Run<'_> {
 
     /// `isKnownType(tn)` (`FHIRPathEngine.java:1904`) for a name that always
     /// contains a `.` -- `funcOfType` builds it as `namespace.name`.
-    fn is_known_type(&self, tn: &str) -> bool {
+    pub(super) fn is_known_type(&self, tn: &str) -> bool {
         let parts: Vec<&str> = tn.split('.').collect();
         let [namespace, name] = parts.as_slice() else {
             return false;

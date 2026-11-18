@@ -46,6 +46,7 @@ mod strext;
 mod strfn;
 mod strregex;
 mod temporal;
+mod types;
 
 #[cfg(test)]
 mod tests;
@@ -102,6 +103,12 @@ pub struct Evaluator<'m> {
     zone_minutes: i32,
     /// `setDoImplicitStringConversion`: off, as both upstream wrappers leave it.
     implicit_string_conversion: bool,
+    /// `doNotEnforceAsSingletonRule`, inverted: `as` raises for a focus of
+    /// more than one item. Enforced unless a caller says otherwise.
+    enforce_as_singleton: bool,
+    /// `doNotEnforceAsCaseSensitive`, inverted: `as` compares type names
+    /// exactly. Enforced unless a caller says otherwise.
+    enforce_as_case_sensitive: bool,
 }
 
 impl<'m> Evaluator<'m> {
@@ -111,7 +118,20 @@ impl<'m> Evaluator<'m> {
             model,
             zone_minutes: 0,
             implicit_string_conversion: false,
+            enforce_as_singleton: true,
+            enforce_as_case_sensitive: true,
         }
+    }
+
+    /// The two rules `as` enforces: that its focus is a singleton, and that
+    /// the type name matches in case. Both are on by default, as in the
+    /// pinned engine (`setDoNotEnforceAsSingletonRule` and
+    /// `setDoNotEnforceAsCaseSensitive` both start `false`).
+    #[must_use]
+    pub fn with_as_rules(mut self, singleton: bool, case_sensitive: bool) -> Self {
+        self.enforce_as_singleton = singleton;
+        self.enforce_as_case_sensitive = case_sensitive;
+        self
     }
 
     /// `FHIRPathEngine.setDoImplicitStringConversion`: when on, the string
@@ -156,6 +176,8 @@ impl<'m> Evaluator<'m> {
             model: self.model,
             expr,
             implicit_string_conversion: self.implicit_string_conversion,
+            enforce_as_singleton: self.enforce_as_singleton,
+            enforce_as_case_sensitive: self.enforce_as_case_sensitive,
         }
         .execute(context, focus_collection, expr.root(), true)
     }
@@ -166,6 +188,8 @@ struct Run<'r> {
     model: &'r dyn Model,
     expr: &'r Expression,
     implicit_string_conversion: bool,
+    enforce_as_singleton: bool,
+    enforce_as_case_sensitive: bool,
 }
 
 impl Run<'_> {
@@ -233,12 +257,13 @@ impl Run<'_> {
                     work = decided;
                 } else if matches!(op, Operation::Is | Operation::As) {
                     // `executeTypeName` reads the right operand as a type
-                    // name, not as an expression; the type operators are a
-                    // later task's.
-                    return Err(EvalError::unsupported(
-                        format!("the operator {}", op.to_code()),
-                        last_node.op_start(),
-                    ));
+                    // name, not as an expression.
+                    let tn = self.type_name_operand(next_id);
+                    work = if op == Operation::Is {
+                        self.op_is(&work, &tn)
+                    } else {
+                        self.op_as(&work, &tn, last)?
+                    };
                 } else {
                     let right = self.execute(context, focus, next_id, true)?;
                     work = self.operate(&work, op, &right, last)?;
@@ -329,6 +354,9 @@ impl Run<'_> {
             Some(Function::Select) => self.func_select(context, focus, id),
             Some(Function::Repeat) => self.func_repeat(context, focus, id),
             Some(Function::OfType) => self.func_of_type(focus, id),
+            Some(Function::Is) => self.func_is(focus, id),
+            Some(Function::As) => self.func_as(focus, id),
+            Some(Function::Type) => Ok(self.func_type(focus)),
             Some(Function::Single) => self.func_single(focus, id),
             // `funcFirst`, `funcLast` and `funcTail`: one item at either end,
             // or everything after the first, with no error for a short focus.

@@ -113,7 +113,10 @@ conversion — `src/eval/convert.rs` (`funcToInteger`, `funcToDecimal`,
 `funcToString`, `funcToBoolean`, `funcToQuantity`, `funcToDateTime`,
 `funcToTime`, the `funcIsX` family, `parseQuantityString`, and
 `Utilities.java`'s `isInteger`, `isDecimal` and `checkDecimal` and
-`RegexConstants.java`'s `DATE_TIME_REGEX`). Each file
+`RegexConstants.java`'s `DATE_TIME_REGEX`), and the type operators and
+reflection — `src/eval/types.rs` (`executeTypeName`, `opIs`, `opAs`,
+`compareTypeNames`, `isKnownType`, `funcIs`, `funcAs`, `funcType` and
+`FHIRPathUtilityClasses.ClassTypeInfo`). Each file
 carries the required header naming the upstream path, the pinned SHA and what
 was modified. Every
 other row is updated by the change that first ports into that crate;
