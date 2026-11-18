@@ -2335,8 +2335,19 @@ The engine SHALL resolve the environment variables `FHIRPathEngine` resolves int
   `isGuardOrOtherImpliesBad`, `isGuardOrOtherImpliesNoParensBad`,
   `isGuardOrInnerImplies` and `isGuardOrInnerImpliesBad` — are evaluated with
   `Observation.effective` as the context over `observation-example.xml`
-- **THEN** each yields its stated output, which requires `%resource` to resolve
-  to the enclosing `Observation` while the focus is an `Observation.effective`
+- **THEN** each is graded as HAPI's own run grades it
+  (`oracles/fhirpath/hapi-8.12.0-results.json:1057-1061`): `isGuardOrOtherImpliesBad`
+  and `isGuardOrOtherImpliesNoParensBad` are `passed`; `isGuardAndOtherImplies`
+  and `isGuardOtherAndImplies` are `failed` (parity under `path.oracle.012`),
+  because the check rejects `$this.toString()` first: an `is` guard does **not**
+  narrow the type the other operand is checked against (`path.check.005`;
+  `executeType` has no guard logic, `FHIRPathEngine.java:3631`);
+  `isGuardOrInnerImplies` and `isGuardOrInnerImpliesBad` are
+  `hapi-cannot-pass` and are graded on Frevo's own run (`path.oracle.016`)
+- **AND** the `%resource` resolution those cases exist for is shown directly:
+  `%resource.status` evaluated over `observation-example.xml` with the
+  `Observation` as the focus yields `final`, and the check types it against the
+  context's resource type, `Observation`, so it passes
 - **AND** the grading selector is those six cases; the `testDollarResource`
   group this scenario previously named is commented out of the pinned suite and
   is not one of the 1,191
@@ -2356,6 +2367,14 @@ The engine SHALL resolve the environment variables `FHIRPathEngine` resolves int
 
 - **WHEN** `%rootResource` is evaluated with a contained resource as the focus
 - **THEN** the result is the enclosing resource, not the contained one
+- **AND** the resource is identified by `%rootResource.type().name` or
+  `%rootResource.id`; `%rootResource.resourceType` is **empty**, not the type
+  name: HAPI has no `resourceType` child (`getChildrenByName` is
+  `item.listChildrenByName(name, false)`, `FHIRPathEngine.java:255-278`, and
+  the R4 `Resource` declares only `id`, `meta`, `implicitRules` and `language`).
+  The static check rejects it first ("The name 'resourceType' is not valid for
+  any of the possible types: [...Patient]"), so the empty result is seen with
+  the check skipped
 
 #### Scenario: [path.env.009] `%rootResource` with no root resource is an execution error
 
@@ -2370,6 +2389,9 @@ The engine SHALL resolve the environment variables `FHIRPathEngine` resolves int
 
 - **WHEN** `%context` is evaluated with a `Patient.name` as the starting context
 - **THEN** the result is that `HumanName`
+- **AND** `%context.resourceType` is likewise empty (no `resourceType` child,
+  `FHIRPathEngine.java:255-278`) and rejected by the check with "The name
+  'resourceType' is not valid ..."; identify the node with `%context.type().name`
 
 #### Scenario: [path.env.011] an unknown environment variable with no host service is an execution error
 
@@ -2406,6 +2428,15 @@ The engine SHALL resolve the environment variables `FHIRPathEngine` resolves int
     is offering the host the chance to supply a value first (`path.env.016`)
   - **implicit-after** — the engine navigated a named property, found nothing,
     and is offering the host the chance to supply a value (`path.env.017`)
+- **AND** the name the host sees differs by stage. The **check** pass passes an
+  explicit `%name` to `resolveConstantType` **with** its `%`
+  (`FHIRPathEngine.java:3173`, `s` unstripped) and passes the no-value name
+  (`:1586`) and the evaluation pass's implicit names (`:3184`, `:3214`)
+  **without** one; the **evaluation** pass strips the `%` before calling
+  `resolveConstant` (`:1783`, `s.substring(1)`). So a host keyed `owned` is asked
+  for `%owned` by the check, and for `owned` by evaluation: such a host fails the
+  **check** of `%owned` with "Invalid FHIRPath Constant %owned" and answers it at
+  evaluation. A host must accept both spellings in the type call
 - **AND** the no-value mode is **not** "resolved for its type with no value
   wanted": an explicit `%name` in the check pass is reported as **explicit**,
   not as no-value, so a host service that keys its type answers off the mode
@@ -2427,6 +2458,11 @@ The engine SHALL resolve the environment variables `FHIRPathEngine` resolves int
   implicit-before answer for `name` is a non-empty collection
 - **THEN** the result is the host service's collection, and the element is
   **never navigated**: the host constant shadows the real property
+- **AND** the host answer replaces only the **leading name**; the rest of the
+  expression runs on it. With a host answering a string for `Patient`, the
+  expression `Patient.name` yields an **empty** collection, because `.name` is
+  navigated on that string (`execute`, `FHIRPathEngine.java:3181-3190`), and the
+  expression `Patient` alone yields the host's string
 - **AND** the host service is asked before any navigation and before the
   leading-type-name special case that matches a resource type, at the leading
   name of the expression **and** at the leading name of every argument the
@@ -2449,6 +2485,13 @@ The engine SHALL resolve the environment variables `FHIRPathEngine` resolves int
   resource is evaluated with a non-null application context and a host service
 - **THEN** navigation runs first and yields empty, and only then is the host
   service asked with the implicit-after mode, whose answer becomes the result
+  (`FHIRPathEngine.java:3214`)
+- **AND** this is observable only with a host that **differentiates the
+  modes**: a host that answers non-empty for the implicit-before mode as well is
+  asked first and its answer is returned at once (`:3184-3190`), so the
+  implicit-after mode is never reached. A test of this scenario uses a host that
+  answers empty for implicit-before and non-empty for implicit-after, and
+  records the modes it was asked: `[ImplicitBefore, ImplicitAfter]`
 - **WHEN** the same expression is evaluated with the **same** host service but a
   **null** application context
 - **THEN** neither implicit mode fires at all, the host service is not consulted
