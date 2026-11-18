@@ -2336,12 +2336,12 @@ The engine SHALL resolve the environment variables `FHIRPathEngine` resolves int
   `isGuardOrInnerImplies` and `isGuardOrInnerImpliesBad` — are evaluated with
   `Observation.effective` as the context over `observation-example.xml`
 - **THEN** each is graded as HAPI's own run grades it
-  (`oracles/fhirpath/hapi-8.12.0-results.json:1057-1061`): `isGuardOrOtherImpliesBad`
+  (`oracles/fhirpath/hapi-8.12.0-results.json:1057-1062`): `isGuardOrOtherImpliesBad`
   and `isGuardOrOtherImpliesNoParensBad` are `passed`; `isGuardAndOtherImplies`
   and `isGuardOtherAndImplies` are `failed` (parity under `path.oracle.012`),
   because the check rejects `$this.toString()` first: an `is` guard does **not**
   narrow the type the other operand is checked against (`path.check.005`;
-  `executeType` has no guard logic, `FHIRPathEngine.java:3631`);
+  `executeType` has no guard logic and `toString` is checked against the unnarrowed focus type, `FHIRPathEngine.java:3639`);
   `isGuardOrInnerImplies` and `isGuardOrInnerImpliesBad` are
   `hapi-cannot-pass` and are graded on Frevo's own run (`path.oracle.016`)
 - **AND** the `%resource` resolution those cases exist for is shown directly:
@@ -2492,6 +2492,13 @@ The engine SHALL resolve the environment variables `FHIRPathEngine` resolves int
   implicit-after mode is never reached. A test of this scenario uses a host that
   answers empty for implicit-before and non-empty for implicit-after, and
   records the modes it was asked: `[ImplicitBefore, ImplicitAfter]`
+- **AND** the static **check** rejects such an expression first: a leading name
+  that is not an element of the focus type resolves to no type and raises
+  `FHIRPATH_UNKNOWN_NAME` (`FHIRPathEngine.java:1587-1593`), and the check
+  consults the host only when there is **no focus type at all**
+  (`atEntry && focus == null`, `:1585-1586`, the no-value mode). So the
+  implicit-after path is reachable only with the check skipped, as in
+  `path.env.007` to `.014`
 - **WHEN** the same expression is evaluated with the **same** host service but a
   **null** application context
 - **THEN** neither implicit mode fires at all, the host service is not consulted
