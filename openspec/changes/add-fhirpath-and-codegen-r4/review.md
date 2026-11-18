@@ -1,4 +1,71 @@
-APPROVED
+CHANGES_REQUESTED
+
+Twenty-sixth review (commit `e3a8ed0`, 2026-11-17). `ENGINE` is
+`org.hl7.fhir.r4/.../fhirpath/FHIRPathEngine.java` and `RT` is
+`org.hl7.fhir.utilities/.../regex/RegexTimeout.java`, both at `73c432b5`. The
+HAPI edge behaviour now stated for `matches`, `matchesFull` and
+`replaceMatches` is correct (dated section). The findings concern how Frevo's
+regex departures are recorded and specified. The twenty-fifth review was
+`APPROVED`; earlier findings follow, kept for the record.
+
+1. **Frevo's silent wrong-answer regex differences are recorded only as debt,
+   not as deviations.**
+   - `DEBT-0015` (`docs/tech-debt.md:388-418`) lists cases where Frevo
+     returns a **different answer** from HAPI:
+     - `$` without `(?m)` before a final line terminator;
+     - Unicode `(?i)` folding (U+212A against `k`);
+     - `.` in `replaceMatches` when the pattern has an inline flag group;
+     - `\U` and similar escapes that Java rejects and Frevo accepts (HAPI
+       errors, Frevo answers);
+     - a lone surrogate treated as an ordinary character;
+     - and "a pattern HAPI times out on gets an answer".
+   - Constitution section 1 makes `docs/deviations.md` "the only exception
+     mechanism" and says "an undocumented difference from HAPI is a bug". Its
+     debt rule covers the flag *not built* where Frevo **matches** HAPI. It
+     does not cover a difference Frevo ships.
+   - ADR 0005 itself labels each of these a "DEV candidate" (Consequences).
+   - DEV-0023 mentions them only as "the remaining corners are `DEBT-0015`".
+     Its **Debt** field says `none`, and `DEBT-0015`'s Origin does not cite
+     DEV-0023. So `check-registries.sh` rule 4 (reciprocity) cannot see the
+     link, and passes.
+   - Enumerate these differences in DEV-0023's HAPI-behaviour and
+     chosen-behaviour fields. Set **Debt** to `DEBT-0015`, and add DEV-0023 to
+     `DEBT-0015`'s Origin.
+
+2. **DEV-0023 calls an unbalanced parenthesis a departure. It is not one.**
+   - `Pattern.compile` raises `PatternSyntaxException`. Inside
+     `executeWithTimeout` that surfaces as an `ExecutionException`, which is
+     rethrown as `RuntimeException` (`RT:28-31`).
+   - So HAPI also fails evaluation for `'a'.matches('(')`. Both sides fail.
+     The entry's "These are departures from HAPI, which accepts them" is
+     wrong for that item.
+   - Move it out of the departure list, or state that it is parity.
+
+3. **The scenarios do not specify Frevo's regex-layer behaviour, so no test
+   can be written from them.**
+   - `path.string.008`-`.010` state HAPI's edges, and only "a pattern Java
+     cannot compile raises an execution error". None of the following
+     appears in any scenario. Each is only in `strregex.rs`, ADR 0005 or the
+     DEV text:
+     - **The rejections.** `'aaa'.matches('a*+')`, `'\u000b'.matches('\\v')`,
+       `(?U)`, `(?u)`, `(?x)`, `'a'.matches('\\p{Alpha}')`, and
+       `'a'.matches('[a--b]')` are execution errors in Frevo and answers in
+       HAPI.
+     - **The exact rewrites.** `\d`, `\w`, `\s` and `\b` are ASCII:
+       `'é'.matches('\\w')` is `false`, as in Java.
+     - **The Java replacement expander.** `$1a` is group 1 then `a`; a missing
+       group is an error; `\$` is a literal `$`.
+     - **Empty-match iteration.** `'abc'.replaceMatches('b*', '-')` is
+       `-a--c-`. `strregex.rs:503` already asserts it.
+     - **The limits.** `size_limit` is 2 MiB and `nest_limit` is 100. A
+       pattern over either is an execution error.
+   - Add scenarios (differential-only where no suite case grades them) with
+     these or similar concrete cases.
+   - **ADR consistency.** Rejecting `(?x)` is not in ADR 0005's Decision
+     item 5, which lists only `U` and `u`. Either amend the ADR on its
+     `chore/` branch, or drop `(?x)` from the rejection list.
+
+## Twenty-fifth review header as issued (commit `14524ee`)
 
 Twenty-fifth review (commit `14524ee`, 2026-11-17) resolves the one finding of
 the twenty-fourth review. Detail is in the dated section at the end. The earlier
@@ -1529,3 +1596,72 @@ clause (`spec.md:1586`). Task 41 now says "taking at most one argument".
 
 **Registers.** `check-registries.sh` reports "registers agree" (20
 deviations, 14 debt entries).
+
+## Twenty-sixth review - commit `e3a8ed0` (2026-11-17)
+
+**Suite and results.** The suite has 23 regex cases:
+- 16 in `testMatches` (`tests-fhir-r4.xml:762-778`), including the five
+  `matchesFull` cases;
+- 7 in `testReplaceMatches` (`:782-788`).
+
+`hapi-8.12.0-results.json` has all 23 `passed` (`testReplaceMatches` at
+`:408-414`; `testMatches` has 16 rows, none failed). "HAPI passes all of
+them" is right.
+
+**`funcMatches` (`ENGINE:5683-5708`): every stated edge is correct.**
+- An empty focus or pattern collection gives empty (`:5688`).
+- An empty pattern string or a focus of more than one item gives `false`,
+  through the else arm (`:5705-5706`).
+- An empty focus string gives `false` (`:5693-5694`).
+- `1.matches('1')` gives empty, because no branch adds anything.
+- `'abc'.matches(1)` uses `convertToString`, so the pattern is `1` and the
+  result is `false`.
+- `(?s)` is the prefix and the call is `RegexTimeout.find` (`:5698`).
+- A timeout raises `Timeout evaluating regex: ` + the pattern (`:5699-5700`).
+- The default is `regexTimeoutMillis = 500` (`:186`).
+
+**`funcMatchesFull` (`:5711-5737`): correct.**
+- There is no empty branch. `{}.matchesFull('b')` falls to the else arm and
+  gives `false` (`:5733-5734`).
+- `'abc'.matchesFull({})` and `'abc'.matchesFull('')` give `false`, because
+  `sw` is `""`.
+- `''.matchesFull('a')` gives `false`.
+- `1.matchesFull('1')` gives empty.
+- The call is `Pattern.matches` with `(?s)` (`:5725`; `RT:55-56`).
+
+**`funcReplaceMatches` (`:4865-4889`): correct.**
+- An empty collection argument gives empty (`:4872`).
+- An empty regex string gives the focus string unchanged, through the else
+  arm (`:4885-4886`), which matches `testReplaceMatches2`.
+- A multi-item focus also takes that arm and returns the **first** item's
+  string, with no error.
+- A non-string focus gives empty.
+- There is no `(?s)` (`:4879`).
+- The call is `Matcher.replaceAll` (`RT:103-104`).
+- One nuance for the timeout: `replaceMatches` calls the three-argument
+  `RegexTimeout.replaceAll`, so it always uses `DEFAULT_TIMEOUT` = 500
+  (`RT:18`, `:90-91`), never `regexTimeoutMillis`. DEV-0023 cites `:186` for
+  all three functions. That is accurate for the default, but not for the
+  setter. ADR 0005 states it correctly.
+
+**DEV-0023 framing.**
+- The `matchesFull`-on-empty half is a genuine specification-against-HAPI
+  case, resolved for HAPI. It is legitimate.
+- The construct rejections, the limits and the absent timeout are Frevo
+  departures from HAPI. The owner accepted the `regex` crate in ADR 0005, and
+  that ADR lists them as DEV candidates. So they belong in
+  `docs/deviations.md`, with the corners Frevo cannot make exact in debt as
+  well. Neither register alone is enough (finding 1).
+- Unbalanced parenthesis: finding 2.
+
+**Blockers entry.** It is a status note plus a request to write the regex
+limits into `design.md`, which the proposer may not write. That is
+appropriate.
+
+**Registers and counts.**
+- The preamble says twenty-one and lists DEV-0023 as pending.
+- `check-registries.sh` reports "registers agree" (21 deviations, 15 debt
+  entries). That result is blind to finding 1.
+- No `#### Scenario:` heading changed. `path` has 363 headings.
+
+**Stale text.** None found for these three scenarios.
