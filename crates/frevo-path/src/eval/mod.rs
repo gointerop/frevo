@@ -48,11 +48,16 @@ mod strfn;
 mod strregex;
 mod temporal;
 mod types;
+mod utility;
 
 #[cfg(test)]
 mod env_tests;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod utility_tests;
+
+use std::sync::{Arc, Mutex};
 
 pub use error::EvalError;
 
@@ -134,9 +139,12 @@ fn is_system_variable(name: &str) -> bool {
 
 /// Evaluates parsed expressions against a model.
 ///
-/// An `Evaluator` holds no per-evaluation state, so one can serve any number
-/// of evaluations, and so can one [`Expression`]: neither is mutated.
-#[derive(Clone, Copy)]
+/// An `Evaluator` holds one piece of state, the `trace()` log, which
+/// [`Evaluator::evaluate`] starts afresh and [`Evaluator::take_log`] empties; a
+/// clone shares it. Nothing else is kept between evaluations, so one evaluator
+/// can serve any number of them, and so can one [`Expression`]: neither is
+/// mutated.
+#[derive(Clone)]
 pub struct Evaluator<'m> {
     model: &'m dyn Model,
     /// The evaluation time zone, minutes east of UTC (`DEV-0018`).
@@ -156,6 +164,8 @@ pub struct Evaluator<'m> {
     /// constant modes are gated on this and not on the host service
     /// (`FHIRPathEngine.java:3184`, `:3213`).
     app_context: bool,
+    /// The `trace()` log (`FHIRPathEngine.log`).
+    log: Arc<Mutex<String>>,
 }
 
 impl<'m> Evaluator<'m> {
@@ -169,7 +179,29 @@ impl<'m> Evaluator<'m> {
             enforce_as_case_sensitive: true,
             host: None,
             app_context: false,
+            log: Arc::new(Mutex::new(String::new())),
         }
+    }
+
+    /// `hasLog()` (`FHIRPathEngine.java:6687`): whether a `trace()` has
+    /// written to the log since the last evaluation started or the log was
+    /// taken.
+    pub fn has_log(&self) -> bool {
+        !self.lock_log().is_empty()
+    }
+
+    /// `takeLog()` (`FHIRPathEngine.java:6692`): the log, which is **emptied**
+    /// by taking it. A second call with no `trace()` between is the empty
+    /// string, which is what stops one case's lines leaking into the next
+    /// when one evaluator serves many.
+    pub fn take_log(&self) -> String {
+        std::mem::take(&mut *self.lock_log())
+    }
+
+    fn lock_log(&self) -> std::sync::MutexGuard<'_, String> {
+        self.log
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
     /// Install a host service (`setHostServices`). Without one an unknown
@@ -258,7 +290,10 @@ impl<'m> Evaluator<'m> {
             vars: None,
         };
         let _zone = temporal::ZoneGuard::set(self.zone_minutes);
+        // Every `evaluate` overload starts `log = new StringBuilder()`.
+        self.lock_log().clear();
         Run {
+            log: &self.log,
             model: self.model,
             expr,
             implicit_string_conversion: self.implicit_string_conversion,
@@ -283,6 +318,7 @@ struct Run<'r> {
     enforce_as_case_sensitive: bool,
     host: Option<&'r dyn HostServices>,
     app_context: bool,
+    log: &'r Mutex<String>,
     /// `%context`: the node evaluation started from.
     base: Option<&'r Value>,
     /// `%resource`.
@@ -428,6 +464,11 @@ impl Run<'_> {
             Some(Function::Select) => self.func_select(context, focus, id),
             Some(Function::Repeat) => self.func_repeat(context, focus, id),
             Some(Function::OfType) => self.func_of_type(focus, id),
+            Some(Function::Trace) => self.func_trace(context, focus, id),
+            Some(Function::Check) => self.func_check(context, focus, id),
+            Some(Function::Aggregate) => self.func_aggregate(context, focus, id),
+            Some(Function::Sort) => self.func_sort(context, focus, id),
+            Some(Function::Extension) => self.func_extension(context, focus, id),
             Some(Function::Is) => self.func_is(focus, id),
             Some(Function::As) => self.func_as(focus, id),
             Some(Function::Type) => Ok(self.func_type(focus)),

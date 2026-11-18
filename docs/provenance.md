@@ -119,7 +119,10 @@ reflection — `src/eval/types.rs` (`executeTypeName`, `opIs`, `opAs`,
 `FHIRPathUtilityClasses.ClassTypeInfo`), the environment variables —
 `src/eval/env.rs` (`resolveConstant` in both forms, `isSystemVariable`, the
 name-step overload of `execute` with its two implicit host-service lookups,
-`funcDefineVariable` and `ExecutionContext.setDefinedVariable`) — and the
+`funcDefineVariable` and `ExecutionContext.setDefinedVariable`), the utility
+functions — `src/eval/utility.rs` (`log`, `hasLog`, `takeLog`, `funcTrace`,
+`funcCheck`, `funcAggregate`, `funcExtension`, `funcSort`,
+`FHIRPathBaseSorter` and `convertToBoolean`) — and the
 server-facing host service, `src/seam/server.rs`, from `hapi-fhir`'s
 `FhirPathR4.setEvaluationContext` at `7ab4c7c7c49281496faa1b3c2498a652457669ae`.
 Each file

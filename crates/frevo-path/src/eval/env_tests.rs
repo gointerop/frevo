@@ -48,7 +48,7 @@ impl Node for TestNode {
     }
 }
 
-fn node(type_name: &str, is_resource: bool, children: Vec<(&str, Value)>) -> Value {
+pub(super) fn node(type_name: &str, is_resource: bool, children: Vec<(&str, Value)>) -> Value {
     Value::Node(Arc::new(TestNode {
         type_name: type_name.to_string(),
         is_resource,
@@ -60,7 +60,7 @@ fn node(type_name: &str, is_resource: bool, children: Vec<(&str, Value)>) -> Val
     }))
 }
 
-fn prim(type_name: &str, lexical: &str) -> Value {
+pub(super) fn prim(type_name: &str, lexical: &str) -> Value {
     Value::Node(Arc::new(TestNode {
         type_name: type_name.to_string(),
         is_resource: false,
@@ -74,7 +74,7 @@ fn prim(type_name: &str, lexical: &str) -> Value {
     }))
 }
 
-struct StubModel;
+pub(super) struct StubModel;
 
 impl Model for StubModel {
     fn is_type(&self, type_name: &str) -> bool {
@@ -122,11 +122,15 @@ fn patient() -> Value {
 
 /// Answers from a table and records every question with its mode.
 #[derive(Default)]
-struct Host {
+pub(super) struct Host {
     constants: Vec<(String, Vec<String>)>,
     /// When set, the constants are answered in this mode only.
     only_mode: Option<ConstantMode>,
     asked: Mutex<Vec<(String, ConstantMode)>>,
+    /// What `log` answers; `true` suppresses the engine's own buffer.
+    pub(super) log_answer: bool,
+    /// The `name: item count` of every `log` call.
+    pub(super) logged: Mutex<Vec<String>>,
 }
 
 impl Host {
@@ -136,8 +140,15 @@ impl Host {
                 name.to_string(),
                 values.iter().map(|v| (*v).to_string()).collect(),
             )],
-            only_mode: None,
-            asked: Mutex::new(Vec::new()),
+            ..Host::default()
+        }
+    }
+
+    /// A host service whose `log` answers `answer`.
+    pub(super) fn logging(answer: bool) -> Self {
+        Host {
+            log_answer: answer,
+            ..Host::default()
         }
     }
 
@@ -212,12 +223,16 @@ impl HostServices for Host {
     fn param_is_type(&self, _name: &str, _index: usize) -> bool {
         false
     }
-    fn log(&self, _name: &str, _focus: &[Value]) -> bool {
-        false
+    fn log(&self, name: &str, focus: &[Value]) -> bool {
+        self.logged
+            .lock()
+            .expect("not poisoned")
+            .push(format!("{name}/{}", focus.len()));
+        self.log_answer
     }
 }
 
-fn describe(value: &Value) -> String {
+pub(super) fn describe(value: &Value) -> String {
     match value {
         Value::String(s) => format!("string:{s}"),
         Value::Integer(i) => format!("integer:{i}"),
@@ -231,7 +246,7 @@ fn describe(value: &Value) -> String {
 }
 
 fn run(
-    evaluator: Evaluator<'_>,
+    evaluator: &Evaluator<'_>,
     text: &str,
     focus: Option<&Value>,
 ) -> Result<Vec<String>, EvalError> {
@@ -241,7 +256,7 @@ fn run(
         .map(|v| v.iter().map(describe).collect())
 }
 
-fn failure(result: Result<Vec<String>, EvalError>) -> String {
+pub(super) fn failure(result: Result<Vec<String>, EvalError>) -> String {
     match result {
         Err(EvalError::Execution { message, .. }) => message,
         other => panic!("expected an execution error, got {other:?}"),
@@ -252,7 +267,7 @@ fn failure(result: Result<Vec<String>, EvalError>) -> String {
 #[test]
 fn a_host_service_answers_a_collection_for_an_explicit_name() {
     let host = Host::owning("dummyConstant", &["one", "two"]);
-    let e = Evaluator::new(&StubModel).with_host_services(&host);
+    let e = &Evaluator::new(&StubModel).with_host_services(&host);
     assert_eq!(
         run(e, "%dummyConstant", None).expect("evaluates"),
         ["string:one", "string:two"]
@@ -271,11 +286,15 @@ fn a_host_service_answers_a_collection_for_an_explicit_name() {
 #[test]
 fn an_unknown_name_with_no_host_service_fails_and_with_one_that_owns_nothing_is_empty() {
     let p = patient();
-    let message = failure(run(Evaluator::new(&StubModel), "%nosuchvariable", Some(&p)));
+    let message = failure(run(
+        &Evaluator::new(&StubModel),
+        "%nosuchvariable",
+        Some(&p),
+    ));
     assert!(message.contains("nosuchvariable"), "{message}");
 
     let host = Host::default();
-    let e = Evaluator::new(&StubModel).with_host_services(&host);
+    let e = &Evaluator::new(&StubModel).with_host_services(&host);
     assert!(run(e, "%nosuchvariable", Some(&p)).expect("ok").is_empty());
     assert_eq!(
         host.asked(),
@@ -287,7 +306,7 @@ fn an_unknown_name_with_no_host_service_fails_and_with_one_that_owns_nothing_is_
 #[test]
 fn resource_root_resource_and_context_come_from_the_evaluation() {
     let p = patient();
-    let e = Evaluator::new(&StubModel);
+    let e = &Evaluator::new(&StubModel);
 
     // Started from the resource, all three are the resource.
     assert_eq!(run(e, "%resource.id", Some(&p)).expect("ok"), ["id:p1"]);
@@ -332,7 +351,7 @@ fn resource_root_resource_and_context_come_from_the_evaluation() {
 #[test]
 fn a_defined_variable_is_visible_to_the_rest_of_its_chain_and_nowhere_else() {
     let p = patient();
-    let e = Evaluator::new(&StubModel);
+    let e = &Evaluator::new(&StubModel);
     assert_eq!(
         run(
             e,
@@ -370,7 +389,7 @@ fn a_defined_variable_is_visible_to_the_rest_of_its_chain_and_nowhere_else() {
 fn a_host_constant_resolved_before_navigation_shadows_a_real_element() {
     let p = patient();
     let host = Host::owning("name", &["shadow"]);
-    let on = Evaluator::new(&StubModel)
+    let on = &Evaluator::new(&StubModel)
         .with_host_services(&host)
         .with_application_context(true);
     assert_eq!(run(on, "name", Some(&p)).expect("ok"), ["string:shadow"]);
@@ -382,7 +401,7 @@ fn a_host_constant_resolved_before_navigation_shadows_a_real_element() {
     // Without an application context the host service is never asked and the
     // real element is reached.
     let host = Host::owning("name", &["shadow"]);
-    let off = Evaluator::new(&StubModel).with_host_services(&host);
+    let off = &Evaluator::new(&StubModel).with_host_services(&host);
     assert_eq!(
         run(off, "name.family", Some(&p)).expect("ok"),
         ["string:A", "string:B"]
@@ -395,7 +414,7 @@ fn a_host_constant_resolved_before_navigation_shadows_a_real_element() {
 fn the_leading_type_name_is_asked_about_before_it_is_matched() {
     let p = patient();
     let host = Host::owning("Patient", &["shadow"]);
-    let on = Evaluator::new(&StubModel)
+    let on = &Evaluator::new(&StubModel)
         .with_host_services(&host)
         .with_application_context(true);
     assert_eq!(run(on, "Patient", Some(&p)).expect("ok"), ["string:shadow"]);
@@ -406,7 +425,7 @@ fn the_leading_type_name_is_asked_about_before_it_is_matched() {
 fn implicit_after_is_a_fall_through_gated_on_the_application_context() {
     let p = patient();
     let host = Host::owning_in(ConstantMode::ImplicitAfter, "nosuchelement", &["fallback"]);
-    let on = Evaluator::new(&StubModel)
+    let on = &Evaluator::new(&StubModel)
         .with_host_services(&host)
         .with_application_context(true);
     assert_eq!(
@@ -423,7 +442,7 @@ fn implicit_after_is_a_fall_through_gated_on_the_application_context() {
 
     // A real element is found by navigation, so the fall-through is not asked.
     let host = Host::owning("name", &[]);
-    let on = Evaluator::new(&StubModel)
+    let on = &Evaluator::new(&StubModel)
         .with_host_services(&host)
         .with_application_context(true);
     run(on, "name", Some(&p)).expect("ok");
@@ -435,7 +454,7 @@ fn implicit_after_is_a_fall_through_gated_on_the_application_context() {
     // No application context: neither implicit mode is asked, whatever the
     // host service owns.
     let host = Host::owning("nosuchelement", &["fallback"]);
-    let off = Evaluator::new(&StubModel).with_host_services(&host);
+    let off = &Evaluator::new(&StubModel).with_host_services(&host);
     assert!(run(off, "nosuchelement", Some(&p)).expect("ok").is_empty());
     assert!(host.asked().is_empty());
 }
@@ -445,7 +464,7 @@ fn implicit_after_is_a_fall_through_gated_on_the_application_context() {
 fn the_server_host_service_leaves_a_resources_own_elements_reachable() {
     let p = patient();
     let host = ServerHostServices;
-    let e = Evaluator::new(&StubModel)
+    let e = &Evaluator::new(&StubModel)
         .with_host_services(&host)
         .with_application_context(true);
     assert_eq!(

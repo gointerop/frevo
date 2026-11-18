@@ -2034,6 +2034,71 @@ passes.
    `check`, before the evaluation they exist to test. Follow HAPI; the helper
    needs a check-skipping variant (the oracle-builder's) or the scenarios need
    restating as check-stage errors.
-3. `path.env.004` is waiting on `extension(url)` (task 48).
+3. `path.env.004` is waiting on `extension(url)` (task 48); see the task 48
+   entry below for why that is still red at the check stage.
 
 Passing now: `path.env.001`, `002`, `003`, `005`, `013`.
+
+## add-fhirpath-and-codegen-r4, task 48: implemented; six of the 28 `path_utility` tests cannot reach it
+
+Implemented in `crates/frevo-path/src/eval/utility.rs`: `trace` with the log
+(`Evaluator::has_log`, `Evaluator::take_log`, the latter clearing; `evaluate`
+starts a fresh log as every pinned `evaluate` overload does; a host service
+whose `log` answers `true` suppresses the entry), `check`, `aggregate`, `sort`
+(natural, one key, several keys, a leading `-` for descending, nulls last, a
+stable merge sort over a fallible comparator) and `extension(url)` (on a
+primitive too, including `modifierExtension`). `Evaluator` is no longer `Copy`
+because it owns the shared log. `testSplit/testSplit3` and the whole of
+`testTrace`, `testAggregate`, `testSort` and `testExtension` that the harness
+can reach pass. In-crate tests with the scenario tags are in
+`src/eval/utility_tests.rs` (8, all green). Task 48 is **not ticked**; of
+`path_utility`'s 28 tests, the ones in task 48's scope that stay red:
+
+1. `path.utility.001`, `002` (`trace_*`): `eval_with_log` asserts
+   `engine.has_log()` on the harness engine, whose `has_log`/`take_log`
+   (`tests/oracle/engine.rs:400-406`) delegate to `UnboundEngine` (always
+   `false` / `""`). The harness also builds a fresh `Evaluator` for every
+   evaluation (`evaluate_over_in_zone`), so even a bound accessor has nothing to
+   read unless the harness keeps one evaluator and forwards the two calls. An
+   oracle-builder change to `tests/`.
+2. `path.utility.003`, `004` (`check_*`): the helpers run the static check
+   first, and HAPI's rejects `Patient.name.check(given.exists(), ...)`:
+   `isExpressionParameter` (`FHIRPathEngine.java:3804-3817`) lists `where`,
+   `exists`, `all`, `select`, `repeat`, `aggregate` at index 0 and `trace` and
+   `defineVariable` at index 1, **not** `check`, so its first argument is typed
+   against the context (`Patient`), where `given` is not a name
+   (`The name 'given' is not valid for any of the possible types:
+   [.../Patient]`). Evaluation is correct (verified directly:
+   `Patient.name.check(prefix.exists(), 'every name needs a prefix')` raises
+   `Check failed with message 'every name needs a prefix'`). The expressions
+   need `$this`-relative arguments, or the helper needs to skip the check.
+3. `path.utility.009`, `011` (and `path.env.004`, `path.types.006`): the static
+   check answers `CheckError::NotImplemented` for `extension(<known URL>)`
+   (`check/pass.rs:1389`), because typing it needs the extension definition's
+   element model, which the `Model` seam does not carry. Evaluation works
+   (`Patient.birthDate.extension('.../patient-birthTime').value` returns the
+   `dateTime`); the pass is task 50's and its model gap is the harness's
+   (`sd_model` excludes profiles). Decision needed: extend `Model` with an
+   extension-definition lookup, or have the oracle-builder ship the extension
+   definitions in the harness model.
+4. The other `path_utility` failures (`conformsTo`, `memberOf`, `resolve`,
+   custom functions, the host `trace` hook) are task 49's and the unbound
+   `UnboundHostEngine`.
+
+`src/eval/tests.rs::every_unimplemented_function_is_unsupported_and_never_empty`
+and `an_unsupported_feature_deep_inside_navigation_still_surfaces` list
+`trace`, `aggregate`, `extension` (and `is`/`as`, environment variables) as
+unsupported and are red by design; not edited.
+
+## add-fhirpath-and-codegen-r4, tasks 32-34, 41, 41a: now green, ticked
+
+`path_collection` (15), `path_filter` (9), `path_subset` (13) and
+`path_combine` (6) pass in full, which is every scenario of tasks 32, 33 and 34
+(`path.collection.001-015`, `path.filter.001-009`, `path.subset.001-013`,
+`path.combine.001-006`). `path_string` passes in full but
+`path.string.024` (needs the host-aware seam, task 40's `implicit_string_conversion`
+setting), so `path.string.011`, `013-019` (task 41) and `008-010`, `025-029`
+with the `020`/`021` regex legs (task 41a, ADR 0005 accepted on
+`chore/adr-0005-regex`) pass. The earlier entries above that name tests of
+these tasks as contradicting HAPI were resolved by the test and spec amendments
+that followed them.
