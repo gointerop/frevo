@@ -1968,3 +1968,72 @@ compatibility layer (`strregex.rs`) but is **not** in the ADR's Decision item 5
 (which lists `U`, `u`, `\v`, possessive quantifiers, POSIX-named `\p{..}`, and
 `--` and `~~` in a class). `path.string.025` and `DEV-0023` state it as
 rejected; the ADR should be amended to list it.
+
+## add-fhirpath-and-codegen-r4, task 46: `path.types.011` contradicts the pinned engine; `path.types.013` needs quantities
+
+Implemented in `crates/frevo-path/src/eval/types.rs`: `is`, `as`, `ofType`
+(task 33's) and `type()`, operator and function forms. `path_types` is 10 of 13
+green. Task 46 is **not ticked**; what keeps it red:
+
+1. `is_with_an_unknown_type_name_is_a_semantic_error` (`path.types.011`) expects
+   `Patient.gender is NoSuchType` to **fail the static check**. HAPI does not:
+   `executeType` reads the right operand of `Is` and `As` with `executeTypeName`
+   (`FHIRPathEngine.java:1627-1628`), which wraps the name and consults nothing;
+   `operateTypes` `case Is` (`:2013-2015`) returns `Boolean` after a cardinality
+   warning; and at evaluation `opIs` (`:1940`) and `funcIs` (`:5095`) answer
+   `false`. `isKnownType` is called only by `opAs`, `funcAs` and `funcOfType`,
+   all at evaluation. The test's own `NOTE FOR REVIEW` says the same. Frevo
+   follows HAPI (the check pass already did, `check/pass.rs`); the test and the
+   spec scenario need amending or a `DEV` entry ruling it ahead-of-HAPI. Not
+   edited here.
+2. `the_whole_types_type_and_inheritance_surface_holds` (`path.types.013`): 8 of
+   the 101 `testTypes` cases are `toQuantity` and stay `Unsupported` (tasks 43
+   and 44, UCUM). That is the correct state, not a defect.
+3. `is_on_an_extensions_value_resolves_the_concrete_choice_type`
+   (`path.types.006`) needs `extension(url)`, task 48.
+
+Also: `src/eval/tests.rs::every_binary_operator_is_unsupported_and_never_empty`
+lists `is` and `as` as unsupported operators and is now red by design; it was
+not edited (not mine to edit) and needs retargeting to the operators still
+unbuilt.
+
+## add-fhirpath-and-codegen-r4, tasks 47 and 47a: implemented; the committed `path_env` tests cannot reach it
+
+Implemented in `crates/frevo-path/src/eval/env.rs` and
+`crates/frevo-path/src/seam/server.rs`: the system URLs, the three backtick
+shorthands, `%us-zip`, `%resource`, `%rootResource` (with their no-focus
+errors), `%context`, the unknown-constant error, a host service returning a
+collection, `defineVariable` with its scoping and redefinition error, the four
+constant-evaluation sites, both implicit modes gated on a non-null application
+context, and `ServerHostServices`. The public surface is
+`Evaluator::with_host_services`, `Evaluator::with_application_context` and
+`Evaluator::evaluate_in(expr, focus, focus_resource, root_resource)`. Neither
+task is ticked, because 12 of the 17 `tests/path_env.rs` tests cannot pass
+whatever the engine does, for two reasons in the test file and not in the
+engine. `crates/frevo-path/src/eval/env_tests.rs` (new, in-crate, tagged with
+the scenario IDs) drives the same behaviour at the crate's own surface and
+passes.
+
+1. **Unbound host-aware seam.** `path.env.006` (second half), `008`, `010`,
+   `012`, `015`, `016`, `017` call `host_engine_under_test()`, which in the
+   committed file returns `UnboundHostEngine`, whose every method is
+   `Err(NotImplemented)` (`tests/path_env.rs:263`). The same holds for
+   `tests/path_utility.rs:394` and the trace log: `FrontEndEngine::has_log` and
+   `take_log` in `tests/oracle/engine.rs:400-406` delegate to the harness's
+   `UnboundEngine`, which answers `false` and the empty string. Binding them is
+   an oracle-builder change to `tests/`; the implementer may not make it.
+2. **The tests' check step contradicts the pinned check pass.**
+   `expect_evaluation_failure_on` (`path_env.rs:399`) asserts that the static
+   check **passes** before it evaluates, for `%resource` and `%rootResource`
+   with no input (`path.env.007`, `009`), for `%nosuchvariable` with no host
+   service (`011`) and for `%v` out of scope (`014`). HAPI's check rejects all
+   four: `resolveConstantType` raises `FHIRPATH_CANNOT_USE` for `%resource` and
+   `%rootResource` when the context has none (`FHIRPathEngine.java:3140-3149`)
+   and `FHIRPATH_UNKNOWN_CONSTANT` when there is no host service
+   (`:3163-3167`). The check pass already follows HAPI, so these four fail at
+   `check`, before the evaluation they exist to test. Follow HAPI; the helper
+   needs a check-skipping variant (the oracle-builder's) or the scenarios need
+   restating as check-stage errors.
+3. `path.env.004` is waiting on `extension(url)` (task 48).
+
+Passing now: `path.env.001`, `002`, `003`, `005`, `013`.

@@ -35,6 +35,7 @@ mod collection;
 mod combine;
 mod compare;
 mod convert;
+mod env;
 mod equality;
 mod error;
 mod filter;
@@ -49,6 +50,8 @@ mod temporal;
 mod types;
 
 #[cfg(test)]
+mod env_tests;
+#[cfg(test)]
 mod tests;
 
 pub use error::EvalError;
@@ -56,17 +59,15 @@ pub use error::EvalError;
 use self::arith::Arith;
 use self::collection::Tri;
 use self::compare::Ordered;
+use crate::seam::host::{ConstantMode, HostServices};
 use crate::seam::model::Model;
 use crate::seam::value::Value;
-use crate::syntax::ast::{Constant, Expression, Function, Kind, NodeId, Operation};
-use crate::syntax::literal::process_date_constant;
+use crate::syntax::ast::{Expression, Function, Kind, NodeId, Operation};
 
-/// The evaluation state `ExecutionContext` carries that navigation reads.
-///
-/// `%resource`, `%rootResource`, `%context` and defined variables are the
-/// environment-variable tasks' and are not represented: reading one is
-/// [`EvalError::Unsupported`], so nothing can observe their absence as an
-/// empty value.
+/// The evaluation state `ExecutionContext` carries that changes as the walk
+/// goes down. What is fixed for a whole evaluation -- `%resource`,
+/// `%rootResource`, `%context`, the host service and the application context
+/// -- lives on [`Run`] instead.
 #[derive(Clone, Copy)]
 struct Context<'c> {
     /// `$this`. `None` where upstream's is `null`: an evaluation with no
@@ -76,20 +77,59 @@ struct Context<'c> {
     index: usize,
     /// `$total`. Only `aggregate()` sets it; everywhere else it is `null`.
     total: Option<&'c [Value]>,
+    /// The variables `defineVariable` has introduced on the way here, newest
+    /// first.
+    vars: Option<&'c VarNode<'c>>,
 }
 
-impl Context<'_> {
-    /// `changeThis(context, newThis)` (`FHIRPathEngine.java:4719`): a context
+/// One variable `defineVariable` introduced. A context is copied, not shared,
+/// at every node upstream, so a definition is visible to the rest of the
+/// chain that follows it and to nothing else; an immutable list whose tail is
+/// the enclosing scope has exactly that visibility.
+struct VarNode<'p> {
+    name: String,
+    value: Vec<Value>,
+    parent: Option<&'p VarNode<'p>>,
+}
+
+impl<'c> Context<'c> {
+    /// `changeThis(context, newThis)` (`FHIRPathEngine.java:4726`): a context
     /// for one item of a per-item criteria. The index goes back to 0 and
     /// `$total` is not carried, because upstream builds a new
     /// `ExecutionContext` and copies only the defined variables.
-    fn change_this<'n>(&self, item: &'n Value) -> Context<'n> {
+    fn change_this<'n>(&self, item: &'n Value) -> Context<'n>
+    where
+        'c: 'n,
+    {
         Context {
             this: Some(item),
             index: 0,
             total: None,
+            vars: self.vars,
         }
     }
+
+    /// `getDefinedVariable(name)`, or `None` where `hasDefinedVariable` is
+    /// false.
+    fn defined_variable(&self, name: &str) -> Option<&'c [Value]> {
+        let mut at = self.vars;
+        while let Some(var) = at {
+            if var.name == name {
+                return Some(&var.value);
+            }
+            at = var.parent;
+        }
+        None
+    }
+}
+
+/// `isSystemVariable` (`FHIRPathEngine.java:1743`): the names
+/// `defineVariable` may not take.
+fn is_system_variable(name: &str) -> bool {
+    matches!(
+        name,
+        "sct" | "loinc" | "ucum" | "resource" | "rootResource" | "context"
+    )
 }
 
 /// Evaluates parsed expressions against a model.
@@ -109,6 +149,13 @@ pub struct Evaluator<'m> {
     /// `doNotEnforceAsCaseSensitive`, inverted: `as` compares type names
     /// exactly. Enforced unless a caller says otherwise.
     enforce_as_case_sensitive: bool,
+    /// The host service, if one is installed. Not having one is a state of its
+    /// own, distinct from a host service that answers nothing.
+    host: Option<&'m dyn HostServices>,
+    /// Whether a non-null application context is passed. Both implicit
+    /// constant modes are gated on this and not on the host service
+    /// (`FHIRPathEngine.java:3184`, `:3213`).
+    app_context: bool,
 }
 
 impl<'m> Evaluator<'m> {
@@ -120,7 +167,28 @@ impl<'m> Evaluator<'m> {
             implicit_string_conversion: false,
             enforce_as_singleton: true,
             enforce_as_case_sensitive: true,
+            host: None,
+            app_context: false,
         }
+    }
+
+    /// Install a host service (`setHostServices`). Without one an unknown
+    /// `%name` is an execution error.
+    #[must_use]
+    pub fn with_host_services(mut self, host: &'m dyn HostServices) -> Self {
+        self.host = Some(host);
+        self
+    }
+
+    /// Say that the evaluation carries a non-null application context, which
+    /// is the condition under which a host service is asked about a bare name
+    /// -- before navigation (`ConstantMode::ImplicitBefore`) and after it
+    /// found nothing (`ConstantMode::ImplicitAfter`). A host service with no
+    /// application context never sees either (`DEV-0010`).
+    #[must_use]
+    pub fn with_application_context(mut self, present: bool) -> Self {
+        self.app_context = present;
+        self
     }
 
     /// The two rules `as` enforces: that its focus is a singleton, and that
@@ -155,12 +223,29 @@ impl<'m> Evaluator<'m> {
     }
 
     /// `FHIRPathEngine.evaluate(Base, ExpressionNode)`: evaluate `expr` with
-    /// `focus` as both the focus collection and `$this`. `None` is upstream's
-    /// `null` base: an empty focus.
+    /// `focus` as the focus collection, `$this` and `%context`. `None` is
+    /// upstream's `null` base: an empty focus. `%resource` and `%rootResource`
+    /// are the focus when it is a resource and absent otherwise.
     pub fn evaluate(
         &self,
         expr: &Expression,
         focus: Option<&Value>,
+    ) -> Result<Vec<Value>, EvalError> {
+        let resource = focus.filter(|v| matches!(v, Value::Node(n) if n.is_resource()));
+        self.evaluate_in(expr, focus, resource, resource)
+    }
+
+    /// `FHIRPathEngine.evaluate(appContext, focusResource, rootResource, base,
+    /// expression)` (`:771`): the same, with `%resource` and `%rootResource`
+    /// supplied by the caller. This is how an evaluation that starts partway
+    /// down a resource -- an invariant on `Observation.effective`, say --
+    /// still sees the resource it is inside.
+    pub fn evaluate_in(
+        &self,
+        expr: &Expression,
+        focus: Option<&Value>,
+        focus_resource: Option<&Value>,
+        root_resource: Option<&Value>,
     ) -> Result<Vec<Value>, EvalError> {
         let focus_collection: &[Value] = match focus {
             Some(v) => std::slice::from_ref(v),
@@ -170,6 +255,7 @@ impl<'m> Evaluator<'m> {
             this: focus,
             index: 0,
             total: None,
+            vars: None,
         };
         let _zone = temporal::ZoneGuard::set(self.zone_minutes);
         Run {
@@ -178,6 +264,11 @@ impl<'m> Evaluator<'m> {
             implicit_string_conversion: self.implicit_string_conversion,
             enforce_as_singleton: self.enforce_as_singleton,
             enforce_as_case_sensitive: self.enforce_as_case_sensitive,
+            host: self.host,
+            app_context: self.app_context,
+            base: focus,
+            focus_resource,
+            root_resource,
         }
         .execute(context, focus_collection, expr.root(), true)
     }
@@ -190,6 +281,14 @@ struct Run<'r> {
     implicit_string_conversion: bool,
     enforce_as_singleton: bool,
     enforce_as_case_sensitive: bool,
+    host: Option<&'r dyn HostServices>,
+    app_context: bool,
+    /// `%context`: the node evaluation started from.
+    base: Option<&'r Value>,
+    /// `%resource`.
+    focus_resource: Option<&'r Value>,
+    /// `%rootResource`.
+    root_resource: Option<&'r Value>,
 }
 
 impl Run<'_> {
@@ -202,6 +301,7 @@ impl Run<'_> {
         at_entry: bool,
     ) -> Result<Vec<Value>, EvalError> {
         let node = self.expr.node(id);
+        let mut defined: Option<VarNode<'_>> = None;
         let mut work: Vec<Value> = match node.kind() {
             // `-x` is `0 - x`: the unary node contributes the zero and its
             // operation chain below applies the sign.
@@ -228,13 +328,22 @@ impl Run<'_> {
                 } else {
                     let mut out = Vec::new();
                     for item in focus {
-                        self.execute_name(item, name, at_entry, &mut out)?;
+                        self.execute_name(item, name, at_entry, node.start(), &mut out)?;
                     }
                     out
                 }
             }
+            Kind::Function if node.function() == Some(Function::DefineVariable) => {
+                let (name, value, out) = self.func_define_variable(context, focus, id)?;
+                defined = Some(VarNode {
+                    name,
+                    value,
+                    parent: context.vars,
+                });
+                out
+            }
             Kind::Function => self.evaluate_function(context, focus, id)?,
-            Kind::Constant => self.resolve_constant(id)?,
+            Kind::Constant => self.resolve_constant(context, id, ConstantMode::Explicit)?,
             Kind::Group => match node.group() {
                 Some(group) => self.execute(context, focus, group, at_entry)?,
                 None => Vec::new(),
@@ -242,7 +351,17 @@ impl Run<'_> {
         };
 
         if let Some(inner) = node.inner() {
-            work = self.execute(context, &work, inner, false)?;
+            // A variable `defineVariable` just introduced is visible to the
+            // rest of this chain and to nothing beside it: the operator loop
+            // below runs in the context the node was entered with.
+            let inner_context = match &defined {
+                Some(var) => Context {
+                    vars: Some(var),
+                    ..context
+                },
+                None => context,
+            };
+            work = self.execute(inner_context, &work, inner, false)?;
         }
 
         if node.is_proximal() && node.operation().is_some() {
@@ -273,51 +392,6 @@ impl Run<'_> {
             }
         }
         Ok(work)
-    }
-
-    /// One name step over one item (`FHIRPathEngine.java:3182`).
-    ///
-    /// The two host-service constant lookups upstream makes at entry fire only
-    /// with an application context and host services installed, and neither
-    /// is part of this evaluator yet — so there is nothing to shadow a name
-    /// and nothing to fall back to.
-    fn execute_name(
-        &self,
-        item: &Value,
-        name: &str,
-        at_entry: bool,
-        out: &mut Vec<Value>,
-    ) -> Result<(), EvalError> {
-        if at_entry && name.chars().next().is_some_and(char::is_uppercase) {
-            if navigate::type_name_matches(self.model, item, name) {
-                out.push(item.clone());
-            }
-            Ok(())
-        } else {
-            navigate::children_by_name(item, name, out).map_err(EvalError::from)
-        }
-    }
-
-    /// `resolveConstant(context, constant, ...)` for the forms that resolve
-    /// without an environment.
-    fn resolve_constant(&self, id: NodeId) -> Result<Vec<Value>, EvalError> {
-        let node = self.expr.node(id);
-        match node.constant() {
-            None | Some(Constant::Empty) => Ok(Vec::new()),
-            Some(Constant::Value(value)) => Ok(vec![value.clone()]),
-            Some(Constant::Deferred(text)) => {
-                if let Some(run) = text.strip_prefix('@') {
-                    process_date_constant(run)
-                        .map(|v| vec![v])
-                        .map_err(|message| EvalError::execution(message, node.start()))
-                } else {
-                    Err(EvalError::unsupported(
-                        format!("the environment variable {text}"),
-                        node.start(),
-                    ))
-                }
-            }
-        }
     }
 
     /// `evaluateFunction` (`FHIRPathEngine.java:3918`), for the functions

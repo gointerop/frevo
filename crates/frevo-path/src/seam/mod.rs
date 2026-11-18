@@ -21,4 +21,5 @@
 pub mod host;
 pub mod model;
 pub mod node;
+pub mod server;
 pub mod value;

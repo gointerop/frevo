@@ -116,7 +116,13 @@ conversion — `src/eval/convert.rs` (`funcToInteger`, `funcToDecimal`,
 `RegexConstants.java`'s `DATE_TIME_REGEX`), and the type operators and
 reflection — `src/eval/types.rs` (`executeTypeName`, `opIs`, `opAs`,
 `compareTypeNames`, `isKnownType`, `funcIs`, `funcAs`, `funcType` and
-`FHIRPathUtilityClasses.ClassTypeInfo`). Each file
+`FHIRPathUtilityClasses.ClassTypeInfo`), the environment variables —
+`src/eval/env.rs` (`resolveConstant` in both forms, `isSystemVariable`, the
+name-step overload of `execute` with its two implicit host-service lookups,
+`funcDefineVariable` and `ExecutionContext.setDefinedVariable`) — and the
+server-facing host service, `src/seam/server.rs`, from `hapi-fhir`'s
+`FhirPathR4.setEvaluationContext` at `7ab4c7c7c49281496faa1b3c2498a652457669ae`.
+Each file
 carries the required header naming the upstream path, the pinned SHA and what
 was modified. Every
 other row is updated by the change that first ports into that crate;

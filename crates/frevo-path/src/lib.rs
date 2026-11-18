@@ -43,6 +43,7 @@ pub use eval::{EvalError, Evaluator};
 pub use seam::host::{ConstantMode, FunctionDetails, HostError, HostServices};
 pub use seam::model::{ElementInfo, Model, TypeSet};
 pub use seam::node::{Node, NodeError};
+pub use seam::server::ServerHostServices;
 pub use seam::value::{
     Decimal, PartialDate, PartialDateTime, PartialTime, Primitive, Quantity, TemporalPrecision,
     Value,
