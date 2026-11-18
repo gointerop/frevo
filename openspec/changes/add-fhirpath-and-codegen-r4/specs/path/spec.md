@@ -1465,17 +1465,26 @@ The engine SHALL implement the string functions `FHIRPathEngine` implements, inc
 
 - **WHEN** `'a'.matches('(?u)a')`, `'a'.matches('(?U)a')`, `'a'.matches('(?x)a')`,
   `'a'.matches('\\v')`, `'a'.matches('a*+')`, `'a'.matches('\\p{Alpha}')` and
-  `'a'.matches('[a--b]')` are evaluated (the last tests `--` inside a class;
-  `~~` likewise), each also through `matchesFull` and `replaceMatches`
+  `'a'.matches('[a-z--b]')` and `'a'.matches('[a-z~~b]')` are evaluated (the
+  last two test `--` and `~~` after a range inside a class), each also through
+  `matchesFull` and `replaceMatches`
 - **THEN** each fails with an execution error naming the construct
-- **AND** HAPI accepts every one of them with Java's meaning (possessive
-  quantifier, vertical-whitespace class, the `U`, `u` and `x` flags,
-  POSIX-named property, class intersection); the departure is recorded as
-  `DEV-0023`, and the engine is the `regex` crate behind a compatibility layer
-  (ADR 0005, decision item 5)
-- **AND** a construct Java has and the `regex` crate lacks (a backreference
-  `(a)\\1`, lookahead `a(?=b)`) is also an execution error and is not a
-  silent difference (`DEBT-0015`)
+- **AND** HAPI accepts every one of them with Java's meaning: a possessive
+  quantifier, the vertical-whitespace class, the `U`, `u` and `x` flags and a
+  POSIX-named property each work in Java, and in `[a-z--b]` Java reads the
+  union of `a-z`, `-` and `b` (so `'-'` and `'b'` match) where the `regex`
+  crate reads set difference (so `'b'` would not); `~~` is likewise a literal
+  `~` in Java and symmetric difference in the crate. The departure is recorded
+  as `DEV-0023`, and the engine is the `regex` crate behind a compatibility
+  layer (ADR 0005, decision item 5)
+- **AND** `[a--b]` is a `PatternSyntaxException` in Java as well (an invalid
+  range), so it is not a departure
+- **AND** backreferences and lookaround are the other way round: Java accepts
+  `'aa'.matches('(a)\\1')` (`true`) and `a(?=b)`, atomic groups and `\\Q..\\E`,
+  and the `regex` crate has no such construct, so Frevo raises an execution
+  error where HAPI answers. This is a consequence of ADR 0005's choice of the
+  `regex` crate, which the owner approved, and is recorded as `DEV-0023`
+  (verified against an OpenJDK 25 probe)
 - **AND** an unbalanced parenthesis (`'a'.matches('(a')`) is an execution error
   in HAPI as well, a `PatternSyntaxException` wrapped by `RegexTimeout`
   (`RegexTimeout.java:28-30`), so it is not a departure
@@ -1515,7 +1524,15 @@ The engine SHALL implement the string functions `FHIRPathEngine` implements, inc
   are evaluated
 - **THEN** the results are `-a-b-c-` and `-a--c-`: an empty match is found at
   every position including the end, and after an empty match the search steps one
-  character (a whole code point, never a split one) forward
+  UTF-16 code **unit** forward
+- **AND** that step can split a surrogate pair: `'😀'.replaceMatches('x*', '-')`
+  (U+1F600, two UTF-16 units) is the five-unit string `-`, the high surrogate
+  U+D83D, `-`, the low surrogate U+DE00, `-`; and `'a😀'.replaceMatches('x*', '-')`
+  is `-`, `a`, `-`, U+D83D, `-`, U+DE00, `-`. Verified against `String.replaceAll`
+  on an OpenJDK 25 probe; the pinned HAPI's JVM is expected to agree, since
+  `Matcher.find` advances by one `char` after an empty match
+- **AND** the two results hold lone surrogates, which the string type must be
+  able to carry (`path.string.022`)
 - **AND** an empty pattern string is returned unchanged rather than matched at
   every position (`'abc'.replaceMatches('', 'x')` is `abc`, `path.string.010`)
 - **AND** differential-only

@@ -407,8 +407,11 @@ them is the whole reason that decision is safe to make.
   Constructs Java has and `regex` lacks (backreferences, lookaround, atomic
   groups, `\Q..\E`, `\R`, `\G`, `\Z`, `(?d)`), and the ones Frevo rejects as
   silently different (`(?u)`, `(?U)`, `(?x)`, `\v`, possessive quantifiers,
-  POSIX `\p{..}`, `--` and `~~` in a class), are errors, not answers; they are
-  not hazards. A pattern HAPI times out on gets an answer.
+  POSIX `\p{..}`, `--` and `~~` after a range in a class), are errors, not
+  answers; they are not wrong-answer hazards, but they are still departures from
+  HAPI, recorded in `DEV-0023` (a pattern that works in HAPI fails in Frevo;
+  paid only by a Java-exact engine, the same trigger). A pattern HAPI times out
+  on gets an answer.
 - **Why deferred:** each needs either an unavailable engine feature or a
   Java-exact engine (ADR 0005 option (c)); no suite case or consumer uses
   them. No flag is added (constitution section 1).

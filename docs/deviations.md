@@ -676,7 +676,11 @@ file, so its prose is not redistributable here (see `oracles/PINS.md`).
   `RegexTimeout` with a 500 ms limit that raises `Timeout evaluating regex`
   (`ENGINE:186`, `5699-5700`), and Java accepts possessive quantifiers, `\v`,
   the inline flags `(?u)`, `(?U)` and `(?x)`, POSIX-named `\p{..}` properties,
-  and `--` and `~~` inside a class, each with Java's meaning.
+  and `--` and `~~` after a range inside a class (`[a-z--b]` is `a-z`, `-` and
+  `b` in Java, set difference in the `regex` crate), each with Java's meaning.
+  Java also supports backreferences (`(a)\1`), lookahead and lookbehind, atomic
+  groups, `\Q..\E`, `\R`, `\G`, `\Z` and `(?d)`, which the `regex` crate lacks
+  (verified on an OpenJDK 25 probe for `(a)\1` and `a(?=b)`).
 - **Specification requirement:** FHIRPath 2.0.0 — `matchesFull` over an empty
   input is empty; a pattern is a regular expression in the platform's dialect
   with no timeout.
@@ -685,7 +689,11 @@ file, so its prose is not redistributable here (see `oracles/PINS.md`).
   on its `chore/` branch): the listed constructs, whose `regex` meaning would
   silently differ, are **execution errors** (an unbalanced parenthesis is an
   error in HAPI too and is not a departure), and there is no wall-clock timeout
-  because the engine is linear in the input. Compiled-program size and group
+  because the engine is linear in the input. The constructs Java has and the
+  `regex` crate lacks (backreferences, lookaround, atomic groups, `\Q..\E`,
+  `\R`, `\G`, `\Z`, `(?d)`) are likewise execution errors where HAPI answers: a
+  consequence of ADR 0005's choice of the crate, which the owner approved, and
+  covered by `path.string.025`. Compiled-program size and group
   nesting are bounded (`size_limit` 2 MiB, `nest_limit` 100); a pattern over
   either is an execution error. These are departures from HAPI, which accepts
   them or times out. Also departures, where Frevo **answers differently rather
