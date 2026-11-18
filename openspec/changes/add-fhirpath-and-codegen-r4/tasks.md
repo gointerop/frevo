@@ -921,14 +921,14 @@ checkpoint because it changes what a gate measures.
   evaluation: `path.types.011`, `DEV-0024`); the empty-focus rule.
   Satisfies `path.types.001` through `path.types.013`.
 
-- [ ] **47. Implement environment variables.** The built-in system URLs, the
+- [x] **47. Implement environment variables.** The built-in system URLs, the
   three backtick shorthands, `%us-zip`, `%resource` and `%rootResource` with
   their no-focus errors, `%context`, the unknown-constant error, a host service
   returning a collection, the constant-evaluation mode passed to the host
   service, and `defineVariable` with its scoping.
   Satisfies `path.env.001` through `path.env.015`.
 
-- [ ] **47a. Implement the implicit constant-resolution sites.** Four
+- [x] **47a. Implement the implicit constant-resolution sites.** Four
   constant-evaluation modes with exactly the sites the engine has: **explicit**
   for a `%name` the expression wrote, at both the evaluation and the check
   constant node; **no-value** at exactly one site, the check pass's name node
