@@ -1,5 +1,38 @@
 CHANGES_REQUESTED
 
+Thirtieth review (commit `caf3579`, 2026-11-17). Finding 2 of the twenty-ninth
+review is resolved, and finding 1 is resolved in substance. Two details of the
+new `path.utility.003` text are wrong. Detail is in the dated section at the
+end. The earlier findings follow, kept for the record.
+
+1. **The quoted wrong-parameter-type message names the type wrongly.**
+   - `checkParamTypes` passes `a`, an element of `actual.getTypes()`, as `{2}`
+     (`FHIRPathEngine.java:3828-3830`). Type details hold URIs, and
+     `FP_Boolean` is `http://hl7.org/fhirpath/System.Boolean`
+     (`TypeDetails.java:66`).
+   - The template is `The parameter type {2} is not legal for {0} parameter
+     {1}. expecting {3}` (`Messages.properties:371`). So HAPI says "The
+     parameter type http://hl7.org/fhirpath/System.Boolean is not legal for
+     check parameter 1. expecting ...", not "…type boolean…".
+   - Quote it with the URI, and give `{3}`, which is `pt.toString()` of the
+     singleton string type.
+
+2. **`Patient.name.check(prefix.exists(), 'm')` is the wrong example of the
+   wrong-parameter-type failure.**
+   - The condition is typed against the context item, `Patient`
+     (`:3267`). `Patient` has no `prefix`, so typing the parameter raises
+     `FHIRPATH_UNKNOWN_NAME` for `prefix` before `checkParamTypes` runs
+     (`:3298`, then `:3545`). That is the same failure as the `given`
+     example in the next clause.
+   - Only `Patient.name.check(true, 'm')` illustrates the boolean rejection.
+   - Replace the second example with a condition that resolves on `Patient`,
+     for example `Patient.name.check(active.exists(), 'm')`, or say that
+     `prefix` fails on the name.
+   - The evaluation clause (check skipped, `prefix` evaluated against the
+     focus `Patient.name`) is correct as written.
+
+## Twenty-ninth-review findings as raised (commit `5f37fc7`)
+
 Twenty-ninth review (commit `5f37fc7`, 2026-11-17). `ENGINE` is
 `org.hl7.fhir.r4/.../fhirpath/FHIRPathEngine.java` at `73c432b5`. The env,
 trace-log, `is`/`as`/`ofType` and `types.013` amendments are correct (dated
@@ -1968,3 +2001,28 @@ headings.
 **Stale text.** No "unknown type … semantic error" text remains. The two
 "semantic error" hits (`navigation.007`, `check.003`) are other behaviours.
 The context-item wording is finding 1.
+
+## Thirtieth review - commit `caf3579` (2026-11-17)
+
+**Twenty-ninth-review finding 1: resolved in substance.**
+- The spec now says every boolean condition fails the check (`case Check`,
+  `:3544-3547`; `checkParamTypes`, `:3820-3831`), and that the second
+  parameter is not type-checked. That second point holds because
+  `checkParamTypes` stops at the end of the one-element type set.
+- It also says there is no boolean form that passes, and that evaluation is
+  graded with the check skipped.
+- `path.utility.004` and task 48 (`tasks.md`) agree.
+- The remaining errors are the quoted message (finding 1) and one example
+  (finding 2).
+
+**Twenty-ninth-review finding 2: resolved.** `path.utility.009` now quotes
+`Reference to an unknown extension - double check that the URL '<url>' is
+correct`. That matches `Messages.properties:368`, whose `''{0}''` is
+MessageFormat's escaped single quote around the URL.
+
+**Stale text.** `grep` for "context-relative" and "resolves against the
+context item" across the change directory, `docs/` and `tasks/` finds
+nothing.
+
+**Registers.** `check-registries.sh` reports "registers agree" (22
+deviations, 15 debt entries). No `#### Scenario:` heading changed.
