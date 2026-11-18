@@ -63,8 +63,20 @@ enum Ask {
 /// would grade nothing.
 #[derive(Debug, Default)]
 struct RecordingHost {
-    /// `name` (without the `%`) to the string values answered for it.
+    /// `name` (without the `%`) to the string values answered for it, in any
+    /// mode.
     constants: Vec<(String, Vec<String>)>,
+    /// A host that **differentiates the modes**: `(name, mode)` to the values
+    /// answered for exactly that mode; every other mode answers empty for a
+    /// name listed here. Consulted before `constants`.
+    by_mode: Vec<(String, ConstantMode, Vec<String>)>,
+    /// When set, the type call answers only the exact spelling the table is
+    /// keyed by. The check pass passes an explicit `%name` to the type call
+    /// WITH its `%` (FHIRPathEngine.java:3173) while the evaluation pass strips
+    /// it (:1783), so a host keyed `owned` fails the check of `%owned`
+    /// (`path.env.015`). Unset, the host accepts both spellings, as a host
+    /// written against the spec must.
+    strict_type_names: bool,
     asked: Mutex<Vec<Ask>>,
 }
 
@@ -80,8 +92,27 @@ impl RecordingHost {
                     )
                 })
                 .collect(),
+            by_mode: Vec::new(),
+            strict_type_names: false,
             asked: Mutex::new(Vec::new()),
         }
+    }
+
+    /// A host that answers `values` for `name` in `mode` only, and empty for
+    /// every other mode (`path.env.017`).
+    fn for_mode(name: &str, mode: ConstantMode, values: &[&str]) -> Self {
+        let mut host = RecordingHost::new(&[]);
+        host.by_mode.push((
+            name.to_string(),
+            mode,
+            values.iter().map(|v| (*v).to_string()).collect(),
+        ));
+        host
+    }
+
+    fn strict(mut self) -> Self {
+        self.strict_type_names = true;
+        self
     }
 
     /// A host service that owns no name at all, which is what every host
@@ -114,6 +145,16 @@ impl HostServices for RecordingHost {
             .lock()
             .expect("the recorder is not poisoned")
             .push(Ask::Constant(name.to_string(), mode));
+        if let Some((_, _, vs)) = self
+            .by_mode
+            .iter()
+            .find(|(n, m, _)| n == name && *m == mode)
+        {
+            return Ok(vs.iter().map(|v| Value::String(v.clone())).collect());
+        }
+        if self.by_mode.iter().any(|(n, _, _)| n == name) {
+            return Ok(Vec::new());
+        }
         Ok(self
             .constants
             .iter()
@@ -131,11 +172,17 @@ impl HostServices for RecordingHost {
             .lock()
             .expect("the recorder is not poisoned")
             .push(Ask::ConstantType(name.to_string(), mode));
-        Ok(self
-            .constants
-            .iter()
-            .find(|(n, _)| n == name)
-            .map(|_| TypeSet::of("string")))
+        let bare = name.strip_prefix('%').unwrap_or(name);
+        let owned = |key: &str| {
+            if self.strict_type_names {
+                key == name
+            } else {
+                key == name || key == bare
+            }
+        };
+        let known = self.constants.iter().any(|(n, _)| owned(n))
+            || self.by_mode.iter().any(|(n, _, _)| owned(n));
+        Ok(known.then(|| TypeSet::of("string")))
     }
 
     fn resolve_reference(
@@ -690,13 +737,48 @@ fn resource_is_the_resource_the_focus_is_inside() {
             case.expression
         );
         assert_eq!(case.context.as_deref(), Some("Observation.effective"));
-        expect_case("isSemanticChecks", name);
+
+        // Each is graded as HAPI's own run grades it
+        // (`hapi-8.12.0-results.json:1057-1062`): the two `...Bad` cases are
+        // `passed`; `isGuardAndOtherImplies` and `isGuardOtherAndImplies` are
+        // `failed` (parity under `path.oracle.012`), because the check rejects
+        // `$this.toString()` first -- an `is` guard does not narrow the type
+        // the other operand is checked against (`path.check.005`); the two
+        // `Inner` cases are `hapi-cannot-pass` and are graded on Frevo's own
+        // context-aware run (`path.oracle.016`).
+        let want = match name {
+            "isGuardOrOtherImpliesBad" | "isGuardOrOtherImpliesNoParensBad" => CaseStatus::Passed,
+            "isGuardAndOtherImplies" | "isGuardOtherAndImplies" => CaseStatus::Failed,
+            // Frevo's own run: `isGuardOrInnerImplies` expects success and ends
+            // at the check stage `failed`; `isGuardOrInnerImpliesBad` is
+            // `invalid="semantic"`, fails the check and is `passed`.
+            "isGuardOrInnerImplies" => CaseStatus::Failed,
+            "isGuardOrInnerImpliesBad" => CaseStatus::Passed,
+            other => panic!("unexpected case {other}"),
+        };
+        let (_, report) = pinned();
+        let r = report
+            .get(&case.address.to_string())
+            .unwrap_or_else(|| panic!("{} must appear in the run report", case.address));
+        assert_eq!(
+            r.status,
+            want,
+            "{}: {:?} is {} -- {}",
+            r.address,
+            r.expression,
+            r.status.as_str(),
+            r.reason
+        );
     }
 
     // And the property those cases depend on, stated directly: with an
     // `Observation.effective` as the focus, `%resource` is the enclosing
-    // `Observation` (FHIRPathEngine.java:1761).
+    // `Observation` (FHIRPathEngine.java:1761), and the check types it against
+    // the context's resource type, `Observation`, so it passes.
     let observation = load_input("observation-example.xml");
+    let typed = oracle::engine::parse_with_host("%resource.status", None).expect("parses");
+    oracle::engine::check_in_type(&typed, Some("Observation"), None)
+        .expect("%resource.status must pass the check against Observation");
     let values = host_eval(
         &EvalRequest::new("%resource.status")
             .over(&observation)
@@ -756,15 +838,41 @@ fn root_resource_is_the_outermost_resource() {
     // that difference is the scenario.
     let container = load_input("patient-container-example.json");
 
+    // The resource is identified by `%rootResource.type().name`; the
+    // `resourceType` JSON member is not a child in HAPI's model
+    // (`getChildrenByName` is `item.listChildrenByName(name, false)`,
+    // FHIRPathEngine.java:255-278, and the R4 `Resource` declares only `id`,
+    // `meta`, `implicitRules` and `language`), so `%rootResource.resourceType`
+    // is EMPTY. The static check rejects it first ("The name 'resourceType' is
+    // not valid for any of the possible types"), so the empty result is seen
+    // with the check skipped (the host-aware seam evaluates unchecked).
     let root = host_eval(
-        &EvalRequest::new("%rootResource.resourceType")
+        &EvalRequest::new("%rootResource.type().name")
             .over(&container)
             .at("Patient.contained"),
     );
     assert_eq!(rendered(&root), ["string:Patient"]);
+    assert!(
+        host_eval(
+            &EvalRequest::new("%rootResource.resourceType")
+                .over(&container)
+                .at("Patient.contained"),
+        )
+        .is_empty(),
+        "`resourceType` is not a child, so it is empty"
+    );
+    let typed =
+        oracle::engine::parse_with_host("%rootResource.resourceType", None).expect("parses");
+    match oracle::engine::check_in_type(&typed, Some("Patient"), None) {
+        Err(EngineError::Diagnostic { message, .. }) => assert!(
+            message.contains("The name 'resourceType' is not valid for any of the possible types"),
+            "{message}"
+        ),
+        other => panic!("the check must reject `resourceType`, not {other:?}"),
+    }
 
     let focus = host_eval(
-        &EvalRequest::new("%resource.resourceType")
+        &EvalRequest::new("%resource.type().name")
             .over(&container)
             .at("Patient.contained"),
     );
@@ -834,8 +942,25 @@ fn context_is_the_node_evaluation_started_from() {
     assert_eq!(rendered(&families), ["string:Chalmers", "string:Windsor"]);
 
     // Started from the resource root instead, `%context` is the Patient.
-    let root = host_eval(&EvalRequest::new("%context.resourceType").over(&patient));
+    let root = host_eval(&EvalRequest::new("%context.type().name").over(&patient));
     assert_eq!(rendered(&root), ["string:Patient"]);
+
+    // `%context.resourceType` is empty (no `resourceType` child,
+    // FHIRPathEngine.java:255-278) and rejected by the check with "The name
+    // 'resourceType' is not valid ..."; the node is identified by
+    // `%context.type().name`.
+    assert!(
+        host_eval(&EvalRequest::new("%context.resourceType").over(&patient)).is_empty(),
+        "`resourceType` is not a child, so it is empty"
+    );
+    let typed = oracle::engine::parse_with_host("%context.resourceType", None).expect("parses");
+    match oracle::engine::check_in_type(&typed, Some("Patient"), None) {
+        Err(EngineError::Diagnostic { message, .. }) => assert!(
+            message.contains("The name 'resourceType' is not valid"),
+            "{message}"
+        ),
+        other => panic!("the check must reject `resourceType`, not {other:?}"),
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1038,15 +1163,32 @@ fn the_host_service_is_told_which_constant_evaluation_mode_is_in_force() {
     // ...and the check pass's constant node is :1610, also explicit. It is
     // **not** no-value: that is the distinction the scenario insists on, and a
     // host service keying its type answers off the mode must see the split.
+    //
+    // The name differs by stage: the check passes an explicit `%name` to
+    // `resolveConstantType` WITH its `%` (:3173) while the evaluation pass
+    // strips it (:1783). A host keyed `owned` therefore fails the CHECK of
+    // `%owned` ("Invalid FHIRPath Constant %owned") yet answers it at
+    // evaluation; a host must accept both spellings in the type call.
+    let strict_host = RecordingHost::new(&[("owned", &["v"])]).strict();
+    let mut engine = host_engine_under_test();
+    match engine.check("%owned", Some("Patient"), Some(&strict_host)) {
+        Err(EngineError::Diagnostic { message, .. }) => assert!(
+            message.contains("Invalid FHIRPath Constant %owned"),
+            "{message}"
+        ),
+        other => panic!("a host keyed `owned` must fail the check of %owned, not {other:?}"),
+    }
+    assert_eq!(strict_host.modes_for("%owned"), [ConstantMode::Explicit]);
     let check_host = RecordingHost::new(&[("owned", &["v"])]);
     let mut engine = host_engine_under_test();
     engine
         .check("%owned", Some("Patient"), Some(&check_host))
-        .expect("checking an explicit constant must succeed");
+        .expect("a host that accepts both spellings passes the check");
     assert_eq!(
-        check_host.modes_for("owned"),
+        check_host.modes_for("%owned"),
         [ConstantMode::Explicit],
-        "an explicit %name in the check pass is explicit, not no-value"
+        "an explicit %name in the check pass is explicit, not no-value, and \
+         reaches the type call with its `%`"
     );
 
     // 2. no-value -- one site only, :1586: the check pass's **name** node, at
@@ -1134,15 +1276,31 @@ fn a_host_constant_can_shadow_a_real_property() {
 
     // It is asked before the leading-type-name special case too, so even a
     // resource type name can be shadowed.
+    //
+    // The host answer replaces only the LEADING NAME; the rest of the
+    // expression runs on it. With a host answering a string for `Patient`, the
+    // expression `Patient` alone yields the host's string, and `Patient.name`
+    // yields an EMPTY collection, because `.name` is navigated on that string
+    // (`execute`, FHIRPathEngine.java:3181-3190).
     let typed = RecordingHost::new(&[("Patient", &["shadowed-type"])]);
     assert_eq!(
         rendered(&host_eval(
-            &EvalRequest::new("Patient.name")
+            &EvalRequest::new("Patient")
                 .over(&patient)
                 .with_host(&typed)
                 .with_app_context()
         )),
         ["string:shadowed-type"]
+    );
+    assert!(
+        host_eval(
+            &EvalRequest::new("Patient.name")
+                .over(&patient)
+                .with_host(&typed)
+                .with_app_context()
+        )
+        .is_empty(),
+        "only the leading name is replaced; `.name` is navigated on the string"
     );
 
     // An empty answer leaves navigation to proceed, which is why a host service
@@ -1206,7 +1364,17 @@ fn implicit_after_is_a_fall_through_and_both_implicit_modes_need_an_app_context(
     //
     // `nosuchelement` is not an element of `Patient`, so navigation yields
     // empty and only then is the host service asked.
-    let host = RecordingHost::new(&[("nosuchelement", &["from-host"])]);
+    //
+    // This is observable only with a host that DIFFERENTIATES the modes: one
+    // answering non-empty for implicit-before too is asked first and returned
+    // at once (:3184-3190), so implicit-after is never reached. The host here
+    // answers empty for implicit-before and non-empty for implicit-after. The
+    // path is reachable only with the check skipped (the seam evaluates
+    // unchecked), because the static check rejects an unknown leading name
+    // first (FHIRPathEngine.java:1587-1593) and consults the host only when
+    // there is no focus type at all (:1585-1586).
+    let host =
+        RecordingHost::for_mode("nosuchelement", ConstantMode::ImplicitAfter, &["from-host"]);
     let values = host_eval(
         &EvalRequest::new("nosuchelement")
             .over(&patient)
@@ -1214,6 +1382,30 @@ fn implicit_after_is_a_fall_through_and_both_implicit_modes_need_an_app_context(
             .with_app_context(),
     );
     assert_eq!(rendered(&values), ["string:from-host"]);
+
+    // A host answering non-empty for implicit-before as well is returned at
+    // once and implicit-after is never reached.
+    let eager = RecordingHost::new(&[("nosuchelement", &["from-host"])]);
+    host_eval(
+        &EvalRequest::new("nosuchelement")
+            .over(&patient)
+            .with_host(&eager)
+            .with_app_context(),
+    );
+    assert_eq!(
+        eager.modes_for("nosuchelement"),
+        [ConstantMode::ImplicitBefore]
+    );
+
+    // The check rejects the unknown leading name first.
+    let typed = oracle::engine::parse_with_host("nosuchelement", Some(&host)).expect("parses");
+    match oracle::engine::check_in_type(&typed, Some("Patient"), Some(&host)) {
+        Err(EngineError::Diagnostic { message, .. }) => assert!(
+            message.contains("The name 'nosuchelement' is not valid for any of the possible types"),
+            "{message}"
+        ),
+        other => panic!("the check must reject an unknown leading name, not {other:?}"),
+    }
 
     // Both modes fire at that name, and in this order: before, then after.
     assert_eq!(

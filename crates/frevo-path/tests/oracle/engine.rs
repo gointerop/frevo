@@ -621,8 +621,15 @@ pub fn evaluate_host_aware(
                 .map_err(engine_error)?;
             let mut out = Vec::new();
             for item in &items {
+                // `%resource` is the resource the focus IS (a contained
+                // resource selected by the context path) or is inside;
+                // `%rootResource` is always the outermost resource.
+                let focus_resource = match item {
+                    Value::Node(n) if n.is_resource() => item,
+                    _ => resource,
+                };
                 out.extend(
-                    ev.evaluate_in(expr, Some(item), Some(resource), Some(resource))
+                    ev.evaluate_in(expr, Some(item), Some(focus_resource), Some(resource))
                         .map_err(engine_error)?,
                 );
             }
