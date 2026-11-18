@@ -608,10 +608,13 @@ fn a_time_literal_with_an_offset_is_an_execution_error() {
 fn every_unimplemented_function_is_unsupported_and_never_empty() {
     let p = patient();
     for text in [
-        "Patient.name.aggregate($this, 0)",
-        "Patient.birthDate.extension('x')",
-        "Patient.name.given.trace('x')",
         "Patient.birthDate.lowBoundary()",
+        "Patient.birthDate.highBoundary()",
+        "Patient.gender.memberOf('http://x')",
+        "Patient.conformsTo('http://x')",
+        "Patient.resolve()",
+        "Patient.birthDate.comparable(Patient.birthDate)",
+        "Patient.name.given.precision()",
     ] {
         let feature = unsupported(text, Some(&p));
         assert!(feature.contains("function"), "{text}: {feature}");
@@ -621,10 +624,9 @@ fn every_unimplemented_function_is_unsupported_and_never_empty() {
 #[test]
 fn every_binary_operator_is_unsupported_and_never_empty() {
     let p = patient();
-    for text in ["Patient.name is HumanName", "Patient.name as HumanName"] {
-        let feature = unsupported(text, Some(&p));
-        assert!(feature.contains("operator"), "{text}: {feature}");
-    }
+    let text = "Patient.gender memberOf 'http://x'";
+    let feature = unsupported(text, Some(&p));
+    assert!(feature.contains("operator"), "{text}: {feature}");
     // Operators that are built, applied to operands whose rule is not: still
     // Unsupported, never empty, though the message names the missing rule.
     for text in ["1 / 3", "1 'mg' < 2 'g'", "1 'mg' ~ 1 'mg'"] {
@@ -639,13 +641,17 @@ fn a_unary_sign_over_an_unbuilt_operation_is_unsupported() {
 }
 
 #[test]
-fn an_environment_variable_is_unsupported() {
+fn an_unknown_environment_variable_is_an_error_and_never_empty() {
+    // Every environment variable is built now, so none can be Unsupported; the
+    // property that survives is the same guard against a silent empty result:
+    // a name the engine does not know is an execution error, not an empty
+    // collection.
     let p = patient();
-    for text in ["%resource", "%context.id", "%ucum"] {
-        let feature = unsupported(text, Some(&p));
+    for text in ["%foo", "%vs", "%ext"] {
+        let message = execution_error(text, Some(&p));
         assert!(
-            feature.contains("environment variable"),
-            "{text}: {feature}"
+            message.contains("Invalid FHIRPath Constant"),
+            "{text}: {message}"
         );
     }
 }
@@ -654,8 +660,8 @@ fn an_environment_variable_is_unsupported() {
 fn an_unsupported_feature_deep_inside_navigation_still_surfaces() {
     // Navigation that reaches nothing must not hide the unsupported step after
     // it: the error is raised whether or not the focus is empty.
-    unsupported("{}.name.aggregate($this, 0)", None);
-    unsupported("Patient.name.prefix.aggregate($this, 0)", Some(&patient()));
+    unsupported("{}.name.lowBoundary()", None);
+    unsupported("Patient.name.prefix.lowBoundary()", Some(&patient()));
 }
 
 // ---------------------------------------------------------------------------
