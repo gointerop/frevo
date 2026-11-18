@@ -908,10 +908,23 @@ checkpoint because it changes what a gate measures.
   Satisfies `path.quantity.001` through `path.quantity.018`.
 
 - [ ] **45. Implement the boundary functions.** `lowBoundary`, `highBoundary` and
-  `precision` over decimals with their carry and borrow cases, out-of-range
-  precision arguments as empty, negatives, exponent-form inputs read from stored
-  lexical form, quantities, dates, dateTimes and times, and integers.
-  Satisfies `path.boundary.001` through `path.boundary.010`.
+  `precision` as the pinned engine computes them: decimal boundaries edited as
+  text, with **no carry** (a `9` rounded up is `:` and the result is an
+  execution error), **no borrow normalisation** (`10.lowBoundary(0)` is `09`),
+  and only a lower-case `e` split off as an exponent, its digits appended with
+  no `e` (`9.5e2.lowBoundary(0)` is `92`), so the 18 suite cases HAPI fails
+  are `failed` with HAPI's values and errors (`DEV-0025`, `DEBT-0016`);
+  out-of-range precision (outside `0`-`16`) empty for a decimal or integer but
+  not checked for a quantity; negatives; integers; quantities; every date or
+  dateTime boundary a `dateTime`; the date precision list 4, 6, 7, 8, 10, 14,
+  17 and the time list 2, 4, 6, 9, others an error, 14 an invalid dateTime, and
+  time precisions below 9 keeping a trailing separator (`10:`); `precision()`
+  raising on an empty focus with a message naming `highBoundary`; a focus of
+  another type empty; the precision argument read as one value with
+  `Integer.parseInt`. The tests for `.001`, `.004`-`.007` and `.009` were
+  written to the specification's values and must be amended to HAPI's by the
+  oracle-builder before this task can be ticked; `.011`-`.017` need tests.
+  Satisfies `path.boundary.001` through `path.boundary.017`.
 
 - [ ] **46. Implement type operators and reflection.** `is`, `as`, `ofType` and
   `type()` across the `System` and `FHIR` namespaces; the FHIR type hierarchy;

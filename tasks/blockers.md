@@ -2237,3 +2237,11 @@ empty); `precision()` raises on an empty focus, its message naming
 than 4, 6, 7, 8, 10, 14 or 17 (time: 2, 4, 6, 9) is an execution error, and
 14 yields an invalid dateTime (`2014-01-01T08:00:+14:00`), also an error;
 `@T10:30.lowBoundary(2)` is the time `10:`.
+
+**Resolved (spec side), 2026-11-18, proposer.** Per the owner's standing ruling
+(HAPI 8.12.0 is the reference), `path.boundary.001`, `.002`, `.004`-`.009` were
+amended in place to HAPI's results and `path.boundary.011`-`.017` were added for
+the HighBoundary exponent cases and the untested behaviours listed above.
+Spec-prose differences are `DEV-0025`; wrong answers are `DEBT-0016`. Owed next:
+the oracle-builder amends `crates/frevo-path/tests/path_boundary.rs` and the two
+`src/eval/tests.rs` lib tests, then the spec-reviewer re-reviews the delta.

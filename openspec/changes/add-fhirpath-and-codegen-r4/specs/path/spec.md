@@ -2109,13 +2109,23 @@ The engine SHALL compare, add, subtract, multiply and divide quantities by conve
 
 ### Requirement: Boundary functions
 
-The engine SHALL implement `lowBoundary`, `highBoundary` and `precision` over decimals, quantities, dates, dateTimes and times as `FHIRPathEngine` does, including the carry and borrow cases.
+The engine SHALL implement `lowBoundary`, `highBoundary` and `precision` over decimals, quantities, dates, dateTimes and times as `FHIRPathEngine` does at the pinned SHA, including its text-edited decimal boundaries with no carry, no borrow normalisation and only a lower-case `e` read as an exponent (`DEV-0025`).
 
 #### Scenario: [path.boundary.001] `lowBoundary` on a decimal widens to the implied precision
 
-- **WHEN** the `LowBoundary` group's decimal cases are evaluated, including
-  `1.587.lowBoundary()` yielding `1.58650000`
-- **THEN** every case yields its stated output
+- **WHEN** the `LowBoundary` group's 31 decimal cases are evaluated, including
+  `1.587.lowBoundary()` yielding `1.58650000`, `1.587.lowBoundary(6)` yielding
+  `1.586500`, `1.587.lowBoundary(2)` yielding `1.58` and `1.587.lowBoundary(0)`
+  yielding `1`
+- **THEN** every case HAPI passes yields its stated output (22 of 31)
+- **AND** Frevo's required status per case follows HAPI's own recorded run
+  (`oracles/fhirpath/hapi-8.12.0-results.json:932-962`): `failed` (parity under
+  `path.oracle.012`) for `LowBoundaryDecimalCarry1`-`3`,
+  `LowBoundaryDecimalBorrow1`-`2` and `LowBoundaryDecimalExponent1`-`4`, whose
+  values and errors are `path.boundary.004` and `path.boundary.005`, and
+  `passed` for the rest
+- **AND** the result keeps the requested scale: `1.587.lowBoundary()` is not the
+  decimal `1.5865`
 
 #### Scenario: [path.boundary.002] `lowBoundary(n)` with an out-of-range precision yields empty
 
@@ -2123,6 +2133,12 @@ The engine SHALL implement `lowBoundary`, `highBoundary` and `precision` over de
   `1.587.lowBoundary(39)` are evaluated
 - **THEN** each yields an empty collection (`LowBoundary/LowBoundaryDecimal3`,
   `LowBoundaryDecimal5`, `LowBoundaryDecimal6`)
+- **AND** the range is checked only for a decimal or an integer focus, and is
+  `0` to `16` inclusive (`precision >= 0 && precision < 17`,
+  `FHIRPathEngine.java:4310`, `:4314`, `:4354`, `:4358`), for both functions; a
+  quantity's precision is not checked (`path.boundary.012`), and a date, dateTime
+  or time precision is checked against its own list (`path.boundary.015`,
+  `path.boundary.016`)
 
 #### Scenario: [path.boundary.003] `lowBoundary` on a negative decimal moves away from zero
 
@@ -2130,52 +2146,273 @@ The engine SHALL implement `lowBoundary`, `highBoundary` and `precision` over de
 - **THEN** the results are `-1.58750000` and `-1.59`
   (`LowBoundary/LowBoundaryNegDecimalDefault`, `LowBoundaryNegDecimal2`)
 
-#### Scenario: [path.boundary.004] `lowBoundary` carries and borrows across digit positions
+#### Scenario: [path.boundary.004] `lowBoundary` neither carries nor normalises a borrow
 
-- **WHEN** `(-9.96).lowBoundary(1)`, `(-9).lowBoundary(0)`,
-  `10.lowBoundary(0)` and `100.lowBoundary(2)` are evaluated
-- **THEN** the results are `-10.0`, `-10`, `9` and `99.50`
-  (`LowBoundary/LowBoundaryDecimalCarry1`, `LowBoundaryDecimalCarry3`,
-  `LowBoundaryDecimalBorrow1`, `LowBoundaryDecimalBorrow2`)
+The decimal boundary is built as text (`Utilities.lowBoundaryForDecimal`,
+`applyPrecision`, `minusOne`, `Utilities.java:1631-1695` at `73c432b5`):
+rounding a digit up adds one to its character code, so a `9` becomes `:`;
+subtracting one turns trailing `0`s into `9`s and keeps a leading `0`. The text
+is then read as a decimal and kept as that decimal's lexical form; a text that
+is not a decimal is an execution error carrying Java's `BigDecimal` message.
 
-#### Scenario: [path.boundary.005] `lowBoundary` reads precision from a decimal's stored lexical form
+- **WHEN** `(-9.96).lowBoundary(1)`, `(-99.96).lowBoundary(1)` and
+  `(-9).lowBoundary(0)` are evaluated
+- **THEN** each is an execution error whose message is
+  `Character : is neither a decimal digit number, decimal point, nor "e"
+  notation exponential mark.`, because the high boundary of the magnitude
+  rounds a `9` up to `:` (`LowBoundary/LowBoundaryDecimalCarry1`,
+  `LowBoundaryDecimalCarry2`, `LowBoundaryDecimalCarry3`; `failed` on HAPI,
+  `hapi-8.12.0-results.json:954-956`)
+- **AND** `10.lowBoundary(0)` is the decimal `09` and `100.lowBoundary(2)` is
+  the decimal `099.50`, each with that lexical form
+  (`LowBoundary/LowBoundaryDecimalBorrow1`, `LowBoundaryDecimalBorrow2`;
+  `failed` on HAPI with `Value should be 9 but was 09` and
+  `Value should be 99.50 but was 099.50`, `results.json:957-958`)
+- **AND** all five cases are `failed` for Frevo too (parity under
+  `path.oracle.012`); the suite's expectations (`-10.0`, `-100.0`, `-10`, `9`,
+  `99.50`) are the specification's, recorded as `DEV-0025`
+- **AND** where the subtraction leaves no leading `0` the result is exact:
+  `1.587.lowBoundary(2)` is `1.58` and `1.lowBoundary(0)` is `0`
 
-- **WHEN** `Parameters.parameter[0].value.lowBoundary(0)` and
-  `Parameters.parameter[1].value.lowBoundary()` are evaluated over
+#### Scenario: [path.boundary.005] `lowBoundary` on an exponent-form decimal appends the exponent's digits
+
+Only the first lower-case `e` is split off; the boundary is computed on the
+mantissa and the exponent's text is appended to the result with no `e`
+(`Utilities.java:1635-1647`, `:1701-1713`). An upper-case `E` is an
+ordinary character of the text. The four values of
+`parameters-example-decimals.xml` are `9.5e2`, `1.5e-3`, `-9.5e2` and `1.5E2`.
+
+- **WHEN** `Parameters.parameter[0].value.lowBoundary(0)`,
+  `Parameters.parameter[1].value.lowBoundary()`,
+  `Parameters.parameter[2].value.lowBoundary(0)` and
+  `Parameters.parameter[3].value.lowBoundary(1)` are evaluated over
   `parameters-example-decimals.xml`
-- **THEN** the results are `945` and `0.00145000`
-  (`LowBoundary/LowBoundaryDecimalExponent1`, `LowBoundaryDecimalExponent2`)
+- **THEN** the results are, in order: the decimal `92`; an execution error
+  `Character - is neither a decimal digit number, decimal point, nor "e"
+  notation exponential mark.` (the text is `1.45000000-3`); an execution error
+  naming `Character :`; and the decimal `1.5`
+  (`LowBoundary/LowBoundaryDecimalExponent1` through `Exponent4`, `failed` on
+  HAPI with these values and errors, `hapi-8.12.0-results.json:959-962`)
+- **AND** all four are `failed` for Frevo too (parity under `path.oracle.012`);
+  the suite's expectations (`945`, `0.00145000`, `-955`, `145.0`) are the
+  specification's, recorded as `DEV-0025`, and the two that answer (`92`,
+  `1.5`) are wrong numbers rather than errors, recorded as `DEBT-0016`
 
 #### Scenario: [path.boundary.006] `highBoundary` on a decimal widens to the implied precision
 
-- **WHEN** the `HighBoundary` group's decimal cases are evaluated, including
-  `1.587.highBoundary()` yielding `1.58750000`
-- **THEN** every case yields its stated output
+- **WHEN** the `HighBoundary` group's 27 decimal cases are evaluated, including
+  `1.587.highBoundary()` yielding `1.58750000`, `1.587.highBoundary(2)` yielding
+  `1.59`, `1.587.highBoundary(6)` yielding `1.587500`,
+  `(-1.587).highBoundary()` yielding `-1.58650000` and
+  `(-1.587).highBoundary(2)` yielding `-1.58`
+- **THEN** every case HAPI passes yields its stated output (18 of 27)
+- **AND** Frevo's required status per case follows HAPI's own recorded run
+  (`oracles/fhirpath/hapi-8.12.0-results.json:969-995`): `failed` (parity under
+  `path.oracle.012`) for `HighBoundaryDecimalCarry1`-`4` and
+  `HighBoundaryDecimalExponent1`-`5`, whose values and errors are
+  `path.boundary.007` and `path.boundary.011`, and `passed` for the rest
+- **AND** `1.587.highBoundary(-1)` and `1.587.highBoundary(39)` are empty, as
+  for `lowBoundary` (`path.boundary.002`), and the result keeps the requested
+  scale: `1.587.highBoundary()` is not the decimal `1.5875`
 
-#### Scenario: [path.boundary.007] `highBoundary` carries across digit positions
+#### Scenario: [path.boundary.007] `highBoundary` does not carry past a `9`
 
 - **WHEN** `9.95.highBoundary(1)`, `0.996.highBoundary(1)`,
   `99.96.highBoundary(1)` and `9.highBoundary(0)` are evaluated
-- **THEN** the results are `10.0`, `1.0`, `100.0` and `10`
-  (`HighBoundary/HighBoundaryDecimalCarry1` through `Carry4`)
+- **THEN** each is an execution error whose message is
+  `Character : is neither a decimal digit number, decimal point, nor "e"
+  notation exponential mark.`, because the digit rounded up is a `9`
+  (`Utilities.java:1672`) (`HighBoundary/HighBoundaryDecimalCarry1` through
+  `Carry4`; `failed` on HAPI, `hapi-8.12.0-results.json:987-990`)
+- **AND** all four are `failed` for Frevo too (parity under `path.oracle.012`);
+  the suite's expectations (`10.0`, `1.0`, `100.0`, `10`) are the
+  specification's, recorded as `DEV-0025`
+- **AND** a round-up of a digit below `9` is exact: `1.587.highBoundary(2)` is
+  `1.59` and `1.highBoundary(0)` is `2`
 
 #### Scenario: [path.boundary.008] boundary functions work on quantities
 
 - **WHEN** the `LowBoundary` and `HighBoundary` groups' quantity cases are
-  evaluated
-- **THEN** every case yields its stated output
+  evaluated, `1.587 'cm'.lowBoundary(8)` and `1.587 'm'.highBoundary(8)`
+- **THEN** every case yields its stated output, and the two results are the
+  quantities `1.58650000 'cm'` and `1.58750000 'm'`: the value is computed as
+  for a decimal and the unit, code and system are copied unchanged
 
-#### Scenario: [path.boundary.009] boundary functions work on dates, dateTimes and times
+#### Scenario: [path.boundary.009] boundary functions on a date or dateTime yield a dateTime
+
+Both functions build every date and dateTime boundary with
+`new DateTimeType(...)` (`FHIRPathEngine.java:4318-4320`, `:4362-4364`) and
+every time boundary with `new TimeType(...)` (`:4322`, `:4366`). The default
+precision is 10 for a date, 17 for a dateTime and 9 for a time; a precision of
+10 or less drops the offset, a higher one keeps a stated offset and otherwise
+appends `+14:00` for `lowBoundary` and `-12:00` for `highBoundary`
+(`DateTimeUtil.java:83-89`, `:174-180`).
 
 - **WHEN** the `LowBoundary` and `HighBoundary` groups' date, dateTime and time
   cases are evaluated
-- **THEN** every case yields its stated output
+- **THEN** every case yields its stated output, as it does on HAPI (10 of 10)
+- **AND** `@2014.lowBoundary(6)` and `@2014.highBoundary(6)` are each a single
+  item of FHIR type `dateTime` (not `date`) with the value `2014-01` and
+  `2014-12`
+- **AND** `@2014-01-01T08.lowBoundary(8)` is a single `dateTime` with the value
+  `2014-01-01`, and `@2014.lowBoundary()` is a single `dateTime` with the value
+  `2014-01-01`
+- **AND** `@2014-01-01T08.lowBoundary(17)` is the `dateTime`
+  `2014-01-01T08:00:00.000+14:00`, `@2014-01-01T08.highBoundary(17)` is
+  `2014-01-01T08:00:59.999-12:00`, and
+  `@2014-01-01T08:05+08:00.lowBoundary(17)` is
+  `2014-01-01T08:05:00.000+08:00`
+- **AND** `@T10:30.lowBoundary(9)` and `@T10:30.highBoundary(9)` are the `time`
+  values `10:30:00.000` and `10:30:59.999`
+- **AND** a high boundary widened from month to day precision uses the month's
+  length, leap years included: `@2014-02.highBoundary(8)` is `2014-02-28` and
+  `@2016-02.highBoundary(8)` is `2016-02-29`, each a `dateTime`
+- **AND** the specification's result type for a date input is a date; recorded
+  as `DEV-0025`, and the type-test consequence as `DEBT-0016`
 
 #### Scenario: [path.boundary.010] an integer's boundaries are decimals half a unit away
 
 - **WHEN** `1.lowBoundary(5)` and `1.highBoundary()` are evaluated
 - **THEN** the results are `0.50000` and `1.50000000`
   (`LowBoundary/LowBoundaryDecimal9`, `HighBoundary/HighBoundaryDecimal8`)
+
+#### Scenario: [path.boundary.011] `highBoundary` on an exponent-form decimal appends the exponent's digits
+
+The exponent rule of `path.boundary.005`, for `highBoundary`
+(`Utilities.java:1701-1713`).
+
+- **WHEN** `Parameters.parameter[0].value.highBoundary(0)`,
+  `Parameters.parameter[0].value.highBoundary()`,
+  `Parameters.parameter[1].value.highBoundary()`,
+  `Parameters.parameter[2].value.highBoundary(0)` and
+  `Parameters.parameter[3].value.highBoundary(1)` are evaluated over
+  `parameters-example-decimals.xml`
+- **THEN** the results are, in order: an execution error naming `Character :`;
+  the decimal `9.550000002`; an execution error naming `Character -`; the
+  decimal `-92`; and the decimal `1.6`
+  (`HighBoundary/HighBoundaryDecimalExponent1` through `Exponent5`, `failed` on
+  HAPI with these values and errors, `hapi-8.12.0-results.json:991-995`)
+- **AND** all five are `failed` for Frevo too (parity under `path.oracle.012`);
+  the suite's expectations (`955`, `955.00000000`, `0.00155000`, `-945`,
+  `155.0`) are the specification's, recorded as `DEV-0025`, and the three that
+  answer are wrong numbers rather than errors, recorded as `DEBT-0016`
+- **AND** the oracle is the suite's `HighBoundary` group
+
+#### Scenario: [path.boundary.012] a quantity's boundary precision is not range-checked
+
+`funcLowBoundary` and `funcHighBoundary` apply the `0`-`16` check of
+`path.boundary.002` only to a decimal or an integer; the quantity arm passes
+the precision straight to the decimal computation (`FHIRPathEngine.java:4323-4327`,
+`:4367-4371`).
+
+- **WHEN** `1.587 'cm'.lowBoundary(-1)` and `1.587 'cm'.highBoundary(-1)` are
+  evaluated
+- **THEN** each is an execution error, not an empty collection: the precision
+  cuts the value's text to nothing, which is not a decimal
+- **AND** `1.587 'cm'.lowBoundary(20)` is the quantity
+  `1.58650000000000000000 'cm'` (twenty fractional digits), where
+  `1.587.lowBoundary(20)` is empty
+- **AND** the specification's out-of-range result is empty, as the suite's
+  decimal cases `LowBoundaryDecimal3` and `LowBoundaryNegDecimal3` show;
+  recorded as `DEV-0025`
+- **AND** no suite case grades it, so it is differential-only, with seam
+  assertions in the boundary tests
+
+#### Scenario: [path.boundary.013] `precision()` on an empty or many-item focus raises, naming `highBoundary`
+
+`funcPrecision` opens with `if (focus.size() != 1) throw
+makeExceptionPlural(..., "highBoundary", ...)` (`FHIRPathEngine.java:4379-4381`).
+
+- **WHEN** `{}.precision()` and `(1.5 | 2.5).precision()` are evaluated
+- **THEN** each is an execution error whose message is the focus-cardinality
+  message (`focus for highBoundary can only have one value, but has 0 values`,
+  and `... has 2 values`), naming `highBoundary` and not `precision`
+- **AND** `{}.lowBoundary()` and `{}.highBoundary()` are empty, not errors
+  (`:4291-4293`, `:4335-4337`)
+- **AND** `(1.5 | 2.5).lowBoundary()` and `(1.5 | 2.5).highBoundary()` are
+  execution errors with the same message naming `lowBoundary` and
+  `highBoundary` respectively (`:4294-4296`, `:4338-4340`)
+- **AND** the specification's result for an empty input is empty; recorded as
+  `DEV-0025`
+- **AND** no suite case grades it, so it is differential-only
+
+#### Scenario: [path.boundary.014] a focus of a type the functions do not take is empty, not an error
+
+The last arm of each function builds an exception with `makeException(...)`
+and does not throw it (`FHIRPathEngine.java:4329`, `:4373`, `:4391`), so the
+result is empty. The static check is stricter: `checkContextContinuous`
+(`:3896-3900`) admits a decimal, date, dateTime, time or Quantity focus, and an
+integer for the two boundaries but not for `precision` (`:3716`, `:3731`).
+
+- **WHEN** `1.precision()`, `'abc'.precision()`, `'abc'.lowBoundary()` and
+  `true.highBoundary()` are evaluated with the static check skipped, as
+  `FhirPathR4` evaluates (`path.check.013`)
+- **THEN** each yields an empty collection
+- **AND** `1 'cm'.precision()` yields an empty collection and passes the static
+  check, because a Quantity focus is admitted by the check but not by
+  `funcPrecision`
+- **AND** with the static check run, `1.precision()` and `'abc'.lowBoundary()`
+  are rejected with `FHIRPATH_CONTINUOUS_ONLY`, while `1.lowBoundary()` passes
+- **AND** no suite case grades it, so it is differential-only
+
+#### Scenario: [path.boundary.015] a date or dateTime boundary precision is one of seven values
+
+`DateTimeUtil.applyDatePrecision` (`DateTimeUtil.java:130-144`) cuts the widened
+text at 4 (year), 6 or 7 (month), 8 or 10 (day), 14 (17 characters) or 17 (the
+whole text), and throws for anything else.
+
+- **WHEN** `@2014-01-15.lowBoundary(7)` and `@2014.lowBoundary(10)` are
+  evaluated
+- **THEN** the results are the dateTimes `2014-01` and `2014-01-01`
+- **AND** `@2014.lowBoundary(5)`, `@2014.highBoundary(0)`,
+  `@2014-01-01T08.lowBoundary(12)` and `@2014.lowBoundary(20)` are each an
+  execution error with the message
+  `Unsupported Date precision for boundary operation: <n>`; there is no range
+  check returning empty
+- **AND** `@2014-01-01T08.lowBoundary(14)` and `@2014-01-01T08.highBoundary(14)`
+  are execution errors: precision 14 keeps 17 characters, so the text is
+  `2014-01-01T08:00:+14:00` (`2014-01-01T08:00:-12:00`), which is not a valid
+  dateTime
+- **AND** the specification's seconds precision 14 yields a dateTime at
+  seconds; recorded as `DEV-0025`
+- **AND** no suite case grades it, so it is differential-only
+
+#### Scenario: [path.boundary.016] a time boundary precision below 9 keeps a trailing separator
+
+`DateTimeUtil.applyTimePrecision` (`DateTimeUtil.java:146-154`) cuts the
+widened text `hh:mm:ss.fff` at 3, 6 or 9 characters for precisions 2, 4 and 6,
+and keeps it whole for 9; `new TimeType(...)` does not validate the text.
+
+- **WHEN** `@T10:30.lowBoundary(2)`, `@T10:30.lowBoundary(4)` and
+  `@T10:30.lowBoundary(6)` are evaluated
+- **THEN** the results are the times `10:`, `10:30:` and `10:30:00.`, each with
+  that lexical form
+- **AND** `@T10:30.highBoundary(2)` and `@T10:30.highBoundary(6)` are the times
+  `10:` and `10:30:59.`
+- **AND** `@T10:30.lowBoundary(3)`, `@T10:30.lowBoundary(8)` and
+  `@T10:30.lowBoundary(17)` are each an execution error with the message
+  `Unsupported Time precision for boundary operation: <n>`
+- **AND** the specification's results are the times `10`, `10:30` and
+  `10:30:00`; recorded as `DEV-0025`, and the malformed values as `DEBT-0016`
+- **AND** no suite case grades it, so it is differential-only
+
+#### Scenario: [path.boundary.017] the precision argument must be a single value read as an integer
+
+Each function evaluates its argument and throws unless it yields exactly one
+item, with a message that names `lowBoundary` in both functions
+(`FHIRPathEngine.java:4300-4301`, `:4344-4345`); the item's primitive text is
+then read with `Integer.parseInt` (`:4303`, `:4347`).
+
+- **WHEN** `1.587.lowBoundary(1 | 2)`, `1.587.highBoundary(1 | 2)` and
+  `1.587.lowBoundary({})` are evaluated with the static check skipped
+- **THEN** each is an execution error whose message is
+  `The parameter type Multiple Values is not legal for lowBoundary parameter 0.
+  expecting integer`, naming `lowBoundary` for `highBoundary` too
+- **AND** with the static check skipped, `1.587.lowBoundary('2')` is the decimal
+  `1.58`, because the string's text parses as an integer, and
+  `1.587.lowBoundary(1.5)` is an execution error with the message
+  `For input string: "1.5"`
+- **AND** no suite case grades it, so it is differential-only
 
 ### Requirement: Type operators and reflection
 

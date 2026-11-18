@@ -9,8 +9,8 @@ capability, because that is the layout `openspec validate` parses and
 |---|---|---:|
 | `codegen` | [`specs/codegen/spec.md`](specs/codegen/spec.md) | 49 |
 | `model` | [`specs/model/spec.md`](specs/model/spec.md) | 83 |
-| `path` | [`specs/path/spec.md`](specs/path/spec.md) | 368 |
-| **Total** | | **500** |
+| `path` | [`specs/path/spec.md`](specs/path/spec.md) | 375 |
+| **Total** | | **507** |
 
 This file carries no normative text of its own. It carries the ID registry,
 which is the thing a later change must not collide with.
@@ -64,6 +64,26 @@ a deviation (the FHIRPath specification defines no check pass; only the suite's
 group note asks for narrowing) and not a known gap (HAPI fails the same 14
 cases): see `docs/deviations.md`, "Considered and not recorded as deviations".
 
+Revision after the owner's standing ruling (HAPI 8.12.0's observable behaviour
+is the reference) applied to the boundary functions, from the implementation of
+task 45 (`tasks/blockers.md`, 2026-11-18, "task 45"): the pinned engine builds a
+decimal boundary by editing its text, with no carry, no borrow normalisation
+and only a lower-case `e` read as an exponent, and builds every date or
+dateTime boundary as a `dateTime`. HAPI fails 18 of its own boundary cases
+(`oracles/fhirpath/hapi-8.12.0-results.json:954-962`, `:987-995`). **7 existing
+scenarios were rewritten in place** to HAPI's results: `path.boundary.001`,
+`.004`, `.005`, `.006`, `.007` and `.009` (now stating the error or value HAPI
+gives, and `failed` parity under `path.oracle.012`), and `.002` (the range check
+made exact); `.008` gained its seam values. **7 IDs were added** at the end of
+the area for behaviour the first draft missed: `path.boundary.011` (the
+`HighBoundary` exponent cases, which no scenario named) and `.012`-`.017`
+(untested upstream behaviour: a quantity's precision is not range-checked,
+`precision()` on an empty focus, a focus of another type, the date and time
+precision lists, the precision argument). None was removed, renumbered, reused
+or repurposed. The spec-prose differences are `DEV-0025`; the wrong answers
+HAPI gives are `DEBT-0016`. The delta changed after `review.md` was
+`APPROVED`, so the spec-reviewer must re-review it.
+
 | Area | IDs allocated | Range |
 |---|---:|---|
 | `codegen.inputs.*` | 6 | `001`-`006` |
@@ -101,7 +121,7 @@ cases): see `docs/deviations.md`, "Considered and not recorded as deviations".
 | `path.convert.*` | 14 | `001`-`014` |
 | `path.datetime.*` | 7 | `001`-`007` |
 | `path.quantity.*` | 18 | `001`-`018` |
-| `path.boundary.*` | 10 | `001`-`010` |
+| `path.boundary.*` | 17 | `001`-`017` |
 | `path.types.*` | 13 | `001`-`013` |
 | `path.env.*` | 17 | `001`-`017` |
 | `path.utility.*` | 28 | `001`-`028` |
@@ -133,10 +153,11 @@ contain `<test ...>` text — and are leftover Java, not well-formed test
 elements. `documentFunctions` is 115 cases, not 114. The `invalid` counts are
 unaffected: 7 syntax, 29 semantic, 27 execution.
 
-**Nineteen scenarios have no live case in the pinned suite to grade them and
+**Twenty-five scenarios have no live case in the pinned suite to grade them and
 say so in their own text**: `path.subset.003`, `path.subset.013`,
 `path.compare.007`, `path.compare.011`, `path.convert.012`,
-`path.datetime.003`, `path.quantity.015`, `path.quantity.018`, `path.env.015`,
+`path.datetime.003`, `path.quantity.015`, `path.quantity.018`,
+`path.boundary.012` through `path.boundary.017`, `path.env.015`,
 `path.env.016`, `path.env.017`, `path.utility.017`, `path.utility.022`,
 `path.utility.023`, `path.utility.024`, `path.utility.027`,
 `path.utility.028`, `path.strictness.005` and `path.strictness.006`. The pinned
@@ -653,13 +674,20 @@ Every allocated ID, grouped as it is grouped in the delta files.
 - `path.boundary.001` — `lowBoundary` on a decimal widens to the implied precision
 - `path.boundary.002` — `lowBoundary(n)` with an out-of-range precision yields empty
 - `path.boundary.003` — `lowBoundary` on a negative decimal moves away from zero
-- `path.boundary.004` — `lowBoundary` carries and borrows across digit positions
-- `path.boundary.005` — `lowBoundary` reads precision from a decimal's stored lexical form
+- `path.boundary.004` — `lowBoundary` neither carries nor normalises a borrow
+- `path.boundary.005` — `lowBoundary` on an exponent-form decimal appends the exponent's digits
 - `path.boundary.006` — `highBoundary` on a decimal widens to the implied precision
-- `path.boundary.007` — `highBoundary` carries across digit positions
+- `path.boundary.007` — `highBoundary` does not carry past a `9`
 - `path.boundary.008` — boundary functions work on quantities
-- `path.boundary.009` — boundary functions work on dates, dateTimes and times
+- `path.boundary.009` — boundary functions on a date or dateTime yield a dateTime
 - `path.boundary.010` — an integer's boundaries are decimals half a unit away
+- `path.boundary.011` — `highBoundary` on an exponent-form decimal appends the exponent's digits
+- `path.boundary.012` — a quantity's boundary precision is not range-checked
+- `path.boundary.013` — `precision()` on an empty or many-item focus raises, naming `highBoundary`
+- `path.boundary.014` — a focus of a type the functions do not take is empty, not an error
+- `path.boundary.015` — a date or dateTime boundary precision is one of seven values
+- `path.boundary.016` — a time boundary precision below 9 keeps a trailing separator
+- `path.boundary.017` — the precision argument must be a single value read as an integer
 
 **Requirement: Type operators and reflection**
 

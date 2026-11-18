@@ -423,3 +423,46 @@ them is the whole reason that decision is safe to make.
 - **Size:** small each; large if a Java-exact engine is needed.
 - **Status:** open
 - **Reviewed:** not yet. Raised 2026-11-17.
+
+### DEBT-0016 — boundary functions give wrong answers, not errors, for exponent-form decimals, date types and sub-millisecond time precisions
+
+- **Area:** path
+- **Origin:** `DEV-0025`, change `add-fhirpath-and-codegen-r4`, task 45
+- **Owed:** the specification's boundary, behind a configuration flag that
+  defaults to HAPI's behaviour, for the cases where matching HAPI answers
+  wrongly rather than failing:
+  - a decimal stored with a lower-case exponent: the exponent's digits are
+    appended without the `e` (`9.5e2` has `lowBoundary(0)` `92`, not `945`;
+    `highBoundary()` `9.550000002`, not `955.00000000`; `-9.5e2` has
+    `highBoundary(0)` `-92`), `path.boundary.005`, `.011`;
+  - a decimal stored with an upper-case `E`: the `E` is treated as a digit
+    position (`1.5E2` has `lowBoundary(1)` `1.5` and `highBoundary(1)` `1.6`,
+    not `145.0` and `155.0`);
+  - a borrow keeps a leading zero (`10.lowBoundary(0)` is `09`): numerically
+    right, but the lexical form, and so string conversion, differs;
+  - the boundary of a date is a `dateTime`, so a type test or `type()` on it
+    reports a dateTime (`path.boundary.009`);
+  - a time boundary at precision 2, 4 or 6 is a malformed time (`10:`,
+    `10:30:`, `10:30:00.`) rather than an hour, minute or second value
+    (`path.boundary.016`).
+  Also owed: an upstream report to `org.hl7.fhir.core` for all of the above
+  and for the carry and date-precision-14 errors, which are errors and not
+  hazards.
+- **Why deferred:** constitution section 1 and the owner's decision of
+  2026-11-08: no flag is added speculatively. HAPI fails the same 18 suite
+  cases, so parity is exact; no consumer, search parameter or IG invariant is
+  known to call a boundary function on an exponent-form decimal or with a time
+  precision below 9.
+- **Cost if unpaid:** an invariant or search expression using `lowBoundary`,
+  `highBoundary` or a type test on their result gets a wrong number or type,
+  silently, for a resource whose decimal was written with an exponent, or for
+  a time at reduced precision; the same answer HAPI gives.
+- **Trigger:** a differential diff or consumer report involving a boundary
+  function on such a value; an IG invariant or generated search-parameter
+  expression calling `lowBoundary` or `highBoundary`; or a re-pin of
+  `org.hl7.fhir.core` that changes `Utilities.applyPrecision` or
+  `DateTimeUtil.applyTimePrecision`.
+- **Size:** small; the change is confined to the text helpers in
+  `crates/frevo-path/src/eval/boundary.rs` and the flag plumbing.
+- **Status:** open
+- **Reviewed:** not yet. Raised 2026-11-18.

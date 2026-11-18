@@ -45,8 +45,8 @@ decision.
 
 ## Entries
 
-All twenty-two entries below come from `add-fhirpath-and-codegen-r4`;
-`DEV-0013`, `DEV-0015`, `DEV-0017`, `DEV-0018`, `DEV-0019`, `DEV-0021`, `DEV-0022`, `DEV-0023` and `DEV-0024` are pending the owner's review (see their entries);
+All twenty-three entries below come from `add-fhirpath-and-codegen-r4`;
+`DEV-0013`, `DEV-0015`, `DEV-0017`, `DEV-0018`, `DEV-0019`, `DEV-0021`, `DEV-0022`, `DEV-0023`, `DEV-0024` and `DEV-0025` are pending the owner's review (see their entries);
 `DEV-0012` and `DEV-0014` were ruled for HAPI (2026-11-17 and 2026-11-14).
 `DEV-0001` through `DEV-0010` are the same kind of case: the pinned R4
 `FHIRPathEngine` does something the FHIRPath specification does not describe. In
@@ -733,6 +733,52 @@ file, so its prose is not redistributable here (see `oracles/PINS.md`).
   the reference. Established from the pinned source; not confirmed against a
   live HAPI.
 - **Normalizer impact:** none on stored bytes.
+- **Reviewed:** pending owner.
+
+### DEV-0025 — boundary functions edit decimals as text, return a dateTime for a date, and diverge on precision edge cases
+
+- **Area:** path
+- **Scenario IDs:** path.boundary.001, path.boundary.004, path.boundary.005,
+  path.boundary.006, path.boundary.007, path.boundary.009, path.boundary.011,
+  path.boundary.012, path.boundary.013, path.boundary.015, path.boundary.016
+- **HAPI 8.12.0 behaviour:** `Utilities.lowBoundaryForDecimal` /
+  `highBoundaryForDecimal` (`Utilities.java:1631-1716` at `73c432b5`) compute a
+  decimal boundary on its text. `applyPrecision` rounds up with
+  `(char)(nv.charAt(ld-1)+1)` (`:1672`), so a `9` becomes `:` and
+  `new DecimalType` throws: `9.95.highBoundary(1)` and `(-9).lowBoundary(0)` are
+  errors. `minusOne` (`:1683-1695`) keeps a leading zero: `10.lowBoundary(0)` is
+  `09`. Only a lower-case `e` is split off and its digits are appended with no
+  `e` (`:1635-1647`, `:1701-1713`): the value `9.5e2` has `lowBoundary(0)` `92`
+  and `highBoundary()` `9.550000002`, and the value `1.5E2` has
+  `lowBoundary(1)` `1.5` (`parameters-example-decimals.xml`). HAPI fails
+  exactly 18 suite cases (`oracles/fhirpath/hapi-8.12.0-results.json:954-962`,
+  `:987-995`). Every date and dateTime boundary is `new DateTimeType(...)`
+  (`ENGINE:4318-4320`, `4362-4364`), so `@2014.lowBoundary(6)` is a `dateTime`.
+  A quantity's precision is not range-checked (`ENGINE:4323-4327`), so
+  `1.587 'cm'.lowBoundary(-1)` is an error. `precision()` on an empty focus
+  throws a message naming `highBoundary` (`ENGINE:4379-4381`). A date
+  precision of 14 builds `2014-01-01T08:00:+14:00` and fails; a time precision
+  of 2, 4 or 6 keeps a trailing separator (`@T10:30.lowBoundary(2)` is the time
+  `10:`) (`DateTimeUtil.java:130-153`).
+- **Specification requirement:** FHIRPath (the `lowBoundary`, `highBoundary`
+  and `precision` functions), as the suite's `LowBoundary`/`HighBoundary`
+  expectations encode it: the boundary is the numeric boundary at the requested
+  precision (`-10.0`, `9`, `945`, `155.0`), of the input's type (a date for a
+  date), empty for a precision out of range; a function over an empty input is
+  empty; seconds precision of a dateTime and hour or minute precision of a time
+  are well-formed values.
+- **Chosen behaviour:** HAPI. The 18 suite cases are `failed` on both sides
+  (parity under `path.oracle.012`); the untested behaviours match the pinned
+  source.
+- **Configuration flag:** none
+- **Debt:** DEBT-0016
+- **Rationale:** owner ruling, 2026-11-17 (as for `DEV-0019`): HAPI 8.12.0's
+  observable behaviour is the reference, including where it fails its own
+  suite. Established from the pinned source and HAPI's recorded suite run; the
+  untested behaviours are not confirmed against a live HAPI.
+- **Normalizer impact:** none on stored bytes. The R4 search-parameter table
+  is not known to call the boundary functions (not checked against the
+  generated table).
 - **Reviewed:** pending owner.
 
 ## Considered and not recorded as deviations
