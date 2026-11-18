@@ -1,5 +1,56 @@
 CHANGES_REQUESTED
 
+Twenty-seventh review (commit `12bb026`, 2026-11-17). The new scenarios'
+Java-side claims were probed with `java.util.regex` (Temurin JDK 25.0.1),
+using HAPI's exact call shapes: `"(?s)"+p` with `find`, `"(?s)"+p` with
+`Pattern.matches`, and `Matcher.replaceAll`. Because the JDK is not HAPI's
+runtime, the results are evidence about `java.util.regex`, whose behaviour
+here is long-standing, not a measurement of HAPI. `.026`, `.027` and `.029`
+are accurate. Three items are not. Detail is in the dated section at the end.
+The earlier findings follow, kept for the record.
+
+1. **`path.string.025`'s `[a--b]` example is not a departure, and "class
+   intersection" misdescribes Java.**
+   - Java parses `[a--b]` as the range `a`..`-`, which is reversed. So
+     `Pattern.compile("(?s)[a--b]")` raises `PatternSyntaxException: Illegal
+     character range` (probe), and HAPI fails `'a'.matches('[a--b]')` too.
+   - Java's class intersection is `&&`. In Java, `--` and `~~` are literals or
+     range ends, never operators.
+   - Use an example Java accepts and the `regex` crate reads as a set
+     operation: `'b'.matches('[a-z--b]')` is `true` in Java (probe: the range
+     `-`..`b` is added), and the crate reads it as set difference. `[a~~b]`
+     is fine: Java gives `true` (probe).
+   - Correct the "HAPI accepts every one of them … class intersection"
+     clause.
+
+2. **`path.string.028` claims Java never splits a surrogate pair after an
+   empty match. It does.**
+   - `Matcher.find` steps one UTF-16 unit past an empty match. The probe
+     gives `"a😀".replaceAll("x*", "-")` = `-a-\uD83D-\uDE00-`: seven code
+     points, with an empty match between the two halves.
+   - Frevo steps a whole code point (`strregex.rs:343-347`,
+     `c.len_utf8()`), which gives `-a-😀-`.
+   - So the scenario states the wrong HAPI behaviour, and Frevo silently
+     differs from HAPI on any supplementary character.
+   - Either specify HAPI's split result and build it (`path.string.022`
+     already requires UTF-16 semantics and lone-surrogate values), or record
+     the difference in DEV-0023 and `DEBT-0015`.
+
+3. **Constructs Java has and the crate lacks are a departure, but DEV-0023
+   does not list them.**
+   - Backreference `(a)\1`, lookahead `a(?=b)`, atomic groups, `\Q..\E`,
+     `\R`, `\X`, `\G`, `\Z`, `\h` and `(?d)` are **answers** in HAPI. The
+     probe gives `true` for `'aa'.matches('(a)\\1')` and
+     `'ab'.matches('a(?=b)')`. They are **errors** in Frevo.
+   - That is a difference from HAPI (constitution section 1), and ADR 0005
+     lists it as the first DEV candidate.
+   - DEV-0023's HAPI-behaviour and chosen-behaviour fields omit it.
+     `path.string.025` points it at `DEBT-0015`, which calls these "not
+     hazards".
+   - Add them to DEV-0023, and cite DEV-0023 in `.025`'s clause.
+
+## Twenty-sixth-review findings as raised (commit `e3a8ed0`)
+
 Twenty-sixth review (commit `e3a8ed0`, 2026-11-17). `ENGINE` is
 `org.hl7.fhir.r4/.../fhirpath/FHIRPathEngine.java` and `RT` is
 `org.hl7.fhir.utilities/.../regex/RegexTimeout.java`, both at `73c432b5`. The
@@ -1665,3 +1716,72 @@ appropriate.
 - No `#### Scenario:` heading changed. `path` has 363 headings.
 
 **Stale text.** None found for these three scenarios.
+
+## Twenty-seventh review - commit `12bb026` (2026-11-17)
+
+**Probe results (Java side)**, from
+`scratchpad/rx/Rx.java`, run outside the repository.
+
+`path.string.025`:
+- These are accepted, with these results: `(?u)a`, `(?U)a` and `(?x)a` are
+  `true`; `\v` on `a` is `false`; `a*+` is `true`; `\p{Alpha}` is `true`;
+  `[a~~b]` is `true`.
+- `[a--b]` raises `Illegal character range` (finding 1).
+- `(a)\1` and `a(?=b)` are `true` (finding 3).
+- `(a` raises `Unclosed group`, which is parity, as the scenario says
+  (`RegexTimeout.java:28-30`).
+- Frevo's layer rejects `U`, `u` and `x` (`strregex.rs:183-185`), `--` and
+  `~~` in a class (`:153-154`), possessive quantifiers (`:268`), `\v`
+  (`:301`) and the 13 POSIX names (`:114-118`, `:312-314`). That matches the
+  scenario's list.
+
+`path.string.026` (all as stated):
+- `\d` on `٣` is `false`. `\w` on `é` is `false` and `\W` on `é` is `true`.
+- `a\sb` is `false` across a no-break space and `true` across a space.
+- `7` matches `\d`, `_` matches `\w`, and `\bab\b` matches `ab`.
+- `[\w]` on `é` is `false`.
+
+`path.string.027` (all as stated):
+- The results are `a[b]c`, `a<b>c`, `a$c` and `a\c`.
+- With one group, `$10` gives `ab0c`. With ten groups, `$10` is group 10.
+- These raise: `$2` (`No group 2`), `${nope}`, a trailing `$`, a trailing
+  `\`, and `$$` (`Illegal group reference`).
+- A non-participating group contributes `""`.
+
+`path.string.028`:
+- `x*` gives `-a-b-c-` and `b*` gives `-a--c-`. Correct.
+- The surrogate stepping is finding 2.
+
+`path.string.029`:
+- Java compiles `(?:a{1000}){1000}` and answers `false`, and it answers
+  `true` for 200 nested groups. So HAPI answers where Frevo errors, which is
+  a departure, as stated.
+- The limits are `SIZE_LIMIT = 2 << 20` and `NEST_LIMIT = 100`
+  (`strregex.rs:53-55`).
+
+**Testability.** Every clause of `.026`, `.027` and `.029` has a concrete
+input and output. `.025` and `.028` will be too, once findings 1 and 2 are
+fixed.
+
+**Counts, independently recounted.**
+- `#### Scenario: [` headings: `codegen` 49, `model` 83, `path` 368, for a
+  total of 500.
+- `path.string.*` has 29 headings, `001`-`029`, with no duplicates.
+- `scenario-coverage.sh --change` reports 500 in scope, with 5 uncovered:
+  `.025`-`.029`, which await the oracle-builder.
+- The index (`spec.md`) and task 4 both say 368. Task 41a satisfies
+  `.025`-`.029`.
+
+**DEV / DEBT linkage.**
+- DEV-0023's **Debt** field is `DEBT-0015`, and `DEBT-0015`'s Origin cites
+  DEV-0023.
+- `check-registries.sh` reports "registers agree" (21 deviations, 15 debt
+  entries).
+- The wrong-answer corners are now listed in DEV-0023. Not yet listed: the
+  missing constructs (finding 3) and the surrogate stepping (finding 2).
+
+**Blockers.** The `(?x)` amendment owed to ADR 0005 is recorded. That is
+appropriate.
+
+**Scenario IDs.** Five headings are added (`.025`-`.029`). No existing
+heading changed.
