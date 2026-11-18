@@ -2525,10 +2525,15 @@ The engine SHALL implement the utility and FHIR-specific functions `FHIRPathEngi
   (`FHIRPathEngine.java:3544-3547`) calls `checkParamTypes` with a singleton
   `string` as the type of the **first** parameter, the condition, and
   `checkParamTypes` raises `FHIRPATH_WRONG_PARAM_TYPE` for any other type
-  (`:3820-3831`): "The parameter type boolean is not legal for check parameter 1.
-  expecting ..." (`Messages.properties:371`). So `Patient.name.check(true, 'm')`
-  and `Patient.name.check(prefix.exists(), 'm')` both **fail the check**; the
-  second parameter is not type-checked. A condition that is not boolean-typed
+  (`:3820-3831`), rendered as "Error evaluating FHIRPath expression: The
+  parameter type http://hl7.org/fhirpath/System.Boolean is not legal for check
+  parameter 1. expecting SINGLETON[http://hl7.org/fhirpath/System.String]"
+  (`Messages.properties:371`; the type is `TypeDetails.FP_Boolean`,
+  `TypeDetails.java:66`, and the expected set prints as the collection status
+  then the type list, `TypeDetails.toString`, `:474-476`). So `Patient.check(true, 'm')`
+  and `Patient.check(active.exists(), 'm')` (`active` is a `Patient` element, so
+  name resolution succeeds and the parameter type is what fails) both **fail the
+  check**; the second parameter is not type-checked. A condition that is not boolean-typed
   (a `string`) passes it, but is then reduced to a boolean at evaluation
 - **AND** `check` is also **not** in `isExpressionParameter` (`:3804-3817`, which
   lists `where`, `exists`, `all`, `select`, `repeat` and `aggregate` at index 0
@@ -2538,9 +2543,10 @@ The engine SHALL implement the utility and FHIR-specific functions `FHIRPathEngi
   name 'given' is not valid for any of the possible types ... Patient"
 - **AND** there is therefore **no boolean-condition form of `check` that passes
   the static check**. The evaluation is graded with the check skipped (as
-  `FhirPathR4` does, `path.check.013`): `Patient.name.check(prefix.exists(),
-  'm')` then evaluates the condition with the focus (`Patient.name`) as its
-  context and returns the focus when the condition is true
+  `FhirPathR4` does, `path.check.013`): `Patient.check(active.exists(), 'm')`
+  over `patient-example.xml` then evaluates the condition with the focus
+  (`Patient`) as its context, and returns the `Patient` because the condition is
+  true
 
 #### Scenario: [path.utility.004] `check` fails when the condition does not hold
 
