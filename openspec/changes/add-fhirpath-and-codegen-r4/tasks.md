@@ -781,12 +781,12 @@ checkpoint because it changes what a gate measures.
   still contradicts it (`DEV-0013`, pending the owner); `.013`'s seam is inside `path_navigation.rs` and was not rebound. See
   `tasks/blockers.md`, 2026-11-12, "task 31".
 
-- [ ] **32. Implement collection predicates.** `empty`, `exists` with and without
+- [x] **32. Implement collection predicates.** `empty`, `exists` with and without
   criteria, `not`, `all`, the four boolean folds and their non-boolean execution
   error, `subsetOf`, `supersetOf`, `isDistinct`, `distinct`, `count`.
   Satisfies `path.collection.001` through `path.collection.015`.
 
-- [ ] **33. Implement filtering, projection and subsetting.** `where`, `select`,
+- [x] **33. Implement filtering, projection and subsetting.** `where`, `select`,
   `repeat` with cycle termination, `ofType` including the namespace-qualified
   form; `single` — which raises for a focus of size 0 as well as for one larger
   than 1 — `first`, `last`, `tail`, `skip`, `take`, `intersect`, `exclude`; and
@@ -795,7 +795,7 @@ checkpoint because it changes what a gate measures.
   Satisfies `path.filter.001` through `path.filter.009`, `path.subset.001`
   through `path.subset.013`.
 
-- [ ] **34. Implement combining and membership.** The union operator, `union`,
+- [x] **34. Implement combining and membership.** The union operator, `union`,
   `combine`, `in`, `contains`, and the empty-operand rule.
   Satisfies `path.combine.001` through `path.combine.006`.
 
@@ -852,7 +852,7 @@ checkpoint because it changes what a gate measures.
   Satisfies `path.string.001` through `path.string.007`, `path.string.012`,
   `path.string.020` through `path.string.024`.
 
-- [ ] **41. Implement string functions: the R3 additions that need no regular
+- [x] **41. Implement string functions: the R3 additions that need no regular
   expression engine.** `replace` (a literal substitution: the pinned
   `funcReplace` calls `String.replace`, not `java.util.regex`), `trim`, `split`
   with its empty segments, `join`, `encode` and `decode` for base64, urlbase64
@@ -861,7 +861,7 @@ checkpoint because it changes what a gate measures.
   taking at most one argument (a second is a parse failure). No crate is added.
   Satisfies `path.string.011`, `path.string.013` through `path.string.019`.
 
-- [ ] **41a. Implement string functions: the regular-expression functions.**
+- [x] **41a. Implement string functions: the regular-expression functions.**
   **BLOCKED on ADR 0005**, a `chore/` branch ADR choosing the regular-expression
   engine; the owner approves the dependency (constitution section 5), and until
   then no crate is added and this task is not started. Split from task 41 by
