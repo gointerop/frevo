@@ -1,4 +1,10 @@
-CHANGES_REQUESTED
+APPROVED
+
+Thirty-fifth review (commit `ee2a0d4`, 2026-11-18) resolves all six findings
+of the thirty-fourth review. Detail is in the dated section at the end. The
+earlier findings follow, kept for the record.
+
+## Thirty-fourth-review findings as raised (commit `bd08451`)
 
 Thirty-fourth review (commit `bd08451`, 2026-11-18, diff against `6d38d35`).
 It covers the amended `path.boundary.*` scenarios, the counts in `spec.md`,
@@ -2383,3 +2389,73 @@ The decimal arithmetic was checked with a line-for-line simulation of
 **Oracles.**
 - `.001`-`.011` name their suite group and cases.
 - `.012`-`.017` are marked differential-only, with seam assertions.
+
+## Thirty-fifth review - commit `ee2a0d4` (2026-11-18)
+
+Scope: the diff `d7f8901..ee2a0d4`, which covers `path.boundary.012`-`.015`,
+`.017`, the new `.018` and `.019`, the `spec.md` counts and registry, task 45,
+`DEV-0025` and `DEBT-0016`. I re-derived every new value from the pinned source,
+using the same line-for-line simulation of `applyPrecision`, `minusOne` and
+`isZero` (`UTIL`) and a hand trace of `BDT.parse`.
+
+**Finding 1 (`.012`): resolved.**
+- `1.587 'cm'.lowBoundary(-1)` and `highBoundary(-1)` both cut the text to
+  `""`. `DecimalType.setValueAsString` reads a blank string as null, so each
+  result is a Quantity with no value.
+- `12.5 'cm'.lowBoundary(-1)` and `highBoundary(-1)` both give `1`. The cut
+  index is 1 and `'2'` is below `'5'`, so neither rounds.
+- At `-2` the cut index is `-1`, and `nv.charAt(-1)` throws before the
+  `down` test is evaluated. Leaving the JDK's message uncompared is
+  reasonable.
+
+**Finding 2 (`.015`): resolved.** Each case traced through `BDT.parse`
+(`:432-552`) and `getOffsetIndex` (`:330-342`):
+- `...T08:00:+14:00` has seconds `+1`, which reads as 1, and parses at SECOND
+  precision.
+- `...T08:00:-12:00` has seconds `-1`, which is out of range, so
+  `throwBadDateFormat` raises `Invalid date/time format: "<text>"`.
+- `+08:00` and `-05:00` give seconds `+0` and `-0`, which both read as 0 and
+  parse. `-10:00` gives `-1`, the error.
+- `@2014-01-01T08:05Z` is held as `2014-01-01T08:05Z`. `splitTimezone` takes
+  the `Z` branch, so the text is `2014-01-01T08:05:Z` (18 characters). The
+  offset index is 17, which passes, and the time part `08:05:` has length 6.
+  So `validateLengthIsAtLeast(value, 19)` (`BDT:863-867`) raises the
+  `Invalid date/time format` error for that text. Correct.
+
+**Finding 3 (`.018`): resolved.** The values are as stated:
+- `0.lowBoundary()` is `-0.50000000`, and `0.highBoundary()` is `0.50000000`.
+- `0.lowBoundary(0)` is `-0`, and `0.highBoundary(0)` is `1`.
+- `0.0.lowBoundary(1)` and `(-0.0).lowBoundary(1)` are `-0.5`, and
+  `0.000.highBoundary(1)` is `0.5`.
+- The zero branch drops the exponent (`UTIL:1638-1639`, `:1704-1705`).
+
+**Finding 4 (`.014`): resolved.**
+- The fixtures exist and hold the cited elements:
+  - `patient-example.xml:78` has `telecom.rank` (`positiveInt`).
+  - `patient-example.xml:95` has the Patient's `gender` (`code`).
+  - `patient-glossy-example.xml:4` has `meta.lastUpdated` (`instant`).
+- `Base.hasType` compares the exact `fhirType()`, so every arm misses. The
+  unthrown `makeException` then gives empty for all three functions.
+
+**Finding 5 (`.019`): resolved.** `getNamedValue` (`ENGINE:4643-4649`)
+returns `null` for a Quantity with no value. `UTIL:1632-1634` and `:1698-1700`
+then throw the two quoted messages.
+
+**Finding 6 (`.013`, `.017`): resolved.** The full texts match
+`Messages.properties:332` and `:371`, with the arguments shifted by
+`I18nBase.formatMessagePlural`.
+
+**Registers and documents.**
+- `DEV-0025`'s HAPI paragraph and `DEBT-0016`'s new bullets match the
+  scenarios. Task 45 now lists `.001`-`.019` and the corrected behaviours.
+- `harness/scripts/check-registries.sh` reports "registers agree" (23
+  deviations, 16 debt entries).
+- `openspec validate add-fhirpath-and-codegen-r4 --strict` reports the change
+  is valid.
+
+**Counts and IDs.**
+- The `#### Scenario: [` headings number codegen 49, model 83 and path 377
+  (19 of them `path.boundary.*`), 509 in total, as `spec.md` states.
+- No ID is duplicated, and no heading was removed or renumbered.
+- The no-live-case list (27) now includes `.012`-`.019`, and each says
+  "differential-only" in its own text.
