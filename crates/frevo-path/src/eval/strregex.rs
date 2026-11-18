@@ -36,6 +36,12 @@
 //! errors. Replacement strings use Java's `$n`, `${name}` and `\` syntax, and
 //! empty matches are found as Java's `Matcher.find` finds them.
 //!
+//! After an empty match the search steps one UTF-16 unit, so it can split a
+//! supplementary character: only then is the text copied and the character
+//! replaced by its two lone halves (the plane-16 encoding of `strfn.rs`), the
+//! ordinary path allocating nothing. The pattern still sees a lone half as a
+//! private-use character, and `.` matches a whole character, not a unit.
+//!
 //! Known remaining differences are `DEBT-0015`.
 
 use std::cell::RefCell;
@@ -47,6 +53,7 @@ use crate::syntax::ast::{Function, NodeId};
 
 use super::collection::{convert_list_to_string, convert_to_string};
 use super::operand::{STRING_TYPES, has_type};
+use super::strfn::{LONE_BASE, from_utf16, lone_unit, utf16};
 use super::{Context, EvalError, Run};
 
 /// The most compiled-program memory a pattern may use, in bytes.
@@ -331,23 +338,49 @@ fn escape(
 fn replace_all(re: &Regex, text: &str, replacement: &str) -> Result<String, String> {
     let groups = re.captures_len() - 1;
     let mut out = String::with_capacity(text.len());
+    let mut work = std::borrow::Cow::Borrowed(text);
+    let mut split = false;
     let mut copied = 0;
     let mut from = 0;
-    while let Some(caps) = re.captures_at(text, from) {
+    while let Some(caps) = re.captures_at(&work, from) {
         let Some(whole) = caps.get(0) else { break };
-        out.push_str(&text[copied..whole.start()]);
+        let (start, end) = (whole.start(), whole.end());
+        out.push_str(&work[copied..start]);
         expand(re, groups, &caps, replacement, &mut out)?;
-        copied = whole.end();
-        from = whole.end();
-        if whole.is_empty() {
-            // `Matcher.find` steps one character past an empty match.
-            match text[from..].chars().next() {
-                Some(c) => from += c.len_utf8(),
-                None => break,
+        copied = end;
+        from = end;
+        if start == end {
+            // `Matcher.find` steps one UTF-16 unit past an empty match. A
+            // supplementary character is two units, so stepping into it
+            // splits it: the character becomes its two lone halves (each the
+            // same four bytes, so offsets hold) and the search resumes
+            // between them, with the surrounding text still in view.
+            let Some(c) = work[from..].chars().next() else {
+                break;
+            };
+            if u32::from(c) >= 0x10000 && lone_unit(c).is_none() {
+                let mut units = [0u16; 2];
+                c.encode_utf16(&mut units);
+                let half = |u: u16| {
+                    char::from_u32(LONE_BASE + u32::from(u) - 0xD800)
+                        .unwrap_or(char::REPLACEMENT_CHARACTER)
+                };
+                let mut halves = String::with_capacity(8);
+                halves.push(half(units[0]));
+                halves.push(half(units[1]));
+                work.to_mut().replace_range(from..from + 4, &halves);
+                split = true;
+                from += 4;
+            } else {
+                from += c.len_utf8();
             }
         }
     }
-    out.push_str(&text[copied..]);
+    out.push_str(&work[copied..]);
+    if split {
+        // Halves left side by side are the pair they were.
+        out = from_utf16(&utf16(&out));
+    }
     Ok(out)
 }
 

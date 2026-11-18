@@ -40,9 +40,9 @@ use super::operand::{STRING_TYPES, has_type, int_of, text_of};
 use super::{Context, EvalError, Run};
 
 /// The first code point that stands for a lone surrogate.
-const LONE_BASE: u32 = 0x10F800;
+pub(super) const LONE_BASE: u32 = 0x10F800;
 
-fn lone_unit(c: char) -> Option<u16> {
+pub(super) fn lone_unit(c: char) -> Option<u16> {
     let c = u32::from(c);
     (LONE_BASE..=0x10FFFF)
         .contains(&c)
