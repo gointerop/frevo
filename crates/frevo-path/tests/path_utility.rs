@@ -584,6 +584,64 @@ fn expect_evaluation_failure(expr: &str, inp: Option<&SuiteInput>) -> String {
     }
 }
 
+/// Evaluate with the static check **skipped**, as `FhirPathR4` skips it
+/// (`path.check.013`).
+fn eval_unchecked_over(expr: &str, inp: Option<&SuiteInput>) -> Vec<ResultItem> {
+    let mut engine = fresh_engine();
+    let context = context_for(inp);
+    let parsed = engine
+        .parse(expr)
+        .unwrap_or_else(|e| panic!("{expr:?} must parse: {e}"));
+    engine
+        .evaluate(parsed, inp, &context, StrictnessFlags::EVALUATE)
+        .unwrap_or_else(|e| panic!("{expr:?} must evaluate with the check skipped: {e}"))
+}
+
+/// `expr` must fail at evaluation with the static check **skipped**.
+fn expect_unchecked_evaluation_failure(expr: &str, inp: Option<&SuiteInput>) -> String {
+    let mut engine = fresh_engine();
+    let context = context_for(inp);
+    let parsed = engine
+        .parse(expr)
+        .unwrap_or_else(|e| panic!("{expr:?} must parse before it can fail at evaluation: {e}"));
+    match engine.evaluate(parsed, inp, &context, StrictnessFlags::EVALUATE) {
+        Ok(items) => panic!("{expr:?} must fail at evaluation, but it returned {items:?}"),
+        Err(EngineError::Diagnostic { message, .. }) => message,
+        Err(e) => panic!("{expr:?} must fail with a diagnostic, not: {e}"),
+    }
+}
+
+/// `expr` must fail the static check over a `Patient` focus.
+fn expect_patient_check_failure(expr: &str) -> String {
+    let mut engine = fresh_engine();
+    let patient = load_input("patient-example.xml");
+    let context = context_for(Some(&patient));
+    let parsed = engine
+        .parse(expr)
+        .unwrap_or_else(|e| panic!("{expr:?} must parse: {e}"));
+    match engine.check(parsed, &context, StrictnessFlags::CHECK) {
+        Ok(()) => panic!("{expr:?} must fail the static check, but the check passed"),
+        Err(EngineError::Diagnostic { message, .. }) => message,
+        Err(e) => panic!("{expr:?} must fail the check with a diagnostic, not: {e}"),
+    }
+}
+
+/// The check outcome (types and warnings) of `expr` over a `Patient` focus.
+fn patient_check_outcome(expr: &str) -> frevo_path::CheckOutcome {
+    let parsed = frevo_path::Expression::parse(expr)
+        .unwrap_or_else(|e| panic!("{expr:?} must parse: {}", e.message()));
+    let context = CaseContext {
+        root_resource_type: Some("Resource"),
+        resource_type: Some("Patient"),
+        ..CaseContext::default()
+    };
+    match oracle::engine::check_expression(&parsed, &context, &EngineConfig::default()) {
+        Ok(Ok(outcome)) => outcome,
+        Ok(Err(e)) => panic!("{expr:?} must pass the static check: {e:?}"),
+        Err(e) => panic!("{expr:?} could not be checked: {e}"),
+    }
+}
+
 fn primitive(fhir_type: &str, value: &str) -> Vec<ResultItem> {
     vec![ResultItem::Primitive {
         fhir_type: fhir_type.to_string(),
@@ -729,6 +787,35 @@ fn trace_passes_its_input_through_and_records_a_log_line() {
         .expect("evaluates");
     assert!(!engine.has_log(), "no trace, no log");
     assert_eq!(engine.take_log(), "");
+
+    // Every `evaluate` starts with an EMPTY log (`log = new StringBuilder()`,
+    // FHIRPathEngine.java:702-795), discarding entries that were never taken:
+    // after a trace that was not taken, evaluating an expression with no trace
+    // leaves no log, so the next case cannot see the previous case's lines
+    // whether or not the harness took them.
+    let mut engine = fresh_engine();
+    let traced = engine.parse("name.given.trace('left')").expect("parses");
+    engine
+        .check(traced, &context, StrictnessFlags::CHECK)
+        .expect("checks");
+    engine
+        .evaluate(traced, Some(&patient), &context, StrictnessFlags::EVALUATE)
+        .expect("evaluates");
+    assert!(engine.has_log());
+    // A static check does not touch the log.
+    let other = engine.parse("name.given.count()").expect("parses");
+    engine
+        .check(other, &context, StrictnessFlags::CHECK)
+        .expect("checks");
+    assert!(engine.has_log(), "a static check must not touch the log");
+    engine
+        .evaluate(other, Some(&patient), &context, StrictnessFlags::EVALUATE)
+        .expect("evaluates");
+    assert!(
+        !engine.has_log(),
+        "a new evaluation starts with an empty log"
+    );
+    assert_eq!(engine.take_log(), "");
 }
 
 // ---------------------------------------------------------------------------
@@ -775,21 +862,40 @@ fn trace_with_a_projection_logs_the_projection_and_not_the_input() {
 // covers: path.utility.003
 #[test]
 fn check_passes_its_input_through_when_the_condition_holds() {
-    // `funcCheck` (FHIRPathEngine.java:5649) returns the focus unchanged when
-    // `convertToBoolean` of its first argument is true.
-    assert_eq!(
-        eval_patient("Patient.name.check(given.exists(), 'given must exist').count()"),
-        integer("3")
-    );
-    assert_eq!(
-        eval_patient("Patient.name.first().check(true, 'always').family"),
-        primitive("string", "Chalmers")
+    // The static check REJECTS every boolean condition: `case Check`
+    // (FHIRPathEngine.java:3544-3547) calls `checkParamTypes` with a singleton
+    // `string` as the type of the first parameter, and `checkParamTypes` raises
+    // `FHIRPATH_WRONG_PARAM_TYPE` for any other type (:3820-3831).
+    const WRONG_PARAM: &str = "The parameter type http://hl7.org/fhirpath/System.Boolean is not \
+                               legal for check parameter 1. expecting \
+                               SINGLETON[http://hl7.org/fhirpath/System.String]";
+    for expr in [
+        "Patient.check(true, 'm')",
+        "Patient.check(active.exists(), 'm')",
+    ] {
+        let message = expect_patient_check_failure(expr);
+        assert!(
+            message.contains(WRONG_PARAM),
+            "{expr}: unexpected check message {message:?}"
+        );
+    }
+
+    // `check` is not in `isExpressionParameter` (:3804-3817), so the condition
+    // is typed against the context item, not the focus: a focus-relative name
+    // fails earlier.
+    let message = expect_patient_check_failure("Patient.name.check(given.exists(), 'm')");
+    assert!(
+        message.contains("The name 'given' is not valid for any of the possible types"),
+        "{message:?}"
     );
 
-    // Unchanged means the focus itself, so the check is transparent mid-path.
+    // Evaluated with the check skipped (as `FhirPathR4` does), `funcCheck`
+    // (:5649-5651) evaluates the condition with the focus (`Patient`) as its
+    // context and returns the `Patient` because the condition is true.
+    let patient = load_input("patient-example.xml");
     assert_eq!(
-        eval_patient("Patient.name.check(true, 'always')"),
-        eval_patient("Patient.name")
+        eval_unchecked_over("Patient.check(active.exists(), 'm')", Some(&patient)),
+        eval_unchecked_over("Patient", Some(&patient))
     );
 }
 
@@ -805,22 +911,25 @@ fn check_fails_when_the_condition_does_not_hold() {
     // `throw makeException(expr, FHIRPATH_CHECK_FAILED, name)`
     // (FHIRPathEngine.java:5654), where `name` is the **second** argument's
     // value -- so the message carries the caller's text.
-    let message = expect_evaluation_failure(
+    //
+    // The static check rejects every boolean condition (`path.utility.003`),
+    // so this is graded with the check skipped.
+    let message = expect_unchecked_evaluation_failure(
         "Patient.name.check(prefix.exists(), 'every name needs a prefix')",
         Some(&patient),
     );
     assert!(
-        message.contains("every name needs a prefix"),
+        message.contains("Check failed with message 'every name needs a prefix'"),
         "the failure must carry the check's own name: {message}"
     );
 
     // A false literal fails too, so the failure is about the condition and not
     // about the navigation.
-    expect_evaluation_failure("Patient.name.check(false, 'never')", Some(&patient));
+    expect_unchecked_evaluation_failure("Patient.name.check(false, 'never')", Some(&patient));
 
     // And it fails rather than returning empty, which is the distinction from
     // `where`.
-    expect_evaluation_failure("{}.check(false, 'never').empty()", None);
+    expect_unchecked_evaluation_failure("{}.check(false, 'never').empty()", None);
 }
 
 // ---------------------------------------------------------------------------
@@ -957,6 +1066,36 @@ fn sort_accepts_several_keys_and_a_descending_key() {
 fn extension_selects_extensions_by_url() {
     expect_group("testExtension", 3);
 
+    // The static check of `extension(url)` (FHIRPathEngine.java:3556-3591) never
+    // fails on an unknown URL: it types the argument as a singleton `string`,
+    // looks a constant URL's definition up (`findExtensionDefinition`,
+    // :3747-3765), and when it is not found adds the warning "Reference to an
+    // unknown extension - double check that the URL '<url>' is correct"
+    // (`FHIRPATH_UNKNOWN_EXTENSION`) and answers a plain `Extension` type.
+    let unknown = patient_check_outcome("Patient.extension('http://example.org/nothing')");
+    assert!(
+        unknown.warnings.iter().any(|w| w.message.contains(
+            "Reference to an unknown extension - double check that the URL \
+             'http://example.org/nothing' is correct"
+        )),
+        "the unknown-extension warning must name the URL: {:?}",
+        unknown.warnings
+    );
+    assert!(
+        unknown
+            .types
+            .names()
+            .iter()
+            .any(|n| n.ends_with("Extension")),
+        "the result is typed as a plain Extension: {:?}",
+        unknown.types
+    );
+    // A known URL passes the check as well (typing it needs the extension's
+    // StructureDefinition from the model).
+    patient_check_outcome(
+        "Patient.birthDate.extension('http://hl7.org/fhir/StructureDefinition/patient-birthTime')",
+    );
+
     const BIRTH_TIME: &str = "http://hl7.org/fhir/StructureDefinition/patient-birthTime";
 
     // `funcExtension` (FHIRPathEngine.java:5464) collects the focus's
@@ -1020,6 +1159,12 @@ fn extension_with_no_match_yields_empty() {
 // covers: path.utility.011
 #[test]
 fn extension_reaches_a_primitives_extensions() {
+    // The check of the call is as in `path.utility.009`: it passes (a
+    // primitive's extension call is typed like any other).
+    patient_check_outcome(
+        "Patient.birthDate.extension('http://hl7.org/fhir/StructureDefinition/patient-birthTime')",
+    );
+
     // The extension in `patient-example.xml:96-100` hangs off a **primitive**,
     // `birthDate`, which in the JSON form is the `_birthDate` sibling. Reaching
     // it requires the primitive value to carry its sibling element

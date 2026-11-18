@@ -160,24 +160,70 @@ fn eval(expr: &str) -> Vec<ResultItem> {
     eval_over(expr, None)
 }
 
-/// `expr` must parse and then fail the **static check** with a diagnostic.
-///
-/// Failing at evaluation instead is not what the scenario asks for, so the
-/// check's success is an explicit failure of this helper.
-fn expect_check_error(expr: &str, context_type: &str) -> String {
+/// Assert the group's cases are graded as HAPI's recorded run grades them:
+/// `passed` except the named cases, which must be `failed` (parity under
+/// `path.oracle.012`). `did-not-run` satisfies neither.
+fn expect_group_except(group: &str, expected_cases: usize, failing: &[&str]) {
+    let (suite, report) = pinned();
+    let g = suite
+        .groups
+        .iter()
+        .find(|g| g.name == group)
+        .unwrap_or_else(|| panic!("the pinned suite has a group named {group}"));
+    assert_eq!(
+        g.cases.len(),
+        expected_cases,
+        "{group} must have {expected_cases} case(s), not {}",
+        g.cases.len()
+    );
+    for name in failing {
+        assert!(
+            g.cases.iter().any(|c| c.address.name == *name),
+            "{group}/{name} must be a case of the group"
+        );
+    }
+    let mut problems = Vec::new();
+    for case in &g.cases {
+        let r = report
+            .get(&case.address.to_string())
+            .unwrap_or_else(|| panic!("{} must appear in the run report", case.address));
+        let want = if failing.iter().any(|n| case.address.name == *n) {
+            CaseStatus::Failed
+        } else {
+            CaseStatus::Passed
+        };
+        if r.status != want {
+            problems.push(format!(
+                "{} ({:?}): {} (wanted {}) -- {}",
+                case.address,
+                case.expression,
+                r.status.as_str(),
+                want.as_str(),
+                r.reason
+            ));
+        }
+    }
+    assert!(
+        problems.is_empty(),
+        "{} of {} cases in {group} are not graded as HAPI grades them; the first few:\n  {}",
+        problems.len(),
+        g.cases.len(),
+        problems[..problems.len().min(5)].join("\n  ")
+    );
+}
+
+/// `expr` must fail at **evaluation** with a diagnostic, the static check
+/// having been skipped (as `FhirPathR4` skips it).
+fn expect_unchecked_evaluation_error(expr: &str, inp: Option<&SuiteInput>) -> String {
     let mut engine = fresh_engine();
-    let context = CaseContext {
-        root_resource_type: Some(context_type),
-        resource_type: Some(context_type),
-        ..CaseContext::default()
-    };
+    let context = context_for(inp);
     let parsed = engine
         .parse(expr)
-        .unwrap_or_else(|e| panic!("{expr:?} must parse before the check can reject it: {e}"));
-    match engine.check(parsed, &context, StrictnessFlags::CHECK) {
-        Ok(()) => panic!("{expr:?} must fail the static check against {context_type}"),
+        .unwrap_or_else(|e| panic!("{expr:?} must parse before it can fail at evaluation: {e}"));
+    match engine.evaluate(parsed, inp, &context, StrictnessFlags::EVALUATE) {
+        Ok(items) => panic!("{expr:?} must fail at evaluation, but it returned {items:?}"),
         Err(EngineError::Diagnostic { message, .. }) => message,
-        Err(e) => panic!("{expr:?} must fail the check with a diagnostic, not: {e}"),
+        Err(e) => panic!("{expr:?} must fail with a diagnostic, not: {e}"),
     }
 }
 
@@ -597,49 +643,46 @@ fn the_is_operator_and_the_is_function_agree() {
 // covers: path.types.011
 #[test]
 fn is_with_an_unknown_type_name_is_a_semantic_error() {
-    // NOTE FOR REVIEW -- scenario against pinned source.
-    //
-    // The pinned R4 engine performs no such check for `is`, at either stage:
-    //
-    //  - at check time the right operand of `Is` is not type-checked at all.
-    //    `executeType`'s operator loop calls `executeTypeName` rather than
-    //    `executeType` for `Is` and `As` (FHIRPathEngine.java:1626-1629), and
-    //    `executeTypeName` just wraps the name in a TypeDetails
-    //    (:1651-1653). `operateTypes`'s `case Is` then returns Boolean after a
-    //    cardinality warning (:2013-2015). Nothing consults `isKnownType`.
-    //  - at evaluation `opIs` compares the name against the focus's type and
-    //    walks its ancestors, returning `false` when nothing matches
-    //    (:1940-1966). `funcIs` does the same (:5045-5100).
-    //
-    // So `Patient.gender is NoSuchType` checks cleanly and evaluates to
-    // `false` upstream. The three sites that *do* call `isKnownType` are
-    // `opAs` (:1881-1883), `funcAs` (:5163-5165) and `funcOfType` (:5206-5208),
-    // and all three raise at **evaluation**, which is why the suite's
-    // `testInheritance/testFHIRPathAsFunction23` and `24` are
-    // `invalid="execution"` and there is no `is` counterpart.
-    //
-    // Written to the scenario as stated.
-    let message = expect_check_error("Patient.gender is NoSuchType", "Patient");
-    assert!(
-        message.contains("NoSuchType"),
-        "the diagnostic must name the type it could not resolve: {message:?}"
+    // DEV-0024, resolved as HAPI's behaviour. `is` with an unknown type name
+    // PASSES the static check: the right operand of `is` and `as` is read by
+    // `executeTypeName`, which consults nothing (FHIRPathEngine.java:1627-1628),
+    // and `operateTypes` `case Is` returns a boolean after a cardinality
+    // warning (:2013-2015). Evaluation yields `false` (`opIs`, :1940; the
+    // function form likewise, :5095).
+    let patient = load_input("patient-example.xml");
+    assert_eq!(
+        eval_over("Patient.gender is NoSuchType", Some(&patient)),
+        boolean(false)
+    );
+    assert_eq!(
+        eval_over("Patient.gender.is(NoSuchType)", Some(&patient)),
+        boolean(false)
     );
 
-    // The function spelling must agree with the operator spelling, as
-    // `path.types.010` requires.
-    let function = expect_check_error("Patient.gender.is(NoSuchType)", "Patient");
-    assert!(function.contains("NoSuchType"), "{function:?}");
-
-    // A type name that does exist checks cleanly, so the rejection is about the
-    // name and not about the operator.
-    let patient = load_input("patient-example.xml");
+    // A type name that does exist is `true`, so the answer is about the name.
     assert_eq!(
         eval_over("Patient.gender is code", Some(&patient)),
         boolean(true)
     );
 
-    // The `as` and `ofType` spellings are refused as well -- upstream at
-    // evaluation, which the suite grades.
+    // `as`, `as()` and `ofType()` with an unknown name fail at EVALUATION with
+    // "The type <name> is not valid" (`FHIRPATH_INVALID_TYPE`, raised after
+    // `isKnownType` fails: :1881-1883, :5163-5165, :5206-5208). The function
+    // forms name `FHIR.NoSuchType`; the operator form names the name as
+    // written. Graded with the check skipped.
+    for (expr, named) in [
+        ("Patient.gender as NoSuchType", "NoSuchType"),
+        ("Patient.gender.as(NoSuchType)", "FHIR.NoSuchType"),
+        ("Patient.gender.ofType(NoSuchType)", "FHIR.NoSuchType"),
+    ] {
+        let message = expect_unchecked_evaluation_error(expr, Some(&patient));
+        assert!(
+            message.contains(&format!("The type {named} is not valid")),
+            "{expr}: unexpected message {message:?}"
+        );
+    }
+
+    // The suite's own `invalid="execution"` cases, passed by HAPI.
     expect_case("testInheritance", "testFHIRPathAsFunction23");
     expect_case("testInheritance", "testFHIRPathAsFunction24");
 }
@@ -685,7 +728,20 @@ fn the_whole_types_type_and_inheritance_surface_holds() {
     // 155 cases between the three groups. The individual scenarios above pick
     // out the ones whose behaviour is stated in prose; this one is the rest of
     // the surface, so a regression anywhere in it is visible.
-    expect_group("testTypes", 101);
+    //
+    // HAPI fails two `testTypes` cases (`hapi-8.12.0-results.json:192-193`):
+    // `qtyEquivalent` returns null (`path.equality.004`, DEV-0017). They stay
+    // `failed` here; every other case passes in HAPI's recorded run. The
+    // `toQuantity` cases need tasks 43 and 44 and are did-not-run until then,
+    // which satisfies neither status.
+    expect_group_except(
+        "testTypes",
+        101,
+        &[
+            "testStringQuantityMonthToQuantityEquivalent",
+            "testStringQuantityYearToQuantityEquivalent",
+        ],
+    );
     expect_group("testType", 30);
     expect_group("testInheritance", 24);
 }

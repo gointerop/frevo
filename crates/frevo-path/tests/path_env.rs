@@ -425,8 +425,29 @@ fn eval_patient(expr: &str) -> Vec<ResultItem> {
     eval_over(expr, Some(&inp))
 }
 
+/// `expr` must fail the static **check** with a real diagnostic, on an engine
+/// built by `build`. The check rejects these expressions before evaluation is
+/// reached (FHIRPathEngine.java:3143-3175).
+fn expect_check_failure_on(
+    build: fn() -> Box<dyn SuiteEngine>,
+    expr: &str,
+    inp: Option<&SuiteInput>,
+) -> String {
+    let mut engine = build();
+    let context = context_for(inp);
+    let parsed = engine
+        .parse(expr)
+        .unwrap_or_else(|e| panic!("{expr:?} must parse before it can fail the check: {e}"));
+    match engine.check(parsed, &context, StrictnessFlags::CHECK) {
+        Ok(()) => panic!("{expr:?} must fail the static check, but the check passed"),
+        Err(EngineError::Diagnostic { message, .. }) => message,
+        Err(e) => panic!("{expr:?} must fail the check with a diagnostic, not: {e}"),
+    }
+}
+
 /// `expr` must fail at **evaluation** with a real diagnostic, on an engine
-/// built by `build`.
+/// built by `build`, with the static check **skipped** as `FhirPathR4` skips it
+/// (`path.check.013`): the check rejects these expressions first.
 fn expect_evaluation_failure_on(
     build: fn() -> Box<dyn SuiteEngine>,
     expr: &str,
@@ -437,9 +458,6 @@ fn expect_evaluation_failure_on(
     let parsed = engine
         .parse(expr)
         .unwrap_or_else(|e| panic!("{expr:?} must parse before it can fail at evaluation: {e}"));
-    engine
-        .check(parsed, &context, StrictnessFlags::CHECK)
-        .unwrap_or_else(|e| panic!("{expr:?} must pass the static check: {e}"));
     match engine.evaluate(parsed, inp, &context, StrictnessFlags::EVALUATE) {
         Ok(items) => panic!("{expr:?} must fail at evaluation, but it returned {items:?}"),
         Err(EngineError::Diagnostic { message, .. }) => message,
@@ -700,8 +718,15 @@ fn resource_with_no_focus_resource_is_an_execution_error() {
     // what the scenario asks for.
     let message = expect_evaluation_failure_on(fresh_engine, "%resource", None);
     assert!(
-        message.contains("%resource"),
+        message.contains("Cannot use %resource in this context because no focus resource"),
         "the error must name %resource: {message}"
+    );
+    // The static check rejects the same expression first, with the same
+    // message (:3143-3145); a test of the evaluation error therefore skips it.
+    let check = expect_check_failure_on(fresh_engine, "%resource", None);
+    assert!(
+        check.contains("Cannot use %resource in this context because no focus resource"),
+        "{check}"
     );
 
     // Not empty: an absent focus resource is a failure and not a missing value.
@@ -761,8 +786,14 @@ fn root_resource_with_no_root_resource_is_an_execution_error() {
     // its own message naming `%rootResource`.
     let message = expect_evaluation_failure_on(fresh_engine, "%rootResource", None);
     assert!(
-        message.contains("%rootResource"),
+        message.contains("Cannot use %rootResource in this context because no focus rootResource"),
         "the error must name %rootResource: {message}"
+    );
+    // The check rejects it first with the same message (:3148-3150).
+    let check = expect_check_failure_on(fresh_engine, "%rootResource", None);
+    assert!(
+        check.contains("Cannot use %rootResource in this context because no focus rootResource"),
+        "{check}"
     );
     expect_evaluation_failure_on(fresh_engine, "%rootResource.id", None);
 }
@@ -821,9 +852,27 @@ fn an_unknown_environment_variable_with_no_host_service_is_an_execution_error() 
     let message =
         expect_evaluation_failure_on(engine_without_host, "%nosuchvariable", Some(&patient));
     assert!(
-        message.contains("nosuchvariable"),
+        message.contains("Invalid FHIRPath Constant %nosuchvariable"),
         "the error must name the constant: {message}"
     );
+    // The check rejects it first with the same message when there is no host
+    // service (:3167-3168)...
+    let check = expect_check_failure_on(engine_without_host, "%nosuchvariable", Some(&patient));
+    assert!(
+        check.contains("Invalid FHIRPath Constant %nosuchvariable"),
+        "{check}"
+    );
+    // ...and when the host service answers `null` for the name (:3175).
+    let answers_null = RecordingHost::answering_nothing();
+    let typed = oracle::engine::parse_with_host("%nosuchvariable", Some(&answers_null))
+        .expect("%nosuchvariable parses");
+    match oracle::engine::check_in_type(&typed, Some("Patient"), Some(&answers_null)) {
+        Err(EngineError::Diagnostic { message, .. }) => assert!(
+            message.contains("Invalid FHIRPath Constant %nosuchvariable"),
+            "{message}"
+        ),
+        other => panic!("a host service answering null must fail the check, not {other:?}"),
+    }
 
     // Not empty, which is the failure mode the scenario exists to forbid.
     expect_evaluation_failure_on(
@@ -943,9 +992,18 @@ fn a_variable_defined_by_define_variable_does_not_leak() {
         Some(&patient),
     );
     assert!(
-        message.contains("v"),
+        message.contains("Invalid FHIRPath Constant %v"),
         "the error must name the constant that is out of scope: {message}"
     );
+    // The check rejects it first for the same reason as `path.env.011`: its
+    // own defined-variable table does not hold a variable outside its scope
+    // (:3163-3168).
+    let check = expect_check_failure_on(
+        engine_without_host,
+        "Patient.name.where(defineVariable('v', family).exists()).select(%v)",
+        Some(&patient),
+    );
+    assert!(check.contains("Invalid FHIRPath Constant %v"), "{check}");
 
     // And a variable never defined at all fails the same way, so the scoping
     // rule is what the first assertion is about.
