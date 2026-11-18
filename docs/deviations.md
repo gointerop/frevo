@@ -755,11 +755,18 @@ file, so its prose is not redistributable here (see `oracles/PINS.md`).
   `:987-995`). Every date and dateTime boundary is `new DateTimeType(...)`
   (`ENGINE:4318-4320`, `4362-4364`), so `@2014.lowBoundary(6)` is a `dateTime`.
   A quantity's precision is not range-checked (`ENGINE:4323-4327`), so
-  `1.587 'cm'.lowBoundary(-1)` is an error. `precision()` on an empty focus
-  throws a message naming `highBoundary` (`ENGINE:4379-4381`). A date
-  precision of 14 builds `2014-01-01T08:00:+14:00` and fails; a time precision
-  of 2, 4 or 6 keeps a trailing separator (`@T10:30.lowBoundary(2)` is the time
-  `10:`) (`DateTimeUtil.java:130-153`).
+  `1.587 'cm'.lowBoundary(-1)` is a Quantity with no value (the text is cut to
+  `""`, which `DecimalType.setValueAsString` reads as null,
+  `DecimalType.java:153-157`), `12.5 'cm'.lowBoundary(-1)` is `1 'cm'`, and
+  `-2` raises `StringIndexOutOfBoundsException`. `precision()` on an empty
+  focus throws a message naming `highBoundary` (`ENGINE:4379-4381`). A date
+  precision of 14 keeps 17 characters before the offset: `lowBoundary(14)` of
+  `@2014-01-01T08` is the dateTime `2014-01-01T08:00:+14:00` (its seconds read
+  as `+1`), while `highBoundary(14)` raises
+  `Invalid date/time format: "2014-01-01T08:00:-12:00"`
+  (`BaseDateTimeType.java:484-492`, `:540-553`). A time precision of 2, 4 or 6
+  keeps a trailing separator (`@T10:30.lowBoundary(2)` is the time `10:`)
+  (`DateTimeUtil.java:130-153`).
 - **Specification requirement:** FHIRPath (the `lowBoundary`, `highBoundary`
   and `precision` functions), as the suite's `LowBoundary`/`HighBoundary`
   expectations encode it: the boundary is the numeric boundary at the requested

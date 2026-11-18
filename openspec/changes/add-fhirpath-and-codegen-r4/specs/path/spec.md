@@ -2307,14 +2307,25 @@ the precision straight to the decimal computation (`FHIRPathEngine.java:4323-432
 
 - **WHEN** `1.587 'cm'.lowBoundary(-1)` and `1.587 'cm'.highBoundary(-1)` are
   evaluated
-- **THEN** each is an execution error, not an empty collection: the precision
-  cuts the value's text to nothing, which is not a decimal
+- **THEN** each is a single Quantity with the unit, code `cm` and system
+  `http://unitsofmeasure.org` copied and **no value**, not an empty collection
+  and not an error: `applyPrecision` (`Utilities.java:1653-1680`) cuts the text
+  to `""`, and `new DecimalType("")` sets a null value for a blank string
+  (`DecimalType.java:153-157`), which `:4326` / `:4370` set on the copy
+- **AND** `12.5 'cm'.lowBoundary(-1)` and `12.5 'cm'.highBoundary(-1)` are each
+  the quantity `1 'cm'`: a negative precision truncates the text rather than
+  rounding at the tens
+- **AND** `1.587 'cm'.lowBoundary(-2)` and `1.587 'cm'.highBoundary(-2)` are
+  execution errors: the cut index is `-1` and `charAt(-1)` raises
+  `StringIndexOutOfBoundsException`, whose message text depends on the JDK and
+  is not compared
 - **AND** `1.587 'cm'.lowBoundary(20)` is the quantity
   `1.58650000000000000000 'cm'` (twenty fractional digits), where
   `1.587.lowBoundary(20)` is empty
 - **AND** the specification's out-of-range result is empty, as the suite's
   decimal cases `LowBoundaryDecimal3` and `LowBoundaryNegDecimal3` show;
-  recorded as `DEV-0025`
+  recorded as `DEV-0025`, and the valueless or truncated quantity, a wrong
+  answer rather than an error, as `DEBT-0016`
 - **AND** no suite case grades it, so it is differential-only, with seam
   assertions in the boundary tests
 
@@ -2324,14 +2335,17 @@ the precision straight to the decimal computation (`FHIRPathEngine.java:4323-432
 makeExceptionPlural(..., "highBoundary", ...)` (`FHIRPathEngine.java:4379-4381`).
 
 - **WHEN** `{}.precision()` and `(1.5 | 2.5).precision()` are evaluated
-- **THEN** each is an execution error whose message is the focus-cardinality
-  message (`focus for highBoundary can only have one value, but has 0 values`,
-  and `... has 2 values`), naming `highBoundary` and not `precision`
+- **THEN** each is an execution error whose message is, in full,
+  `Error evaluating FHIRPath expression: focus for highBoundary can only have
+  one value, but has 0 values` (and `... but has 2 values`), naming
+  `highBoundary` and not `precision` (`FHIRPATH_FOCUS_other`,
+  `Messages.properties:332`)
 - **AND** `{}.lowBoundary()` and `{}.highBoundary()` are empty, not errors
   (`:4291-4293`, `:4335-4337`)
 - **AND** `(1.5 | 2.5).lowBoundary()` and `(1.5 | 2.5).highBoundary()` are
-  execution errors with the same message naming `lowBoundary` and
-  `highBoundary` respectively (`:4294-4296`, `:4338-4340`)
+  execution errors with the messages `Error evaluating FHIRPath expression:
+  focus for lowBoundary can only have one value, but has 2 values` and the same
+  naming `highBoundary` (`:4294-4296`, `:4338-4340`)
 - **AND** the specification's result for an empty input is empty; recorded as
   `DEV-0025`
 - **AND** no suite case grades it, so it is differential-only
@@ -2353,6 +2367,18 @@ integer for the two boundaries but not for `precision` (`:3716`, `:3731`).
   `funcPrecision`
 - **AND** with the static check run, `1.precision()` and `'abc'.lowBoundary()`
   are rejected with `FHIRPATH_CONTINUOUS_ONLY`, while `1.lowBoundary()` passes
+- **AND** dispatch is by the exact `fhirType()`, compared case-insensitively
+  with no subtype following (`Base.hasType`, `Base.java:159-165`), so a model
+  element of a specialised type is not taken either: with the static check
+  skipped, `Patient.telecom.rank.first().lowBoundary()`,
+  `.highBoundary()` and `.precision()` (a `positiveInt`) and
+  `Patient.gender.lowBoundary()`, `.highBoundary()` and `.precision()` (a
+  `code`) over `patient-example.xml`, and
+  `Patient.meta.lastUpdated.lowBoundary()`, `.highBoundary()` and
+  `.precision()` (an `instant`) over `patient-glossy-example.xml`, each yield an
+  empty collection; an `unsignedInt` element is the same. An `instant` is not
+  treated as a dateTime and a `positiveInt` or `unsignedInt` is not treated as
+  an integer, whatever the model's type hierarchy says (`path.types.*`)
 - **AND** no suite case grades it, so it is differential-only
 
 #### Scenario: [path.boundary.015] a date or dateTime boundary precision is one of seven values
@@ -2369,12 +2395,27 @@ whole text), and throws for anything else.
   execution error with the message
   `Unsupported Date precision for boundary operation: <n>`; there is no range
   check returning empty
-- **AND** `@2014-01-01T08.lowBoundary(14)` and `@2014-01-01T08.highBoundary(14)`
-  are execution errors: precision 14 keeps 17 characters, so the text is
-  `2014-01-01T08:00:+14:00` (`2014-01-01T08:00:-12:00`), which is not a valid
-  dateTime
-- **AND** the specification's seconds precision 14 yields a dateTime at
-  seconds; recorded as `DEV-0025`
+- **AND** precision 14 keeps 17 characters and then appends the offset, and
+  `new DateTimeType` reads the two characters after the minute's `:` as the
+  seconds (`BaseDateTimeType.java:330-342`, `:484-492`, `:540-553`), so the
+  result depends on the first two characters of the offset:
+  - `@2014-01-01T08.lowBoundary(14)` is a single `dateTime` whose lexical form
+    is `2014-01-01T08:00:+14:00`: the seconds text `+1` parses as `1`
+  - `@2014-01-01T08.highBoundary(14)` is an execution error with the message
+    `Invalid date/time format: "2014-01-01T08:00:-12:00"`: the seconds text
+    `-1` is out of range (`BaseDateTimeType.java:796-798`)
+  - with a stated offset, any `+` offset and any `-` offset whose hour starts
+    with `0` parse: `@2014-01-01T08:05+08:00.lowBoundary(14)` is the dateTime
+    `2014-01-01T08:05:+08:00` and `@2014-01-01T08:05-05:00.highBoundary(14)`
+    is the dateTime `2014-01-01T08:05:-05:00`, while
+    `@2014-01-01T08:05-10:00.highBoundary(14)` is the `Invalid date/time
+    format` error for its text
+  - with a stated `Z`, `@2014-01-01T08:05Z.lowBoundary(14)` builds
+    `2014-01-01T08:05:Z`, shorter than the 19 characters a seconds field
+    needs, and is the `Invalid date/time format` error for that text
+- **AND** the specification's seconds precision 14 yields a well-formed
+  dateTime at seconds; recorded as `DEV-0025`, and the malformed dateTimes
+  that parse as `DEBT-0016`
 - **AND** no suite case grades it, so it is differential-only
 
 #### Scenario: [path.boundary.016] a time boundary precision below 9 keeps a trailing separator
@@ -2405,14 +2446,53 @@ then read with `Integer.parseInt` (`:4303`, `:4347`).
 
 - **WHEN** `1.587.lowBoundary(1 | 2)`, `1.587.highBoundary(1 | 2)` and
   `1.587.lowBoundary({})` are evaluated with the static check skipped
-- **THEN** each is an execution error whose message is
-  `The parameter type Multiple Values is not legal for lowBoundary parameter 0.
-  expecting integer`, naming `lowBoundary` for `highBoundary` too
+- **THEN** each is an execution error whose message is, in full,
+  `Error evaluating FHIRPath expression: The parameter type Multiple Values is
+  not legal for lowBoundary parameter 0. expecting integer`
+  (`FHIRPATH_WRONG_PARAM_TYPE`, `Messages.properties:371`), naming
+  `lowBoundary` for `highBoundary` too
 - **AND** with the static check skipped, `1.587.lowBoundary('2')` is the decimal
   `1.58`, because the string's text parses as an integer, and
   `1.587.lowBoundary(1.5)` is an execution error with the message
   `For input string: "1.5"`
 - **AND** no suite case grades it, so it is differential-only
+
+#### Scenario: [path.boundary.018] a zero decimal takes a fixed half-unit text
+
+Both decimal boundaries test `isZero` first (`Utilities.java:1639`, `:1705`,
+`:1718-1720`), which strips `.`, `-` and `0` and so takes `0`, `0.0`, `0.000`
+and `(-0.0)` alike. The zero branch does not go through `minusOne`: it applies
+the precision to the fixed text `-0.5000000000000000000000000` (low) or
+`0.50000000000000000000000000000` (high), and a lower-case exponent's digits
+are not appended.
+
+- **WHEN** `0.lowBoundary()`, `0.highBoundary()`, `0.lowBoundary(0)` and
+  `0.highBoundary(0)` are evaluated
+- **THEN** the results are the decimals `-0.50000000`, `0.50000000`, `-0` and
+  `1`, each with that lexical form (`1` because the `5` rounds the leading `0`
+  up)
+- **AND** `0.0.lowBoundary(1)`, `(-0.0).lowBoundary(1)` and
+  `0.000.highBoundary(1)` are `-0.5`, `-0.5` and `0.5`
+- **AND** no suite case grades it (`LowBoundaryDecimal14` and `15` are
+  `0.0034`, not zero), so it is differential-only
+
+#### Scenario: [path.boundary.019] a quantity with no value has no boundary
+
+The quantity arm reads the value with `getNamedValue`
+(`FHIRPathEngine.java:4643-4649`), which is `null` when the element has no
+`value`, and `lowBoundaryForDecimal` / `highBoundaryForDecimal` throw for a
+null or empty text (`Utilities.java:1632-1634`, `:1698-1700`).
+
+- **WHEN** `Observation.value.lowBoundary()` and
+  `Observation.value.highBoundary()` are evaluated over an Observation whose
+  `valueQuantity` carries `unit`, `system` and `code` but no `value`
+- **THEN** each is an execution error with the message
+  `Unable to calculate lowBoundary for a null decimal string` and
+  `Unable to calculate highBoundary for a null decimal string` respectively
+- **AND** this holds for any precision argument, because the text is tested
+  before the precision is used
+- **AND** no suite case or fixture has such a quantity, so it is
+  differential-only, with a hand-built input for the seam assertions
 
 ### Requirement: Type operators and reflection
 

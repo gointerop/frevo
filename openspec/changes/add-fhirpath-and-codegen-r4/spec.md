@@ -9,8 +9,8 @@ capability, because that is the layout `openspec validate` parses and
 |---|---|---:|
 | `codegen` | [`specs/codegen/spec.md`](specs/codegen/spec.md) | 49 |
 | `model` | [`specs/model/spec.md`](specs/model/spec.md) | 83 |
-| `path` | [`specs/path/spec.md`](specs/path/spec.md) | 375 |
-| **Total** | | **507** |
+| `path` | [`specs/path/spec.md`](specs/path/spec.md) | 377 |
+| **Total** | | **509** |
 
 This file carries no normative text of its own. It carries the ID registry,
 which is the thing a later change must not collide with.
@@ -79,8 +79,12 @@ the area for behaviour the first draft missed: `path.boundary.011` (the
 `HighBoundary` exponent cases, which no scenario named) and `.012`-`.017`
 (untested upstream behaviour: a quantity's precision is not range-checked,
 `precision()` on an empty focus, a focus of another type, the date and time
-precision lists, the precision argument). None was removed, renumbered, reused
-or repurposed. The spec-prose differences are `DEV-0025`; the wrong answers
+precision lists, the precision argument). After the thirty-fourth review,
+`.012`, `.013`, `.014`, `.015` and `.017` were corrected in place (a valueless
+quantity at precision `-1`, precision 14 parsing for `+` offsets, exact
+`fhirType()` dispatch for model elements, the full message texts) and **2 more
+IDs were added**: `path.boundary.018` (the zero branch) and `.019` (a quantity
+with no value). None was removed, renumbered, reused or repurposed. The spec-prose differences are `DEV-0025`; the wrong answers
 HAPI gives are `DEBT-0016`. The delta changed after `review.md` was
 `APPROVED`, so the spec-reviewer must re-review it.
 
@@ -121,7 +125,7 @@ HAPI gives are `DEBT-0016`. The delta changed after `review.md` was
 | `path.convert.*` | 14 | `001`-`014` |
 | `path.datetime.*` | 7 | `001`-`007` |
 | `path.quantity.*` | 18 | `001`-`018` |
-| `path.boundary.*` | 17 | `001`-`017` |
+| `path.boundary.*` | 19 | `001`-`019` |
 | `path.types.*` | 13 | `001`-`013` |
 | `path.env.*` | 17 | `001`-`017` |
 | `path.utility.*` | 28 | `001`-`028` |
@@ -153,11 +157,11 @@ contain `<test ...>` text — and are leftover Java, not well-formed test
 elements. `documentFunctions` is 115 cases, not 114. The `invalid` counts are
 unaffected: 7 syntax, 29 semantic, 27 execution.
 
-**Twenty-five scenarios have no live case in the pinned suite to grade them and
+**Twenty-seven scenarios have no live case in the pinned suite to grade them and
 say so in their own text**: `path.subset.003`, `path.subset.013`,
 `path.compare.007`, `path.compare.011`, `path.convert.012`,
 `path.datetime.003`, `path.quantity.015`, `path.quantity.018`,
-`path.boundary.012` through `path.boundary.017`, `path.env.015`,
+`path.boundary.012` through `path.boundary.019`, `path.env.015`,
 `path.env.016`, `path.env.017`, `path.utility.017`, `path.utility.022`,
 `path.utility.023`, `path.utility.024`, `path.utility.027`,
 `path.utility.028`, `path.strictness.005` and `path.strictness.006`. The pinned
@@ -688,6 +692,8 @@ Every allocated ID, grouped as it is grouped in the delta files.
 - `path.boundary.015` — a date or dateTime boundary precision is one of seven values
 - `path.boundary.016` — a time boundary precision below 9 keeps a trailing separator
 - `path.boundary.017` — the precision argument must be a single value read as an integer
+- `path.boundary.018` — a zero decimal takes a fixed half-unit text
+- `path.boundary.019` — a quantity with no value has no boundary
 
 **Requirement: Type operators and reflection**
 

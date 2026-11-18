@@ -444,10 +444,18 @@ them is the whole reason that decision is safe to make.
     reports a dateTime (`path.boundary.009`);
   - a time boundary at precision 2, 4 or 6 is a malformed time (`10:`,
     `10:30:`, `10:30:00.`) rather than an hour, minute or second value
-    (`path.boundary.016`).
+    (`path.boundary.016`);
+  - a dateTime boundary at precision 14 is a malformed dateTime that parses
+    for a `+` offset or a `-0x` offset (`2014-01-01T08:00:+14:00`, seconds
+    read as `1`), where the specification gives a seconds-precision value
+    (`path.boundary.015`);
+  - a quantity's boundary at a negative precision is a Quantity with no value
+    (`1.587 'cm'.lowBoundary(-1)`) or a truncated one
+    (`12.5 'cm'.lowBoundary(-1)` is `1 'cm'`), where the specification gives
+    empty (`path.boundary.012`).
   Also owed: an upstream report to `org.hl7.fhir.core` for all of the above
-  and for the carry and date-precision-14 errors, which are errors and not
-  hazards.
+  and for the carry, `highBoundary(14)` and `-2` quantity-precision errors,
+  which are errors and not hazards.
 - **Why deferred:** constitution section 1 and the owner's decision of
   2026-11-08: no flag is added speculatively. HAPI fails the same 18 suite
   cases, so parity is exact; no consumer, search parameter or IG invariant is
