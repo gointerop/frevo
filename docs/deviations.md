@@ -669,7 +669,7 @@ file, so its prose is not redistributable here (see `oracles/PINS.md`).
 ### DEV-0023 — `matchesFull` on an empty focus is `false`, and the regex layer rejects constructs Java accepts
 
 - **Area:** path
-- **Scenario IDs:** path.string.008, path.string.009, path.string.010
+- **Scenario IDs:** path.string.008, path.string.009, path.string.010, path.string.025, path.string.026, path.string.027, path.string.028, path.string.029
 - **HAPI 8.12.0 behaviour:** `funcMatchesFull` has no empty-propagation branch
   (`ENGINE:5711-5735`): `{}.matchesFull('b')` is `false`, where `funcMatches`
   (`ENGINE:5688`) yields empty. The three functions run `java.util.regex` through
@@ -683,14 +683,21 @@ file, so its prose is not redistributable here (see `oracles/PINS.md`).
 - **Chosen behaviour:** HAPI for the empty focus (`false`). For the pattern
   dialect Frevo uses the `regex` crate behind a compatibility layer (ADR 0005,
   on its `chore/` branch): the listed constructs, whose `regex` meaning would
-  silently differ, and an unbalanced parenthesis are **execution errors**, and
-  there is no wall-clock timeout because the engine is linear in the input.
-  Compiled-program size and group nesting are bounded (`size_limit` 2 MiB,
-  `nest_limit` 100); a pattern over either is an execution error. These are
-  departures from HAPI, which accepts them or times out; the remaining corners
-  are `DEBT-0015`.
+  silently differ, are **execution errors** (an unbalanced parenthesis is an
+  error in HAPI too and is not a departure), and there is no wall-clock timeout
+  because the engine is linear in the input. Compiled-program size and group
+  nesting are bounded (`size_limit` 2 MiB, `nest_limit` 100); a pattern over
+  either is an execution error. These are departures from HAPI, which accepts
+  them or times out. Also departures, where Frevo **answers differently rather
+  than erroring** (all `DEBT-0015`): `$` without `(?m)` does not match before a
+  final line terminator (Java does) in all three functions; `(?i)` folds Unicode
+  case where Java's default is ASCII; `.` in `replaceMatches` is rewritten to
+  exclude Java's five line terminators only when the pattern has no inline flag
+  group; `\u` and other escapes the `regex` crate accepts and Java rejects are
+  accepted; a lone surrogate carried as a private-use code point is an ordinary
+  character; `replace_all` iteration can be O(m*n^2) on an adversarial pattern.
 - **Configuration flag:** none
-- **Debt:** none
+- **Debt:** DEBT-0015
 - **Rationale:** owner decision, 2026-11-17 (ADR 0005): the dependency is the
   `regex` crate. HAPI 8.12.0's behaviour is the reference where the crate can
   match it. The departures need the owner's confirmation.

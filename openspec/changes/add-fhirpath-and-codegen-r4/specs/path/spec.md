@@ -1461,6 +1461,76 @@ The engine SHALL implement the string functions `FHIRPathEngine` implements, inc
   (`testReplaceMatches2`, `:4885-4886`); a focus of more than one item returns the
   **first** item's string with no error (`:4885-4886`); a focus that is not
   string-like with a non-empty pattern yields an empty collection (`DEV-0006`)
+#### Scenario: [path.string.025] a pattern construct whose meaning would silently differ from Java's is an execution error
+
+- **WHEN** `'a'.matches('(?u)a')`, `'a'.matches('(?U)a')`, `'a'.matches('(?x)a')`,
+  `'a'.matches('\\v')`, `'a'.matches('a*+')`, `'a'.matches('\\p{Alpha}')` and
+  `'a'.matches('[a--b]')` are evaluated (the last tests `--` inside a class;
+  `~~` likewise), each also through `matchesFull` and `replaceMatches`
+- **THEN** each fails with an execution error naming the construct
+- **AND** HAPI accepts every one of them with Java's meaning (possessive
+  quantifier, vertical-whitespace class, the `U`, `u` and `x` flags,
+  POSIX-named property, class intersection); the departure is recorded as
+  `DEV-0023`, and the engine is the `regex` crate behind a compatibility layer
+  (ADR 0005, decision item 5)
+- **AND** a construct Java has and the `regex` crate lacks (a backreference
+  `(a)\\1`, lookahead `a(?=b)`) is also an execution error and is not a
+  silent difference (`DEBT-0015`)
+- **AND** an unbalanced parenthesis (`'a'.matches('(a')`) is an execution error
+  in HAPI as well, a `PatternSyntaxException` wrapped by `RegexTimeout`
+  (`RegexTimeout.java:28-30`), so it is not a departure
+- **AND** no pinned suite case grades any of these, so they are differential-only
+
+#### Scenario: [path.string.026] `\d`, `\w`, `\s` and `\b` mean their ASCII sets, as in Java's default mode
+
+- **WHEN** `'٣'.matches('\\d')` (an Arabic-Indic digit), `'é'.matches('\\w')`,
+  `'é'.matches('\\W')` and `'a b'.matches('a\\sb')` (a no-break space) are
+  evaluated
+- **THEN** the results are `false`, `false`, `true` and `false`
+- **AND** `'7'.matches('\\d')`, `'_'.matches('\\w')`, `'a b'.matches('a\\sb')` and
+  `'ab'.matches('\\bab\\b')` are `true`
+- **AND** the same holds inside a character class (`'é'.matches('[\\w]')` is
+  `false`), and `\D`, `\W`, `\S` and `\B` are the complements
+- **AND** this is Java's default (non-Unicode-class) meaning; differential-only
+
+#### Scenario: [path.string.027] the `replaceMatches` replacement string uses Java's syntax
+
+- **WHEN** `'abc'.replaceMatches('(b)', '[$1]')`,
+  `'abc'.replaceMatches('(?<x>b)', '<${x}>')`, `'abc'.replaceMatches('b', '\\$')`
+  and `'a.c'.replaceMatches('\\.', '\\\\')` are evaluated (the literals pass
+  `\$` and two backslashes to the engine)
+- **THEN** the results are `a[b]c`, `a<b>c`, `a$c` and `a\c`
+- **AND** `$n` takes further digits only while the number still names a group:
+  with ten groups `$10` is group 10, and with one group `$10` is group 1
+  followed by `0`
+- **AND** a reference to a missing group (`'abc'.replaceMatches('(b)', '$2')`,
+  `${nope}`), a trailing `$` and a trailing `\` are execution errors
+- **AND** a group that did not participate in the match contributes nothing
+- **AND** the engine's own `$` template syntax is never used: `'abc'.replaceMatches('b', '$$')`
+  is an execution error as in Java, not `a$c`
+
+#### Scenario: [path.string.028] `replaceMatches` finds empty matches as Java's `Matcher.find` does
+
+- **WHEN** `'abc'.replaceMatches('x*', '-')` and `'abc'.replaceMatches('b*', '-')`
+  are evaluated
+- **THEN** the results are `-a-b-c-` and `-a--c-`: an empty match is found at
+  every position including the end, and after an empty match the search steps one
+  character (a whole code point, never a split one) forward
+- **AND** an empty pattern string is returned unchanged rather than matched at
+  every position (`'abc'.replaceMatches('', 'x')` is `abc`, `path.string.010`)
+- **AND** differential-only
+
+#### Scenario: [path.string.029] a pattern over the compiled-size or nesting limit is an execution error
+
+- **WHEN** `'a'.matches('(?:a{1000}){1000}')` (a compiled program over 2 MiB) and
+  a pattern of 200 nested groups are evaluated
+- **THEN** each fails with an execution error (compiled-program `size_limit` of
+  2 MiB, group `nest_limit` of 100), not a panic (`path.errors.003`)
+- **AND** a pattern nested 50 deep and a small pattern evaluate normally
+- **AND** HAPI compiles both with `java.util.regex` and answers, so this is a
+  departure recorded as `DEV-0023`; the limit values are owed to `design.md`
+  (`tasks/blockers.md`). Differential-only
+
 #### Scenario: [path.string.011] `replace` substitutes literal substrings
 
 - **WHEN** the `testReplace` group's cases are evaluated

@@ -388,7 +388,8 @@ them is the whole reason that decision is safe to make.
 ### DEBT-0015 — the regular-expression functions differ from `java.util.regex` in corners where Frevo answers rather than errors
 
 - **Area:** path
-- **Origin:** change `add-fhirpath-and-codegen-r4`, task 41a, ADR 0005
+- **Origin:** change `add-fhirpath-and-codegen-r4`, task 41a, ADR 0005, and
+  `DEV-0023` (the deviation these corners are part of)
 - **Owed:** a closer match to Java in the places the `regex` crate cannot be
   made exact by rewriting the pattern:
   - `$` without `(?m)` does not match before a final line terminator (Java

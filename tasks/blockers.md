@@ -1962,3 +1962,9 @@ compatibility layer's resource limits belong in the design: compiled-program
 cache of 64 compiled patterns, no wall-clock timeout, and the performance budget
 and `bench/` workload for a `matches`/`replaceMatches` search path if one is
 extracted. Needs the owner or the design's author.
+
+**Owed to ADR 0005 (for its owner).** The inline flag `(?x)` is rejected by the
+compatibility layer (`strregex.rs`) but is **not** in the ADR's Decision item 5
+(which lists `U`, `u`, `\v`, possessive quantifiers, POSIX-named `\p{..}`, and
+`--` and `~~` in a class). `path.string.025` and `DEV-0023` state it as
+rejected; the ADR should be amended to list it.

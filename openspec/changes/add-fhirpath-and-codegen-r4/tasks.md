@@ -115,12 +115,12 @@ checkpoint because it changes what a gate measures.
 - [ ] **4. Write the failing tests for every `path.*` scenario.** One test per
   scenario ID, each carrying a `// covers: path.<area>.<nnn>` comment, with the
   oracle-backed scenarios driven from the harness's case selectors and the rest
-  written directly. All 363 must fail, and none by `todo!()`, `#[ignore]` or a
+  written directly. All 368 must fail, and none by `todo!()`, `#[ignore]` or a
   bare `#[should_panic]`. Where a scenario says it is differential-only, the
   test is written against a recorded HAPI response rather than against a suite
   case, and says so. `path.check.015`-`019` are driven from the in-process
   `path-check-warnings` oracle of task 4a, not from a suite selector.
-  Covers all 363 `path.*` scenarios.
+  Covers all 368 `path.*` scenarios.
 
 - [ ] **4a. Build the `path-check-warnings` in-process oracle.** The check
   pass's warning channel is reachable by neither the vendored suite — whose
@@ -872,7 +872,9 @@ checkpoint because it changes what a gate measures.
   regex timeout (`regexTimeoutMillis`, `:186`) is part of the behaviour. Any
   pattern in the pinned suite's `testMatches` or `testReplaceMatches` that the
   chosen engine cannot express is recorded as a deviation.
-  Satisfies `path.string.008`, `path.string.009`, `path.string.010`. The
+  Satisfies `path.string.008`, `path.string.009`, `path.string.010` and
+  `path.string.025` through `path.string.029` (rejected constructs, ASCII class
+  rewrites, the replacement syntax, empty-match iteration, the limits). The
   `matches`, `matchesFull` and `replaceMatches` legs of `path.string.020` and
   `path.string.021`, which task 40 otherwise satisfies, are satisfied here.
 

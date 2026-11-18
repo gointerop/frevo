@@ -9,8 +9,8 @@ capability, because that is the layout `openspec validate` parses and
 |---|---|---:|
 | `codegen` | [`specs/codegen/spec.md`](specs/codegen/spec.md) | 49 |
 | `model` | [`specs/model/spec.md`](specs/model/spec.md) | 83 |
-| `path` | [`specs/path/spec.md`](specs/path/spec.md) | 363 |
-| **Total** | | **495** |
+| `path` | [`specs/path/spec.md`](specs/path/spec.md) | 368 |
+| **Total** | | **500** |
 
 This file carries no normative text of its own. It carries the ID registry,
 which is the thing a later change must not collide with.
@@ -97,7 +97,7 @@ cases): see `docs/deviations.md`, "Considered and not recorded as deviations".
 | `path.logic.*` | 10 | `001`-`010` |
 | `path.math.*` | 14 | `001`-`014` |
 | `path.mathfn.*` | 11 | `001`-`011` |
-| `path.string.*` | 24 | `001`-`024` |
+| `path.string.*` | 29 | `001`-`029` |
 | `path.convert.*` | 14 | `001`-`014` |
 | `path.datetime.*` | 7 | `001`-`007` |
 | `path.quantity.*` | 18 | `001`-`018` |
@@ -580,6 +580,11 @@ Every allocated ID, grouped as it is grouped in the delta files.
 - `path.string.008` — `matches` tests a regular expression unanchored
 - `path.string.009` — `matchesFull` requires the whole string to match
 - `path.string.010` — `replaceMatches` substitutes regular-expression matches
+- `path.string.025` — a pattern construct whose meaning would silently differ from Java's is an execution error
+- `path.string.026` — `\d`, `\w`, `\s` and `\b` mean their ASCII sets, as in Java's default mode
+- `path.string.027` — the `replaceMatches` replacement string uses Java's syntax
+- `path.string.028` — `replaceMatches` finds empty matches as Java's `Matcher.find` does
+- `path.string.029` — a pattern over the compiled-size or nesting limit is an execution error
 - `path.string.011` — `replace` substitutes literal substrings
 - `path.string.012` — `length` counts characters
 - `path.string.013` — `trim` removes leading and trailing whitespace
