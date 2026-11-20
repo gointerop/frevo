@@ -120,6 +120,19 @@ message with no ` (@char N)` and no Frevo offset (`1 + 1 < 'a'`,
 state that the evaluation's result carries the rewrite (`where` and
 `select($this)` return the object the comparison rewrote). No ID was added.
 
+After the implementer's finding of 2026-11-20 (`tasks/blockers.md`,
+"`path.errors.002`'s `@char` values are not HAPI's"), five scenarios were
+corrected in place, with no ID added: `path.errors.002` now states HAPI's
+lexer column rule (a whitespace character counts 2, `FHIRLexer.java:321-324`),
+so `(1=1) and 1 < 'a'` is ` (@char 13)` and the three-term form ` (@char 25)`,
+separates Frevo's optional byte `offset` from the suffix, and names the
+operator-start and location-less constructions; `path.boundary.013`,
+`path.boundary.017`, `path.check.005` and `path.utility.003` now quote HAPI's
+messages with the position suffix HAPI appends (` (@char 4)`, ` (@char 15)`,
+` (@char 7)`, ` (@char 37)`, ` (@char 9)`). `path.compare.015` also states
+that a `dateTime` value the evaluation builds (`now()`, `dateTime`
+arithmetic, a `dateTime` boundary) is rewritten when compared.
+
 | Area | IDs allocated | Range |
 |---|---:|---|
 | `codegen.inputs.*` | 6 | `001`-`006` |

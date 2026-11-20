@@ -2449,3 +2449,18 @@ the test and the harness line, and the implementer then lands the suffix, the
 every `makeException` site with a located holder, which conflicts with
 `path.boundary.013`'s "in full" messages (`{}.precision()` is ` (@char 4)` in
 HAPI, by the rule); that scenario needs the same amendment.
+
+**Resolved in the spec, 2026-11-20 (proposer).** Verified in
+`FHIRLexer.java:285`, `:321-324` and `SourceLocation.checkChar`/`incColumn`,
+and against `hapi-8.12.0-results.json:1043`, `:1046` (` (@char 7)`,
+` (@char 37)`). `path.errors.002` states the column rule and the values
+` (@char 1)`, ` (@char 13)`, ` (@char 25)`, ` (@line 2 char 2)`; Frevo's
+`offset` stays the zero-based byte offset (0, 10, 20) and is optional, present
+exactly when the suffix is. `path.boundary.013` (` (@char 4)`, ` (@char 15)`),
+`path.boundary.017` (` (@char 7)`), `path.check.005` (` (@char 37)`;
+`path.check.006`'s form ` (@char 7)`) and `path.utility.003` (` (@char 9)`) now
+carry HAPI's suffix. The rewrite of values the evaluation builds is in
+`path.compare.015`, `DEV-0017` and `DEBT-0017`; `toDateTime()` is not among them,
+since the R4 engine does not implement it (`DEV-0021`). Oracle-builder: the
+harness line `tests/oracle/engine.rs:1680-1683` (`offset: Some(offset)` to an
+optional offset) and the tests listed in the proposer's hand-off.

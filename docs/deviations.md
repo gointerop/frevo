@@ -543,7 +543,11 @@ file, so its prose is not redistributable here (see `oracles/PINS.md`).
   read of that element in the same evaluation gets its Zulu string
   (`testLessThan28`), and a compared `dateTime` literal's value does too,
   within that evaluation only: a `@` literal is rebuilt from its text on every
-  evaluation (`ENGINE:1336`, `1653-1672`).
+  evaluation (`ENGINE:1336`, `1653-1672`). The same applies to any
+  `DateTimeType` the evaluation builds and then compares (`now()`, date
+  arithmetic on a `dateTime`, `lowBoundary`/`highBoundary` of a `dateTime`),
+  and the rewritten object is what `where` and `select` return
+  (`path.compare.015`).
 - **Specification requirement:** FHIRPath 2.0.0 and the pinned suite: decimal
   equality by value, equality and equivalence of quantities and of
   minute-precision dateTimes, a difference for `q - q`, negation for `0 - q`,

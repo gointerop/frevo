@@ -1096,6 +1096,22 @@ The engine SHALL implement the four ordered comparison operators as `FHIRPathEng
   returns the same rewritten value. An uncompared literal is returned as
   written: `(@2012-04-15T10:00:00+02:00).select($this)` returns
   `2012-04-15T10:00:00+02:00`
+- **AND** the rewrite is not limited to elements and `@` literals: it applies to
+  **any** `DateTimeType` object finer than a day that reaches an ordered
+  comparison, including the values the evaluation builds itself, because
+  `compareDateTimeElements` writes to whichever object it is given. So
+  `now().where($this > @2000-01-01T00:00:00Z)` returns the current instant
+  rendered in Zulu (`DateTimeType.now()`, `:4772-4776`, which otherwise renders
+  in the JVM zone);
+  `(@2012-04-15T10:00:00+02:00 + 1 day).where($this < @2013-01-01T00:00:00Z)`
+  returns `2012-04-16T08:00:00Z` (`dateAdd` returns a `DateTimeType` copy,
+  `:2706-2708`, `:2715-2716`); and
+  `@2012-04-15T10:00:00+02:00.lowBoundary().where($this < @2013-01-01T00:00:00Z)`
+  returns `2012-04-15T08:00:00.000Z` (`lowBoundary` of a dateTime builds a
+  millisecond-precision `DateTimeType`, `:4318-4319`). A date boundary, a
+  `date + quantity` result and `today()` are day-precision or `DateType`
+  values and are never rewritten. `toDateTime()` builds no value: the R4 engine
+  does not implement it (`DEV-0021`)
 - **AND** an offset-less literal is placed in the evaluation zone first
   (`path.datetime.004`): at the suite's zone, offset 0,
   `(@2012-04-15T10:00:00).select($this < @2013-01-01T00:00:00Z and $this.toString() = '2012-04-15T10:00:00Z')`
@@ -2449,15 +2465,21 @@ makeExceptionPlural(..., "highBoundary", ...)` (`FHIRPathEngine.java:4379-4381`)
 - **WHEN** `{}.precision()` and `(1.5 | 2.5).precision()` are evaluated
 - **THEN** each is an execution error whose message is, in full,
   `Error evaluating FHIRPath expression: focus for highBoundary can only have
-  one value, but has 0 values` (and `... but has 2 values`), naming
-  `highBoundary` and not `precision` (`FHIRPATH_FOCUS_other`,
-  `Messages.properties:332`)
+  one value, but has 0 values (@char 4)` and
+  `Error evaluating FHIRPath expression: focus for highBoundary can only have
+  one value, but has 2 values (@char 15)`, naming `highBoundary` and not
+  `precision` (`FHIRPATH_FOCUS_other`, `Messages.properties:332`). The holder
+  is the `precision` function node, whose start is set, so `makeExceptionPlural`
+  appends its column under `path.errors.002`'s rule (`:572-582`): `{}` is one
+  token and `.` another, so `precision` starts at column 4 (byte offset 3); in
+  `(1.5 | 2.5).precision()` the two spaces count 2 each, so it starts at
+  column 15 (byte offset 13)
 - **AND** `{}.lowBoundary()` and `{}.highBoundary()` are empty, not errors
   (`:4291-4293`, `:4335-4337`)
 - **AND** `(1.5 | 2.5).lowBoundary()` and `(1.5 | 2.5).highBoundary()` are
   execution errors with the messages `Error evaluating FHIRPath expression:
-  focus for lowBoundary can only have one value, but has 2 values` and the same
-  naming `highBoundary` (`:4294-4296`, `:4338-4340`)
+  focus for lowBoundary can only have one value, but has 2 values (@char 15)`
+  and the same naming `highBoundary` (`:4294-4296`, `:4338-4340`)
 - **AND** the specification's result for an empty input is empty; recorded as
   `DEV-0025`
 - **AND** no suite case grades it, so it is differential-only
@@ -2560,9 +2582,11 @@ then read with `Integer.parseInt` (`:4303`, `:4347`).
   `1.587.lowBoundary({})` are evaluated with the static check skipped
 - **THEN** each is an execution error whose message is, in full,
   `Error evaluating FHIRPath expression: The parameter type Multiple Values is
-  not legal for lowBoundary parameter 0. expecting integer`
+  not legal for lowBoundary parameter 0. expecting integer (@char 7)`
   (`FHIRPATH_WRONG_PARAM_TYPE`, `Messages.properties:371`), naming
-  `lowBoundary` for `highBoundary` too
+  `lowBoundary` for `highBoundary` too. The holder is the function node
+  (`:4301`, `:4345`): `1.587` is one token, so the function name starts at
+  column 7 (byte offset 6), under `path.errors.002`'s rule
 - **AND** with the static check skipped, `1.587.lowBoundary('2')` is the decimal
   `1.58`, because the string's text parses as an integer, and
   `1.587.lowBoundary(1.5)` is an execution error with the message
@@ -3004,9 +3028,12 @@ The engine SHALL implement the utility and FHIR-specific functions `FHIRPathEngi
   (`FHIRPathEngine.java:3544-3547`) calls `checkParamTypes` with a singleton
   `string` as the type of the **first** parameter, the condition, and
   `checkParamTypes` raises `FHIRPATH_WRONG_PARAM_TYPE` for any other type
-  (`:3820-3831`), rendered as "Error evaluating FHIRPath expression: The
-  parameter type http://hl7.org/fhirpath/System.Boolean is not legal for check
-  parameter 1. expecting SINGLETON[http://hl7.org/fhirpath/System.String]"
+  (`:3820-3831`), rendered for `Patient.check(true, 'm')` as "Error evaluating
+  FHIRPath expression: The parameter type http://hl7.org/fhirpath/System.Boolean
+  is not legal for check parameter 1. expecting
+  SINGLETON[http://hl7.org/fhirpath/System.String] (@char 9)", the suffix being
+  the column of the `check` function node, which is the holder
+  (`checkParamTypes(exp, ...)`, `:3545`; `path.errors.002`'s rule)
   (`Messages.properties:371`; the type is `TypeDetails.FP_Boolean`,
   `TypeDetails.java:66`, and the expected set prints as the collection status
   then the type list, `TypeDetails.toString`, `:474-476`). So `Patient.check(true, 'm')`
@@ -3319,13 +3346,19 @@ it. Like the pinned engine, it SHALL NOT narrow a type on a type guard
 - **THEN** the check **fails** with the primitive-only diagnostic for
   `toString`. Its message id is `FHIRPATH_PRIMITIVE_ONLY` and its message is
   exactly `Error evaluating FHIRPath expression: The function toString can only
-  be used on primitives`: the template at `Messages.properties:353` with `{0}`
-  bound to `toString`, which `makeException` passes through unchanged
-  (`ENGINE:584-594`). It appends a location suffix only when the engine's
-  `location` is set, and neither `FHIRPathTests` nor the oracle harness sets it. This is the same
-  diagnostic the unguarded expression of `path.check.006` produces. Wherever
+  be used on primitives (@char 37)`: the template at `Messages.properties:353`
+  with `{0}` bound to `toString`, followed by the position of the `toString`
+  function node under `path.errors.002`'s column rule (byte offset 32; the four
+  spaces count 2 each). `makeException` (`ENGINE:584-594`) adds no
+  ` (at ...)` fragment, because neither `FHIRPathTests` nor the oracle harness
+  sets the engine's `location`. HAPI's record carries the same suffix for the
+  `>= 10` form of this expression (`isEffectOnLogic1`,
+  `hapi-8.12.0-results.json:1046`). This is the same diagnostic the unguarded
+  expression of `path.check.006` produces, with its own position
+  (` (@char 7)` for `$this.toString().length() > 10`). Wherever
   `path.check.006` to `.012` name "the `FHIRPATH_PRIMITIVE_ONLY` diagnostic for
-  `toString`", they mean this exact message
+  `toString`", they mean this message text followed by the ` (@char N)` of the
+  `toString` node in that expression
 - **AND** this is HAPI 8.12.0's behaviour: `executeType` types every operand of
   an operator chain against the **same** focus (`ENGINE:1621-1637`); the `is`
   operator types to `Boolean` and leaves the focus unchanged
@@ -3376,7 +3409,10 @@ it. Like the pinned engine, it SHALL NOT narrow a type on a type guard
   `isEffectOnLogic3Base` is `hapi-cannot-pass` (`path.oracle.016`)
 - **AND** for each of those three context types the guarded expression of
   `path.check.005` and this unguarded one get the **same** check outcome: the
-  guard changes nothing the check pass observes
+  guard changes nothing the check pass observes. Where both fail, the message
+  id and the message text are the same and only the position suffix differs,
+  because the `toString` node sits at a different column: ` (@char 37)` for the
+  guarded form and ` (@char 7)` for this one (`path.errors.002`)
 
 #### Scenario: [path.check.007] the `is()` function narrows nothing either; only `ofType()` and `as` retype the focus
 
@@ -3694,16 +3730,48 @@ The engine SHALL report an evaluation failure as an error carrying HAPI's messag
   `(1=1) and (1=1) and 1 < 'a'`
 - **THEN** each fails with an execution error whose message is exactly
   `Error evaluating FHIRPath expression: Unable to compare values of type integer and string`
-  followed by ` (@char 1)`, ` (@char 11)` and ` (@char 21)` respectively:
+  followed by ` (@char 1)`, ` (@char 13)` and ` (@char 25)` respectively:
   `makeException` formats `FHIRPATH_CANT_COMPARE` with both `fhirType()`s
   (`FHIRPathEngine.java:2435`, `:584-594`) and constructs
   `PathEngineException(message, id, holder.getStart(), holder.toString())`,
   whose constructor appends only `rep(location, expression)`
   (`org.hl7.fhir.utilities/src/main/java/org/hl7/fhir/exceptions/PathEngineException.java:81-93`)
-- **AND** the error's offset is the position of the failing operator node's
-  start within the whole expression, 0, 10 and 20 (zero-based) for the three
-  expressions; `@char` is the same position one-based (`SourceLocation` starts
-  at column 1, `FHIRLexer.java:56`)
+- **AND** `@char` is HAPI's lexer **column**, which is not the byte offset plus
+  one. The column starts at 1 (`SourceLocation(1, 1)`, `FHIRLexer.java:56`) and
+  advances as follows:
+  - a token adds its length once (`incColumn(cursor - currentStart)`,
+    `FHIRLexer.java:285`), the length of a string or delimited token counting
+    its quotes and escapes as written;
+  - a whitespace character other than CR and LF adds **2**:
+    `skipWhitespaceAndComments` calls `checkChar` (`setColumn(column + 1)`) and
+    then `incColumn()` (`FHIRLexer.java:321-324`, `SourceLocation.java`
+    `checkChar`, `incColumn`);
+  - a CR, or an LF not preceded by a CR, starts a new line at column 1
+    (`newLine`), and the `incColumn()` that follows makes it column 2; an LF
+    after a CR adds 1;
+  - a `//` comment adds 1 per character, the `//` included, up to the line end
+    (`:294-303`); a `/* */` comment adds 2 per character from the `/*` up to
+    the `*/`, with CR and LF handled as above, and 2 for the `*/`
+    (`:304-320`);
+  - a node's position is the column at which its first token starts
+    (`currentStartLocation`, `:147`; `setStart`, `FHIRPathEngine.java:1076`)
+- **AND** so in `(1=1) and 1 < 'a'` the `1` starts at byte offset 10 and column
+  13 (`(1=1)` reaches 6, the space 8, `and` 11, the space 13), and in
+  `(1=1) and (1=1) and 1 < 'a'` at byte offset 20 and column 25. HAPI's own
+  record shows the rule: `isSemanticChecks/isEffectOnLogic1` reports `toString`
+  in `$this is dateTime implies $this.toString().length() >= 10`, at byte
+  offset 32 after four spaces, as ` (@char 37)`, and `isEffectOnLogic1Base`
+  (`$this.toString().length() >= 10`, no space) as ` (@char 7)`
+  (`oracles/fhirpath/hapi-8.12.0-results.json:1046`, `:1043`)
+- **AND** a node on a later line is reported as ` (@line L char C)` with the
+  same column rule: `(1=1) and` followed by an LF and `1 < 'a'` fails with
+  ` (@line 2 char 2)`
+- **AND** Frevo's error `offset` is a separate value from the message suffix:
+  it is the zero-based byte offset of the failing node's first token in the
+  expression text (0, 10 and 20 for the three expressions above), present
+  exactly when HAPI's message carries a position suffix, and absent otherwise.
+  The suffix in the message is computed by HAPI's column rule, never derived as
+  `offset + 1`
 - **WHEN** `1 + 1 < 'a'` is evaluated, and then `(1=1) and 1 + 1 < 'a'`
 - **THEN** each fails with the message exactly
   `Error evaluating FHIRPath expression: Unable to compare values of type integer and string`,
@@ -3741,8 +3809,22 @@ The engine SHALL report an evaluation failure as an error carrying HAPI's messag
 - **AND** the position rule holds for every execution error raised through
   `makeException` or `makeExceptionPlural` (`:572-594`) with a non-null holder
   whose start is set: a term `parseExpression` built (a literal, a name, a
-  function call, a parenthesised group). A holder built by `newGroup`, or a
-  `null` holder, gives the bare message and no offset. The 21 evaluation-stage
+  function call, a parenthesised group), with the column rule above. A holder
+  built by `newGroup`, the indexer node built for `[...]` (which is created
+  without a start, `:1188-1192`), or a `null` holder gives the bare message and
+  no offset. This covers check-stage errors raised the same way, such as
+  `path.check.005`'s and `path.utility.003`'s.
+- **AND** errors the engine constructs directly rather than through
+  `makeException` follow their own location argument: the arithmetic and
+  calendar-unit errors pass the **operator token's** start, `getOpStart()`
+  (`FHIRPATH_ARITHMETIC_PLUS`, `_MINUS`, `_QTY`, `_UNIT` and the wrapped
+  arithmetic exception, `FHIRPathEngine.java:2063`, `:2080`, `:2725`, `:2731`,
+  `:2763`, `:2801`), so the suffix and Frevo's offset name the `+` or `-`, with
+  the same column rule, and are absent when the operator was moved onto a
+  `newGroup` node (which has no operator start either); the variable, `as` and
+  type-name errors pass no location (`:1007`, `:1014`, `:1057`, `:1064`,
+  `:1882`, `:1885`, `:5164`, `:5167`, `:5207`) and carry no suffix and no
+  offset The 21 evaluation-stage
   cases of `path.errors.001` are graded on their stage, not on their message
 
 #### Scenario: [path.errors.003] evaluation never panics
