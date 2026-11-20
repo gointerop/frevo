@@ -1,4 +1,10 @@
-CHANGES_REQUESTED
+APPROVED
+
+Fortieth review (commit `b73a460`, 2026-11-20) resolves the one finding of the
+thirty-ninth review. The detail is in the dated section at the end. The
+earlier findings follow, kept for the record.
+
+## Thirty-ninth-review findings as raised (commit `4331265`)
 
 Thirty-ninth review (commit `4331265`, 2026-11-20, diff against `bc22e8c`).
 Findings 2, 3 and 4 of the thirty-eighth review are resolved, and finding 1 is
@@ -2942,6 +2948,66 @@ column 15 is unchanged.
 **Registers, counts and validators.**
 - `DEV-0017` and `DEBT-0017` now state the precision rule (14 or 17
   rewritten, 10 or less not).
+- `harness/scripts/check-registries.sh` reports "registers agree" (23
+  deviations, 17 debt entries).
+- `openspec validate add-fhirpath-and-codegen-r4 --strict` reports the change
+  is valid.
+- The headings number codegen 49, model 83 and path 378, 510 in total. No ID
+  is duplicated, added, removed or renumbered.
+
+## Fortieth review - commit `b73a460` (2026-11-20)
+
+Scope: the diff `5c510fb..b73a460`: the precision-14 clause of
+`path.compare.015`, and its note in `spec.md`.
+
+**Thirty-ninth finding: resolved.**
+- The clause now references `path.boundary.015`.
+- I traced each of the five values through `DateTimeUtil.lowBoundaryForDate`
+  and `highBoundaryForDate` (`:65-90`, `:156-181`, `applyDatePrecision`
+  `:130-144`, `splitTimezone` `:183-200`). I then traced the resulting text
+  through `BaseDateTimeType.parse` (`getOffsetIndex` `:330-342`, called at
+  `:470`; zone `:479`; seconds `:491`).
+- For every offset text below, `getOffsetIndex` passes its consistency test:
+  the one sign found after index 16 is at 17, and 17 - 2 equals the sum of the
+  three indexes, with -1 for each one not found.
+
+The five values:
+- `@2014-01-01T08.lowBoundary(14)`:
+  - The text is `2014-01-01T08:00:+14:00`.
+  - The time part is `08:00:` (length 6), so the seconds are `+1` = 1, at
+    SECOND precision, and the zone is +14:00.
+  - The instant is `2014-01-01T08:00:01+14:00`, which in Zulu is
+    `2013-12-31T18:00:01Z`.
+  - 2013 < 2015, so `where` keeps it. Correct.
+- `@2014-01-01T08:05+08:00.lowBoundary(14)`:
+  - `splitTimezone` takes the `+` branch, giving
+    `2014-01-01T08:05:+08:00`.
+  - The seconds are `+0` = 0, so the instant is 08:05:00+08:00, which in Zulu
+    is `2014-01-01T00:05:00Z`. Correct.
+- `@2014-01-01.lowBoundary(14)`:
+  - The `date` focus is widened to `2014-01-01T00:00:00.000` and cut to 17
+    characters.
+  - It has no offset and the precision is above 10, so `+14:00` is appended.
+  - The seconds are `+1`, which gives `2013-12-31T10:00:01Z`. Correct.
+- `@2014-01-01T08:05-05:00.highBoundary(14)`:
+  - `splitTimezone` takes the `-` branch, because the last `-` is after the
+    `T`. That gives `2014-01-01T08:05` and `-05:00`.
+  - It is widened to `...08:05:59.999` and cut to `2014-01-01T08:05:`, then
+    the offset is appended.
+  - The seconds text `-0` reads as 0, which is in range. The zone is -05:00.
+  - 08:05:00-05:00 is `2014-01-01T13:05:00Z`. Correct.
+- `@2014-01-01T08.highBoundary(14)`:
+  - The focus has no offset, so the text is `2014-01-01T08:00:-12:00`.
+  - The seconds `-1` fall below the lower bound 0, so `parseInt` calls
+    `throwBadDateFormat`. That happens inside `new DateTimeType`
+    (`ENGINE:4364`), before `where` runs. Correct.
+
+All five operands carry an offset, so none of the values depends on the
+evaluation zone. The Zulu form renders at SECOND precision with no fractional
+seconds, because `parse` leaves `myFractionalSeconds` empty when
+`timeLength <= 8`.
+
+**Registers, counts and validators.**
 - `harness/scripts/check-registries.sh` reports "registers agree" (23
   deviations, 17 debt entries).
 - `openspec validate add-fhirpath-and-codegen-r4 --strict` reports the change
