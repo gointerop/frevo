@@ -1,4 +1,12 @@
-CHANGES_REQUESTED
+APPROVED
+
+Forty-fourth review (commit `e30696c`, 2026-11-20) resolves both findings of
+the forty-third review. It narrows `path.navigation.025` to what Frevo builds,
+and records the HTML-mode item string as `DEV-0028` (pending the owner) and
+`DEBT-0018`. Two non-blocking notes on the registers are in the dated section
+at the end. The earlier findings follow, kept for the record.
+
+## Forty-third-review findings as raised (commit `429b868`)
 
 Forty-third review (commit `429b868`, 2026-11-20, diff against `295b604`). The
 forty-second finding is resolved in `path.api.005`. The new
@@ -3459,3 +3467,75 @@ cases are right, and the generation rule now carries the exception.
 - `path.navigation.*` has 25 headings. No ID is duplicated, removed or
   renumbered.
 - The no-live-case list (31) includes `.025`, which says "differential-only".
+
+## Forty-fourth review - commit `e30696c` (2026-11-20)
+
+Scope: the diff `db58962..e30696c`. It covers `path.navigation.025`, the new
+`DEV-0028` and `DEBT-0018`, the `spec.md` note and task text. `XC` is
+`org.hl7.fhir.utilities/.../xhtml/XhtmlComposer.java` and `XT` is
+`org.hl7.fhir.r4/.../model/XhtmlType.java`, both at `73c432b5`.
+
+**Forty-third finding 1 (the loop): resolved.**
+- `DEV-0028` and `DEBT-0018` now state the loop as it runs (`XC:92-103`):
+  from the last child down to the second, never the first, and never
+  descending into the first.
+- I re-derived both examples:
+  - `<div ...><ul><li>a</li><li>b</li></ul></div>`: the root's children are
+    `[ul]`, so the loop body never runs and nothing is inserted.
+  - `<div ...>x<ul><li>a</li><li>b</li></ul></div>`: the root's children are
+    `[x, ul]`. At `i = 1`, `ul` follows the text `x`, which does not end in CR
+    or LF, so one CR LF is inserted before it. The recursion into `ul` sees
+    `[li, li]`. At `i = 1`, the second `li` follows an element, so a second CR
+    LF is inserted. The first `li` is never visited.
+  - That is **two** insertions, as the proposer says. My forty-third finding
+    gave the same two.
+
+**Forty-third finding 2 (the trigger): resolved.**
+- The edit happens only in `XhtmlComposer(false).compose` (`XC:105-108`),
+  reached from `XT.primitiveValue()` (`:107-108`) or `getValue()`
+  (`:77-78`), on `place.getDiv()` (`:82`).
+- `funcChildren` and `funcDescendants` only collect the `XhtmlType`, and
+  `count()` and `ofType()` read only `fhirType()`. The spec and `DEV-0028` now
+  say this, with `toString()` as the example that triggers the edit and
+  `count()` as the example that does not.
+
+**The graded part of `path.navigation.025`.**
+- By name: `XhtmlComposer(true)` never runs the insertion (`XC:105-108`).
+  The `x<ul>...` example is therefore returned verbatim, and reading it never
+  edits the narrative. Correct.
+- `children()` yields `status`, then the `XhtmlType`
+  (`Narrative.java:340-343`), so `count()` is `2`.
+- `XT.fhirType()` is `"xhtml"` (`:55-57`), so `ofType(xhtml).count()` is `1`.
+- `XT.listChildren` is empty (`:60-61`), so `descendants()` adds nothing
+  below the item. With no `id` or extensions on the fixture narrative, its
+  count is also `2`.
+- These are testable as written.
+
+**`DEV-0028` and `DEBT-0018`: coherent, and framed as a deviation pending the
+owner.**
+- `DEV-0028`'s HAPI paragraph matches the source.
+- Its chosen behaviour says, in bold, that the `xhtml` item's string is "a
+  **difference from HAPI**". It is marked "Reviewed: pending owner". It names
+  `DEBT-0018`, which names `DEV-0028` as its origin.
+- `harness/scripts/check-registries.sh` agrees.
+- Under constitution section 1, a difference from HAPI is acceptable only
+  through this register and only until the owner rules. That is how it is
+  recorded.
+
+Non-blocking notes, for the owner's checkpoint:
+1. `DEBT-0018`'s "Why deferred" cites the owner's 2026-11-08 decision that no
+   flag is added speculatively. That decision covers not building a flag for
+   the **specification's** behaviour where Frevo already matches HAPI. Here
+   Frevo does not match HAPI, so the decision does not apply. The deferral
+   rests only on `DEV-0028` being pending, and the entry should say so.
+2. If the owner rules for HAPI, `DEBT-0018` stops being deferred work. It
+   becomes work owed by the change that implements `path.navigation.025` or
+   `add-narrative`. The trigger list could name that ruling explicitly.
+
+**Registers, counts and validators.**
+- `harness/scripts/check-registries.sh` reports "registers agree" (25
+  deviations, 18 debt entries).
+- `openspec validate add-fhirpath-and-codegen-r4 --strict` reports the change
+  is valid.
+- The headings number codegen 49, model 83 and path 381, 513 in total. No ID
+  is duplicated, added, removed or renumbered.
