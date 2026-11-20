@@ -1,3 +1,76 @@
+CHANGES_REQUESTED
+
+Thirty-sixth review (commit `ecf0496`, 2026-11-20, diff against `d0b5a1d`).
+`ENGINE` is `org.hl7.fhir.r4/src/main/java/org/hl7/fhir/r4/fhirpath/FHIRPathEngine.java`
+at `73c432b5`. Every other claim in the scope checks out against the pinned
+source. The verification detail is in the dated section at the end. Two
+findings remain:
+
+1. **`path.errors.002` says every `makeException` error ends in `(@char N)`.
+   It does not when the failing operator's node is a precedence group.**
+   `newGroup` (`ENGINE:1315-1321`) builds a `Kind.Group` node and never calls
+   `setStart`. `parseExpression` sets a start only on nodes it creates itself
+   (`ENGINE:1076`). In `1 + 1 < 'a'`, `gatherPrecedence` for `+`
+   (`ENGINE:1239-1311`, entry branch `ops.contains(start.getOperation())`)
+   wraps `1 + 1` in such a group. It moves `<` onto that group and returns it
+   as the root, so the `<` node is the group. `execute` passes that node as
+   the holder (`last = exp`, `ENGINE:1510-1522`), and `opLessThan` throws
+   `makeException(expr, FHIRPATH_CANT_COMPARE, ...)` (`ENGINE:2435`).
+   `makeException` then builds
+   `new PathEngineException(fmt, constName, holder.getStart() /* null */, holder.toString())`
+   (`ENGINE:584-594`). `rep(null, <non-empty text>)` returns `""`
+   (`PathEngineException.java:81-93`). So HAPI's message is exactly
+   `Error evaluating FHIRPath expression: Unable to compare values of type integer and string`,
+   with no position suffix. The same happens whenever the left operand of the
+   failing operator is a run of higher-precedence operators
+   (`a + b < c`, `x * 2 > 'y'`, `a | b = ...`, and so on). Real expressions
+   are often written this way.
+   `(1 + 1) < 'a'` is different: the parenthesised group is created by
+   `parseExpression` with a start, so it does carry ` (@char 1)`.
+   The scenario's last AND ("this holds for every execution error raised
+   through `makeException` or `makeExceptionPlural`") is wrong, and the
+   requirement sentence ("carrying ... the position of the failing
+   sub-expression") over-promises. An implementer who follows the text would
+   append ` (@char 1)` to `1 + 1 < 'a'`, and the differential would show a
+   message diff.
+   Fix: add cases to `path.errors.002`, or add a new ID:
+   - `1 + 1 < 'a'` gives the bare message with no suffix.
+   - `(1 + 1) < 'a'` gives the message with ` (@char 1)`.
+   - `(1=1) and 1 + 1 < 'a'` gives the bare message. The `<` node is again a
+     `newGroup` node, created by the `+` pass.
+   Also state what Frevo's error offset is when HAPI has no location, or say
+   that it is absent. As written, "the error's offset is the position of the
+   failing operator node's start" has no HAPI counterpart for these cases.
+   Narrow the final AND to holders with a non-null start.
+
+2. **No scenario states that the evaluation's *result* carries the Zulu
+   rewrite.** `path.compare.013` and `.015` grade the rewrite only through a
+   later read inside the same expression (`toString()` through `$this`, or a
+   second navigation). But the rewritten object is also what the evaluation
+   returns when the compared value is the output. `funcWhere` adds the same
+   `item` it compared (`ENGINE:6249-6260`), and `compareDateTimeElements` has
+   already called `setTimeZoneZulu(true)` on that object (`ENGINE:635-648`,
+   `BaseDateTimeType.java:690-694`). So in HAPI:
+   - `(@2012-04-15T10:00:00+02:00).where($this < @2013-01-01T00:00:00Z)`
+     returns one `dateTime` whose string is `2012-04-15T08:00:00Z`.
+   - `Patient.birthDate.extension('http://hl7.org/fhir/StructureDefinition/patient-birthTime').value.where($this < @1975-01-01T00:00:00Z)`
+     over `patient-example.xml` returns `1974-12-25T19:35:45Z`, not
+     `1974-12-25T14:35:45-05:00`.
+   This is inside the evaluation: it is the evaluation's output, not the
+   "after the evaluation" persistence that the new blocker defers. The phrase
+   "for the rest of that evaluation" does not say whether the returned items
+   are the rewritten ones. An implementation that drops its per-evaluation
+   rewrite when the evaluation ends, before it materialises the result, would
+   pass `.013` and `.015` and still diff against HAPI. That affects search
+   parameter extraction and any returned value: the "a returned value shown to
+   a user" cost that `DEBT-0017` itself names.
+   Fix: add an AND to `.013` (element) and `.015` (literal), or add a new ID,
+   with both expressions above and their returned strings. State in the same
+   place that the result of `select($this)` after a comparison is the
+   rewritten value too.
+
+## Thirty-fifth review header as issued (commit `ee2a0d4`)
+
 APPROVED
 
 Thirty-fifth review (commit `ee2a0d4`, 2026-11-18) resolves all six findings
@@ -2459,3 +2532,104 @@ then throw the two quoted messages.
 - No ID is duplicated, and no heading was removed or renumbered.
 - The no-live-case list (27) now includes `.012`-`.019`, and each says
   "differential-only" in its own text.
+
+## Thirty-sixth review - commit `ecf0496` (2026-11-20)
+
+Scope: the diff `d0b5a1d..ecf0496`. It covers `path.datetime.004`, `DEV-0018`,
+`path.navigation.001`/`.005`/`.024`, `path.string.015`, `path.errors.002`, the
+`path.oracle.009` note, `path.compare.013` and the new `.015`,
+`DEV-0017`/`DEBT-0017`, the `spec.md` counts, the text of tasks 1 and 35, and
+the new blocker "element rewrite after the evaluation". I read `reference/`
+before the delta.
+
+**Suite zone (`path.datetime.004`, `DEV-0018`, task 1): correct.**
+- `FHIRPathTests.java:174` calls
+  `TimeZone.setDefault(TimeZone.getTimeZone("UTC+1100"))`.
+- On a local JDK 25, `TimeZone.getTimeZone("UTC+1100")` returns id `GMT` with
+  raw offset 0. A custom id needs the `GMT` prefix, and the unknown id falls
+  back to GMT.
+- `couldBeTheSameTime` (`BaseDateTimeType.java:937-956`) widens an
+  offset-less operand by 14 hours each way. With the operand at `10:00Z`, the
+  window contains `15:00Z`, so the answer is empty. With it at `23:00Z` the
+  previous day, the window does not, so the answer is `false`.
+  `testEquality23` and `testNEquality17` expect empty and are recorded
+  `passed` (`hapi-8.12.0-results.json:496`, `:530`). So offset 0 is the zone
+  that produced the record.
+- `testDateTimeGreaterThanDate2` (`:104`) and `testToday1`/`2` and
+  `testNow1`/`2` (`:460-463`) are `passed`. At offset 0, `today()` and Zulu
+  `now()` always fall on the same day.
+- The `@2015-02-04T10:00:00 < @2015-02-04T05:30:00Z` values are right for both
+  zones.
+- `JUnit` creates a new `FHIRPathTests` instance per method (there is no
+  `@TestInstance`), so the `resources` cache (`:120`, `:207-214`) does not
+  carry `testLessThan28`'s mutation into later cases. `testExtension1`-`3`
+  only test `exists()` and `empty()` anyway.
+
+**Navigation and join: correct.**
+- `testJoinEmpty` is `failed` (`:457`). `funcJoin` (`ENGINE:4547-4567`)
+  always adds one `StringType`.
+- `testSimpleNone` (`name.suffix`, no output) is `passed` (`:18`).
+- `testEscapedIdentifierUnicode` failed at the check stage (`:20`). It is the
+  only non-pass in `testBasics` (8 cases); `testMiscellaneousAccessorTests` (3)
+  and `testObservations` (10) are all `passed`.
+- `.001`, `.005`, `.024` and `path.string.015` are consistent with each other.
+
+**`path.oracle.009`: correct.**
+- `tests-fhir-r4.xml:413` is the only `type="Quantity"` output, in
+  `testTypes`.
+- It is recorded `passed` (`:186`), as are `LowBoundaryQuantity` (`:963`) and
+  `HighBoundaryQuantity` (`:996`).
+
+**`path.errors.002`: correct as far as it goes; see finding 1.**
+- The message text matches `Messages.properties:303`, and `FHIRPATH_LOCATION`
+  is `:340`.
+- `rep` behaves as quoted (`PathEngineException.java:81-93`).
+- `SourceLocation` starts at (1, 1) (`FHIRLexer.java:56`), and `next()` records
+  the start after skipping whitespace (`:143-147`).
+- For the three stated expressions the holder is the literal `1` node. In
+  `(1=1) and 1 < 'a'`, `gatherPrecedence` for `<` takes the `else` branch and
+  wraps the `1` node in a `newGroup`, but `<` stays on the inner `1` node,
+  which has a start. So `@char 1`, `11` and `21` are right.
+- `HapiWorkerContext` extends `I18nBase`, the same message source the suite
+  uses.
+
+**`path.compare.013`/`.015`: correct as far as they go; see finding 2.**
+- `processConstant` returns a `FHIRConstant` for `@` (`ENGINE:1335-1336`).
+- `resolveConstant`/`processDateConstant` (`:1653-1736`) build a new
+  `DateTimeType` on each evaluation.
+- `funcSelect` (`:6263-6273`) and `changeThis` (`:4726-4734`) pass the same
+  object as `$this`.
+- `preOperate` short-circuits `and` only on a `false` left (`:1542-1549`).
+- `isDateChar` (`FHIRLexer.java:335-338`) ends `@...+02:00` before `.toString`.
+- `compareDateTimeElements` copies non-`DateTimeType` operands (`:636-637`)
+  and rewrites only above DAY precision.
+- Its only callers are the four ordered operators (`:2421`, `:2468`, `:2516`,
+  `:2566`) and equivalence (`:2218`, which does not rewrite).
+- `convertToString` returns `primitiveValue()`.
+- I traced every stated value of `.015`, including the offset-0 offset-less
+  case and the parse-once, evaluate-twice case, and each one holds.
+
+**Registers.**
+- `DEV-0017` now lists `path.compare.015` and `DEBT-0017`.
+- Moving `testLessThan28` out of the quantity list is right: it is the
+  `dateTime` case (`tests-fhir-r4.xml:1052`).
+- `DEBT-0017` names a trigger, a size and an upstream report. It is the
+  flag-not-built record that constitution section 1 requires.
+- `harness/scripts/check-registries.sh` reports "registers agree" (23
+  deviations, 17 debt entries).
+- `openspec validate add-fhirpath-and-codegen-r4 --strict` reports the change
+  is valid.
+
+**Blocker.** "Element rewrite after the evaluation" is correctly raised as an
+owner decision, and leaving it ungraded until the owner rules is acceptable.
+Finding 2 is a separate point: it concerns the evaluation's own output.
+
+**Counts and IDs.**
+- The `#### Scenario: [` headings number codegen 49, model 83 and path 378,
+  510 in total, as stated.
+- `path.compare.*` has 15 headings, and no ID is duplicated, removed or
+  renumbered.
+- The no-live-case list has 28 entries and includes `.015`, which says
+  "differential-only".
+- `spec.md` says 6 scenarios were rewritten. The commit subject says "five";
+  the record is `spec.md`, and the six it lists are correct.
