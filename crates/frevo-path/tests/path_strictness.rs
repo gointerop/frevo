@@ -40,11 +40,11 @@ mod oracle;
 
 use std::sync::OnceLock;
 
-use frevo_path::{CheckError, CheckOptions};
+use frevo_path::{CheckError, EngineSettings, Evaluator};
 
 use oracle::engine::{
     CaseContext, EngineConfig, EngineError, StrictnessFlags, SuiteEngine, check_outcome_in_type,
-    engine_under_test, evaluate_items, host_base_evaluator, parse_with_host, typed_input,
+    engine_under_test, evaluate_items, host_base_evaluator, path_error, r4_model, typed_input,
 };
 use oracle::input::{self, SuiteInput};
 use oracle::run::{self, CaseStatus, RunReport};
@@ -58,13 +58,12 @@ use oracle::value::ResultItem;
 // the other five are engine-wide fields with public getters and setters that
 // nothing in the harness models. So the whole set is driven through this seam.
 //
-// What `frevo-path` already exposes is bound: the two `as` rules
-// (`Evaluator::with_as_rules`), implicit string conversion
-// (`Evaluator::with_implicit_string_conversion`), and polymorphic names and the
-// SQL-on-FHIR warning in the check pass (`CheckOptions`). What it does not --
-// a settings value an engine created for a FHIR version reports, polymorphic
-// names in **evaluation**, legacy mode and liquid mode -- answers
-// `NotImplemented`, never a default (task 52).
+// Bound over task 52's surface: `Evaluator::for_version` and
+// `EngineSettings::server_facing()` for the settings an engine reports as
+// created, `Evaluator::with_settings` for all seven switches in evaluation,
+// `Evaluator::parse` (which refuses liquid mode itself) for parsing, and
+// `EngineSettings::check_options` for the two the check pass reads. Liquid
+// mode on answers `NotImplemented` from the crate, never a default.
 // ---------------------------------------------------------------------------
 
 /// The seven switches `FHIRPathEngine` exposes, in this crate's polarity:
@@ -102,6 +101,34 @@ impl Settings {
     }
 }
 
+impl From<EngineSettings> for Settings {
+    fn from(s: EngineSettings) -> Settings {
+        Settings {
+            enforce_as_singleton_rule: s.enforce_as_singleton_rule,
+            enforce_as_case_sensitive: s.enforce_as_case_sensitive,
+            allow_polymorphic_names: s.allow_polymorphic_names,
+            implicit_string_conversion: s.implicit_string_conversion,
+            liquid_mode: s.liquid_mode,
+            legacy_mode: s.legacy_mode,
+            emit_sql_on_fhir_warning: s.emit_sql_on_fhir_warning,
+        }
+    }
+}
+
+impl From<Settings> for EngineSettings {
+    fn from(s: Settings) -> EngineSettings {
+        EngineSettings {
+            enforce_as_singleton_rule: s.enforce_as_singleton_rule,
+            enforce_as_case_sensitive: s.enforce_as_case_sensitive,
+            allow_polymorphic_names: s.allow_polymorphic_names,
+            implicit_string_conversion: s.implicit_string_conversion,
+            liquid_mode: s.liquid_mode,
+            legacy_mode: s.legacy_mode,
+            emit_sql_on_fhir_warning: s.emit_sql_on_fhir_warning,
+        }
+    }
+}
+
 trait ConfiguredEngine {
     /// The settings the engine reports, as created.
     fn settings(&self) -> Result<Settings, EngineError>;
@@ -122,36 +149,53 @@ trait ConfiguredEngine {
 }
 
 /// An engine created for `version` with no explicit configuration, which is
-/// what `path.strictness.001` and `path.strictness.007` are about.
-fn engine_for_version(_version: &str) -> Box<dyn ConfiguredEngine> {
-    // `frevo-path` has no constructor that takes a FHIR version and no
-    // settings value to report, so the version selects nothing yet and
-    // `settings()` answers `NotImplemented`.
-    Box::new(BoundConfigured)
+/// what `path.strictness.001` and `path.strictness.007` are about: the
+/// settings are those `Evaluator::for_version` gives an evaluator over the
+/// harness's R4 model, read back through `Evaluator::settings`.
+fn engine_for_version(version: &str) -> Box<dyn ConfiguredEngine> {
+    let created = match r4_model() {
+        None => Err(EngineError::NotImplemented),
+        Some(model) => Evaluator::for_version(model, version)
+            .map(|e| Settings::from(e.settings()))
+            .map_err(|e| EngineError::Diagnostic {
+                message: e.to_string(),
+                offset: None,
+            }),
+    };
+    Box::new(BoundConfigured { created })
 }
 
 /// An engine created the way `FhirPathR4`'s constructor creates one.
 fn server_facing_engine() -> Box<dyn ConfiguredEngine> {
-    Box::new(BoundConfigured)
+    Box::new(BoundConfigured {
+        created: Ok(Settings::from(EngineSettings::server_facing())),
+    })
 }
 
 /// The binding over `frevo_path`'s public surface: [`Evaluator`] for
 /// evaluation and [`Checker`] for the check pass, over the oracle harness's R4
 /// model.
 ///
-/// [`Evaluator`]: frevo_path::Evaluator
 /// [`Checker`]: frevo_path::Checker
-struct BoundConfigured;
+struct BoundConfigured {
+    /// The settings the engine reports as created, or why it could not be.
+    created: Result<Settings, EngineError>,
+}
 
 impl BoundConfigured {
-    /// The parsed expression. `frevo-path` has no liquid mode, so with it on
-    /// there is nothing to parse with; off, the parser is the ordinary one,
-    /// which is what liquid mode off means.
+    /// An evaluator over the harness's R4 model with exactly `settings`.
+    fn evaluator(settings: Settings) -> Result<Evaluator<'static>, EngineError> {
+        Ok(host_base_evaluator()
+            .ok_or(EngineError::NotImplemented)?
+            .with_settings(EngineSettings::from(settings)))
+    }
+
+    /// The parsed expression, through `Evaluator::parse`, which refuses
+    /// liquid mode itself (`EvalError::Unsupported`, so `NotImplemented`);
+    /// off, the parser is the ordinary one, which is what liquid mode off
+    /// means.
     fn parse(expr: &str, settings: Settings) -> Result<frevo_path::Expression, EngineError> {
-        if settings.liquid_mode {
-            return Err(EngineError::NotImplemented);
-        }
-        parse_with_host(expr, None)
+        Self::evaluator(settings)?.parse(expr).map_err(path_error)
     }
 
     /// The typed tree for `inp`, or `None` for no input.
@@ -170,8 +214,7 @@ impl BoundConfigured {
 
 impl ConfiguredEngine for BoundConfigured {
     fn settings(&self) -> Result<Settings, EngineError> {
-        // Needs a settings value an engine reports as created (task 52).
-        Err(EngineError::NotImplemented)
+        self.created.clone()
     }
 
     fn evaluate_with(
@@ -180,21 +223,11 @@ impl ConfiguredEngine for BoundConfigured {
         inp: Option<&SuiteInput>,
         settings: Settings,
     ) -> Result<Vec<ResultItem>, EngineError> {
-        // The evaluator has no legacy mode and no polymorphic-names switch, so
-        // either one on cannot be evaluated; off is what the evaluator does.
-        // The SQL-on-FHIR warning is a check-pass setting and is not read here.
-        if settings.legacy_mode || settings.allow_polymorphic_names {
-            return Err(EngineError::NotImplemented);
-        }
-        let parsed = Self::parse(expr, settings)?;
+        // All seven switches go to the evaluator; the SQL-on-FHIR warning is a
+        // check-pass setting the evaluator does not read.
+        let evaluator = Self::evaluator(settings)?;
+        let parsed = evaluator.parse(expr).map_err(path_error)?;
         let root = Self::root(inp)?;
-        let evaluator = host_base_evaluator()
-            .ok_or(EngineError::NotImplemented)?
-            .with_as_rules(
-                settings.enforce_as_singleton_rule,
-                settings.enforce_as_case_sensitive,
-            )
-            .with_implicit_string_conversion(settings.implicit_string_conversion);
         evaluate_items(&evaluator, &parsed, root.as_ref())
     }
 
@@ -211,10 +244,7 @@ impl ConfiguredEngine for BoundConfigured {
         }
         let parsed = Self::parse(expr, settings)?;
         let context_type = inp.and_then(SuiteInput::resource_type);
-        let options = CheckOptions {
-            allow_polymorphic_names: settings.allow_polymorphic_names,
-            emit_sql_on_fhir_warning: settings.emit_sql_on_fhir_warning,
-        };
+        let options = EngineSettings::from(settings).check_options();
         match check_outcome_in_type(&parsed, context_type, None, options)? {
             Ok(_) => Ok(()),
             Err(CheckError::NotImplemented { .. }) => Err(EngineError::NotImplemented),
@@ -518,28 +548,54 @@ fn a_mis_cased_type_name_resolves_only_when_case_is_not_enforced() {
     //     if (doNotEnforceAsCaseSensitive) return left.equalsIgnoreCase(right);
     //     else                             return left.equals(right);
     //
-    // So with case **not** enforced -- the server-facing default -- `Code`
-    // matches the FHIR type `code`.
+    // `funcAs` first asks `isKnownType("FHIR.Code")` (:5163-5165, :1904-1935).
+    // HAPI's server-facing worker misses `.../StructureDefinition/Code` and,
+    // because the first letter is upper-case, retries with it lower-cased and
+    // finds `code` (`HapiWorkerContext.fetchTypeDefinition`,
+    // `DefaultProfileValidationSupportBundleStrategy.java:276-297`). So with
+    // case **not** enforced -- the server-facing default -- `Code` then
+    // matches the item's type `code`.
     let lenient = Settings::PRE_R5_DEFAULT;
     assert_eq!(
         eval_with("Patient.gender.as(Code)", Some(&patient), lenient),
         primitive("code", "male")
     );
 
-    // With case enforced -- the harness's evaluation configuration -- `Code`
-    // does not name a FHIR type and the result is empty. Empty, not an error:
-    // the guard that raises is the singleton one, not this.
+    // With case enforced, which only the setter reaches, the type is **still
+    // known** through the same retry -- so this is not the invalid-type error
+    // -- and the result is empty, because `Code` and `code` now compare
+    // unequal. Empty, not an error: the guard that raises is the singleton
+    // one, and the focus here is a singleton.
     let strict = Settings::PRE_R5_DEFAULT.enforcing_as();
     assert_eq!(
         eval_with("Patient.gender.as(Code)", Some(&patient), strict),
         empty()
     );
 
-    // Upstream corroboration, and the reason the lenient default exists:
-    // `org.hl7.fhir.r4.utils.FhirPathEngineR4Test.testAs` asserts that
-    // `Observation.value.as(String)` and `as(FHIR.String)` both resolve through
-    // `FhirPathR4`, with the comment "Allow for bad casing on primitive type
-    // names - this is a common mistake and even some 4.0.1 SPs use it".
+    // The operator spelling behaves as the function in both states: `opAs`
+    // tests `isKnownType("Code")` and then `compareTypeNames` (:1880-1890).
+    assert_eq!(
+        eval_with("Patient.gender as Code", Some(&patient), lenient),
+        primitive("code", "male"),
+        "`as Code` resolves as `as(Code)` does with case not enforced"
+    );
+    assert_eq!(
+        eval_with("Patient.gender as Code", Some(&patient), strict),
+        empty(),
+        "`as Code` is empty as `as(Code)` is with case enforced"
+    );
+
+    // `ofType` compares with `equals`, not `compareTypeNames` (:5205-5226), so
+    // `ofType(Code)` is empty whatever the case setting.
+    for (state, settings) in [("not enforced", lenient), ("enforced", strict)] {
+        assert_eq!(
+            eval_with("Patient.gender.ofType(Code)", Some(&patient), settings),
+            empty(),
+            "`ofType(Code)` is empty with case {state}"
+        );
+    }
+
+    // The correctly cased name is unaffected.
     let observation = load_input("observation-example.xml");
     assert_eq!(
         eval_with(
@@ -549,28 +605,45 @@ fn a_mis_cased_type_name_resolves_only_when_case_is_not_enforced() {
         ),
         primitive("string", "lbs")
     );
-    assert_eq!(
-        eval_with(
-            "Observation.value.as(quantity).unit",
-            Some(&observation),
-            lenient
-        ),
-        primitive("string", "lbs"),
-        "mis-cased the other way round, which is the same rule"
-    );
-    assert_eq!(
-        eval_with("Observation.value.as(quantity)", Some(&observation), strict),
-        empty()
-    );
 
-    // No live case grades either state, so both are differential-only: every
-    // suite case is evaluated with case **enforced** and checked with it not
-    // enforced, and none of them mis-cases a type name.
+    // The retry applies only to an **upper-case** initial: `quantity` names
+    // no `StructureDefinition`, so `isKnownType("FHIR.quantity")` is false and
+    // `funcAs` raises `FHIRPATH_INVALID_TYPE` (Messages.properties:336) in
+    // either state. It is constructed without a location, so there is no
+    // prefix, no position suffix and no offset (`path.errors.002`). HAPI's own
+    // `FhirPathEngineR4Test.testAs`
+    // (`hapi-fhir-validation/src/test/java/org/hl7/fhir/r4/utils/FhirPathEngineR4Test.java:93-115`)
+    // exercises only `string`, `FHIR.string`, `String` and `FHIR.String`.
+    for (state, settings) in [("not enforced", lenient), ("enforced", strict)] {
+        for expr in [
+            "Observation.value.as(quantity)",
+            "Observation.value.as(quantity).unit",
+        ] {
+            let (message, offset) =
+                eval_failure_and_offset_with(expr, Some(&observation), settings);
+            assert_eq!(
+                message, "The type FHIR.quantity is not valid",
+                "{expr} with case {state}: HAPI's invalid-type message, exactly"
+            );
+            assert_eq!(
+                offset, None,
+                "{expr} with case {state}: the invalid-type error has no location"
+            );
+        }
+    }
+
+    // No live case grades any of this, so it is differential-only: no suite
+    // case names a mis-cased type in `as`, `as()` or `ofType()`.
     let (suite, _) = pinned();
     assert_eq!(
         suite
             .cases()
-            .filter(|c| c.expression.contains("as(Code)") || c.expression.contains("as(quantity)"))
+            .filter(|c| {
+                c.expression.contains("as(Code)")
+                    || c.expression.contains("as Code")
+                    || c.expression.contains("ofType(Code)")
+                    || c.expression.contains("as(quantity)")
+            })
             .count(),
         0
     );
@@ -622,6 +695,34 @@ fn lenient_polymorphic_names_are_supported_by_the_engine_and_left_unset_by_hapi(
     assert_eq!(
         eval_with("Observation.valueQuantity.unit", Some(&observation), on),
         primitive("string", "lbs")
+    );
+
+    // With polymorphic names allowed, the choice element's **own** base name
+    // navigates to nothing. `getChildrenByName` (FHIRPathEngine.java:255-279)
+    // tests `name.startsWith(n)` for each `[x]` child, so `value` matches
+    // `value[x]` with an empty type suffix (:262-264), and an item is kept only
+    // when its `fhirType()` equals that suffix ignoring case (:273), which no
+    // type does.
+    assert_eq!(
+        eval_with("Observation.value", Some(&observation), on),
+        empty(),
+        "with polymorphic names on, `Observation.value` navigates nothing"
+    );
+    assert_eq!(
+        eval_with("Observation.value.exists()", Some(&observation), on),
+        boolean(false)
+    );
+
+    // With them off, the base name yields the `Quantity` (`path.navigation.006`).
+    let value = eval_with("Observation.value", Some(&observation), off);
+    assert_eq!(
+        value.iter().map(ResultItem::fhir_type).collect::<Vec<_>>(),
+        ["Quantity"],
+        "with polymorphic names off, `Observation.value` is the Quantity: {value:?}"
+    );
+    assert_eq!(
+        eval_with("Observation.value.exists()", Some(&observation), off),
+        boolean(true)
     );
 
     // The suite's comment that lenient polymorphic mode "is not supported in

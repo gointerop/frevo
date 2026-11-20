@@ -1,4 +1,4 @@
-//! Navigation: `path.navigation.001` through `path.navigation.024`.
+//! Navigation: `path.navigation.001` through `path.navigation.025`.
 //!
 //! ```text
 //! cargo test -p frevo-path --test path_navigation
@@ -1226,5 +1226,143 @@ fn the_miscellaneous_accessor_cases_all_hold() {
     assert_eq!(
         eval_patient("birthDate"),
         vec![primitive("date", "1974-12-25")]
+    );
+}
+
+// ---------------------------------------------------------------------------
+// path.navigation.025 -- `Narrative.div` by name and through `children()`
+// ---------------------------------------------------------------------------
+
+/// A `Patient` whose `text.div` is `div`, hand-built because no suite fixture
+/// carries these narratives. JSON, because there the stored narrative is the
+/// XHTML text itself, as a model hands it out.
+fn patient_with_div(name: &str, div: &str) -> SuiteInput {
+    // The fixtures hold no backslash, so a `"` is the only character to escape.
+    assert!(
+        !div.contains('\\'),
+        "the fixture must not need more escaping"
+    );
+    let escaped = div.replace('"', "\\\"");
+    let body = format!(
+        r#"{{"resourceType":"Patient","text":{{"status":"generated","div":"{escaped}"}}}}"#
+    );
+    let document = Document::Json(
+        oracle::json::parse(&body)
+            .unwrap_or_else(|e| panic!("the hand-built Patient is JSON: {e}")),
+    );
+    SuiteInput {
+        file: format!("hand-built-patient-div-{name}.json"),
+        bytes: body.into_bytes(),
+        document,
+    }
+}
+
+const HI_DIV: &str = r#"<div xmlns="http://www.w3.org/1999/xhtml">hi</div>"#;
+
+// covers: path.navigation.025
+#[test]
+fn narrative_div_navigates_to_a_string_by_name_and_to_an_xhtml_through_children() {
+    // Provenance: `reference/org.hl7.fhir.core/org.hl7.fhir.r4/src/main/java/org/hl7/fhir/r4/model/Narrative.java`
+    // and `org.hl7.fhir.utilities/.../xhtml/XhtmlComposer.java` at `73c432b5`.
+    //
+    // By name, `Narrative.getProperty` answers `div` with
+    // `new StringType(new XhtmlComposer(true).composeEx(div))`
+    // (Narrative.java:364-366): a **string**, not an `xhtml`, holding the
+    // parsed node re-serialised in XML mode, not pretty.
+    let patient = patient_with_div("hi", HI_DIV);
+    let inp = Some(&patient);
+    assert_eq!(
+        eval_unchecked("Patient.text.div", inp),
+        vec![primitive("string", HI_DIV)]
+    );
+    for (expr, want) in [
+        ("Patient.text.div is string", true),
+        ("Patient.text.div is FHIR.string", true),
+        ("Patient.text.div is xhtml", false),
+        (
+            r#"Patient.text.div = '<div xmlns="http://www.w3.org/1999/xhtml">hi</div>'"#,
+            true,
+        ),
+    ] {
+        assert_eq!(
+            eval_unchecked(expr, inp),
+            vec![primitive("boolean", if want { "true" } else { "false" })],
+            "{expr}"
+        );
+    }
+    assert_eq!(
+        eval_unchecked("Patient.text.div.ofType(string)", inp),
+        vec![primitive("string", HI_DIV)]
+    );
+    assert_eq!(
+        eval_unchecked("Patient.text.div.toString()", inp),
+        vec![primitive("string", HI_DIV)]
+    );
+    // The check types `div` as `xhtml` from the element definition, which is
+    // in the string-like set, so a string function passes the check.
+    assert_eq!(
+        eval_over("Patient.text.div.contains('>hi<')", inp),
+        vec![primitive("boolean", "true")]
+    );
+
+    // The value is the composition, not the stored text: in XML mode an
+    // element with no children and no content is written self-closed and a
+    // `"` in text is written `&quot;` (XhtmlComposer.java:176-230, :313-350).
+    let quoted = patient_with_div(
+        "quoted",
+        r#"<div xmlns="http://www.w3.org/1999/xhtml">say "a"<br></br>b</div>"#,
+    );
+    assert_eq!(
+        eval_unchecked("Patient.text.div", Some(&quoted)),
+        vec![primitive(
+            "string",
+            r#"<div xmlns="http://www.w3.org/1999/xhtml">say &quot;a&quot;<br/>b</div>"#
+        )]
+    );
+
+    // No line break is inserted, because `breakBlocksWithLines` runs only in
+    // HTML mode (XhtmlComposer.java:105-108): this narrative comes back as
+    // exactly the stored text.
+    let list = r#"<div xmlns="http://www.w3.org/1999/xhtml">x<ul><li>a</li><li>b</li></ul></div>"#;
+    let listed = patient_with_div("list", list);
+    assert_eq!(
+        eval_unchecked("Patient.text.div", Some(&listed)),
+        vec![primitive("string", list)]
+    );
+    // Reading it again gives the same text, so reading it edits nothing.
+    assert_eq!(
+        eval_unchecked("Patient.text.div", Some(&listed)),
+        vec![primitive("string", list)]
+    );
+
+    // Through `*`, `listChildren` holds `new XhtmlType(this)` for `div`
+    // (Narrative.java:343, Base.java:226-236, FHIRPathEngine.java:4833), so
+    // `children()` is the `status` code and one item of type `xhtml`. The
+    // same holds for `descendants()` (:4819): an `XhtmlType` has no children
+    // (`listChildren`, XhtmlType.java:60-61) and this narrative no `id` or
+    // extensions. Only the type and count are graded: the item's string in
+    // HAPI is the HTML-mode composition, which Frevo does not reproduce
+    // (`DEV-0028`, owed as `DEBT-0018`).
+    for (expr, want) in [
+        ("Patient.text.children().count()", "2"),
+        ("Patient.text.children().ofType(xhtml).count()", "1"),
+        ("Patient.text.descendants().count()", "2"),
+        ("Patient.text.descendants().ofType(xhtml).count()", "1"),
+    ] {
+        assert_eq!(
+            eval_unchecked(expr, inp),
+            vec![primitive("integer", want)],
+            "{expr}"
+        );
+    }
+    let children = eval_unchecked("Patient.text.children()", inp);
+    assert_eq!(
+        children
+            .iter()
+            .map(ResultItem::fhir_type)
+            .filter(|t| *t == "xhtml")
+            .count(),
+        1,
+        "exactly one child is an xhtml: {children:?}"
     );
 }

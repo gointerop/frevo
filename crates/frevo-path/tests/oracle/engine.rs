@@ -20,7 +20,7 @@ use std::sync::{Arc, OnceLock};
 use frevo_path::{
     CheckError, CheckFocus, CheckOptions, CheckOutcome, CheckRequest, Checker, ConstantMode,
     ElementInfo, EvalError, Evaluator, FunctionDetails, HostError, HostServices, Model, Node,
-    NodeError, Primitive, TypeSet, Value,
+    NodeError, PathError, Primitive, TypeSet, Value,
 };
 
 use super::input::{self, Document, SuiteInput};
@@ -546,6 +546,31 @@ pub fn evaluate_over_in_zone(
 pub fn host_base_evaluator() -> Option<Evaluator<'static>> {
     let model = sd_model()?;
     Some(Evaluator::new(model).with_time_zone_offset_minutes(SUITE_TIME_ZONE_OFFSET_MINUTES))
+}
+
+/// The pinned R4 type model the harness evaluates over, for a test that must
+/// construct an [`Evaluator`] through one of the crate's own constructors --
+/// `Evaluator::for_version` (`path.strictness.001`) -- rather than through
+/// [`host_base_evaluator`]. `None` when the pinned R4 package is absent, which
+/// a caller answers as [`EngineError::NotImplemented`].
+#[allow(dead_code)]
+pub fn r4_model() -> Option<&'static dyn Model> {
+    sd_model().map(|m| m as &dyn Model)
+}
+
+/// A failure of one of the crate's text-level operations (`Evaluator::parse`,
+/// `evaluate_text`, ...) as the harness grades it: a parse failure is a
+/// diagnostic at its offset, an evaluation failure is graded as
+/// [`eval_error`] grades it, so the not-implemented kind stays `did-not-run`.
+#[allow(dead_code)]
+pub fn path_error(e: PathError) -> EngineError {
+    match e {
+        PathError::Parse(p) => EngineError::Diagnostic {
+            message: p.message().to_string(),
+            offset: Some(p.offset()),
+        },
+        PathError::Evaluate(e) => engine_error(e),
+    }
 }
 
 /// Evaluate `expr` over `root` on a caller-configured `evaluator` and grade

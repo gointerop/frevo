@@ -1,5 +1,5 @@
 //! Parsing and execution errors: `path.parse.001`-`008` and
-//! `path.errors.001`-`005`.
+//! `path.errors.001`-`007`.
 //!
 //! ```text
 //! cargo test -p frevo-path --test path_parse_errors
@@ -634,6 +634,95 @@ fn an_execution_error_carries_hapis_message_and_a_position_only_where_hapi_has_o
             offset, None,
             "{expr:?}: `new PathEngineException(e)` has no location, so there is no offset"
         );
+    }
+}
+
+/// Parse `expr` and require evaluation to fail with a diagnostic, the static
+/// check **skipped**, as `FhirPathR4` skips it (`path.check.013`). Used where
+/// the scenario states the evaluate-stage error of an expression the check
+/// would reject first.
+fn expect_unchecked_evaluation_error(expr: &str) -> (String, Option<usize>) {
+    let mut engine = fresh_engine();
+    let context = CaseContext::default();
+    let parsed = engine
+        .parse(expr)
+        .unwrap_or_else(|e| panic!("{expr:?} must parse before it can fail at evaluation: {e}"));
+    match engine.evaluate(parsed, None, &context, StrictnessFlags::EVALUATE) {
+        Ok(items) => panic!("{expr:?} must fail at evaluation, but it returned {items:?}"),
+        Err(EngineError::Diagnostic { message, offset }) => (message, offset),
+        Err(e) => panic!("{expr:?} must fail with a diagnostic, not: {e}"),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// path.errors.006 -- a unary sign's error position
+// ---------------------------------------------------------------------------
+
+// covers: path.errors.006
+#[test]
+fn a_unary_signs_error_position_is_just_past_the_token_after_the_sign() {
+    // A leading `-` becomes a `Unary` wrapper node carrying the sign
+    // (FHIRPathEngine.java:1082-1088), executed as `0 - <operand>`
+    // (`case Unary`, :1470-1471; :1508-1522), so `opMinus` raises
+    // `FHIRPATH_OP_INCOMPATIBLE` (Messages.properties:350; :2977-2978) for
+    // `0 - 'a'` with the wrapper as holder. The wrapper's start is read with
+    // `getCurrentLocation()` **after** `lexer.take()` has lexed the next token
+    // (FHIRLexer.java:101-105), so it is the column just past the operand's
+    // first token: `-` reaches column 2 and `'a'` 5; with the space, 2, 4 and
+    // then 7. Frevo's offset is the zero-based byte offset of that position.
+    const INCOMPATIBLE: &str = "Error evaluating FHIRPath expression -: left and right operand have incompatible or invalid types (integer, string)";
+    for (expr, suffix, want_offset) in [("-'a'", " (@char 5)", 4), ("- 'a'", " (@char 7)", 5)] {
+        let (message, offset) = expect_unchecked_evaluation_error(expr);
+        assert_eq!(
+            message,
+            format!("{INCOMPATIBLE}{suffix}"),
+            "{expr:?}: HAPI's message and position, exactly"
+        );
+        assert_eq!(
+            offset,
+            Some(want_offset),
+            "{expr:?}: the offset is just past the operand's first token"
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// path.errors.007 -- the `iif` singleton and `is` parameter-kind errors
+// ---------------------------------------------------------------------------
+
+// covers: path.errors.007
+#[test]
+fn the_iif_singleton_and_is_parameter_kind_errors_carry_hapis_prefix_and_position() {
+    // `funcIif` throws `FHIRPATH_NO_COLLECTION` (Messages.properties:344) for a
+    // focus of more than one item (FHIRPathEngine.java:5007-5010), with the
+    // `iif` function node as holder: column 11, byte offset 8. The static
+    // check only records a warning for it (`checkSingleton`, :3839-3843), so
+    // the expression passes the check and fails at evaluation.
+    let (message, offset) = expect_evaluation_error("(1 | 2).iif(true, 'a')");
+    assert_eq!(
+        message,
+        "Error evaluating FHIRPath expression: The function iif can only be used on a singleton value but found 2 (@char 11)"
+    );
+    assert_eq!(offset, Some(8), "the `iif` node starts at byte 8");
+
+    // `funcIs` (:5102-5109) throws `FHIRPATH_PARAM_WRONG`
+    // (Messages.properties:352) with the `is` function node as holder: column
+    // 3, byte offset 2. The second message names the kind of the **outer**
+    // parameter node (`Name`), not that of the inner node that failed the
+    // test, because `funcIs` passes `texp.getKind()` in both branches (:5108).
+    for (expr, want) in [
+        (
+            "1.is('x')",
+            "Error evaluating FHIRPath expression: The expression type Constant is not supported for parameter 0 on function is (@char 3)",
+        ),
+        (
+            "1.is(FHIR.toString())",
+            "Error evaluating FHIRPath expression: The expression type Name is not supported for parameter 1 on function is (@char 3)",
+        ),
+    ] {
+        let (message, offset) = expect_unchecked_evaluation_error(expr);
+        assert_eq!(message, want, "{expr:?}: HAPI's message, exactly");
+        assert_eq!(offset, Some(2), "{expr:?}: the `is` node starts at byte 2");
     }
 }
 
