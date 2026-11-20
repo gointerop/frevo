@@ -607,15 +607,24 @@ fn a_time_literal_with_an_offset_is_an_execution_error() {
 #[test]
 fn every_unimplemented_function_is_unsupported_and_never_empty() {
     let p = patient();
-    // `memberOf`, `conformsTo` and `resolve()` are built (task 49); these two
-    // are the only functions of the R4 table the evaluator does not dispatch.
+    // `memberOf`, `conformsTo`, `resolve()` (task 49) and `comparable()` are
+    // built; these three are the only functions of the R4 table the evaluator
+    // does not dispatch (every `Function` variant checked against the
+    // `eval/` dispatch).
     for text in [
-        "Patient.birthDate.comparable(Patient.birthDate)",
         "Patient.hasTemplateIdOf('http://x')",
+        "Patient.text.htmlChecks()",
+        "Patient.text.htmlChecks2()",
     ] {
         let feature = unsupported(text, Some(&p));
         assert!(feature.contains("function"), "{text}: {feature}");
     }
+    // `comparable()` is built except for two different UCUM codes, which
+    // needs the UCUM unit algebra (task 43, blocked); that branch is still
+    // Unsupported, never `false` or empty.
+    let text = "1 'mg'.comparable(1 'g')";
+    let feature = unsupported(text, Some(&p));
+    assert!(feature.contains("comparable()"), "{text}: {feature}");
 }
 
 #[test]
@@ -660,8 +669,11 @@ fn an_unknown_environment_variable_is_an_error_and_never_empty() {
 fn an_unsupported_feature_deep_inside_navigation_still_surfaces() {
     // Navigation that reaches nothing must not hide the unsupported step after
     // it: the error is raised whether or not the focus is empty.
-    unsupported("{}.name.comparable(1 'mg')", None);
-    unsupported("Patient.name.prefix.comparable(1 'mg')", Some(&patient()));
+    unsupported("{}.name.hasTemplateIdOf('http://x')", None);
+    unsupported(
+        "Patient.name.prefix.hasTemplateIdOf('http://x')",
+        Some(&patient()),
+    );
 }
 
 // ---------------------------------------------------------------------------
