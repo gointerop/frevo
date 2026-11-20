@@ -174,6 +174,12 @@ added**: `path.navigation.025`, the string value and type of `text.div` and the
 `xhtml` item `children()` yields. None was removed, renumbered, reused or
 repurposed.
 
+After the forty-third review, `path.navigation.025` was narrowed in place: the
+by-name `text.div` string (XML mode, no line-break insertion) stays graded; the
+`xhtml` item from `children()` and `descendants()` is graded for type and count
+only, and its HTML-mode string and the edit it makes are `DEV-0028` and
+`DEBT-0018`.
+
 | Area | IDs allocated | Range |
 |---|---:|---|
 | `codegen.inputs.*` | 6 | `001`-`006` |

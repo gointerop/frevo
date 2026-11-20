@@ -778,9 +778,10 @@ checkpoint because it changes what a gate measures.
   and non-integer cases; contained resources; the logical-id rule for
   `Resource.id`; primitive extensions; `$this` and `$index`; `children()` and
   `descendants()` with the unordered-collection rule; document order preserved.
-  Also `Narrative.div`: a `string` holding the XML-mode composition by name, an
-  `xhtml` holding the HTML-mode composition through `children()` and
-  `descendants()` (`path.navigation.025`).
+  Also `Narrative.div`: a `string` holding the XML-mode composition by name, and
+  an `xhtml` item through `children()` and `descendants()` whose string is the
+  same XML-mode composition (`path.navigation.025`; HAPI's HTML-mode string is
+  `DEV-0028`/`DEBT-0018`).
   Satisfies `path.navigation.001` through `path.navigation.025`.
   **Implemented, not ticked.** `path_navigation` is 0 of 24: every test calls
   the check pass (task 50) before evaluating, and most also use functions and

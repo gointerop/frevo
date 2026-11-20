@@ -45,8 +45,8 @@ decision.
 
 ## Entries
 
-All twenty-four entries below come from `add-fhirpath-and-codegen-r4`;
-`DEV-0013`, `DEV-0015`, `DEV-0017`, `DEV-0018`, `DEV-0019`, `DEV-0021`, `DEV-0022`, `DEV-0023`, `DEV-0024`, `DEV-0025` and `DEV-0026` are pending the owner's review (see their entries);
+All twenty-five entries below come from `add-fhirpath-and-codegen-r4`;
+`DEV-0013`, `DEV-0015`, `DEV-0017`, `DEV-0018`, `DEV-0019`, `DEV-0021`, `DEV-0022`, `DEV-0023`, `DEV-0024`, `DEV-0025`, `DEV-0026` and `DEV-0028` are pending the owner's review (see their entries);
 `DEV-0012` and `DEV-0014` were ruled for HAPI (2026-11-17 and 2026-11-14).
 `DEV-0001` through `DEV-0010` are the same kind of case: the pinned R4
 `FHIRPathEngine` does something the FHIRPath specification does not describe. In
@@ -839,6 +839,47 @@ file, so its prose is not redistributable here (see `oracles/PINS.md`).
   suite names a mis-cased type in `as`, `as()` or `ofType()`, so the oracle
   harness's results are the same either way. Established from the pinned
   source; not confirmed against a live HAPI.
+- **Normalizer impact:** none on stored bytes.
+- **Reviewed:** pending owner.
+
+### DEV-0028 — `Narrative.div` navigates as a `string` of recomposed XHTML, and Frevo's `xhtml` item does not take HAPI's HTML-mode string
+
+- **Area:** path
+- **Scenario IDs:** path.navigation.025, path.api.005
+- **HAPI 8.12.0 behaviour:** navigating to `div` by name yields a
+  `StringType` holding the parsed node recomposed in XML mode
+  (`Narrative.java:364-366`), so `text.div is xhtml` is `false`. Navigating with
+  `*` (`children()`, `descendants()`) yields an `XhtmlType` (`Narrative.java:343`)
+  whose string, when read, is the node composed in HTML mode
+  (`XhtmlType.java:77-78`, `:107-108`). Before composing, HTML mode edits the
+  narrative's own node: for each child list, from the last child down to the
+  second (never the first, and never descending into the first), it inserts a
+  CR LF text node before an element named `li`, `ul`, `ol`, `tr`, `td`, `th`,
+  `div` or `table` unless the previous sibling is text ending in CR or LF
+  (`breakBlocksWithLines`, `XhtmlComposer.java:49`, `:85-104`). So
+  `<div xmlns="http://www.w3.org/1999/xhtml"><ul><li>a</li><li>b</li></ul></div>`
+  gets no insertion, and
+  `<div xmlns="http://www.w3.org/1999/xhtml">x<ul><li>a</li><li>b</li></ul></div>`
+  gets one before `<ul>` and one before the second `<li>`. The edit happens when
+  the item's string is read (`Patient.text.children().ofType(xhtml).toString()`),
+  not when it is navigated (`Patient.text.children().count()`), and it stays on
+  the resource object, so a later `text.div` over it includes the CR LFs.
+- **Specification requirement:** FHIR R4 defines `Narrative.div` as type
+  `xhtml`, so `text.div is xhtml` is `true`, and FHIRPath navigation does not
+  change the value it returns.
+- **Chosen behaviour:** HAPI for navigation by name (`string`, XML-mode
+  composition, no edit; `path.navigation.025`). For the `xhtml` item from `*`
+  navigation, the type is HAPI's but the string is Frevo's: the same XML-mode
+  composition, with no CR LF insertion and no edit of the stored narrative.
+  That part is a **difference from HAPI**.
+- **Configuration flag:** none
+- **Debt:** DEBT-0018
+- **Rationale:** the HTML-mode composer is a second serialiser with its own
+  void-element and entity rules, and its edit of the input contradicts the
+  stored-bytes design (constitution section 6) in the same way as the open
+  question in `tasks/blockers.md` ("element rewrite after the evaluation").
+  No suite case, search parameter or known invariant reads the string of a
+  `children()` or `descendants()` item of a narrative. Pending the owner.
 - **Normalizer impact:** none on stored bytes.
 - **Reviewed:** pending owner.
 

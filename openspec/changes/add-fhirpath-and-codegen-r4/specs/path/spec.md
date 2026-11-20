@@ -470,25 +470,28 @@ The engine SHALL navigate a resource through the node trait, addressing a polymo
   Attributes are written in the iteration order of the node's
   `java.util.HashMap` (`XhtmlNode.java:89`, `:142`; `attributes`,
   `XhtmlComposer.java:306-311`), and the text and attributes are those
-  HAPI's `XhtmlParser` keeps
+  HAPI's `XhtmlParser` keeps. No line break is inserted, because
+  `breakBlocksWithLines` runs only in HTML mode (`XhtmlComposer.java:105-108`):
+  a stored `<div xmlns="http://www.w3.org/1999/xhtml">x<ul><li>a</li><li>b</li></ul></div>`
+  navigates to exactly that text, and reading `text.div` never edits the
+  stored narrative
 - **WHEN** `Patient.text.children()` is evaluated over the same `Patient`
-- **THEN** the result is the `status` code and one **`xhtml`** item: `*`
-  navigation collects `listChildren`'s property values, which hold
+- **THEN** the result is the `status` code and one item of type **`xhtml`**:
+  `*` navigation collects `listChildren`'s property values, which hold
   `new XhtmlType(this)` for `div` (`Narrative.java:343`, `Base.java:226-236`,
-  `FHIRPathEngine.java:4833`). Its string value is the node composed in
-  **HTML** mode (`XhtmlType.primitiveValue`, `XhtmlComposer(false)`), which
-  first inserts a CR LF text node before every child element named `li`,
-  `ul`, `ol`, `tr`, `td`, `th`, `div` or `table` that does not already follow a
-  line break (`breakBlocksWithLines`, `XhtmlComposer.java:49`, `:85-104`)
-- **AND** that insertion edits the narrative's own node, so after
-  `children()` or `descendants()` has read a `div` whose children include such
-  an element, a later `text.div` over the same resource object includes the
-  inserted CR LF: for a stored
-  `<div xmlns="http://www.w3.org/1999/xhtml">a<div>b</div></div>`, `text.div`
-  read after `text.children()` in the same evaluation is the same text with a
-  CR LF between `a` and the inner `<div>`. Whether the edit must outlive the
-  evaluation is the same open question as the `dateTime` rewrite
-  (`tasks/blockers.md`, 2026-11-20, "element rewrite after the evaluation")
+  `FHIRPathEngine.java:4833`); `Patient.text.children().count()` is `2` and
+  `Patient.text.children().ofType(xhtml).count()` is `1`. The same holds for
+  `descendants()` (`:4819`)
+- **AND** this scenario grades that item's **type and count only**. Its string
+  value in Frevo is the same XML-mode composition `text.div` gives, and
+  reading it never edits the stored narrative. HAPI differs:
+  `XhtmlType.primitiveValue` composes in HTML mode (`XhtmlType.java:107-108`,
+  `XhtmlComposer(false)`), which first edits the narrative's own node by
+  inserting CR LF text nodes (`breakBlocksWithLines`, `XhtmlComposer.java:85-104`),
+  and only when the item's string is read (`toString()`, a comparison, a string
+  function, rendering the result), not when `children()` navigates
+  (`XhtmlType.java:77-78`, `:107-108`). That difference is `DEV-0028`, and
+  the HTML-mode value and the edit are owed as `DEBT-0018`
 - **AND** no live case grades it, so it is differential-only
 
 ### Requirement: Collection predicates

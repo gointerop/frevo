@@ -511,3 +511,33 @@ them is the whole reason that decision is safe to make.
   `crates/frevo-path/src/eval/rewrite.rs`, and the flag would skip it.
 - **Status:** open
 - **Reviewed:** not yet. Raised 2026-11-20.
+
+### DEBT-0018 — the string of a narrative's `xhtml` item is not HAPI's HTML-mode composition
+
+- **Area:** path
+- **Origin:** `DEV-0028`, change `add-fhirpath-and-codegen-r4`, raised by the
+  forty-third review of `path.navigation.025`
+- **Owed:** for the `xhtml` item `children()` or `descendants()` yields for
+  `Narrative.div`, HAPI's string: the node composed by `XhtmlComposer` in HTML
+  mode (`XhtmlType.java:107-108`), including `breakBlocksWithLines`' CR LF
+  insertion exactly as its loop works (from the last child down to the second,
+  never the first child nor below it; `XhtmlComposer.java:85-104`), HTML-mode
+  void elements and `&nbsp;` (`:228-229`, `:313-350`), and the edit of the
+  stored node that makes a later `text.div` include the inserted CR LFs.
+- **Why deferred:** constitution section 1 and the owner's decision of
+  2026-11-08: no flag or second code path is built speculatively; the HTML-mode
+  composer is a second serialiser, and the edit of the input conflicts with the
+  stored-bytes design. No suite case reads such a string, and no known
+  search-parameter expression or invariant does.
+- **Cost if unpaid:** an expression that reads the string of a narrative's
+  `xhtml` item (`Patient.text.children().ofType(xhtml).toString()`, a
+  `contains()` or a comparison on it) gets the XML-mode text where HAPI gives
+  the HTML-mode text with inserted CR LFs, silently; and a later `text.div` in
+  the same evaluation lacks the CR LFs HAPI's has.
+- **Trigger:** a differential diff or consumer report on such an expression;
+  `add-narrative` porting `XhtmlComposer`'s HTML mode; or a re-pin of
+  `org.hl7.fhir.core` that changes `XhtmlType` or `breakBlocksWithLines`.
+- **Size:** medium; it needs the HTML-mode composer, which `add-narrative`
+  needs anyway.
+- **Status:** open
+- **Reviewed:** not yet. Raised 2026-11-20.
