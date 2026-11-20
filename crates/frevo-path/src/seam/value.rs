@@ -196,11 +196,64 @@ pub struct PartialDate {
 
 /// A dateTime at the precision it was written, with the offset it carried.
 /// `offset_minutes` is `None` for a local dateTime with no offset at all.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+///
+/// Equality, hashing and `Debug` read the three public fields only.
+#[derive(Clone)]
 pub struct PartialDateTime {
     pub lexical: String,
     pub precision: TemporalPrecision,
     pub offset_minutes: Option<i32>,
+    /// Which evaluated `@` literal this value is, or 0 for any other value.
+    ///
+    /// Upstream resolves a `@` literal to a new `DateTimeType` object every
+    /// time its node is evaluated (`resolveConstant`, `processDateConstant`,
+    /// `FHIRPathEngine.java:1653-1736`), and an ordered comparison rewrites
+    /// that object to Zulu in place (`compareDateTimeElements`, `:635-648`),
+    /// so every holder of that object -- `$this`, the items `where` returns --
+    /// sees the rewrite and a second occurrence of the same text does not
+    /// (`path.compare.015`). A value is cloned freely here, so the object's
+    /// identity is carried as this number, which every clone shares.
+    pub(crate) occurrence: u64,
+}
+
+impl PartialDateTime {
+    /// A dateTime value that is not an evaluated `@` literal.
+    pub fn new(lexical: String, precision: TemporalPrecision, offset_minutes: Option<i32>) -> Self {
+        Self {
+            lexical,
+            precision,
+            offset_minutes,
+            occurrence: 0,
+        }
+    }
+}
+
+impl PartialEq for PartialDateTime {
+    fn eq(&self, other: &Self) -> bool {
+        self.lexical == other.lexical
+            && self.precision == other.precision
+            && self.offset_minutes == other.offset_minutes
+    }
+}
+
+impl Eq for PartialDateTime {}
+
+impl std::hash::Hash for PartialDateTime {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.lexical.hash(state);
+        self.precision.hash(state);
+        self.offset_minutes.hash(state);
+    }
+}
+
+impl std::fmt::Debug for PartialDateTime {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PartialDateTime")
+            .field("lexical", &self.lexical)
+            .field("precision", &self.precision)
+            .field("offset_minutes", &self.offset_minutes)
+            .finish()
+    }
 }
 
 /// A time at the precision it was written.

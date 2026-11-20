@@ -272,6 +272,7 @@ pub fn process_date_constant(value: &str) -> Result<Value, String> {
                 lexical: format!("{date}T{time}{}", tz.unwrap_or_default()),
                 precision,
                 offset_minutes,
+                occurrence: 0,
             }))
         }
         (Some(date), None) => {

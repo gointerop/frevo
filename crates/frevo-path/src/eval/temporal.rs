@@ -499,6 +499,7 @@ impl Dt {
                 lexical,
                 precision: self.precision,
                 offset_minutes: self.offset,
+                occurrence: 0,
             })
         } else {
             Value::Date(PartialDate {
@@ -625,6 +626,7 @@ pub(super) fn now() -> Value {
         lexical,
         precision: TemporalPrecision::Millisecond,
         offset_minutes: Some(offset),
+        occurrence: 0,
     })
 }
 

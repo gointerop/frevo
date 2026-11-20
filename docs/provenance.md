@@ -140,7 +140,10 @@ include/exclude loop, `findCodeInConcept` and `checkExpansion` of
 ordered comparison's in-place Zulu rewrite of a `dateTime` operand —
 `src/eval/rewrite.rs` (`compareDateTimeElements`' `setTimeZoneZulu(true)`, and
 `BaseDateTimeType.java`'s `setTimeZoneZulu` and `encode`, kept as a
-per-evaluation overlay rather than a write to the input) — and the
+per-evaluation overlay rather than a write to the input, reaching the items
+each step returns, and for a `@` literal keyed by an occurrence number standing
+for the new object `resolveConstant`/`processDateConstant` build per node
+evaluation) — and the
 server-facing host service, `src/seam/server.rs`, from `hapi-fhir`'s
 `FhirPathR4.setEvaluationContext` at `7ab4c7c7c49281496faa1b3c2498a652457669ae`.
 Each file

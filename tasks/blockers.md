@@ -2407,3 +2407,45 @@ the same resource in one request). Decision needed: either Frevo reproduces the
 persistence (contradicting constitution section 6's bytes-as-stored design for
 the input) and a scenario is added, or the difference is recorded as a known
 gap or a deviation with the owner's approval. Until then no scenario grades it.
+
+## 2026-11-20 — `add-fhirpath-and-codegen-r4` — `path.errors.002`'s `@char` values are not HAPI's
+
+**Raised by** `implementer`, on task 53 (`path.errors.002`). Not implemented;
+the test `path_parse_errors.rs::an_execution_error_carries_hapis_message_and_a_position_only_where_hapi_has_one`
+stays red.
+
+**Finding.** The scenario says `@char` is the failing node's byte offset plus
+one, and grades `(1=1) and 1 < 'a'` as ` (@char 11)` and
+`(1=1) and (1=1) and 1 < 'a'` as ` (@char 21)`. The pinned lexer counts every
+whitespace character **twice**: `skipWhitespaceAndComments` calls
+`currentLocation.checkChar(ch, last13)`, which for a non-newline does
+`setColumn(getColumn() + 1)`, and then `currentLocation.incColumn()`
+(`org.hl7.fhir.r4/.../fhirpath/FHIRLexer.java:321-324`;
+`org.hl7.fhir.utilities/.../SourceLocation.java`, `checkChar`, `incColumn`).
+A token adds its length once (`FHIRLexer.java:285`). So HAPI reports
+` (@char 13)` and ` (@char 25)` for those two expressions; ` (@char 1)` for
+`1 < 'a'` and `(1 + 1) < 'a'` is right either way, having no whitespace before
+the node. HAPI's own recorded run confirms the rule:
+`oracles/fhirpath/hapi-8.12.0-results.json`, `isSemanticChecks/isEffectOnLogic1[4]`,
+reports `$this is dateTime implies $this.toString().length() >= 10` with
+` (@char 37)` for `toString`, whose byte offset is 32 (one-based 33) after
+four spaces; `isEffectOnLogic1Base[1]` (`$this.toString()...`, no space) is
+` (@char 7)`. A newline also resets the column to 1 and then adds 1, and a
+multi-line expression reports ` (@line L char C)`.
+
+**Second, independent obstacle.** The scenario wants no offset for a
+`newGroup` holder, but `EvalError::Execution { message, offset: usize }` is
+destructured by the harness (`tests/oracle/engine.rs:1680-1683`,
+`offset: Some(offset)`), so no `src` change can yield `offset: None` there
+without breaking the build of every test binary. The fix needs both sides in
+one commit: the field becomes `Option<usize>` and the harness line becomes
+`offset,`.
+
+**Decision needed.** The proposer amends `path.errors.002` (the two `@char`
+values and the rule "the same position one-based", to HAPI's column, which
+counts whitespace twice and resets on a newline), the oracle-builder updates
+the test and the harness line, and the implementer then lands the suffix, the
+`newGroup` "no start" flag and the optional offset. The same rule applies to
+every `makeException` site with a located holder, which conflicts with
+`path.boundary.013`'s "in full" messages (`{}.precision()` is ` (@char 4)` in
+HAPI, by the rule); that scenario needs the same amendment.

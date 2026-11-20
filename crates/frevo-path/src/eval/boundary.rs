@@ -543,6 +543,7 @@ fn date_time_type(s: String, at: usize) -> Result<Value, EvalError> {
         lexical: s,
         precision: dt.precision,
         offset_minutes: dt.offset,
+        occurrence: 0,
     }))
 }
 

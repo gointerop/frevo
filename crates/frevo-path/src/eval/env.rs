@@ -97,8 +97,16 @@ impl Run<'_> {
             Some(Constant::Value(value)) => Ok(vec![value.clone()]),
             Some(Constant::Deferred(text)) => {
                 if let Some(run) = text.strip_prefix('@') {
+                    // A new value on every evaluation of the node, as
+                    // `processDateConstant` builds a new object
+                    // (`path.compare.015`).
                     process_date_constant(run)
-                        .map(|v| vec![v])
+                        .map(|mut v| {
+                            if let Value::DateTime(d) = &mut v {
+                                d.occurrence = super::rewrite::new_occurrence();
+                            }
+                            vec![v]
+                        })
                         .map_err(|message| EvalError::execution(message, node.start()))
                 } else if let Some(name) = text.strip_prefix('%') {
                     if let Some(defined) = context.defined_variable(name) {

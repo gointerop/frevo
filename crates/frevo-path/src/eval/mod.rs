@@ -390,6 +390,10 @@ impl Run<'_> {
                 None => Vec::new(),
             },
         };
+        // An item an ordered comparison has rewritten to Zulu is read as
+        // rewritten from here on, wherever it is held (`path.compare.013`,
+        // `path.compare.015`).
+        rewrite::apply_all(&mut work);
 
         if let Some(inner) = node.inner() {
             // A variable `defineVariable` just introduced is visible to the
@@ -431,6 +435,7 @@ impl Run<'_> {
                 last = next_id;
                 next = self.expr.node(next_id).op_next();
             }
+            rewrite::apply_all(&mut work);
         }
         Ok(work)
     }
