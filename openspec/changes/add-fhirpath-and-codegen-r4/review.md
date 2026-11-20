@@ -1,3 +1,73 @@
+CHANGES_REQUESTED
+
+Thirty-eighth review (commit `56d3bf3`, 2026-11-20, diff against `16e6719`).
+`ENGINE` is `org.hl7.fhir.r4/src/main/java/org/hl7/fhir/r4/fhirpath/FHIRPathEngine.java`
+at `73c432b5`. The column rule is right, and it corrects a value I passed in the
+thirty-sixth and thirty-seventh reviews (`@char 11`/`21`, now `13`/`25`). Every
+column value checks out. Four findings remain; the detail is in the dated
+section at the end.
+
+1. **`path.compare.015` says "a date boundary ... is never rewritten", but a
+   `date` boundary above precision 10 is a millisecond `DateTimeType`.**
+   For a `date` focus, `lowBoundary` and `highBoundary` build
+   `new DateTimeType(...)` (`ENGINE:4317-4318`, `:4361-4362`). Above precision
+   10, `DateTimeUtil.lowBoundaryForDate` (`DateTimeUtil.java:65-90`) pads the
+   value to `T00:00:00.000` and appends `+14:00` (`-12:00` for high). The value
+   is then finer than a day, so `compareDateTimeElements` rewrites it
+   (`ENGINE:643-648`). So
+   `@2014-01-01.lowBoundary(17).where($this < @2015-01-01T00:00:00Z)` returns
+   `2013-12-31T10:00:00.000Z`, not `2014-01-01T00:00:00.000+14:00`. The
+   converse also holds: a `dateTime` boundary at precision 10 or less, such as
+   `@2014-01-01T08.lowBoundary(8)` = `2014-01-01`, is DAY precision and is not
+   rewritten, so "a `dateTime` boundary builds a millisecond-precision
+   `DateTimeType`" is true only at the default precision.
+   Fix: decide by the built value's precision, not by the input type, and add
+   the `date`-at-17 case and the `dateTime`-at-8 case.
+
+2. **`path.boundary.013` gives the wrong byte offset for
+   `(1.5 | 2.5).precision()`.** `precision` starts at byte index 12:
+   `(`=0, `1.5`=1-3, space=4, `|`=5, space=6, `2.5`=7-9, `)`=10, `.`=11,
+   `p`=12. Its column is 1 + 12 + 2 (the two spaces count 2 each) = 15. The
+   column 15 is right; the stated "(byte offset 13)" is wrong. Since Frevo's
+   offset is graded (`path.errors.002`), this is a testable error.
+
+3. **`path.errors.002`'s list of direct constructions misnames one site and
+   omits another.**
+   - `:2801` is `opTimes`. It wraps the `UcumException` from
+     `getUcumService().multiply`, so `getOpStart()` there is the `*` token,
+     not "the `+` or `-`".
+   - `:3102`, `throw new PathEngineException(e)` in the decimal arm of
+     `opMod`, is missing from the list. It is the error `5.5 mod 0` and
+     `5 mod 0.0` raise (`path.math.007`/`.008`). It passes no location and no
+     id: the message is the cause's `toString()`, with no suffix, so Frevo
+     carries no offset.
+   Fix: state the `*` for `:2801`, and add `:3102` to the no-location list
+   with "no suffix, no offset".
+
+4. **"Never the sub-expression's text" (the `path.errors.002` title and task
+   53) is false for the `as` singleton error.** `opAs` (`ENGINE:1884-1885`)
+   and `funcAs` (`:5166-5167`) format `FHIRPATH_AS_COLLECTION`
+   (`Messages.properties:301`,
+   `Attempt to use ''as()'' on more than one item (''{0}'', ''{1}'')`) with
+   `expr.toString()`. That is the holder node's rendering through
+   `ExpressionNode.toString` (`ExpressionNode.java:396-464`), and it puts the
+   node's text into the message. With the rule enforced,
+   `Patient.name.as(HumanName)` over `patient-example.xml` (three `name`s)
+   fails with exactly
+   `Attempt to use 'as()' on more than one item ('3', 'as(HumanName)')`, with
+   no `Error evaluating...` prefix and no suffix. `path.strictness.003` says
+   only "evaluation fails".
+   Fix: narrow the title and task 53 to the errors that use
+   `rep`/`makeException`, and give `path.strictness.003` (or
+   `path.errors.002`) the exact message for the function form and the
+   operator form. In `Patient.name as HumanName` the holder is `last`, the
+   `Patient` node (`ENGINE:1510-1519`), whose rendering includes its inner
+   and its operation: `('3', 'Patient.name as HumanName')`. The operator
+   form also needs `isKnownType("HumanName")` to pass through
+   `fetchTypeDefinition` (`:1880-1882`).
+
+## Thirty-seventh review header as issued (commit `444560a`)
+
 APPROVED
 
 Thirty-seventh review (commit `444560a`, 2026-11-20) resolves both findings
@@ -2709,3 +2779,82 @@ note. I traced the parse trees and functions again from the pinned source
   unchanged and as stated.
 - No ID is duplicated, added, removed or renumbered, and the registry lines
   for `.015` and `errors.002` match the headings.
+
+## Thirty-eighth review - commit `56d3bf3` (2026-11-20)
+
+Scope: the diff `16e6719..56d3bf3`. It covers the column rule and offset in
+`path.errors.002`; the suffixes in `path.boundary.013`/`.017`,
+`path.check.005`/`.006` and `path.utility.003`; the start-less and
+direct-construction lists; the `path.compare.015` extension; `DEV-0017`,
+`DEBT-0017`, tasks 35 and 53, `spec.md` and the blockers note. I re-derived
+every column by hand from `FHIRLexer.java` and `SourceLocation.java` at
+`73c432b5`.
+
+**Column rule: correct, and I had it wrong before.**
+- `skipWhitespaceAndComments` calls `checkChar` (`setColumn(column + 1)` for a
+  non-newline character) and then `incColumn()` (`FHIRLexer.java:321-324`), so
+  each whitespace character adds 2.
+- A token adds `cursor - currentStart` once (`:285`).
+- CR or a lone LF: `newLine()` sets column 1, then `incColumn()` makes it 2.
+  An LF after a CR adds only 1.
+- A `//` comment adds 1 per character from the first `/` (`:294-303`). A
+  `/* */` comment adds 2 per character, plus 2 for the closing `*/`
+  (`:304-320`).
+- HAPI's own record confirms the rule: `isEffectOnLogic1` reports
+  ` (@char 37)` at byte offset 32 after four spaces (`results.json:1046`), and
+  `isEffectOnLogic1Base` reports ` (@char 7)` (`:1043`). The other recorded
+  suffixes are consistent; for example ``Patient.`name` `` is
+  ` (@char 9)` (`:20`).
+- My thirty-sixth and thirty-seventh reviews accepted `@char 11`/`21`. That
+  was wrong, and this commit fixes it.
+
+**Values re-derived.**
+- `(1=1) and 1 < 'a'`: `(1=1)` reaches 6, the space 8, `and` 11, the space 13.
+  So ` (@char 13)`, byte offset 10.
+- `(1=1) and (1=1) and 1 < 'a'`: 25, byte offset 20.
+- `(1=1) and` LF `1 < 'a'`: ` (@line 2 char 2)`.
+- `{}.precision()`: `{}` is one token (`:203-208`), so the column is 4 and the
+  offset 3.
+- `(1.5 | 2.5).precision()`: column 15 is right, but the offset is 12, not 13
+  (finding 2). The `lowBoundary` form is the same column 15.
+- `1.587.lowBoundary({})`: the number loop stops at the second `.`, so the
+  column is 7 and the offset 6. The holder is the function node (`:4301`,
+  `:4345`).
+- `Patient.check(true, 'm')`: column 9. The holder is the `check` node,
+  through `checkParamTypes(exp, ...)` (`:3545`, `:3830`).
+- `path.check.005`: column 37, offset 32. `path.check.006`: column 7.
+
+**Start-less holders and direct constructions.**
+- `newGroup` (`:1315-1321`) and the indexer node (`:1188-1192`) set no start.
+- A null holder goes through `:580`/`:592`.
+- `gatherPrecedence` moves an operation with `setOperation` only, so a
+  `newGroup` node has no `opStart` either.
+- `getOpStart()` is used exactly at `:2063`, `:2080`, `:2725`, `:2731`,
+  `:2763` and `:2801` (`:2801` is `*`; finding 3).
+- `opStart` is a fresh `currentStartLocation` object for each token (`:147`),
+  so nothing is aliased.
+- Every direct `new PathEngineException` is listed except `:3102`
+  (finding 3).
+- `PathEngineException` never sets `location`, so an optional Frevo offset,
+  present exactly when the suffix is, matches what HAPI exposes.
+
+**`path.compare.015` extension.**
+- `funcNow` returns `DateTimeType.now()` (`:4772-4776`).
+- `dateAdd` copies (`:2715-2716`). A `dateTime` copy keeps `+02:00`, so
+  `+ 1 day` and then the rewrite gives `2012-04-16T08:00:00Z`.
+- A `date + quantity` result stays a `DateType` (`:2703-2704`).
+- `today()` is a `DateType` (`:4779-4783`).
+- `lowBoundary` of `@2012-04-15T10:00:00+02:00` at the default 17 is
+  `2012-04-15T10:00:00.000+02:00`, which becomes `2012-04-15T08:00:00.000Z`.
+- `toDateTime` throws `FHIRPATH_NOT_IMPLEMENTED` (`:4976-4980`, `DEV-0021`).
+- The one wrong claim is the `date` boundary (finding 1).
+
+**Registers, counts and validators.**
+- `DEV-0017` and `DEBT-0017` match the scenario text, so finding 1 will need
+  their "a `dateTime` boundary" wording widened the same way.
+- `harness/scripts/check-registries.sh` reports "registers agree" (23
+  deviations, 17 debt entries).
+- `openspec validate add-fhirpath-and-codegen-r4 --strict` reports the change
+  is valid.
+- The headings number codegen 49, model 83 and path 378, 510 in total. No ID
+  is duplicated, added, removed or renumbered.
