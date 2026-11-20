@@ -543,3 +543,32 @@ them is the whole reason that decision is safe to make.
   needs anyway.
 - **Status:** open
 - **Reviewed:** not yet. Raised 2026-11-20.
+
+### DEBT-0019 — equality and equivalence of quantities with unit text and no code answer by which side has the unit
+
+- **Area:** path
+- **Origin:** `DEV-0017`, change `add-fhirpath-and-codegen-r4`, raised by the
+  oracle-builder's classification of the `path.quantity` tests (2026-11-20)
+- **Owed:** a configuration flag, defaulting to HAPI's behaviour, under which
+  two quantities with no UCUM system and no `code` compare as the
+  specification says: equal and equivalent when both lack a unit
+  (`path.quantity.009`), empty under `=` and `false` under `~` when exactly one
+  has a unit (`path.quantity.011`, `.012`), regardless of side. Also owed: an
+  upstream report to `org.hl7.fhir.core` for the guard
+  `else if (!left.hasUnit() || right.hasUnit())` (`FHIRPathEngine.java:2282`,
+  `:2355`).
+- **Why deferred:** constitution section 1 and the owner's decision of
+  2026-11-08: no flag is added speculatively. HAPI fails the same five suite
+  cases, so parity is exact; no consumer is known to compare unit-text
+  quantities with `=` or `~`.
+- **Cost if unpaid:** `1 'tablets' = 1` and `1 'tablets' ~ 1` are `true`, a
+  wrong answer, silently, while the same comparison written the other way round
+  is empty or fails; and two unitless quantities are never `=`. An invariant or
+  search expression comparing such quantities gets HAPI's answer.
+- **Trigger:** a differential diff or consumer report involving `=` or `~` on
+  quantities without a UCUM system; an IG invariant doing so; or a re-pin of
+  `org.hl7.fhir.core` that changes `qtyEqual` or `qtyEquivalent`.
+- **Size:** small; confined to the quantity equality rule in
+  `crates/frevo-path/src/eval/equality.rs` and the flag plumbing.
+- **Status:** open
+- **Reviewed:** not yet. Raised 2026-11-20.

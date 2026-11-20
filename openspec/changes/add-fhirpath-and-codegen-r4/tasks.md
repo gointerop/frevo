@@ -939,8 +939,11 @@ checkpoint because it changes what a gate measures.
   conversion, equivalence rounding to the lower precision, calendar-duration
   commensurability, magnitude comparison, unit arithmetic, the dimensionless
   unit, the unitless and unit-text cases from
-  `parameters-example-quantities.xml` and `parameters-quantity-unit-text.xml`,
-  `comparable()`, the incommensurable-comparison result, and the unknown-unit
+  `parameters-example-quantities.xml` and `parameters-quantity-unit-text.xml`
+  as HAPI answers them (the side-dependent unit guard of `qtyEqual` and
+  `qtyEquivalent`, and execution errors carrying HAPI's recorded
+  `NullPointerException` text; `path.quantity.009`, `.011`-`.013`, `DEV-0017`,
+  `DEBT-0019`), `comparable()`, the incommensurable-comparison result, and the unknown-unit
   and non-UCUM-system behaviours.
   Satisfies `path.quantity.001` through `path.quantity.018`.
 

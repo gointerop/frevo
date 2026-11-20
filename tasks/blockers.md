@@ -2803,3 +2803,12 @@ outcomes). **Decision needed:** the proposer restates the four scenarios as
 HAPI behaves (and records the deviation from the suite's intent, if any), after
 which the oracle-builder amends `path_quantity.rs`. The rest of
 `path_quantity.rs` is red on tasks 43 and 44 (UCUM), not on this.
+
+**Resolved in the spec, 2026-11-20 (proposer).** Verified in
+`FHIRPathEngine.java` (`qtyEqual` `:2258-2290`, `qtyEquivalent` `:2331-2363`,
+`doEquivalent` `:2204-2206`, `opEquals` `:2103-2128`, `opLessThan` `:2436-2454`,
+`qtyToCanonicalDecimal` `:2298-2311`) and the recorded run (`:631-639`, `:669`,
+`:728`). The four scenarios now state HAPI's results; the NullPointerException
+cases are execution errors in Frevo with HAPI's recorded JVM message. The
+spec-prose differences are in `DEV-0017`, the wrong answers in `DEBT-0019`. The
+UCUM-dependent scenarios are unchanged and stay blocked on the owner.

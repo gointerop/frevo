@@ -513,7 +513,7 @@ file, so its prose is not redistributable here (see `oracles/PINS.md`).
 ### DEV-0017 — equality, equivalence, comparison, date arithmetic and division follow pinned-engine defects
 
 - **Area:** path
-- **Scenario IDs:** path.equality.001, path.equality.002, path.equality.004, path.equality.005, path.equality.012, path.compare.001, path.compare.002, path.compare.003, path.compare.004, path.combine.001, path.math.001, path.math.003, path.math.005, path.math.006, path.math.007, path.math.008, path.compare.013, path.compare.014, path.compare.015
+- **Scenario IDs:** path.equality.001, path.equality.002, path.equality.004, path.equality.005, path.equality.012, path.compare.001, path.compare.002, path.compare.003, path.compare.004, path.combine.001, path.math.001, path.math.003, path.math.005, path.math.006, path.math.007, path.math.008, path.compare.013, path.compare.014, path.compare.015, path.quantity.009, path.quantity.011, path.quantity.012, path.quantity.013
 - **HAPI 8.12.0 behaviour:** HAPI fails 38 cases of its own pinned suite
   (`oracles/fhirpath/hapi-8.12.0-results.json`) on these mechanisms.
   `removeTrailingZeros` (`ENGINE:2161-2182`) strips zeros from a number written
@@ -527,10 +527,18 @@ file, so its prose is not redistributable here (see `oracles/PINS.md`).
   `testPlusDate23`/`24`, `testMinus7`, `testUnion12`). `qtyEquivalent` returns
   `null`, which `doEquivalent` unboxes (`ENGINE:2204-2206`): a
   `NullPointerException` (`testEquivalent24`-`29`, `testNotEquivalent23`/`24`).
+  With no UCUM system and no `code`, `qtyEqual` and `qtyEquivalent` return
+  `null` when the left quantity has no unit or the units differ, and otherwise
+  compare values alone (`ENGINE:2282`, `2355`): two unitless quantities are
+  empty under `=` and raise under `~`, `1 'tablets' = 1` and `~` are `true`, and
+  `1 ~ 1 'tablets'` raises (`testQuantityNoUnitEqual`,
+  `testQuantityNoUnitEquivalent`, `testQuantityUnitVsNoUnitEqual`,
+  `testQuantityUnitVsNoUnitEquivalent`, `testQuantityNoUnitVsUnitEquivalent`).
   `<=`, `>` and `>=` over quantities dereference `qtyToCanonicalDecimal`'s
   `null` for a non-UCUM system (`ENGINE:2301-2304`, `2494-2496`, `2544-2546`,
   `2592-2594`), and `<` over differing code lists compares canonical decimals
-  (`ENGINE:2440`) (`testLessThan29`, `30`, `33`, `testLessOrEqual28`/`29`,
+  (`ENGINE:2440`) (`testLessThan29`, `30`, `33`, the last over a unit-text
+  quantity with no UCUM system, `testLessOrEqual28`/`29`,
   `testGreaterThan28`/`29`, `testGreatorOrEqual28`/`29`). `hasValue()` over a
   `HumanName` is `true` (`ENGINE:5776-5780`, `testHasCodingValue2`). Division
   and modulo by zero are empty only for integers and for `/` with a non-zero
@@ -561,7 +569,8 @@ file, so its prose is not redistributable here (see `oracles/PINS.md`).
   unchecked exception.
 - **Configuration flag:** none
 - **Debt:** DEBT-0017 (the Zulu rewrite of a compared `dateTime`,
-  `path.compare.013`, `path.compare.015`)
+  `path.compare.013`, `path.compare.015`), DEBT-0019 (unit-guard equality of
+  unit-text quantities, `path.quantity.009`, `.011`, `.012`)
 - **Rationale:** owner ruling, 2026-11-17: HAPI 8.12.0's observable behaviour is
   the reference. Established by reading the pinned source and HAPI's recorded
   run; not confirmed against a live HAPI. The value `0.0 / 0` yields depends on

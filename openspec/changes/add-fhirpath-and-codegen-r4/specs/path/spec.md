@@ -2273,14 +2273,30 @@ The engine SHALL compare, add, subtract, multiply and divide quantities by conve
 - **WHEN** `1.0 'm' / 1.0 'm' = 1 '1'` is evaluated
 - **THEN** the result is `true` (`testQuantity/testQuantity11`)
 
-#### Scenario: [path.quantity.009] two unitless quantities compare equal and equivalent
+#### Scenario: [path.quantity.009] two unitless quantities: equality is empty and equivalence fails
 
 - **WHEN** `Parameters.parameter[0].value = Parameters.parameter[1].value` and
   the same with the equivalence operator are evaluated over
-  `parameters-example-quantities.xml`
-- **THEN** both yield `true`
-  (`testQuantityUnitComparison/testQuantityNoUnitEqual`,
-  `testQuantityNoUnitEquivalent`)
+  `parameters-example-quantities.xml` (two quantities of value `1`, with no
+  `unit`, `code` or `system`)
+- **THEN** equality yields an **empty** collection and equivalence **fails**:
+  `qtyEqual` and `qtyEquivalent` (`FHIRPathEngine.java:2258-2290`,
+  `:2331-2363`) first try UCUM canonical forms, which need a UCUM `system`
+  (`qtyToCanonicalPair`, `:2292-2303`), so none of these quantities takes that
+  path. With no `code` on either side they reach the unit guard
+  `else if (!left.hasUnit() || right.hasUnit())` (`:2282`, `:2355`): it returns
+  `null` when the **left** has no unit, or when the units differ, and otherwise
+  falls through to compare the values, so a left quantity **with** a unit and a
+  right one **without** compares by value alone. `opEquals` turns a `null` into
+  an empty result (`:2114-2127`); `doEquivalent` unboxes it into a `boolean`
+  (`:2204-2206`), which raises a `NullPointerException`. The left has no unit, so both return `null`
+- **AND** Frevo's required status per case follows HAPI's own recorded run (`oracles/fhirpath/hapi-8.12.0-results.json`): `passed` for every case HAPI passes, and `failed` (parity under `path.oracle.012`) for the cases named here, which HAPI fails. A Frevo pass on one of them would be listed as `ahead-of-hapi`, not accepted as a pass of this scenario; both are failed: `testQuantityUnitComparison/testQuantityNoUnitEqual`
+  (the suite expects `true`; HAPI finds no item, `hapi-8.12.0-results.json:632`)
+  and `testQuantityNoUnitEquivalent` (the suite expects `true`; HAPI raises,
+  `:633`)
+- **AND** where HAPI raises a `NullPointerException`, Frevo returns an execution error, never a panic (`path.errors.003`), with no offset (`path.errors.002`) and with the message HAPI's run records, the JVM's text, exactly: `Cannot invoke "java.lang.Boolean.booleanValue()" because the return value of "org.hl7.fhir.r4.fhirpath.FHIRPathEngine.qtyEquivalent(org.hl7.fhir.r4.model.Quantity, org.hl7.fhir.r4.model.Quantity)" is null`
+- **AND** the specification makes both `true`; recorded as `DEV-0017`, and the
+  empty equality as a wrong-answer hazard, `DEBT-0019`
 
 #### Scenario: [path.quantity.010] two quantities with the same unit text and no code compare equal
 
@@ -2290,26 +2306,66 @@ The engine SHALL compare, add, subtract, multiply and divide quantities by conve
   (`testQuantityUnitComparison/testQuantityUnitTextEqual`,
   `testQuantityUnitTextEquivalent`)
 
-#### Scenario: [path.quantity.011] a quantity with a unit compared to one without yields empty for equality
+#### Scenario: [path.quantity.011] equality of a quantity with a unit and one without depends on which side has the unit
 
-- **WHEN** `Parameters.parameter[2].value = Parameters.parameter[0].value` and
-  the reverse are evaluated over `parameters-example-quantities.xml`
-- **THEN** both yield an empty collection
-  (`testQuantityUnitComparison/testQuantityUnitVsNoUnitEqual`,
-  `testQuantityNoUnitVsUnitEqual`)
+- **WHEN** `Parameters.parameter[2].value = Parameters.parameter[0].value` (left
+  `1 'tablets'` as unit text only, right `1` with no unit) and the reverse are
+  evaluated over `parameters-example-quantities.xml`
+- **THEN** the first yields the single boolean **`true`** and the reverse an
+  **empty** collection: `qtyEqual` and `qtyEquivalent` (`FHIRPathEngine.java:2258-2290`,
+  `:2331-2363`) first try UCUM canonical forms, which need a UCUM `system`
+  (`qtyToCanonicalPair`, `:2292-2303`), so none of these quantities takes that
+  path. With no `code` on either side they reach the unit guard
+  `else if (!left.hasUnit() || right.hasUnit())` (`:2282`, `:2355`): it returns
+  `null` when the **left** has no unit, or when the units differ, and otherwise
+  falls through to compare the values, so a left quantity **with** a unit and a
+  right one **without** compares by value alone. `opEquals` turns a `null` into
+  an empty result (`:2114-2127`); `doEquivalent` unboxes it into a `boolean`
+  (`:2204-2206`), which raises a `NullPointerException`. With the unit on the left the guard
+  is skipped and `1 = 1` is compared; with it on the right the guard returns
+  `null`
+- **AND** Frevo's required status per case follows HAPI's own recorded run (`oracles/fhirpath/hapi-8.12.0-results.json`): `passed` for every case HAPI passes, and `failed` (parity under `path.oracle.012`) for the cases named here, which HAPI fails. A Frevo pass on one of them would be listed as `ahead-of-hapi`, not accepted as a pass of this scenario: `testQuantityUnitComparison/testQuantityUnitVsNoUnitEqual`
+  is failed (the suite expects no output; HAPI finds one item,
+  `hapi-8.12.0-results.json:636`) and `testQuantityNoUnitVsUnitEqual` is
+  passed (`:637`)
+- **AND** the specification makes both empty; recorded as `DEV-0017`, and the
+  `true` as a wrong-answer hazard, `DEBT-0019`
 
-#### Scenario: [path.quantity.012] a quantity with a unit compared to one without yields false for equivalence
+#### Scenario: [path.quantity.012] equivalence of a quantity with a unit and one without is `true` one way and fails the other
 
 - **WHEN** the same two expressions with the equivalence operator are evaluated
-- **THEN** both yield `false`
-  (`testQuantityUnitComparison/testQuantityUnitVsNoUnitEquivalent`,
-  `testQuantityNoUnitVsUnitEquivalent`)
+- **THEN** `Parameters.parameter[2].value ~ Parameters.parameter[0].value`
+  yields the single boolean **`true`**, and
+  `Parameters.parameter[0].value ~ Parameters.parameter[2].value` **fails**,
+  by the same guard as `path.quantity.011`, with `doEquivalent` unboxing the
+  `null`
+- **AND** Frevo's required status per case follows HAPI's own recorded run (`oracles/fhirpath/hapi-8.12.0-results.json`): `passed` for every case HAPI passes, and `failed` (parity under `path.oracle.012`) for the cases named here, which HAPI fails. A Frevo pass on one of them would be listed as `ahead-of-hapi`, not accepted as a pass of this scenario; both are failed:
+  `testQuantityUnitComparison/testQuantityUnitVsNoUnitEquivalent` (the suite
+  expects `false`; HAPI answers `true`, `hapi-8.12.0-results.json:638`) and
+  `testQuantityNoUnitVsUnitEquivalent` (the suite expects `false`; HAPI raises,
+  `:639`)
+- **AND** where HAPI raises a `NullPointerException`, Frevo returns an execution error, never a panic (`path.errors.003`), with no offset (`path.errors.002`) and with the message HAPI's run records, the JVM's text, exactly: `Cannot invoke "java.lang.Boolean.booleanValue()" because the return value of "org.hl7.fhir.r4.fhirpath.FHIRPathEngine.qtyEquivalent(org.hl7.fhir.r4.model.Quantity, org.hl7.fhir.r4.model.Quantity)" is null`
+- **AND** the specification makes both `false`; recorded as `DEV-0017`, and the
+  `true` as a wrong-answer hazard, `DEBT-0019`
 
 #### Scenario: [path.quantity.013] unit text without a code is handled per the suite's dedicated input
 
-- **WHEN** the three cases using `parameters-quantity-unit-text.xml` are
-  evaluated
-- **THEN** every case yields its stated output
+- **WHEN** the three cases using `parameters-quantity-unit-text.xml` (left
+  `1` with unit text `mg/dL` only; right `2 'mg/dL'` with a UCUM `system` and
+  `code`) are evaluated
+- **THEN** `testLessOrEqual/testLessOrEqual30` (`<=`) and
+  `testGreaterThan/testGreaterThan30` (`>`) yield `true`: those operators
+  compare the `unit` children, which are equal, and then the values
+  (`hapi-8.12.0-results.json:669`, `:728`, both passed)
+- **AND** `testLessThan/testLessThan33` (`<`) **fails**: `<` compares the `code`
+  children (`FHIRPathEngine.java:2438-2440`), which differ, so it compares the
+  canonical decimals, and `qtyToCanonicalDecimal` returns `null` for the
+  quantity with no UCUM system (`:2301-2303`); the recursive `opLessThan` calls
+  `isPrimitive()` on it (`:2414`). This is the case `path.compare.001` lists
+- **AND** Frevo's required status per case follows HAPI's own recorded run (`oracles/fhirpath/hapi-8.12.0-results.json`): `passed` for every case HAPI passes, and `failed` (parity under `path.oracle.012`) for the cases named here, which HAPI fails. A Frevo pass on one of them would be listed as `ahead-of-hapi`, not accepted as a pass of this scenario: `testLessThan33` is failed (the suite expects `true`;
+  HAPI raises, `hapi-8.12.0-results.json:631`), the other two passed
+- **AND** where HAPI raises a `NullPointerException`, Frevo returns an execution error, never a panic (`path.errors.003`), with no offset (`path.errors.002`) and with the message HAPI's run records, the JVM's text, exactly: `Cannot invoke "org.hl7.fhir.r4.model.Base.isPrimitive()" because the return value of "java.util.List.get(int)" is null`
+- **AND** the specification makes it `true`; recorded as `DEV-0017`
 
 #### Scenario: [path.quantity.014] `comparable()` reports whether two quantities are commensurable
 

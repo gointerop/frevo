@@ -189,6 +189,13 @@ narrative with no `div` still yields an `xhtml` child, an unparseable stored
 narrative fails by name, and an XML document's narrative is its markup. No ID
 was added.
 
+After the oracle-builder's classification of the quantity tests
+(`tasks/blockers.md`, 2026-11-20, "four `path.quantity` scenarios still state the
+suite's answer, not HAPI's"), `path.quantity.009`, `.011`, `.012` and `.013` were
+rewritten in place to HAPI's recorded results, with the cases HAPI fails graded
+`failed` under `path.oracle.012` and HAPI's `NullPointerException` text as
+Frevo's execution-error message (`DEV-0017`, `DEBT-0019`). No ID was added.
+
 | Area | IDs allocated | Range |
 |---|---:|---|
 | `codegen.inputs.*` | 6 | `001`-`006` |
