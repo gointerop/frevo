@@ -483,8 +483,9 @@ them is the whole reason that decision is safe to make.
 - **Owed:** a configuration flag, defaulting to HAPI's behaviour, under which
   `<`, `<=`, `>` and `>=` compare a `dateTime` without changing it, so that a
   later read of the compared element (`path.compare.013`, `testLessThan28`) or
-  of the compared literal's value through `$this` (`path.compare.015`) returns
-  the string the resource or the expression carried, and not the Zulu
+  of the compared literal's value through `$this` (`path.compare.015`), and
+  the evaluation's result when it returns the compared value (`where`,
+  `select($this)`), returns the string the resource or the expression carried, and not the Zulu
   rendering of the same instant. Also owed: an upstream report to
   `org.hl7.fhir.core` (`compareDateTimeElements`, `FHIRPathEngine.java:635-648`,
   writes to its operand instead of to a copy).

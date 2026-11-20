@@ -823,7 +823,8 @@ checkpoint because it changes what a gate measures.
   invariant forms; and the Zulu rewrite of a compared `dateTime`, for an element
   within the evaluation (`path.compare.013`) and for a literal's value within
   the evaluation, never carried into a later evaluation of the same parse
-  (`path.compare.015`).
+  (`path.compare.015`), and in both cases visible in the evaluation's returned
+  items (`where`, `select($this)`).
   Satisfies `path.equality.001` through `path.equality.012`, `path.compare.001`
   through `path.compare.015`.
 
@@ -1104,8 +1105,9 @@ checkpoint because it changes what a gate measures.
 - [ ] **53. Implement error reporting and the bounds.** 21 of the 27
   `invalid="execution"` cases failing at evaluation after a clean parse and
   check, with the 6 `documentFunctions` ones failing at parse, graded `failed`,
-  as for HAPI; errors carrying HAPI's message, which ends ` (@char N)` and never
-  contains the sub-expression's text, and the sub-expression's offset; no panic anywhere in the
+  as for HAPI; errors carrying HAPI's message, which never contains the
+  sub-expression's text and ends ` (@char N)` with a matching offset only when
+  the failing node has a start (none for a precedence group or a null holder); no panic anywhere in the
   suite; depth and step limits; and a model decode error surfacing as an error
   rather than as an empty collection.
   Satisfies `path.errors.001` through `path.errors.005`.

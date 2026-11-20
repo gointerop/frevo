@@ -111,6 +111,15 @@ removed, renumbered, reused or repurposed. The hazard is `DEBT-0017` (origin
 `DEV-0017`); `DEV-0018` was restated for offset 0. The delta changed after
 `review.md` was `APPROVED`, so the spec-reviewer must re-review it.
 
+After the thirty-sixth review, two of those scenarios were corrected again in
+place and one more: `path.errors.002` now states that a failing operator held
+by a precedence group (`newGroup`, which sets no start) gives HAPI's bare
+message with no ` (@char N)` and no Frevo offset (`1 + 1 < 'a'`,
+`(1=1) and 1 + 1 < 'a'`), while a parenthesised group keeps its position
+(`(1 + 1) < 'a'`, ` (@char 1)`); `path.compare.013` and `path.compare.015` now
+state that the evaluation's result carries the rewrite (`where` and
+`select($this)` return the object the comparison rewrote). No ID was added.
+
 | Area | IDs allocated | Range |
 |---|---:|---|
 | `codegen.inputs.*` | 6 | `001`-`006` |
@@ -571,7 +580,7 @@ Every allocated ID, grouped as it is grouped in the delta files.
 - `path.compare.010` — a Period invariant written with raw comparison and one written with boundaries differ
 - `path.compare.013` — an ordered comparison of a dateTime rewrites the operand's stored string to Zulu
 - `path.compare.014` — `<=` with a unit-less left quantity and a unit-bearing right quantity fails
-- `path.compare.015` — an ordered comparison rewrites a `dateTime` literal for the rest of that evaluation, and only for the value it produced
+- `path.compare.015` — an ordered comparison rewrites a `dateTime` literal for the rest of that evaluation, including its result, and only for the value it produced
 
 **Requirement: Boolean logic**
 
@@ -824,7 +833,7 @@ Every allocated ID, grouped as it is grouped in the delta files.
 **Requirement: Execution errors**
 
 - `path.errors.001` — 21 of the 27 execution-invalid oracle cases fail at evaluation; the other 6 fail at parse, as for HAPI
-- `path.errors.002` — an error carries HAPI's message and the position of the failing sub-expression, not its text
+- `path.errors.002` — an error carries HAPI's message, a position only where HAPI's failing node has a start, and never the sub-expression's text
 - `path.errors.003` — evaluation never panics
 - `path.errors.004` — evaluation is bounded for an adversarial expression
 - `path.errors.005` — an error from `frevo-model` is surfaced, not swallowed into empty

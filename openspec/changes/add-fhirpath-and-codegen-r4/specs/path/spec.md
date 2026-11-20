@@ -1049,6 +1049,19 @@ The engine SHALL implement the four ordered comparison operators as `FHIRPathEng
 - **AND** the specification does not describe the mutation; HAPI's recorded run
   is `failed` for `testLessThan28`, and Frevo matches it as parity
   (`path.oracle.012`)
+- **AND** the evaluation's **result** carries the rewrite when the compared
+  element is what it returns:
+  `Patient.birthDate.extension('http://hl7.org/fhir/StructureDefinition/patient-birthTime').value.where($this < @1975-01-01T00:00:00Z)`
+  over `patient-example.xml` returns one `dateTime` whose value is
+  `1974-12-25T19:35:45Z`, not `1974-12-25T14:35:45-05:00`. `funcWhere` adds
+  the same `item` object it compared (`FHIRPathEngine.java:6249-6260`), which
+  `compareDateTimeElements` has already set to Zulu; `select($this)` after a
+  comparison returns the rewritten object the same way (`funcSelect`,
+  `:6263-6273`), so
+  `...value.where($this < @1975-01-01T00:00:00Z).select($this)` returns
+  `1974-12-25T19:35:45Z` too. The returned items are part of the evaluation,
+  so a rewrite that is dropped before the result is produced does not meet
+  this scenario
 - **AND** a `dateTime` **literal** operand is rewritten the same way, within
   the evaluation that compared it; `path.compare.015` states what that is
   observable through and why it does not outlive the evaluation
@@ -1062,7 +1075,7 @@ The engine SHALL implement the four ordered comparison operators as `FHIRPathEng
   wrong answer, not an error; the flag that would restore the operand's own
   string is `DEBT-0017` (origin `DEV-0017`)
 
-#### Scenario: [path.compare.015] an ordered comparison rewrites a `dateTime` literal for the rest of that evaluation, and only for the value it produced
+#### Scenario: [path.compare.015] an ordered comparison rewrites a `dateTime` literal for the rest of that evaluation, including its result, and only for the value it produced
 
 - **WHEN** `(@2012-04-15T10:00:00+02:00).select($this < @2013-01-01T00:00:00Z and $this.toString() = '2012-04-15T08:00:00Z')`
   is evaluated
@@ -1074,6 +1087,15 @@ The engine SHALL implement the four ordered comparison operators as `FHIRPathEng
   its left (`:1508-1525`; `preOperate`, `:1542`, short-circuits only a `false` left), so `toString()` reads `2012-04-15T08:00:00Z`
 - **AND** `(@2012-04-15T10:00:00+02:00).select(($this < @2013-01-01T00:00:00Z) and $this.toString() = '2012-04-15T10:00:00+02:00')`
   is the single boolean `false`
+- **AND** the evaluation's **result** carries the rewrite when the compared
+  literal's value is what it returns:
+  `(@2012-04-15T10:00:00+02:00).where($this < @2013-01-01T00:00:00Z)` returns
+  one `dateTime` whose value is `2012-04-15T08:00:00Z`, because `funcWhere`
+  returns the object it compared (`:6249-6260`), and
+  `(@2012-04-15T10:00:00+02:00).where($this < @2013-01-01T00:00:00Z).select($this)`
+  returns the same rewritten value. An uncompared literal is returned as
+  written: `(@2012-04-15T10:00:00+02:00).select($this)` returns
+  `2012-04-15T10:00:00+02:00`
 - **AND** an offset-less literal is placed in the evaluation zone first
   (`path.datetime.004`): at the suite's zone, offset 0,
   `(@2012-04-15T10:00:00).select($this < @2013-01-01T00:00:00Z and $this.toString() = '2012-04-15T10:00:00Z')`
@@ -3652,7 +3674,7 @@ deviation from HAPI, so neither needs a `DEV-nnnn` entry: both are HAPI.
 
 ### Requirement: Execution errors
 
-The engine SHALL report an evaluation failure as an error carrying HAPI's message and the position of the failing sub-expression, and SHALL never panic or substitute an empty collection for a failure.
+The engine SHALL report an evaluation failure as an error carrying HAPI's message, with the position of the failing node exactly where HAPI's message carries one, and SHALL never panic or substitute an empty collection for a failure.
 
 #### Scenario: [path.errors.001] 21 of the 27 execution-invalid oracle cases fail at evaluation; the other 6 fail at parse, as for HAPI
 
@@ -3666,7 +3688,7 @@ The engine SHALL report an evaluation failure as an error carrying HAPI's messag
   `path.oracle.005`'s stage rule, as `path.oracle.014` states. HAPI fails them
   the same way (`FHIRPathTests.java:199-202`)
 
-#### Scenario: [path.errors.002] an error carries HAPI's message and the position of the failing sub-expression, not its text
+#### Scenario: [path.errors.002] an error carries HAPI's message, a position only where HAPI's failing node has a start, and never the sub-expression's text
 
 - **WHEN** `1 < 'a'` is evaluated, and then `(1=1) and 1 < 'a'` and
   `(1=1) and (1=1) and 1 < 'a'`
@@ -3682,6 +3704,32 @@ The engine SHALL report an evaluation failure as an error carrying HAPI's messag
   start within the whole expression, 0, 10 and 20 (zero-based) for the three
   expressions; `@char` is the same position one-based (`SourceLocation` starts
   at column 1, `FHIRLexer.java:56`)
+- **WHEN** `1 + 1 < 'a'` is evaluated, and then `(1=1) and 1 + 1 < 'a'`
+- **THEN** each fails with the message exactly
+  `Error evaluating FHIRPath expression: Unable to compare values of type integer and string`,
+  with **no** position suffix at all
+- **AND** the reason is that the node carrying the failing `<` is a precedence
+  group, which has no start: `organisePrecedence` runs `gatherPrecedence` once
+  per precedence level (`FHIRPathEngine.java:1224-1237`), and the `+` level
+  wraps `1 + 1` in a node built by `newGroup` (`:1239-1311`, `:1315-1321`),
+  which never sets a start, then moves `<` onto that group. `execute` passes the
+  group as the holder (`last = exp`, `:1508-1522`; `operate`, `:1843-1850`),
+  `makeException` passes its `null` start (`:589-590`), and
+  `rep(null, <non-empty text>)` returns `""` (`PathEngineException.java:81-93`).
+  In `(1=1) and 1 + 1 < 'a'` the `<` node is again the group the `+` level
+  built
+- **AND** the same holds for any failing operator whose left operand is a run
+  of operators of higher precedence, gathered by `organisePrecedence`
+  (`a + b < c`, `x * 2 > 'y'`, `a | b = c`), and for any error raised with a
+  `null` holder (`PathEngineException(fmt, constName)`, `:591-592`)
+- **AND** for these errors Frevo's error carries **no** offset, because HAPI's
+  exception exposes no position for them: `PathEngineException` never assigns
+  its `location` field (`PathEngineException.java`, constructors), so the
+  message suffix is the only place HAPI reports one
+- **WHEN** `(1 + 1) < 'a'` is evaluated
+- **THEN** the message ends ` (@char 1)` and the offset is 0: a parenthesised
+  group is built by `parseExpression` itself, which sets its start
+  (`:1076`, `:1135-1143`), and the `<` level finds no work to gather
 - **AND** the message does **not** contain the failing sub-expression's text
   (`1 < 'a'`): the `expression` argument is used only when the location is
   `null` and the expression text is empty, where `rep` appends ` (@~` and the
@@ -3690,9 +3738,12 @@ The engine SHALL report an evaluation failure as an error carrying HAPI's messag
 - **AND** an engine with no `location` configured, which is every engine the
   suite and the harness run, adds no ` (at ...)` fragment
   (`FHIRPATH_LOCATION`, `:586-588`)
-- **AND** this holds for every execution error raised through `makeException`
-  or `makeExceptionPlural` (`:572-582`); the 21 evaluation-stage cases of
-  `path.errors.001` are graded on their stage, not on their message
+- **AND** the position rule holds for every execution error raised through
+  `makeException` or `makeExceptionPlural` (`:572-594`) with a non-null holder
+  whose start is set: a term `parseExpression` built (a literal, a name, a
+  function call, a parenthesised group). A holder built by `newGroup`, or a
+  `null` holder, gives the bare message and no offset. The 21 evaluation-stage
+  cases of `path.errors.001` are graded on their stage, not on their message
 
 #### Scenario: [path.errors.003] evaluation never panics
 

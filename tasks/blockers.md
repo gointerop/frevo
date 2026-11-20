@@ -2377,6 +2377,14 @@ oracle-builder's (listed in the proposer's hand-off): `fhirpath_oracle.rs`
 (the zone test and constant, the `testStringIntegerLiteralToQuantity` address),
 `oracle/engine.rs:136`, `path_navigation.rs:603-604` and `:1203`,
 `path_parse_errors.rs:556-571`, and new tests for `path.compare.015`.
+After the thirty-sixth review (same day): `path.errors.002` also requires the
+bare message and **no** offset for `1 + 1 < 'a'` and `(1=1) and 1 + 1 < 'a'`
+(a `newGroup` holder has no start) and ` (@char 1)`, offset 0, for
+`(1 + 1) < 'a'`; `path.compare.013` and `.015` require the evaluation's result
+to carry the rewrite (`...value.where($this < @1975-01-01T00:00:00Z)` returns
+`1974-12-25T19:35:45Z`; `(@2012-04-15T10:00:00+02:00).where($this < @2013-01-01T00:00:00Z)`
+returns `2012-04-15T08:00:00Z`). Tests: `path_parse_errors.rs` (`path.errors.002`)
+and `path_compare_equality.rs` (`.013`, `.015`).
 
 ## 2026-11-20 — `add-fhirpath-and-codegen-r4` — element rewrite after the evaluation
 
