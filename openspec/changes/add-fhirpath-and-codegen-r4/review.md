@@ -1,5 +1,40 @@
 CHANGES_REQUESTED
 
+Thirty-ninth review (commit `4331265`, 2026-11-20, diff against `bc22e8c`).
+Findings 2, 3 and 4 of the thirty-eighth review are resolved, and finding 1 is
+resolved except for its precision-14 case. The detail is in the dated section
+at the end. One finding remains:
+
+1. **`path.compare.015` leaves the precision-14 boundary rewrite ungraded,
+   although HAPI's value is fixed, and it cites the wrong scenario.** The new
+   AND says "A boundary at precision 14 is malformed (`path.boundary.009`) and
+   is rewritten only where it parses; no scenario grades that string". The
+   malformed precision-14 forms are in `path.boundary.015`, not `.009`.
+   HAPI's result is also derivable, so leaving it ungraded is a gap rather than
+   an out-of-scope note. `BaseDateTimeType.parse` works as follows for
+   `2014-01-01T08:00:+14:00`:
+   - It takes the offset at index 17 (`getOffsetIndex`, `:330-342`, called at `:470`).
+   - The time part is `08:00:` (length 6), so it reads the seconds from
+     `value.substring(17, 19)` = `+1`, which is 1 (`:491`), at SECOND
+     precision.
+   - It sets the zone to `+14:00` (`:479`).
+   
+   The instant is therefore `2014-01-01T08:00:01+14:00`.
+   `compareDateTimeElements` then rewrites it (precision SECOND > DAY). So:
+   - `@2014-01-01T08.lowBoundary(14).where($this < @2015-01-01T00:00:00Z)`
+     returns `2013-12-31T18:00:01Z`.
+   - `@2014-01-01T08:05+08:00.lowBoundary(14).where($this < @2015-01-01T00:00:00Z)`
+     (seconds `+0`) returns `2014-01-01T00:05:00Z`.
+   - `@2014-01-01.lowBoundary(14).where(...)` (`2014-01-01T00:00:+14:00`)
+     returns `2013-12-31T10:00:01Z`.
+   - The `highBoundary(14)` forms with seconds `-1` fail before any
+     comparison, as `.015` already states.
+   
+   Fix: replace the "no scenario grades that string" sentence with these
+   cases, and correct the cross-reference to `path.boundary.015`.
+
+## Thirty-eighth-review findings as raised (commit `56d3bf3`)
+
 Thirty-eighth review (commit `56d3bf3`, 2026-11-20, diff against `16e6719`).
 `ENGINE` is `org.hl7.fhir.r4/src/main/java/org/hl7/fhir/r4/fhirpath/FHIRPathEngine.java`
 at `73c432b5`. The column rule is right, and it corrects a value I passed in the
@@ -2852,6 +2887,61 @@ every column by hand from `FHIRLexer.java` and `SourceLocation.java` at
 **Registers, counts and validators.**
 - `DEV-0017` and `DEBT-0017` match the scenario text, so finding 1 will need
   their "a `dateTime` boundary" wording widened the same way.
+- `harness/scripts/check-registries.sh` reports "registers agree" (23
+  deviations, 17 debt entries).
+- `openspec validate add-fhirpath-and-codegen-r4 --strict` reports the change
+  is valid.
+- The headings number codegen 49, model 83 and path 378, 510 in total. No ID
+  is duplicated, added, removed or renumbered.
+
+## Thirty-ninth review - commit `4331265` (2026-11-20)
+
+Scope: the diff `bc22e8c..4331265`. It covers `path.compare.015`'s boundary
+rule, the `path.boundary.013` offset, the direct-construction list in
+`path.errors.002` and its title, `path.strictness.003`, `DEV-0017`,
+`DEBT-0017`, tasks 35 and 53, and `spec.md`.
+
+**Thirty-eighth finding 1 (boundary rewrite): resolved except for precision
+14 (the new finding).**
+- `applyDatePrecision` (`DateTimeUtil.java:130-144`) keeps 4, 7 or 10
+  characters at precision 4, 6/7 and 8/10. Below 11 no offset is appended
+  (`:84-86`, `:174-176`), so the built value is YEAR, MONTH or DAY precision
+  and is not rewritten.
+- At 17 it keeps the whole text, with a stated offset or `+14:00`/`-12:00`.
+- `@2014-01-01.lowBoundary(17)` is `2014-01-01T00:00:00.000+14:00`, which in
+  Zulu is `2013-12-31T10:00:00.000Z`. `compareTimes` then sees 2013 < 2015,
+  so `where` keeps it.
+- `@2014-01-01T08.lowBoundary(8)` is `2014-01-01` at DAY precision.
+  `compareTimes` returns -1 on the year before any precision test, so `where`
+  returns it unchanged.
+- `date + quantity` (`ENGINE:2703-2704`) and `today()` (`:4779-4783`) are
+  `DateType` values.
+
+**Thirty-eighth finding 2: resolved.** The byte offset is now 12, and the
+column 15 is unchanged.
+
+**Thirty-eighth finding 3: resolved.**
+- `:2801` is now named as `opTimes`, with its operator start on the `*`.
+- `:3102` (`new PathEngineException(e)` in `opMod`) is listed as having no
+  location, no suffix and no offset.
+- The `getOpStart()` list (`:2063`, `:2080`, `:2725`, `:2731`, `:2763`) is
+  complete.
+
+**Thirty-eighth finding 4: resolved.**
+- `Messages.properties:301` through `MessageFormat` (`I18nBase.java:206`)
+  gives `Attempt to use 'as()' on more than one item ('3', ...)`.
+- `patient-example.xml` has three `Patient.name` elements (`:50`, `:56`,
+  `:60`; `:122` is the contact's).
+- `funcAs`'s holder renders as `as(HumanName)` (`ExpressionNode.java:402-421`).
+- `opAs`'s holder is the `Patient` node that carries the operation, and it
+  renders as `Patient.name as HumanName` (`:451-461`).
+- Both are constructed without a location. `funcAs` builds `FHIR.HumanName`
+  and `opAs` uses the bare name, each through `isKnownType`.
+- The narrowed title, the new AND clause and the task 53 text are accurate.
+
+**Registers, counts and validators.**
+- `DEV-0017` and `DEBT-0017` now state the precision rule (14 or 17
+  rewritten, 10 or less not).
 - `harness/scripts/check-registries.sh` reports "registers agree" (23
   deviations, 17 debt entries).
 - `openspec validate add-fhirpath-and-codegen-r4 --strict` reports the change
