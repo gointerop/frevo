@@ -1121,9 +1121,27 @@ The engine SHALL implement the four ordered comparison operators as `FHIRPathEng
   `@2014-01-01.lowBoundary(17).where($this < @2015-01-01T00:00:00Z)` returns
   `2013-12-31T10:00:00.000Z` (from `2014-01-01T00:00:00.000+14:00`), while
   `@2014-01-01T08.lowBoundary(8).where($this < @2015-01-01T00:00:00Z)` returns
-  `2014-01-01`, unchanged. A boundary at precision 14 is malformed
-  (`path.boundary.009`) and is rewritten only where it parses; no scenario
-  grades that string
+  `2014-01-01`, unchanged
+- **AND** a boundary at precision 14 is the malformed text of
+  `path.boundary.015` (17 characters, then the offset), which
+  `BaseDateTimeType.parse` reads with the offset found at index 17
+  (`getOffsetIndex`, `BaseDateTimeType.java:330-342`; `:470-480`), the
+  seconds taken from the first two characters of the offset
+  (`substring(17, 19)`, `:491`) at SECOND precision, and the zone set from the
+  offset (`:479`); the comparison then rewrites that value to Zulu. So, each
+  followed by `.where($this < @2015-01-01T00:00:00Z)`:
+  - `@2014-01-01T08.lowBoundary(14)` (text `2014-01-01T08:00:+14:00`, seconds
+    `+1`) returns `2013-12-31T18:00:01Z`;
+  - `@2014-01-01T08:05+08:00.lowBoundary(14)` (text
+    `2014-01-01T08:05:+08:00`, seconds `+0`) returns `2014-01-01T00:05:00Z`;
+  - `@2014-01-01.lowBoundary(14)` (a `date` focus, text
+    `2014-01-01T00:00:+14:00`) returns `2013-12-31T10:00:01Z`;
+  - `@2014-01-01T08:05-05:00.highBoundary(14)` (text
+    `2014-01-01T08:05:-05:00`, seconds `-0`) returns `2014-01-01T13:05:00Z`;
+  - a `highBoundary(14)` whose text reads seconds `-1` (no offset on the focus,
+    so `-12:00`, as `@2014-01-01T08.highBoundary(14)`) fails while the boundary
+    is built, with the `Invalid date/time format` error of
+    `path.boundary.015`, before any comparison is reached
 - **AND** a `date + quantity` result and `today()` are `DateType` values and
   are never rewritten. `toDateTime()` builds no value: the R4 engine
   does not implement it (`DEV-0021`)

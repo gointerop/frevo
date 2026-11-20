@@ -141,6 +141,10 @@ at 8 is not); `path.boundary.013` gives the byte offset 12 for
 (`:2801`), adds `opMod`'s location-less `:3102`, and narrows "never the
 sub-expression's text" to `makeException`/`rep` errors; `path.strictness.003`
 gives the two exact `as`-singleton messages, which render the holder node.
+After the thirty-ninth review, `path.compare.015`'s precision-14 boundary
+clause was corrected in place to reference `path.boundary.015` and to grade
+HAPI's values (`2013-12-31T18:00:01Z`, `2014-01-01T00:05:00Z`,
+`2013-12-31T10:00:01Z`, `2014-01-01T13:05:00Z`, and the `-1`-seconds failure).
 
 | Area | IDs allocated | Range |
 |---|---:|---|
