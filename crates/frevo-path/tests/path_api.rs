@@ -41,7 +41,7 @@ use frevo_path::{
     Value,
 };
 
-use oracle::engine::EngineError;
+use oracle::engine::{EngineError, evaluate_host_aware, host_base_evaluator, parse_with_host};
 use oracle::input;
 
 // ---------------------------------------------------------------------------
@@ -188,34 +188,79 @@ trait FhirPath {
     fn parse_count(&self) -> usize;
 }
 
-/// Phase D binds the real surface here.
+/// The surface under test.
+///
+/// `frevo-path` already has the two halves `parse` and the plain evaluation
+/// need -- [`frevo_path::Expression::parse`] and [`frevo_path::Evaluator`],
+/// with [`frevo_path::Evaluator::with_host_services`] for `setEvaluationContext`
+/// -- so those are bound. What it does not have yet is task 54's surface over
+/// them: an evaluation that checks every result against a requested type
+/// (`FhirPathR4`'s `Msg.code(256)`) and `evaluateFirst`. Those answer
+/// `NotImplemented`, never a default: a requested type other than [`ANY`] is
+/// not filtered or ignored here, because a harness that checked the type
+/// itself would be grading the harness.
 fn fhir_path_under_test() -> Box<dyn FhirPath> {
-    Box::new(UnboundFhirPath)
+    Box::new(BoundFhirPath {
+        parsed: Vec::new(),
+        parses: 0,
+        host: None,
+    })
 }
 
-struct UnboundFhirPath;
+struct BoundFhirPath {
+    parsed: Vec<frevo_path::Expression>,
+    parses: usize,
+    host: Option<Arc<dyn HostServices>>,
+}
 
-impl FhirPath for UnboundFhirPath {
-    fn parse(&mut self, _expr: &str) -> Result<Parsed, EngineError> {
-        Err(EngineError::NotImplemented)
+impl BoundFhirPath {
+    fn run(
+        &self,
+        input: &Value,
+        expr: &frevo_path::Expression,
+        want: &str,
+    ) -> Result<Vec<Value>, EngineError> {
+        if want != ANY {
+            // Needs task 54's typed evaluation.
+            return Err(EngineError::NotImplemented);
+        }
+        let base = host_base_evaluator().ok_or(EngineError::NotImplemented)?;
+        evaluate_host_aware(&base, expr, Some(input), None, self.host.as_deref(), false)
+    }
+}
+
+impl FhirPath for BoundFhirPath {
+    fn parse(&mut self, expr: &str) -> Result<Parsed, EngineError> {
+        self.parses += 1;
+        let parsed = parse_with_host(expr, self.host.as_deref())?;
+        self.parsed.push(parsed);
+        Ok(Parsed(self.parsed.len() - 1))
     }
 
     fn evaluate(
         &mut self,
-        _input: &Value,
-        _expr: &str,
-        _want: &str,
+        input: &Value,
+        expr: &str,
+        want: &str,
     ) -> Result<Vec<Value>, EngineError> {
-        Err(EngineError::NotImplemented)
+        let parsed = self.parse(expr)?;
+        self.evaluate_parsed(input, parsed, want)
     }
 
     fn evaluate_parsed(
         &mut self,
-        _input: &Value,
-        _parsed: Parsed,
-        _want: &str,
+        input: &Value,
+        parsed: Parsed,
+        want: &str,
     ) -> Result<Vec<Value>, EngineError> {
-        Err(EngineError::NotImplemented)
+        let expr = self
+            .parsed
+            .get(parsed.0)
+            .ok_or_else(|| EngineError::Diagnostic {
+                message: format!("no expression was parsed under handle {}", parsed.0),
+                offset: None,
+            })?;
+        self.run(input, expr, want)
     }
 
     fn evaluate_first(
@@ -224,13 +269,16 @@ impl FhirPath for UnboundFhirPath {
         _expr: &str,
         _want: &str,
     ) -> Result<Option<Value>, EngineError> {
+        // Needs task 54's `evaluateFirst`.
         Err(EngineError::NotImplemented)
     }
 
-    fn set_host_services(&mut self, _host: Arc<dyn HostServices>) {}
+    fn set_host_services(&mut self, host: Arc<dyn HostServices>) {
+        self.host = Some(host);
+    }
 
     fn parse_count(&self) -> usize {
-        0
+        self.parses
     }
 }
 

@@ -61,13 +61,11 @@ impl std::fmt::Display for EngineError {
                 write!(f, "requires licensed terminology: {system}")
             }
             EngineError::NotImplemented => f.write_str(
-                "the stage or feature this case needs is not bound to the oracle harness yet \
-                 -- parse and check are bound, evaluate is bound for navigation, the \
-                 collection predicates, filtering, subsetting, combining and membership \
-                 (tasks 31-34), equality, equivalence and ordered comparison, boolean \
-                 logic and arithmetic over numbers, strings and quantities (tasks 35-37), \
-                 and convert_to_boolean \
-                 (crates/frevo-path/tests/oracle/engine.rs::engine_under_test)",
+                "the stage or feature this case needs is not implemented by frevo-path yet \
+                 -- every stage the crate exposes is bound, so this is the crate answering \
+                 EvalError::Unsupported or CheckError::NotImplemented, a setting or surface \
+                 the crate has no API for, or the pinned R4 type package being absent \
+                 (crates/frevo-path/tests/oracle/engine.rs)",
             ),
         }
     }
@@ -327,11 +325,11 @@ impl SuiteEngine for FrontEndEngine {
         parsed: ParsedHandle,
         input: Option<&SuiteInput>,
         _context: &CaseContext<'_>,
-        _flags: StrictnessFlags,
+        flags: StrictnessFlags,
     ) -> Result<Vec<ResultItem>, EngineError> {
-        // The strictness flags are read by the type operators, which are not
-        // bound yet; the evaluator core reads neither them nor the case
-        // context's types (see the `context` handling below).
+        // The strictness flags are the two `as` rules, which the evaluator
+        // takes through `with_as_rules`; the evaluator core does not read the
+        // case context's types (see the `context` handling below).
         // `FHIRPathTests.test` evaluates with
         // `fp.evaluate(res, node)`: the input resource is the focus and
         // `$this`, and there is no application context.
@@ -378,7 +376,11 @@ impl SuiteEngine for FrontEndEngine {
             .evaluator
             .clone()
             .ok_or(EngineError::NotImplemented)?
-            .with_time_zone_offset_minutes(zone);
+            .with_time_zone_offset_minutes(zone)
+            .with_as_rules(
+                flags.enforce_as_singleton_rule,
+                flags.enforce_as_case_sensitive,
+            );
         // `FHIRPathTests.test` installs `FHIRPathTestEvaluationServices`
         // before every case (`FHIRPathTests.java:176`), so evaluation sees the
         // suite's host service whenever the configuration installs it.
@@ -649,28 +651,72 @@ pub fn check_in_type(
     context_type: Option<&str>,
     host: Option<&dyn HostServices>,
 ) -> Result<TypeSet, EngineError> {
+    match check_outcome_in_type(expr, context_type, host, CheckOptions::default())? {
+        Ok(outcome) => Ok(outcome.types),
+        Err(CheckError::NotImplemented { .. }) => Err(EngineError::NotImplemented),
+        Err(CheckError::Failed {
+            message, offset, ..
+        }) => Err(EngineError::Diagnostic { message, offset }),
+    }
+}
+
+/// The check pass against a named context type (or none), with an optional
+/// host service and explicit [`CheckOptions`], answering the pass's own
+/// outcome: the inferred types **and** the warnings, or its [`CheckError`].
+/// The outer error is the one prerequisite the pass cannot report itself --
+/// no type model -- and is [`EngineError::NotImplemented`].
+///
+/// `path_check_warnings.rs` grades the warning list through this, and
+/// `path_strictness.rs` the polymorphic-names and SQL-on-FHIR switches.
+#[allow(dead_code)]
+pub fn check_outcome_in_type(
+    expr: &frevo_path::Expression,
+    context_type: Option<&str>,
+    host: Option<&dyn HostServices>,
+    options: CheckOptions,
+) -> Result<Result<CheckOutcome, CheckError>, EngineError> {
+    let checker = checker_for(host, options)?;
+    Ok(checker.check_with_warnings(expr, &request_in_type(context_type)))
+}
+
+/// [`check_outcome_in_type`] through the pass's **simple** surface,
+/// [`Checker::check`], which answers the inferred types and drops the
+/// warnings itself (`path.check.019`).
+#[allow(dead_code)]
+pub fn simple_check_in_type(
+    expr: &frevo_path::Expression,
+    context_type: Option<&str>,
+    host: Option<&dyn HostServices>,
+    options: CheckOptions,
+) -> Result<Result<TypeSet, CheckError>, EngineError> {
+    let checker = checker_for(host, options)?;
+    Ok(checker.check(expr, &request_in_type(context_type)))
+}
+
+/// A checker over the pinned model; `NotImplemented` when the type package is
+/// absent.
+fn checker_for<'a>(
+    host: Option<&'a dyn HostServices>,
+    options: CheckOptions,
+) -> Result<Checker<'a>, EngineError> {
     let model = sd_model().ok_or(EngineError::NotImplemented)?;
-    let request = CheckRequest {
+    let mut checker = Checker::new(model).with_options(options);
+    if let Some(h) = host {
+        checker = checker.with_host_services(h);
+    }
+    Ok(checker)
+}
+
+/// `fp.check(res, "Resource", type, type, node)` for a named context type, or
+/// the null-context check without one.
+fn request_in_type(context_type: Option<&str>) -> CheckRequest<'_> {
+    CheckRequest {
         root_resource_type: context_type.map(|_| "Resource"),
         resource_type: context_type,
         focus: match context_type {
             Some(t) => CheckFocus::Context(t),
             None => CheckFocus::None,
         },
-    };
-    let mut checker = Checker::new(model).with_options(CheckOptions {
-        allow_polymorphic_names: false,
-        emit_sql_on_fhir_warning: false,
-    });
-    if let Some(h) = host {
-        checker = checker.with_host_services(h);
-    }
-    match checker.check_with_warnings(expr, &request) {
-        Ok(outcome) => Ok(outcome.types),
-        Err(CheckError::NotImplemented { .. }) => Err(EngineError::NotImplemented),
-        Err(CheckError::Failed {
-            message, offset, ..
-        }) => Err(EngineError::Diagnostic { message, offset }),
     }
 }
 
@@ -1312,11 +1358,18 @@ impl Model for SdModel {
 }
 
 /// A node of a typed input tree.
+///
+/// `by_name` indexes `children` by element name, so a navigation step costs
+/// what the engine spends on it and not a scan of every sibling: without it
+/// `Patient.birthDate` over a `Patient` with a thousand names reads a thousand
+/// entries in this adapter, and `path.perf.004`'s ratio would measure the
+/// harness rather than the engine.
 #[derive(Debug)]
 struct TreeNode {
     type_name: String,
     is_resource: bool,
     children: Vec<(String, Value)>,
+    by_name: HashMap<String, Vec<Value>>,
     primitive: Option<Primitive>,
 }
 
@@ -1330,12 +1383,7 @@ impl Node for TreeNode {
     }
 
     fn children(&self, name: &str) -> Result<Vec<Value>, NodeError> {
-        Ok(self
-            .children
-            .iter()
-            .filter(|(n, _)| n == name)
-            .map(|(_, v)| v.clone())
-            .collect())
+        Ok(self.by_name.get(name).cloned().unwrap_or_default())
     }
 
     fn all_children(&self) -> Result<Vec<(String, Value)>, NodeError> {
@@ -1353,10 +1401,15 @@ fn tree_node(
     children: Vec<(String, Value)>,
     primitive: Option<Primitive>,
 ) -> Value {
+    let mut by_name: HashMap<String, Vec<Value>> = HashMap::new();
+    for (name, value) in &children {
+        by_name.entry(name.clone()).or_default().push(value.clone());
+    }
     Value::Node(Arc::new(TreeNode {
         type_name: type_name.to_string(),
         is_resource,
         children,
+        by_name,
         primitive,
     }))
 }
@@ -1679,10 +1732,9 @@ fn engine_error(e: EvalError) -> EngineError {
         EvalError::Unsupported { .. } => EngineError::NotImplemented,
         EvalError::Execution { message, offset } => EngineError::Diagnostic {
             message,
-            // `.into()` accepts both `usize` and `Option<usize>`: the
-            // offset is absent where HAPI's failing node has no start
+            // The offset is absent where HAPI's failing node has no start
             // (path.errors.002).
-            offset: offset.into(),
+            offset,
         },
         EvalError::Node(e) => EngineError::Diagnostic {
             message: e.to_string(),

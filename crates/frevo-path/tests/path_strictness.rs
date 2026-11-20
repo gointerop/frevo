@@ -40,8 +40,11 @@ mod oracle;
 
 use std::sync::OnceLock;
 
+use frevo_path::{CheckError, CheckOptions};
+
 use oracle::engine::{
-    CaseContext, EngineConfig, EngineError, StrictnessFlags, SuiteEngine, engine_under_test,
+    CaseContext, EngineConfig, EngineError, StrictnessFlags, SuiteEngine, check_outcome_in_type,
+    engine_under_test, evaluate_items, host_base_evaluator, parse_with_host, typed_input,
 };
 use oracle::input::{self, SuiteInput};
 use oracle::run::{self, CaseStatus, RunReport};
@@ -53,8 +56,15 @@ use oracle::value::ResultItem;
 //
 // The committed harness carries the two `as` switches and the SQL-on-FHIR one;
 // the other five are engine-wide fields with public getters and setters that
-// nothing in the harness models. So the whole set is driven through this seam,
-// whose unbound binding answers `NotImplemented` -- never a default.
+// nothing in the harness models. So the whole set is driven through this seam.
+//
+// What `frevo-path` already exposes is bound: the two `as` rules
+// (`Evaluator::with_as_rules`), implicit string conversion
+// (`Evaluator::with_implicit_string_conversion`), and polymorphic names and the
+// SQL-on-FHIR warning in the check pass (`CheckOptions`). What it does not --
+// a settings value an engine created for a FHIR version reports, polymorphic
+// names in **evaluation**, legacy mode and liquid mode -- answers
+// `NotImplemented`, never a default (task 52).
 // ---------------------------------------------------------------------------
 
 /// The seven switches `FHIRPathEngine` exposes, in this crate's polarity:
@@ -114,37 +124,104 @@ trait ConfiguredEngine {
 /// An engine created for `version` with no explicit configuration, which is
 /// what `path.strictness.001` and `path.strictness.007` are about.
 fn engine_for_version(_version: &str) -> Box<dyn ConfiguredEngine> {
-    Box::new(UnboundConfigured)
+    // `frevo-path` has no constructor that takes a FHIR version and no
+    // settings value to report, so the version selects nothing yet and
+    // `settings()` answers `NotImplemented`.
+    Box::new(BoundConfigured)
 }
 
 /// An engine created the way `FhirPathR4`'s constructor creates one.
 fn server_facing_engine() -> Box<dyn ConfiguredEngine> {
-    Box::new(UnboundConfigured)
+    Box::new(BoundConfigured)
 }
 
-struct UnboundConfigured;
+/// The binding over `frevo_path`'s public surface: [`Evaluator`] for
+/// evaluation and [`Checker`] for the check pass, over the oracle harness's R4
+/// model.
+///
+/// [`Evaluator`]: frevo_path::Evaluator
+/// [`Checker`]: frevo_path::Checker
+struct BoundConfigured;
 
-impl ConfiguredEngine for UnboundConfigured {
+impl BoundConfigured {
+    /// The parsed expression. `frevo-path` has no liquid mode, so with it on
+    /// there is nothing to parse with; off, the parser is the ordinary one,
+    /// which is what liquid mode off means.
+    fn parse(expr: &str, settings: Settings) -> Result<frevo_path::Expression, EngineError> {
+        if settings.liquid_mode {
+            return Err(EngineError::NotImplemented);
+        }
+        parse_with_host(expr, None)
+    }
+
+    /// The typed tree for `inp`, or `None` for no input.
+    fn root(inp: Option<&SuiteInput>) -> Result<Option<frevo_path::Value>, EngineError> {
+        match inp {
+            None => Ok(None),
+            Some(i) => typed_input(i)
+                .map(Some)
+                .ok_or_else(|| EngineError::Diagnostic {
+                    message: format!("{} cannot be built into a typed tree", i.file),
+                    offset: None,
+                }),
+        }
+    }
+}
+
+impl ConfiguredEngine for BoundConfigured {
     fn settings(&self) -> Result<Settings, EngineError> {
+        // Needs a settings value an engine reports as created (task 52).
         Err(EngineError::NotImplemented)
     }
 
     fn evaluate_with(
         &mut self,
-        _expr: &str,
-        _inp: Option<&SuiteInput>,
-        _settings: Settings,
+        expr: &str,
+        inp: Option<&SuiteInput>,
+        settings: Settings,
     ) -> Result<Vec<ResultItem>, EngineError> {
-        Err(EngineError::NotImplemented)
+        // The evaluator has no legacy mode and no polymorphic-names switch, so
+        // either one on cannot be evaluated; off is what the evaluator does.
+        // The SQL-on-FHIR warning is a check-pass setting and is not read here.
+        if settings.legacy_mode || settings.allow_polymorphic_names {
+            return Err(EngineError::NotImplemented);
+        }
+        let parsed = Self::parse(expr, settings)?;
+        let root = Self::root(inp)?;
+        let evaluator = host_base_evaluator()
+            .ok_or(EngineError::NotImplemented)?
+            .with_as_rules(
+                settings.enforce_as_singleton_rule,
+                settings.enforce_as_case_sensitive,
+            )
+            .with_implicit_string_conversion(settings.implicit_string_conversion);
+        evaluate_items(&evaluator, &parsed, root.as_ref())
     }
 
     fn check_with(
         &mut self,
-        _expr: &str,
-        _inp: Option<&SuiteInput>,
-        _settings: Settings,
+        expr: &str,
+        inp: Option<&SuiteInput>,
+        settings: Settings,
     ) -> Result<(), EngineError> {
-        Err(EngineError::NotImplemented)
+        // The check pass has no legacy mode either; the two `as` rules and
+        // implicit string conversion are evaluation settings it does not read.
+        if settings.legacy_mode {
+            return Err(EngineError::NotImplemented);
+        }
+        let parsed = Self::parse(expr, settings)?;
+        let context_type = inp.and_then(SuiteInput::resource_type);
+        let options = CheckOptions {
+            allow_polymorphic_names: settings.allow_polymorphic_names,
+            emit_sql_on_fhir_warning: settings.emit_sql_on_fhir_warning,
+        };
+        match check_outcome_in_type(&parsed, context_type, None, options)? {
+            Ok(_) => Ok(()),
+            Err(CheckError::NotImplemented { .. }) => Err(EngineError::NotImplemented),
+            Err(CheckError::Failed {
+                message, offset, ..
+            }) => Err(EngineError::Diagnostic { message, offset }),
+        }
     }
 }
 

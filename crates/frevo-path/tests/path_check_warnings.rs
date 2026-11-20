@@ -21,13 +21,17 @@
 //! at `73c432b5f43ddbce979978a760ec4aa81e929094`, with the constants themselves
 //! in `org.hl7.fhir.utilities/.../i18n/I18nConstants.java`.
 //!
-//! The oracle runs against a trait object, so it compiles and runs before the
-//! check pass exists. The unbound binding returns
-//! [`CheckError::NotImplemented`] from every surface, which is an error value
-//! and not a panicking placeholder, so a run reports what is missing instead of
-//! aborting.
+//! The oracle runs against a trait object, bound to `frevo_path::Checker`
+//! through the shared harness. Anything the pass cannot check answers
+//! [`CheckError::NotImplemented`], which is an error value and not a panicking
+//! placeholder, so a run reports what is missing instead of aborting.
 //!
 //! Scenario coverage: `path.check.015` through `path.check.019`.
+
+// `dead_code` is allowed for the shared harness module and nothing else; see
+// `tests/oracle/mod.rs:18-23`.
+#[allow(dead_code)]
+mod oracle;
 
 // ---------------------------------------------------------------------------
 // The nine warning ids
@@ -138,7 +142,8 @@ pub enum CheckError {
     /// The check genuinely failed: this is what the suite's
     /// `invalid="semantic"` cases select for.
     Failed { message: String },
-    /// No check pass is bound to this oracle yet.
+    /// The check pass cannot check the expression yet, or the harness has no
+    /// type model. Not a verdict.
     NotImplemented,
 }
 
@@ -147,8 +152,8 @@ impl std::fmt::Display for CheckError {
         match self {
             CheckError::Failed { message } => f.write_str(message),
             CheckError::NotImplemented => f.write_str(
-                "no check pass is bound to the path-check-warnings oracle yet \
-                 (crates/frevo-path/tests/path_check_warnings.rs::oracle_under_test)",
+                "the check pass cannot check this expression yet, or the harness has no \
+                 type model (crates/frevo-path/tests/path_check_warnings.rs::oracle_under_test)",
             ),
         }
     }
@@ -190,32 +195,104 @@ pub trait CheckOracle {
     ) -> Result<Vec<String>, CheckError>;
 }
 
-/// The check pass this oracle grades.
+/// The check pass this oracle grades: `frevo_path::Checker` over the oracle
+/// harness's R4 model, through [`oracle::engine::check_outcome_in_type`].
 ///
-/// Task 50a replaces this body with the real one, over the generated R4 model.
+/// The binding only translates. The ids come from the crate's own
+/// `frevo_path::WarningId`, matched by their stable string, so an id the crate
+/// emits that this oracle does not know is a panic rather than a dropped
+/// warning; the crate's `CheckError::NotImplemented` stays `NotImplemented`.
 fn oracle_under_test() -> Box<dyn CheckOracle> {
-    Box::new(UnboundCheck)
+    Box::new(BoundCheck)
 }
 
-struct UnboundCheck;
+struct BoundCheck;
 
-impl CheckOracle for UnboundCheck {
+impl BoundCheck {
+    fn parse(expression: &str) -> Result<frevo_path::Expression, CheckError> {
+        frevo_path::Expression::parse(expression).map_err(|e| CheckError::Failed {
+            message: format!("{expression:?} does not parse: {}", e.message()),
+        })
+    }
+
+    fn options(settings: CheckSettings) -> frevo_path::CheckOptions {
+        frevo_path::CheckOptions {
+            allow_polymorphic_names: false,
+            emit_sql_on_fhir_warning: settings.emit_sql_on_fhir_warning,
+        }
+    }
+}
+
+/// The crate's answer, as this oracle grades it. The outer error is the
+/// harness having no type model, which is not a verdict either.
+fn graded<T>(
+    answer: Result<Result<T, frevo_path::CheckError>, oracle::engine::EngineError>,
+) -> Result<T, CheckError> {
+    match answer {
+        Err(_) => Err(CheckError::NotImplemented),
+        Ok(Err(frevo_path::CheckError::NotImplemented { .. })) => Err(CheckError::NotImplemented),
+        Ok(Err(frevo_path::CheckError::Failed { message, .. })) => {
+            Err(CheckError::Failed { message })
+        }
+        Ok(Ok(value)) => Ok(value),
+    }
+}
+
+fn warning_id(id: frevo_path::WarningId) -> WarningId {
+    WarningId::ALL
+        .into_iter()
+        .find(|w| w.as_str() == id.as_str())
+        .unwrap_or_else(|| {
+            panic!(
+                "the check pass emitted {:?}, which is not one of the nine ids",
+                id.as_str()
+            )
+        })
+}
+
+impl CheckOracle for BoundCheck {
     fn check_with_warnings(
         &mut self,
-        _expression: &str,
-        _context_type: &str,
-        _settings: CheckSettings,
+        expression: &str,
+        context_type: &str,
+        settings: CheckSettings,
     ) -> Result<CheckOutcome, CheckError> {
-        Err(CheckError::NotImplemented)
+        let parsed = Self::parse(expression)?;
+        let outcome = graded(oracle::engine::check_outcome_in_type(
+            &parsed,
+            Some(context_type),
+            None,
+            Self::options(settings),
+        ))?;
+        Ok(CheckOutcome {
+            inferred_types: outcome.types.names().to_vec(),
+            warnings: outcome
+                .warnings
+                .iter()
+                .map(|w| CheckWarning {
+                    id: warning_id(w.id),
+                    message: w.message.clone(),
+                })
+                .collect(),
+        })
     }
 
     fn check(
         &mut self,
-        _expression: &str,
-        _context_type: &str,
-        _settings: CheckSettings,
+        expression: &str,
+        context_type: &str,
+        settings: CheckSettings,
     ) -> Result<Vec<String>, CheckError> {
-        Err(CheckError::NotImplemented)
+        // The crate's simple surface, `Checker::check`, drops the warnings
+        // itself; this binding does not discard anything.
+        let parsed = Self::parse(expression)?;
+        let types = graded(oracle::engine::simple_check_in_type(
+            &parsed,
+            Some(context_type),
+            None,
+            Self::options(settings),
+        ))?;
+        Ok(types.names().to_vec())
     }
 }
 

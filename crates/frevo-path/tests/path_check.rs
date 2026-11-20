@@ -1005,14 +1005,28 @@ fn a_guard_that_can_never_be_true_leaves_the_other_operand_checked_as_usual() {
 
     // The same shape with a guard that *can* be true fails identically, so
     // whether the guard is satisfiable changes nothing the check observes.
+    // Only the position suffix differs, because `Period` is two bytes shorter
+    // than `dateTime` and so the `toString` node sits two columns earlier:
+    // byte offset 30 after four spaces is column 1 + 30 + 4 = 35 for the
+    // satisfiable guard, byte offset 32 after four spaces is column 37 for the
+    // unsatisfiable one (path.errors.002). Each suffix is asserted on its own
+    // before the rest is compared.
+    let without_suffix = |expr: &str, suffix: &str| {
+        let (id, message) = verdict_at_effective(expr, &["Period", "Timing"])
+            .unwrap_or_else(|| panic!("{expr:?} as Period|Timing must fail the check"));
+        let text = message.strip_suffix(suffix).unwrap_or_else(|| {
+            panic!("the message must end with the position {suffix:?}: {message:?}")
+        });
+        (id, text.to_string())
+    };
     assert_eq!(
-        verdict_at_effective(
+        without_suffix(
             "$this is Period implies $this.toString().length() >= 10",
-            &["Period", "Timing"],
+            " (@char 35)",
         ),
-        verdict_at_effective(
+        without_suffix(
             "$this is dateTime implies $this.toString().length() >= 10",
-            &["Period", "Timing"],
+            " (@char 37)",
         ),
     );
 }
