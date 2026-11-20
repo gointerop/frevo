@@ -1,5 +1,42 @@
 CHANGES_REQUESTED
 
+Forty-seventh review (commit `cd6f9a3`, 2026-11-20, diff against `0503660`).
+Both forty-sixth findings are resolved: `path.quantity.019` and `DEV-0029`
+record the server-facing `HAPI-0274: `, and `DEV-0017` says 43. One finding
+remains. `path.quantity.019` over-states which operations reach the worker in
+two places, and the differential relies on that list to explain HAPI's
+failures. `ENGINE` is the R4 `FHIRPathEngine.java` at `73c432b5`. The detail
+is in the dated section at the end.
+
+1. **Two of `path.quantity.019`'s "raises `HAPI-0274: `" claims are wrong
+   for part of their range.**
+   - **`comparable()`.** `funcComparable` (`ENGINE:4609-4641`) returns
+     without consulting the worker in several cases:
+     - `false` when either side is not a single `Quantity`, or when either
+       `system` is absent or the two differ;
+     - `false` when either `code` is absent;
+     - `true` when the two codes are **equal** (`:4627-4629`).
+     
+     It reaches `worker.getUcumService()` (`:4631`) only for two UCUM-system
+     quantities with **different** codes. So under the server-facing worker,
+     `1 'cm'.comparable(2 'cm')` is `true`, while the three `Comparable`
+     cases raise. The scenario says "in `comparable()` with a UCUM `system`".
+   - **`<=` with a unit on one side only.** `opLessOrEqual` (`:2533-2538`)
+     computes `lunit`/`runit` and tests
+     `(lunit == null && runit == null) || lunit.equals(runit)`. When the left
+     has no unit and the right has one, `lunit.equals(...)` throws a
+     `NullPointerException` before the worker is reached. For example,
+     `Parameters.parameter[0].value <= Parameters.parameter[2].value` over
+     `parameters-example-quantities.xml` fails with the JVM's NPE text, under
+     **both** workers, not with `HAPI-0274: `. When the right has no unit and
+     the left has one, the lists differ and the worker is reached. `<`, `>`
+     and `>=` compare lists with `Base.compareDeep` and have no such NPE.
+   - Fix: narrow both clauses to what the code does, add the two examples,
+     and cross-reference the existing NPE statement (`path.compare.014`,
+     spec `:1037`), which already gives `1 'kg' <= 1 year` that NPE.
+
+## Forty-sixth-review findings as raised (commit `b356a10`)
+
 Forty-sixth review (commit `b356a10`, 2026-11-20, diff against `beb1101`).
 Every value in the four amended scenarios matches the pinned engine run under
 the suite's worker and HAPI's recorded results, and so do both JVM messages.
@@ -3761,3 +3798,90 @@ returns a service or `null`.
   is valid.
 - The headings number codegen 49, model 83 and path 381, 513 in total. No ID
   is duplicated, added, removed or renumbered.
+
+## Forty-seventh review - commit `cd6f9a3` (2026-11-20)
+
+Scope: the diff `0503660..cd6f9a3`. It covers the new `path.quantity.019`,
+`.015`'s null-service clause, the requirement sentence, `DEV-0029` and its
+blocker, the `DEV-0017` count, and `spec.md` and task text.
+
+**Call sites (`ENGINE`).** `grep getUcumService()` gives `:2265`, `:2294`,
+`:2307`, `:2338`, `:2443`, `:2490`, `:2540`, `:2588`, `:2793`, `:2798`,
+`:3013`, `:3018`, `:4631` and `:4633`. In detail:
+- **Equality and equivalence.** In `qtyEqual` (`:2258-2290`) and
+  `qtyEquivalent` (`:2331-2363`), the worker is consulted right after the two
+  `hasValue` tests, so for every pair of valued quantities. `doEquals`
+  (`:2190-2192`) and `doEquivalent` (`:2204-2206`) route every
+  `Quantity`/`Quantity` pair there, so `=`, `!=`, `~` and `!~` all raise.
+  Correct.
+  - That covers `.001`-`.004`, `.009`-`.012`, `.017` and `testQuantity1`-`6`.
+  - It also covers `testQuantity9`-`11`: each is `... = <quantity>` after the
+    `*` or `/`.
+- **Ordered comparisons.**
+  - `<` (`:2437-2443`) consults the worker when the `code` lists differ.
+  - `>` (`:2485-2490`) and `>=` (`:2582-2588`) consult it when the `unit`
+    lists differ, compared with `compareDeep`.
+  - `<=` (`:2533-2540`) compares the `unit` strings, with the NPE in
+    finding 1.
+  - `6 days < 1 week` has codes `d` and `wk`, and `8 days > 1 week` has units
+    `days` and `week`. So both raise. Correct.
+- **Multiplication and division.** `opTimes` (`:2793`) and `opDivideBy`
+  (`:3013`) evaluate `worker.getUcumService() != null` only for two
+  `Quantity` operands, after the integer and decimal arms. So
+  `.006`-`.008` raise. Correct.
+- **`comparable()`.** See finding 1.
+
+**What never reaches the worker.** `testLessOrEqual30` and
+`testGreaterThan30` have equal `unit` lists, so they are `true` under both
+workers. Correct.
+
+**Exception and unwrapping.**
+- `HapiWorkerContext.java:372-374` throws
+  `new UnsupportedOperationException(Msg.code(274))`. `Msg.code` renders
+  `"HAPI-0274: "` (`Msg.java:31-32`), so the message is exactly `HAPI-0274: `.
+- The exception is a `RuntimeException`, not a `FHIRException`.
+  `FhirPathR4.java:66-70` catches only `FHIRException`, and
+  `FhirPathFilterInterceptor.java:80-84` catches only
+  `FhirPathExecutionException`. So it escapes both. Correct.
+
+**Workers.**
+- `FhirR4.java:54-57` returns `new FhirPathR4(theFhirContext)`, which builds
+  on `HapiWorkerContext` (`FhirPathR4.java:34-36`).
+- `SearchParamExtractorR4.initFhirPath` (`:99-101`) builds a plain
+  `FHIRPathEngine` on a new `HapiWorkerContext`.
+- `TestingUtilities.java:84-89` builds the suite's `SimpleWorkerContext` and
+  calls `setUcumService(new UcumEssenceService(...ucum-essence.xml))`.
+- All as cited.
+
+**`.015` reframed: correct.** The `getUcumService() == null` branches are at
+`:2443-2445`, `:2490-2492`, `:2540-2542` and `:2588-2590`. Neither HAPI
+worker reaches them, and Frevo always has UCUM data. "Not graded" is right for
+an unreachable branch.
+
+**`DEV-0029` framing.**
+- The HAPI paragraph and the specification paragraph are right.
+- Under constitution section 1 this is a case where HAPI (its server-facing
+  worker) and the specification disagree. The rule is to choose HAPI and raise
+  the case at the checkpoint.
+- The entry instead chooses the suite's UCUM answers. It says so plainly, and
+  it marks itself "pending owner". It has its own decision entry in
+  `tasks/blockers.md`, with both options and their consequences: under (b), a
+  server-facing configuration that raises, while the oracle harness keeps the
+  suite's answers. That is the correct way to hold a non-HAPI choice until
+  the owner rules.
+- "Configuration flag: none" and "Debt: none" are coherent. The debt register
+  records a flag not built where Frevo **matches** HAPI and HAPI is the
+  hazard. Here Frevo does not match HAPI, and any work owed under option (b)
+  is the blocker's.
+- The rationale's "never answers differently from the suite's recorded value"
+  is accurate.
+
+**Registers, counts and validators.**
+- `harness/scripts/check-registries.sh` reports "registers agree" (26
+  deviations, 19 debt entries).
+- `openspec validate add-fhirpath-and-codegen-r4 --strict` reports the change
+  is valid.
+- The headings number codegen 49, model 83 and path 382, 514 in total. No ID
+  is duplicated, removed or renumbered.
+- The oracle-builder's uncommitted `Cargo.lock` and `crates/frevo-codegen`
+  edits in the worktree were left untouched.
