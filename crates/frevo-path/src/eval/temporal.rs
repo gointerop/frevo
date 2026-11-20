@@ -34,6 +34,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use crate::seam::value::{PartialDate, PartialDateTime, TemporalPrecision, Value};
 
 use super::EvalError;
+use super::error::At;
 use super::navigate::fhir_type;
 use super::operand::Qty;
 
@@ -252,7 +253,7 @@ impl Dt {
 
 /// The date or dateTime a value is, or `None` when it is neither
 /// (`Base.isDateTime`, `dateTimeValue`).
-pub(super) fn from_value(value: &Value, offset: usize) -> Result<Option<Dt>, EvalError> {
+pub(super) fn from_value(value: &Value) -> Result<Option<Dt>, EvalError> {
     let (text, is_date_time) = match value {
         Value::Date(d) => (d.lexical.clone(), false),
         Value::DateTime(d) => (d.lexical.clone(), true),
@@ -269,9 +270,9 @@ pub(super) fn from_value(value: &Value, offset: usize) -> Result<Option<Dt>, Eva
         },
         _ => return Ok(None),
     };
-    Dt::parse(&text, is_date_time).map(Some).ok_or_else(|| {
-        EvalError::execution(format!("Invalid date/time format: \"{text}\""), offset)
-    })
+    Dt::parse(&text, is_date_time)
+        .map(Some)
+        .ok_or_else(|| EvalError::plain(format!("Invalid date/time format: \"{text}\"")))
 }
 
 /// `BaseDateTimeType.compareTimes(left, right, null)` over fields already in
@@ -407,7 +408,7 @@ pub(super) fn compare_ordered(l: &Dt, r: &Dt) -> Option<Ordering> {
 /// `DateTimeType.copy()` re-parses the value and a `DateTimeType` does not
 /// accept minute precision, so an equality or equivalence involving one is
 /// an error upstream (`Invalid date/time format`).
-pub(super) fn check_copyable(d: &Dt, text_of: &str, offset: usize) -> Result<(), EvalError> {
+pub(super) fn check_copyable(d: &Dt, text_of: &str) -> Result<(), EvalError> {
     if d.is_date_time && d.precision == TemporalPrecision::Minute {
         // `copy()` re-parses the string. With **no** zone the parse itself
         // fails (`BaseDateTimeType.java:797`); with one it succeeds and the
@@ -420,7 +421,7 @@ pub(super) fn check_copyable(d: &Dt, text_of: &str, offset: usize) -> Result<(),
         } else {
             format!("Invalid date/time format: \"{text_of}\"")
         };
-        return Err(EvalError::execution(message, offset));
+        return Err(EvalError::plain(message));
     }
     Ok(())
 }
@@ -495,11 +496,14 @@ impl Dt {
     fn into_value(self) -> Value {
         let lexical = self.render();
         if self.is_date_time {
+            // A new `DateTimeType` (`dateAdd` returns a copy,
+            // `FHIRPathEngine.java:2715-2716`), which an ordered comparison
+            // rewrites to Zulu like any other (`path.compare.015`).
             Value::DateTime(PartialDateTime {
                 lexical,
                 precision: self.precision,
                 offset_minutes: self.offset,
-                occurrence: 0,
+                occurrence: super::rewrite::new_occurrence(),
             })
         } else {
             Value::Date(PartialDate {
@@ -528,19 +532,14 @@ fn int_value(text: &str) -> i32 {
 /// The unit is the quantity's code when it has one, else its unit text, so
 /// `1 year` (unit only) and `1 'd'` (code) both reach a calendar arm while
 /// `1 'a'` and `1 'mo'` are refused.
-pub(super) fn date_add(
-    value: &Value,
-    q: &Qty,
-    negate: bool,
-    at: usize,
-) -> Result<Value, EvalError> {
-    let Some(mut dt) = from_value(value, at)? else {
-        return Err(EvalError::execution(
-            format!("{} is not a date or dateTime", fhir_type(value)),
-            at,
-        ));
+pub(super) fn date_add(value: &Value, q: &Qty, negate: bool, op: At) -> Result<Value, EvalError> {
+    let Some(mut dt) = from_value(value)? else {
+        return Err(EvalError::plain(format!(
+            "{} is not a date or dateTime",
+            fhir_type(value)
+        )));
     };
-    check_copyable(&dt, &super::collection::convert_to_string(value), at)?;
+    check_copyable(&dt, &super::collection::convert_to_string(value))?;
     let amount = int_value(q.value.as_deref().unwrap_or("0"));
     let amount = i64::from(if negate {
         0i32.wrapping_sub(amount)
@@ -557,7 +556,7 @@ pub(super) fn date_add(
                     "Error in date arithmetic: attempt to add a definite quantity duration \
                      time unit {shown}"
                 ),
-                at,
+                op,
             ));
         }
         Some("months" | "month") => dt.add_months(amount),
@@ -567,7 +566,7 @@ pub(super) fn date_add(
                     "Error in date arithmetic: attempt to add a definite quantity duration \
                      time unit {shown}"
                 ),
-                at,
+                op,
             ));
         }
         Some("weeks" | "week" | "wk") => dt.add_ms(amount * 7 * MS_PER_DAY),
@@ -579,7 +578,7 @@ pub(super) fn date_add(
         _ => {
             return Err(EvalError::execution(
                 format!("Error in date arithmetic: unrecognized time unit {shown}"),
-                at,
+                op,
             ));
         }
     }
@@ -626,7 +625,9 @@ pub(super) fn now() -> Value {
         lexical,
         precision: TemporalPrecision::Millisecond,
         offset_minutes: Some(offset),
-        occurrence: 0,
+        // `DateTimeType.now()` is a new object each call, which a comparison
+        // rewrites to Zulu (`path.compare.015`).
+        occurrence: super::rewrite::new_occurrence(),
     })
 }
 

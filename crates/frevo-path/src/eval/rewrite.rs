@@ -33,10 +33,13 @@
 //!   the same text, or a later evaluation of the same parse, starts from the
 //!   text again. The object's identity is the value's occurrence number
 //!   ([`new_occurrence`]), which every clone of the value shares;
-//! - any other `dateTime` value an evaluation builds -- `toDateTime()`,
-//!   `now()`, a boundary or arithmetic result -- is also a new `DateTimeType`
-//!   upstream and would be rewritten the same way; no scenario covers it, so it
-//!   carries no occurrence number and is not;
+//! - a `dateTime` value the evaluation **builds** -- `now()`, a `dateTime`
+//!   plus or minus a quantity, a `lowBoundary` or `highBoundary` result -- is
+//!   a new `DateTimeType` upstream and is rewritten the same way, so each gets
+//!   an occurrence number when it is built (`path.compare.015`). Only one finer
+//!   than a day is rewritten ([`temporal::zulu_lexical`] answers nothing for a
+//!   day or coarser), and a `date` result or `today()` is a `DateType`, which
+//!   is never rewritten. The R4 engine has no `toDateTime()` (`DEV-0021`);
 //! - identity is the node's allocation. A model that hands out a fresh node
 //!   for the same element on every navigation does not see the rewrite; the
 //!   harness model and an in-memory tree do.

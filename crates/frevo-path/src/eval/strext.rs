@@ -41,19 +41,19 @@ use crate::seam::value::Value;
 use crate::syntax::ast::{Function, NodeId};
 
 use super::collection::{convert_list_to_string, convert_to_string};
+use super::error::At;
 use super::operand::{STRING_TYPES, has_type, text_of};
 use super::strfn::{from_utf16, utf16};
 use super::{Context, EvalError, Run};
 
-fn oob(at: usize) -> EvalError {
-    EvalError::execution("Index 0 out of bounds for length 0", at)
+fn oob() -> EvalError {
+    EvalError::plain("Index 0 out of bounds for length 0")
 }
 
-fn npe(what: &str, at: usize) -> EvalError {
-    EvalError::execution(
-        format!("Cannot invoke \"String.{what}()\" because the primitive value is null"),
-        at,
-    )
+fn npe(what: &str) -> EvalError {
+    EvalError::plain(format!(
+        "Cannot invoke \"String.{what}()\" because the primitive value is null"
+    ))
 }
 
 /// `String.getBytes()`: UTF-8, an unpaired surrogate becoming `?`.
@@ -81,7 +81,7 @@ fn bytes_to_hex(bytes: &[u8]) -> String {
 
 /// `hexStringToByteArray`: a non-digit reads as -1, the pair wrapping as a
 /// Java `byte`; an odd length reads past the end and raises.
-fn hex_to_bytes(text: &str, at: usize) -> Result<Vec<u8>, EvalError> {
+fn hex_to_bytes(text: &str) -> Result<Vec<u8>, EvalError> {
     let units = utf16(text);
     let digit = |u: u16| -> i32 {
         u8::try_from(u)
@@ -93,10 +93,11 @@ fn hex_to_bytes(text: &str, at: usize) -> Result<Vec<u8>, EvalError> {
     let mut i = 0;
     while i < units.len() {
         let Some(&low) = units.get(i + 1) else {
-            return Err(EvalError::execution(
-                format!("Index {} out of bounds for length {}", i + 1, units.len()),
-                at,
-            ));
+            return Err(EvalError::plain(format!(
+                "Index {} out of bounds for length {}",
+                i + 1,
+                units.len()
+            )));
         };
         let v = (digit(units[i]) << 4) + digit(low);
         out.push(v.to_le_bytes()[0]);
@@ -128,7 +129,7 @@ fn base64_encode(bytes: &[u8], url: bool) -> String {
 
 /// `Base64.getDecoder()` / `getUrlDecoder()`: padding is optional, anything
 /// outside the alphabet raises.
-fn base64_decode(text: &str, url: bool, at: usize) -> Result<Vec<u8>, EvalError> {
+fn base64_decode(text: &str, url: bool) -> Result<Vec<u8>, EvalError> {
     let value = |c: u8| -> Option<u32> {
         match c {
             b'A'..=b'Z' => Some(u32::from(c - b'A')),
@@ -153,25 +154,20 @@ fn base64_decode(text: &str, url: bool, at: usize) -> Result<Vec<u8>, EvalError>
                 _ => false,
             };
             if !ok {
-                return Err(EvalError::execution(
+                return Err(EvalError::plain(
                     "Input byte array has wrong 4-byte ending unit",
-                    at,
                 ));
             }
             i += if n == 2 { 2 } else { 1 };
             if i < bytes.len() {
-                return Err(EvalError::execution(
-                    format!("Input byte array has incorrect ending byte at {i}"),
-                    at,
-                ));
+                return Err(EvalError::plain(format!(
+                    "Input byte array has incorrect ending byte at {i}"
+                )));
             }
             break;
         }
         let Some(v) = value(c) else {
-            return Err(EvalError::execution(
-                format!("Illegal base64 character {c:x}"),
-                at,
-            ));
+            return Err(EvalError::plain(format!("Illegal base64 character {c:x}")));
         };
         acc = (acc << 6) | v;
         n += 1;
@@ -184,9 +180,8 @@ fn base64_decode(text: &str, url: bool, at: usize) -> Result<Vec<u8>, EvalError>
     }
     match n {
         1 => {
-            return Err(EvalError::execution(
+            return Err(EvalError::plain(
                 "Last unit does not have enough valid bits",
-                at,
             ));
         }
         2 => out.push((acc >> 4).to_le_bytes()[0]),
@@ -215,7 +210,7 @@ fn escape_xml(text: &str) -> String {
 }
 
 /// `Utilities.unescapeXml`: an entity with no `;`, or an unknown one, raises.
-fn unescape_xml(text: &str, at: usize) -> Result<String, EvalError> {
+fn unescape_xml(text: &str) -> Result<String, EvalError> {
     let chars: Vec<char> = text.chars().collect();
     let mut out = String::with_capacity(text.len());
     let mut i = 0;
@@ -225,10 +220,10 @@ fn unescape_xml(text: &str, at: usize) -> Result<String, EvalError> {
             let mut name = String::new();
             loop {
                 let Some(&c) = chars.get(i) else {
-                    return Err(EvalError::execution(
-                        format!("Index {i} out of bounds for length {}", chars.len()),
-                        at,
-                    ));
+                    return Err(EvalError::plain(format!(
+                        "Index {i} out of bounds for length {}",
+                        chars.len()
+                    )));
                 };
                 if c == ';' {
                     break;
@@ -243,10 +238,7 @@ fn unescape_xml(text: &str, at: usize) -> Result<String, EvalError> {
                 "quot" => out.push('"'),
                 "mu" => out.push('\u{3bc}'),
                 other => {
-                    return Err(EvalError::execution(
-                        format!("unknown XML entity \"{other}\""),
-                        at,
-                    ));
+                    return Err(EvalError::plain(format!("unknown XML entity \"{other}\"")));
                 }
             }
         } else {
@@ -287,14 +279,14 @@ fn escape_json(text: &str) -> String {
 }
 
 /// `Utilities.unescapeJson`, defects included (see the module notes).
-fn unescape_json(text: &str, at: usize) -> Result<String, EvalError> {
+fn unescape_json(text: &str) -> Result<String, EvalError> {
     let units = utf16(text);
     let mut out: Vec<u16> = Vec::with_capacity(units.len());
     let bounds = |i: usize| {
-        EvalError::execution(
-            format!("Index {i} out of bounds for length {}", units.len()),
-            at,
-        )
+        EvalError::plain(format!(
+            "Index {i} out of bounds for length {}",
+            units.len()
+        ))
     };
     let mut i = 0;
     while i < units.len() {
@@ -313,28 +305,28 @@ fn unescape_json(text: &str, at: usize) -> Result<String, EvalError> {
                 Some('t') => out.push(u16::from(b'\t')),
                 Some('u') => {
                     if i + 5 > units.len() {
-                        return Err(EvalError::execution(
-                            format!("begin {}, end {}, length {}", i + 1, i + 5, units.len()),
-                            at,
-                        ));
+                        return Err(EvalError::plain(format!(
+                            "begin {}, end {}, length {}",
+                            i + 1,
+                            i + 5,
+                            units.len()
+                        )));
                     }
                     let hex = from_utf16(&units[i + 1..i + 5]);
-                    let code = i32::from_str_radix(&hex, 16).map_err(|_| {
-                        EvalError::execution(format!("For input string: \"{hex}\""), at)
-                    })?;
+                    let code = i32::from_str_radix(&hex, 16)
+                        .map_err(|_| EvalError::plain(format!("For input string: \"{hex}\"")))?;
                     let Ok(unit) = u16::try_from(code) else {
-                        return Err(EvalError::execution(
-                            format!("Not a valid Unicode code point: 0x{code:X}"),
-                            at,
-                        ));
+                        return Err(EvalError::plain(format!(
+                            "Not a valid Unicode code point: 0x{code:X}"
+                        )));
                     };
                     out.push(unit);
                 }
                 _ => {
-                    return Err(EvalError::execution(
-                        format!("Unknown JSON escape \\{}", from_utf16(&[ch])),
-                        at,
-                    ));
+                    return Err(EvalError::plain(format!(
+                        "Unknown JSON escape \\{}",
+                        from_utf16(&[ch])
+                    )));
                 }
             }
         } else {
@@ -361,7 +353,7 @@ fn url_encode(text: &str) -> String {
 }
 
 /// `URLDecoder.decode(string, "UTF-8")`.
-fn url_decode(text: &str, at: usize) -> Result<String, EvalError> {
+fn url_decode(text: &str) -> Result<String, EvalError> {
     let bytes = text.as_bytes();
     let mut out: Vec<u8> = Vec::with_capacity(bytes.len());
     let mut i = 0;
@@ -372,15 +364,15 @@ fn url_decode(text: &str, at: usize) -> Result<String, EvalError> {
                 i += 1;
             }
             b'%' => {
-                let hex = bytes.get(i + 1..i + 3).ok_or_else(|| {
-                    EvalError::execution("Incomplete trailing escape (%) pattern", at)
-                })?;
+                let hex = bytes
+                    .get(i + 1..i + 3)
+                    .ok_or_else(|| EvalError::plain("Incomplete trailing escape (%) pattern"))?;
                 let value = std::str::from_utf8(hex)
                     .ok()
                     .filter(|h| h.bytes().all(|b| b.is_ascii_hexdigit()))
                     .and_then(|h| u8::from_str_radix(h, 16).ok())
                     .ok_or_else(|| {
-                        EvalError::execution("Illegal hex characters in escape (%) pattern", at)
+                        EvalError::plain("Illegal hex characters in escape (%) pattern")
                     })?;
                 out.push(value);
                 i += 3;
@@ -475,7 +467,7 @@ impl Run<'_> {
     ) -> Result<Vec<Value>, EvalError> {
         match function {
             Function::Replace => self.func_replace(context, focus, id),
-            Function::Trim => self.func_trim(focus, id),
+            Function::Trim => self.func_trim(focus),
             Function::Split => self.func_split(context, focus, id),
             Function::Join => self.func_join(context, focus, id),
             other => self.func_codec(context, focus, id, other),
@@ -489,7 +481,6 @@ impl Run<'_> {
         focus: &[Value],
         id: NodeId,
     ) -> Result<Vec<Value>, EvalError> {
-        let at = self.expr.node(id).start();
         let p0 = self.param(id, 0)?;
         let target = self.execute(context, focus, p0, true)?;
         let p1 = self.param(id, 1)?;
@@ -503,7 +494,7 @@ impl Run<'_> {
                     "Error evaluating FHIRPath expression: The function replace can only be used on a singleton value but found {}",
                     focus.len()
                 ),
-                at,
+                At::node(self.expr.node(id)),
             ));
         };
         if !(self.implicit_string_conversion || has_type(one, &STRING_TYPES)) {
@@ -523,12 +514,11 @@ impl Run<'_> {
     }
 
     /// `funcTrim`: `String.trim()` behind a size check; no type guard.
-    fn func_trim(&self, focus: &[Value], id: NodeId) -> Result<Vec<Value>, EvalError> {
+    fn func_trim(&self, focus: &[Value]) -> Result<Vec<Value>, EvalError> {
         let [one] = focus else {
             return Ok(Vec::new());
         };
-        let at = self.expr.node(id).start();
-        let cnt = text_of(self.model, one).ok_or_else(|| npe("trim", at))?;
+        let cnt = text_of(self.model, one).ok_or_else(|| npe("trim"))?;
         // `trim` removes every character up to and including U+0020.
         Ok(vec![Value::String(
             cnt.trim_matches(|c: char| c <= ' ').to_string(),
@@ -542,10 +532,9 @@ impl Run<'_> {
         focus: &[Value],
         id: NodeId,
     ) -> Result<Vec<Value>, EvalError> {
-        let at = self.expr.node(id).start();
         let p = self.param(id, 0)?;
         let nl = self.execute(context, focus, p, true)?;
-        let first = nl.first().ok_or_else(|| oob(at))?;
+        let first = nl.first().ok_or_else(oob)?;
         let sep = text_of(self.model, first);
         let [one] = focus else {
             return Ok(Vec::new());
@@ -557,12 +546,11 @@ impl Run<'_> {
             return Ok(Vec::new());
         };
         let Some(sep) = sep else {
-            return Err(npe("length", at));
+            return Err(npe("length"));
         };
         if sep.is_empty() {
-            return Err(EvalError::execution(
+            return Err(EvalError::plain(
                 "split() with an empty separator does not terminate in the pinned engine",
-                at,
             ));
         }
         Ok(simple_split(&utf16(&cnt), &utf16(&sep))
@@ -578,12 +566,11 @@ impl Run<'_> {
         focus: &[Value],
         id: NodeId,
     ) -> Result<Vec<Value>, EvalError> {
-        let at = self.expr.node(id).start();
         let mut sep = String::new();
         if !self.expr.node(id).parameters().is_empty() {
             let p = self.param(id, 0)?;
             let nl = self.execute(context, focus, p, true)?;
-            let first = nl.first().ok_or_else(|| oob(at))?;
+            let first = nl.first().ok_or_else(oob)?;
             // `StringBuilder.append((String) null)` writes `null`.
             sep = text_of(self.model, first).unwrap_or_else(|| "null".to_string());
         }
@@ -603,29 +590,28 @@ impl Run<'_> {
         id: NodeId,
         function: Function,
     ) -> Result<Vec<Value>, EvalError> {
-        let at = self.expr.node(id).start();
         let p = self.param(id, 0)?;
         let nl = self.execute(context, focus, p, true)?;
-        let first = nl.first().ok_or_else(|| oob(at))?;
+        let first = nl.first().ok_or_else(oob)?;
         let format = text_of(self.model, first);
         let [one] = focus else {
             return Ok(Vec::new());
         };
-        let cnt = text_of(self.model, one).ok_or_else(|| npe("getBytes", at))?;
+        let cnt = text_of(self.model, one).ok_or_else(|| npe("getBytes"))?;
         let out = match (function, format.as_deref()) {
             (Function::Encode, Some("hex")) => bytes_to_hex(&java_bytes(&cnt)),
             (Function::Encode, Some("base64")) => base64_encode(&java_bytes(&cnt), false),
             (Function::Encode, Some("urlbase64")) => base64_encode(&java_bytes(&cnt), true),
-            (Function::Decode, Some("hex")) => java_string(&hex_to_bytes(&cnt, at)?),
-            (Function::Decode, Some("base64")) => java_string(&base64_decode(&cnt, false, at)?),
-            (Function::Decode, Some("urlbase64")) => java_string(&base64_decode(&cnt, true, at)?),
+            (Function::Decode, Some("hex")) => java_string(&hex_to_bytes(&cnt)?),
+            (Function::Decode, Some("base64")) => java_string(&base64_decode(&cnt, false)?),
+            (Function::Decode, Some("urlbase64")) => java_string(&base64_decode(&cnt, true)?),
             (Function::Escape, Some("html")) => escape_xml(&cnt),
             (Function::Escape, Some("json")) => escape_json(&cnt),
             (Function::Escape, Some("url")) => url_encode(&cnt),
             (Function::Escape, Some("md")) => markdown_escape(&cnt),
-            (Function::Unescape, Some("html")) => unescape_xml(&cnt, at)?,
-            (Function::Unescape, Some("json")) => unescape_json(&cnt, at)?,
-            (Function::Unescape, Some("url")) => url_decode(&cnt, at)?,
+            (Function::Unescape, Some("html")) => unescape_xml(&cnt)?,
+            (Function::Unescape, Some("json")) => unescape_json(&cnt)?,
+            (Function::Unescape, Some("url")) => url_decode(&cnt)?,
             (Function::Unescape, Some("md")) => markdown_unescape(&cnt),
             _ => return Ok(Vec::new()),
         };

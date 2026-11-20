@@ -42,7 +42,7 @@ use types::{Types, is_backbone};
 
 use crate::seam::host::HostServices;
 use crate::seam::model::{ElementInfo, Model, TypeSet};
-use crate::syntax::ast::Expression;
+use crate::syntax::ast::{At, Expression};
 
 /// What the expression is checked against.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -163,18 +163,20 @@ impl<'a> Checker<'a> {
         expr: &Expression,
         focus: CheckFocus<'_>,
     ) -> Result<Option<Types>, CheckError> {
-        let offset = expr.node(expr.root()).start();
+        // `makeException(expr, FHIRPATH_UNKNOWN_CONTEXT, ...)` is held by the
+        // root node, whose start a precedence group lacks (`path.errors.002`).
+        let at = At::node(expr.node(expr.root()));
         match focus {
             CheckFocus::None => Ok(None),
             CheckFocus::Context(context) => {
                 let mut types = Types::new(Some(CollectionStatus::Singleton));
-                self.add_context_types(context, &mut types, offset, "FHIRPATH_UNKNOWN_CONTEXT")?;
+                self.add_context_types(context, &mut types, at, "FHIRPATH_UNKNOWN_CONTEXT")?;
                 Ok(Some(types))
             }
             CheckFocus::Types(list) => {
                 let mut types = Types::new(Some(CollectionStatus::Singleton));
                 for t in list {
-                    self.add_context_types(t, &mut types, offset, "FHIRPATH_UNKNOWN_CONTEXT")?;
+                    self.add_context_types(t, &mut types, at, "FHIRPATH_UNKNOWN_CONTEXT")?;
                 }
                 Ok(Some(types))
             }
@@ -187,20 +189,20 @@ impl<'a> Checker<'a> {
         &self,
         context: &str,
         types: &mut Types,
-        offset: usize,
+        at: At,
         unknown: &'static str,
     ) -> Result<(), CheckError> {
         let unknown_context = || {
             CheckError::failed(
                 unknown,
                 format!("Unknown context evaluating FHIRPath expression: {context}"),
-                offset,
+                at,
             )
         };
         if context.contains('#') || context.contains("://") {
             return Err(CheckError::not_implemented(
                 format!("a context given as a URL or a fragment ({context})"),
-                offset,
+                at.offset,
             ));
         }
         let mut segments = context.split('.');
@@ -217,7 +219,7 @@ impl<'a> Checker<'a> {
             CheckError::failed(
                 "FHIRPATH_UNKNOWN_CONTEXT_ELEMENT",
                 format!("Unknown context element evaluating FHIRPath expression: {context}"),
-                offset,
+                at,
             )
         };
         let mut current = head.to_string();
@@ -229,7 +231,7 @@ impl<'a> Checker<'a> {
                         "the elements of {current}, which the model given to the check pass \
                          cannot describe"
                     ),
-                    offset,
+                    at.offset,
                 ));
             };
             let found = match_context_element(elements, segment, self.model);
@@ -244,7 +246,7 @@ impl<'a> Checker<'a> {
                     _ => {
                         return Err(CheckError::not_implemented(
                             format!("a context path through a multi-typed element ({context})"),
-                            offset,
+                            at.offset,
                         ));
                     }
                 };

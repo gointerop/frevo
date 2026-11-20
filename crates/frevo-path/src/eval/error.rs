@@ -18,6 +18,7 @@ use std::error::Error;
 use std::fmt;
 
 use crate::seam::node::NodeError;
+pub(crate) use crate::syntax::ast::At;
 
 /// An evaluation did not produce a result.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -28,12 +29,28 @@ pub enum EvalError {
     Unsupported { feature: String, offset: usize },
     /// An execution error: the expression is valid and the engine implements
     /// it, and evaluating it over this input fails.
-    Execution { message: String, offset: usize },
+    ///
+    /// `offset` is the zero-based byte offset of the first token of the node
+    /// HAPI attributes the failure to. It is present exactly when HAPI's
+    /// message carries a position suffix -- ` (@char C)` or
+    /// ` (@line L char C)`, already part of `message` -- and absent where
+    /// HAPI's failing node has no start, where it raises with no holder, and
+    /// where the failure is not a `PathEngineException` built with a location
+    /// at all (`path.errors.002`).
+    Execution {
+        message: String,
+        offset: Option<usize>,
+    },
     /// The model failed to navigate. Propagated, never turned into empty.
     Node(NodeError),
 }
 
 impl EvalError {
+    /// The not-implemented kind, at `at`'s byte offset.
+    pub(crate) fn unsupported_at(feature: impl Into<String>, at: At) -> Self {
+        EvalError::unsupported(feature, at.offset)
+    }
+
     pub(crate) fn unsupported(feature: impl Into<String>, offset: usize) -> Self {
         EvalError::Unsupported {
             feature: feature.into(),
@@ -41,10 +58,29 @@ impl EvalError {
         }
     }
 
-    pub(crate) fn execution(message: impl Into<String>, offset: usize) -> Self {
+    /// `makeException(holder, ...)` and `makeExceptionPlural` (and the direct
+    /// `new PathEngineException(message, id, location, ...)` constructions):
+    /// `message` is HAPI's formatted text, and `at` the holder's start, or the
+    /// operator start the construction passes. With a start, the message gets
+    /// `rep(location, ...)`'s suffix and the error the start's byte offset;
+    /// without one it is the bare message with no offset
+    /// (`PathEngineException.java:81-93`, `path.errors.002`).
+    pub(crate) fn execution(message: impl Into<String>, at: At) -> Self {
+        let mut message = message.into();
+        let offset = at.position.map(|position| {
+            message.push_str(&position.location.suffix());
+            position.offset
+        });
+        EvalError::Execution { message, offset }
+    }
+
+    /// A failure HAPI raises with no location: a `PathEngineException` built
+    /// without one, or a Java runtime exception the engine does not wrap. The
+    /// message is exactly as given and there is no offset (`path.errors.002`).
+    pub(crate) fn plain(message: impl Into<String>) -> Self {
         EvalError::Execution {
             message: message.into(),
-            offset,
+            offset: None,
         }
     }
 
@@ -58,9 +94,8 @@ impl EvalError {
     /// [`NodeError`].
     pub fn offset(&self) -> Option<usize> {
         match self {
-            EvalError::Unsupported { offset, .. } | EvalError::Execution { offset, .. } => {
-                Some(*offset)
-            }
+            EvalError::Unsupported { offset, .. } => Some(*offset),
+            EvalError::Execution { offset, .. } => *offset,
             EvalError::Node(_) => None,
         }
     }
@@ -73,9 +108,14 @@ impl fmt::Display for EvalError {
                 f,
                 "{feature} is not implemented by this engine yet (at offset {offset})"
             ),
-            EvalError::Execution { message, offset } => {
-                write!(f, "{message} (at offset {offset})")
-            }
+            EvalError::Execution {
+                message,
+                offset: Some(offset),
+            } => write!(f, "{message} (at offset {offset})"),
+            EvalError::Execution {
+                message,
+                offset: None,
+            } => f.write_str(message),
             EvalError::Node(e) => write!(f, "navigation failed: {e}"),
         }
     }

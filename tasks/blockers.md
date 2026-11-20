@@ -2464,3 +2464,30 @@ carry HAPI's suffix. The rewrite of values the evaluation builds is in
 since the R4 engine does not implement it (`DEV-0021`). Oracle-builder: the
 harness line `tests/oracle/engine.rs:1680-1683` (`offset: Some(offset)` to an
 optional offset) and the tests listed in the proposer's hand-off.
+
+## 2026-11-20 -- add-fhirpath-and-codegen-r4: two test-side defects found while landing path.errors.002
+
+**What was done.** The implementer landed HAPI's column suffix and the
+optional offset (`EvalError::Execution { offset: Option<usize> }`), the check
+stage's suffix, the exact `as()` messages and the rewrite of built `dateTime`
+values. Two red results are in test files the implementer may not edit.
+
+1. **`path.check.011`, `tests/path_check.rs:1006-1017`.** The test's last
+   assertion requires `$this is Period implies $this.toString().length() >= 10`
+   and `$this is dateTime implies $this.toString().length() >= 10` (both
+   checked as `Period|Timing`) to fail with *identical* verdicts, message text
+   included. Under `path.errors.002`'s column rule the `toString` node is at
+   column 35 in the first (`Period` is two characters shorter than
+   `dateTime`) and 37 in the second, so HAPI's two messages differ in their
+   suffix (` (@char 35)` vs ` (@char 37)`). `path.check.011` does not ask for
+   identical messages. The assertion should compare the verdicts with each
+   suffix asserted and stripped, as `path.check.006`'s test already does.
+2. **The lint gate, `tests/oracle/engine.rs:1685`.** `offset: offset.into()`
+   was written so it compiles for `usize` and `Option<usize>`; with the field
+   now `Option<usize>` it is an identity conversion, and
+   `cargo clippy --workspace --all-targets -- -D warnings` fails on
+   `clippy::useless_conversion`. The line should become `offset,`. It is the
+   only clippy finding in the workspace.
+
+**Decision needed.** None from the owner: the oracle-builder fixes both lines
+(no assertion is weakened by either) on this branch.

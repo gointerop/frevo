@@ -39,6 +39,7 @@ use crate::syntax::literal::process_date_constant;
 
 use super::collection::convert_to_string;
 use super::equality::primitive_text;
+use super::error::At;
 use super::{Context, EvalError, Run, is_system_variable, navigate};
 
 impl Run<'_> {
@@ -49,7 +50,6 @@ impl Run<'_> {
         item: &Value,
         name: &str,
         at_entry: bool,
-        offset: usize,
         out: &mut Vec<Value>,
     ) -> Result<(), EvalError> {
         let gated = at_entry && self.app_context;
@@ -57,7 +57,7 @@ impl Run<'_> {
             if let Some(host) = self.host {
                 let known = host
                     .resolve_constant(name, ConstantMode::ImplicitBefore)
-                    .map_err(|e| EvalError::execution(e.message, offset))?;
+                    .map_err(|e| EvalError::plain(e.message))?;
                 if !known.is_empty() {
                     out.extend(known);
                     return Ok(());
@@ -76,7 +76,7 @@ impl Run<'_> {
             if let Some(host) = self.host {
                 out.extend(
                     host.resolve_constant(name, ConstantMode::ImplicitAfter)
-                        .map_err(|e| EvalError::execution(e.message, offset))?,
+                        .map_err(|e| EvalError::plain(e.message))?,
                 );
             }
         }
@@ -107,18 +107,18 @@ impl Run<'_> {
                             }
                             vec![v]
                         })
-                        .map_err(|message| EvalError::execution(message, node.start()))
+                        .map_err(EvalError::plain)
                 } else if let Some(name) = text.strip_prefix('%') {
                     if let Some(defined) = context.defined_variable(name) {
                         return Ok(defined.to_vec());
                     }
-                    self.resolve_environment(context, text, mode, node.start())
+                    self.resolve_environment(context, text, mode, At::node(node))
                 } else {
                     Err(EvalError::execution(
                         format!(
                             "Error evaluating FHIRPath expression: Invalid FHIRPath Constant {text}"
                         ),
-                        node.start(),
+                        At::node(node),
                     ))
                 }
             }
@@ -133,7 +133,7 @@ impl Run<'_> {
         _context: Context<'_>,
         s: &str,
         mode: ConstantMode,
-        offset: usize,
+        at: At,
     ) -> Result<Vec<Value>, EvalError> {
         let one = |text: String| Ok(vec![Value::String(text)]);
         match s {
@@ -145,7 +145,7 @@ impl Run<'_> {
                 None => Err(EvalError::execution(
                     "Error evaluating FHIRPath expression: Cannot use %resource in this \
                      context because no focus resource",
-                    offset,
+                    at,
                 )),
             },
             "%rootResource" => match self.root_resource {
@@ -153,7 +153,7 @@ impl Run<'_> {
                 None => Err(EvalError::execution(
                     "Error evaluating FHIRPath expression: Cannot use %rootResource in this \
                      context because no focus rootResource",
-                    offset,
+                    at,
                 )),
             },
             // Upstream adds `context.context` with no guard, which for an
@@ -174,11 +174,11 @@ impl Run<'_> {
             _ => match self.host {
                 None => Err(EvalError::execution(
                     format!("Error evaluating FHIRPath expression: Invalid FHIRPath Constant {s}"),
-                    offset,
+                    at,
                 )),
                 Some(host) => host
                     .resolve_constant(&s[1..], mode)
-                    .map_err(|e| EvalError::execution(e.message, offset)),
+                    .map_err(|e| EvalError::plain(e.message)),
             },
         }
     }
@@ -195,10 +195,7 @@ impl Run<'_> {
         let node = self.expr.node(id);
         let nl = self.execute(context, focus, self.param(id, 0)?, true)?;
         let Some(first) = nl.first() else {
-            return Err(EvalError::execution(
-                "Index 0 out of bounds for length 0",
-                node.start(),
-            ));
+            return Err(EvalError::plain("Index 0 out of bounds for length 0"));
         };
         let name = primitive_text(self.model, first).unwrap_or_else(|| convert_to_string(first));
         let value = match node.parameters().get(1) {
@@ -206,10 +203,9 @@ impl Run<'_> {
             None => focus.to_vec(),
         };
         if is_system_variable(&name) || context.defined_variable(&name).is_some() {
-            return Err(EvalError::execution(
-                format!("The variable '{name}' cannot be redefined"),
-                node.start(),
-            ));
+            return Err(EvalError::plain(format!(
+                "The variable '{name}' cannot be redefined"
+            )));
         }
         Ok((name, value, focus.to_vec()))
     }

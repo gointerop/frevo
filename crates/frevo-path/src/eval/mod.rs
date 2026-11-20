@@ -65,6 +65,8 @@ use std::sync::{Arc, Mutex};
 
 pub use error::EvalError;
 
+use self::error::At;
+
 use self::arith::Arith;
 use self::collection::Tri;
 use self::compare::Ordered;
@@ -358,9 +360,8 @@ impl Run<'_> {
                         // NullPointerException; Frevo returns the failure
                         // (`path.navigation.018`, `path.errors.003`).
                         None => {
-                            return Err(EvalError::execution(
+                            return Err(EvalError::plain(
                                 "$total is only defined inside the arguments of aggregate()",
-                                node.start(),
                             ));
                         }
                     }
@@ -369,7 +370,7 @@ impl Run<'_> {
                 } else {
                     let mut out = Vec::new();
                     for item in focus {
-                        self.execute_name(item, name, at_entry, node.start(), &mut out)?;
+                        self.execute_name(item, name, at_entry, &mut out)?;
                     }
                     out
                 }
@@ -590,10 +591,7 @@ impl Run<'_> {
     ) -> Result<Vec<Value>, EvalError> {
         let node = self.expr.node(id);
         let Some(&param) = node.parameters().first() else {
-            return Err(EvalError::execution(
-                "the indexer requires an index",
-                node.start(),
-            ));
+            return Err(EvalError::plain("the indexer requires an index"));
         };
         let index = self.execute(context, focus, param, true)?;
         let position = match index.as_slice() {
@@ -602,32 +600,26 @@ impl Run<'_> {
             [single] => match integer_of(single) {
                 Some(i) => i,
                 None => {
-                    return Err(EvalError::execution(
-                        format!(
-                            "the indexer requires an integer, but the index is a {}",
-                            navigate::fhir_type(single)
-                        ),
-                        self.expr.node(param).start(),
-                    ));
+                    return Err(EvalError::plain(format!(
+                        "the indexer requires an integer, but the index is a {}",
+                        navigate::fhir_type(single)
+                    )));
                 }
             },
             many => {
-                return Err(EvalError::execution(
-                    format!(
-                        "the indexer requires a single integer, but the index has {} items",
-                        many.len()
-                    ),
-                    self.expr.node(param).start(),
-                ));
+                return Err(EvalError::plain(format!(
+                    "the indexer requires a single integer, but the index has {} items",
+                    many.len()
+                )));
             }
         };
         // `Integer.parseInt(s) < focus.size()` admits a negative index and
         // `focus.get(-1)` then raises; raise a typed error rather than panic.
         let Ok(position) = usize::try_from(position) else {
-            return Err(EvalError::execution(
-                format!("Index {position} out of bounds for length {}", focus.len()),
-                self.expr.node(param).start(),
-            ));
+            return Err(EvalError::plain(format!(
+                "Index {position} out of bounds for length {}",
+                focus.len()
+            )));
         };
         Ok(focus.get(position).cloned().into_iter().collect())
     }
@@ -652,7 +644,11 @@ impl Run<'_> {
         holder: NodeId,
     ) -> Result<Vec<Value>, EvalError> {
         let node = self.expr.node(holder);
-        let (at, offset) = (node.start(), node.op_start());
+        // `holder.getStart()`, which `makeException` reports, and
+        // `holder.getOpStart()`, which the date-arithmetic and `opTimes`
+        // constructions pass instead (`path.errors.002`).
+        let (at, op_at) = (At::node(node), At::op(node));
+        let offset = node.op_start();
         let model = self.model;
         match op {
             Operation::Equals => equality::op_equals(model, left, right, false, offset),
@@ -673,12 +669,12 @@ impl Run<'_> {
             Operation::And | Operation::Or | Operation::Xor | Operation::Implies => {
                 self.op_logic(left, op, right, holder)
             }
-            Operation::Plus => arith::op_arith(model, left, Arith::Plus, right, at),
-            Operation::Minus => arith::op_arith(model, left, Arith::Minus, right, at),
-            Operation::Times => arith::op_arith(model, left, Arith::Times, right, at),
-            Operation::DivideBy => arith::op_arith(model, left, Arith::DivideBy, right, at),
-            Operation::Div => arith::op_arith(model, left, Arith::Div, right, at),
-            Operation::Mod => arith::op_arith(model, left, Arith::Mod, right, at),
+            Operation::Plus => arith::op_arith(model, left, Arith::Plus, right, at, op_at),
+            Operation::Minus => arith::op_arith(model, left, Arith::Minus, right, at, op_at),
+            Operation::Times => arith::op_arith(model, left, Arith::Times, right, at, op_at),
+            Operation::DivideBy => arith::op_arith(model, left, Arith::DivideBy, right, at, op_at),
+            Operation::Div => arith::op_arith(model, left, Arith::Div, right, at, op_at),
+            Operation::Mod => arith::op_arith(model, left, Arith::Mod, right, at, op_at),
             Operation::Concatenate => arith::op_concatenate(model, left, right, at),
             Operation::MemberOf => self.op_member_of(left, right, holder),
             other => Err(EvalError::unsupported(

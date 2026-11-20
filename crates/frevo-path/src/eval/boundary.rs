@@ -59,6 +59,7 @@ use crate::seam::value::{
 use crate::syntax::ast::{Function, NodeId};
 
 use super::arith::too_wide;
+use super::error::At;
 use super::hostfn::MadePrimitive;
 use super::operand::{Qty, has_type, int_of, qty_of, text_of};
 use super::temporal::Dt;
@@ -73,7 +74,10 @@ const LOW_OF_ZERO: &str = "-0.5000000000000000000000000";
 /// `highBoundaryForDecimal` of a zero.
 const HIGH_OF_ZERO: &str = "0.50000000000000000000000000000";
 
-fn focus_error(name: &str, count: usize, at: usize) -> EvalError {
+/// `makeExceptionPlural(focus.size(), expr, FHIRPATH_FOCUS, ...)`: the
+/// function node is the holder, so its start is the position
+/// (`path.errors.002`).
+fn focus_error(name: &str, count: usize, at: At) -> EvalError {
     EvalError::execution(
         format!(
             "Error evaluating FHIRPath expression: focus for {name} can only have one value, \
@@ -85,26 +89,20 @@ fn focus_error(name: &str, count: usize, at: usize) -> EvalError {
 
 /// The `NumberFormatException` `new BigDecimal(s)` raises for a character it
 /// does not read.
-fn not_a_decimal_character(bad: char, at: usize) -> EvalError {
-    EvalError::execution(
-        format!(
-            "Character {bad} is neither a decimal digit number, decimal point, nor \"e\" \
+fn not_a_decimal_character(bad: char) -> EvalError {
+    EvalError::plain(format!(
+        "Character {bad} is neither a decimal digit number, decimal point, nor \"e\" \
              notation exponential mark."
-        ),
-        at,
-    )
+    ))
 }
 
 /// A `StringIndexOutOfBoundsException` from `charAt`.
-fn out_of_bounds(index: i64, length: usize, at: usize) -> EvalError {
-    EvalError::execution(
-        format!("Index {index} out of bounds for length {length}"),
-        at,
-    )
+fn out_of_bounds(index: i64, length: usize) -> EvalError {
+    EvalError::plain(format!("Index {index} out of bounds for length {length}"))
 }
 
 /// `s.substring(from, to)` over characters.
-fn substring(s: &[char], from: i64, to: i64, at: usize) -> Result<String, EvalError> {
+fn substring(s: &[char], from: i64, to: i64) -> Result<String, EvalError> {
     let len = i64::try_from(s.len()).unwrap_or(i64::MAX);
     let range = usize::try_from(from)
         .ok()
@@ -112,19 +110,18 @@ fn substring(s: &[char], from: i64, to: i64, at: usize) -> Result<String, EvalEr
         .filter(|(f, t)| f <= t && *t <= s.len());
     match range {
         Some((f, t)) => Ok(s[f..t].iter().collect()),
-        None => Err(EvalError::execution(
-            format!("begin {from}, end {to}, length {len}"),
-            at,
-        )),
+        None => Err(EvalError::plain(format!(
+            "begin {from}, end {to}, length {len}"
+        ))),
     }
 }
 
 /// `s.charAt(i)` over characters.
-fn char_at(s: &[char], index: i64, at: usize) -> Result<char, EvalError> {
+fn char_at(s: &[char], index: i64) -> Result<char, EvalError> {
     usize::try_from(index)
         .ok()
         .and_then(|i| s.get(i).copied())
-        .ok_or_else(|| out_of_bounds(index, s.len(), at))
+        .ok_or_else(|| out_of_bounds(index, s.len()))
 }
 
 /// `(char) (c + delta)`.
@@ -152,7 +149,7 @@ fn is_zero(value: &str) -> bool {
 
 /// `Utilities.getDecimalPrecision`: the length of the second element of
 /// `value.split("\\.")`, the exponent cut off first.
-fn decimal_precision(value: &str, at: usize) -> Result<i64, EvalError> {
+fn decimal_precision(value: &str) -> Result<i64, EvalError> {
     let value = split_exponent(value).0;
     if !value.contains('.') {
         return Ok(0);
@@ -165,7 +162,7 @@ fn decimal_precision(value: &str, at: usize) -> Result<i64, EvalError> {
     }
     match parts.get(1) {
         Some(fraction) => Ok(i64::try_from(fraction.chars().count()).unwrap_or(i64::MAX)),
-        None => Err(out_of_bounds(1, parts.len(), at)),
+        None => Err(out_of_bounds(1, parts.len())),
     }
 }
 
@@ -186,7 +183,7 @@ fn minus_one(value: &str) -> String {
 }
 
 /// `Utilities.applyPrecision(v, p, down)`.
-fn apply_precision(v: &str, p: i32, down: bool, at: usize) -> Result<String, EvalError> {
+fn apply_precision(v: &str, p: i32, down: bool) -> Result<String, EvalError> {
     let chars: Vec<char> = v.chars().collect();
     let dp = chars.iter().position(|c| *c == '.');
     // `nv.substring(0, dp) + nv.substring(dp + 1)`: the first point only.
@@ -196,7 +193,7 @@ fn apply_precision(v: &str, p: i32, down: bool, at: usize) -> Result<String, Eva
         .filter(|(i, _)| Some(*i) != dp)
         .map(|(_, c)| *c)
         .collect();
-    let d = i64::from(p) - decimal_precision(v, at)?;
+    let d = i64::from(p) - decimal_precision(v)?;
     let mut s: String = if d == 0 {
         nv.iter().collect()
     } else if d > 0 {
@@ -209,12 +206,12 @@ fn apply_precision(v: &str, p: i32, down: bool, at: usize) -> Result<String, Eva
         if dp.is_some() {
             ld -= 1;
         }
-        if char_at(&nv, ld, at)? >= '5' && !down {
-            let mut s = substring(&nv, 0, ld - 1, at)?;
-            s.push(shift_char(char_at(&nv, ld - 1, at)?, 1));
+        if char_at(&nv, ld)? >= '5' && !down {
+            let mut s = substring(&nv, 0, ld - 1)?;
+            s.push(shift_char(char_at(&nv, ld - 1)?, 1));
             s
         } else {
-            substring(&nv, 0, ld, at)?
+            substring(&nv, 0, ld)?
         }
     };
     if s.ends_with('.') {
@@ -233,55 +230,45 @@ fn apply_precision(v: &str, p: i32, down: bool, at: usize) -> Result<String, Eva
 }
 
 /// `Utilities.lowBoundaryForDecimal`.
-fn low_boundary_for_decimal(
-    value: Option<&str>,
-    precision: i32,
-    at: usize,
-) -> Result<String, EvalError> {
+fn low_boundary_for_decimal(value: Option<&str>, precision: i32) -> Result<String, EvalError> {
     let Some(value) = value.filter(|v| !v.is_empty()) else {
-        return Err(EvalError::execution(
+        return Err(EvalError::plain(
             "Unable to calculate lowBoundary for a null decimal string",
-            at,
         ));
     };
     let (value, e) = split_exponent(value);
     if is_zero(value) {
-        return apply_precision(LOW_OF_ZERO, precision, true, at);
+        return apply_precision(LOW_OF_ZERO, precision, true);
     }
     let body = if let Some(rest) = value.strip_prefix('-') {
-        format!("-{}", high_boundary_for_decimal(Some(rest), precision, at)?)
+        format!("-{}", high_boundary_for_decimal(Some(rest), precision)?)
     } else if value.contains('.') {
         let v = format!("{}{HALF_AFTER_POINT}", minus_one(value));
-        apply_precision(&v, precision, true, at)?
+        apply_precision(&v, precision, true)?
     } else {
         let v = format!("{}{HALF_WITH_POINT}", minus_one(value));
-        apply_precision(&v, precision, true, at)?
+        apply_precision(&v, precision, true)?
     };
     Ok(format!("{body}{e}"))
 }
 
 /// `Utilities.highBoundaryForDecimal`.
-fn high_boundary_for_decimal(
-    value: Option<&str>,
-    precision: i32,
-    at: usize,
-) -> Result<String, EvalError> {
+fn high_boundary_for_decimal(value: Option<&str>, precision: i32) -> Result<String, EvalError> {
     let Some(value) = value.filter(|v| !v.is_empty()) else {
-        return Err(EvalError::execution(
+        return Err(EvalError::plain(
             "Unable to calculate highBoundary for a null decimal string",
-            at,
         ));
     };
     let (value, e) = split_exponent(value);
     if is_zero(value) {
-        return apply_precision(HIGH_OF_ZERO, precision, false, at);
+        return apply_precision(HIGH_OF_ZERO, precision, false);
     }
     let body = if let Some(rest) = value.strip_prefix('-') {
-        format!("-{}", low_boundary_for_decimal(Some(rest), precision, at)?)
+        format!("-{}", low_boundary_for_decimal(Some(rest), precision)?)
     } else if value.contains('.') {
-        apply_precision(&format!("{value}{HALF_AFTER_POINT}"), precision, false, at)?
+        apply_precision(&format!("{value}{HALF_AFTER_POINT}"), precision, false)?
     } else {
-        apply_precision(&format!("{value}{HALF_WITH_POINT}"), precision, false, at)?
+        apply_precision(&format!("{value}{HALF_WITH_POINT}"), precision, false)?
     };
     Ok(format!("{body}{e}"))
 }
@@ -298,22 +285,21 @@ fn decimal_type(s: &str, at: usize) -> Result<Decimal, EvalError> {
         .chars()
         .find(|c| !(c.is_ascii_digit() || matches!(c, '.' | 'e' | 'E' | '+' | '-')))
     {
-        return Err(not_a_decimal_character(bad, at));
+        return Err(not_a_decimal_character(bad));
     }
     // `applyPrecision` can cut the text to a bare sign, which `BigDecimal`
     // rejects outright.
     if !s.chars().any(|c| c.is_ascii_digit()) {
-        return Err(EvalError::execution(
-            format!("the boundary \"{s}\" is not a decimal"),
-            at,
-        ));
+        return Err(EvalError::plain(format!(
+            "the boundary \"{s}\" is not a decimal"
+        )));
     }
     // A sign after the first character with no exponent mark before it, as
     // `1.45000000-3` has: `BigDecimal` names the sign.
     if !s.contains(['e', 'E'])
         && let Some(bad) = s.chars().skip(1).find(|c| matches!(c, '-' | '+'))
     {
-        return Err(not_a_decimal_character(bad, at));
+        return Err(not_a_decimal_character(bad));
     }
     // Every character is one `BigDecimal` reads: a value wider than this
     // decimal type holds.
@@ -424,49 +410,42 @@ fn day_count(y: i32, m: i32) -> &'static str {
 }
 
 /// `Integer.parseInt(text)`.
-fn parse_int(text: &str, at: usize) -> Result<i32, EvalError> {
+fn parse_int(text: &str) -> Result<i32, EvalError> {
     text.parse::<i32>()
-        .map_err(|_| EvalError::execution(format!("For input string: \"{text}\""), at))
+        .map_err(|_| EvalError::plain(format!("For input string: \"{text}\"")))
 }
 
 /// `DateTimeUtil.applyDatePrecision`.
-fn apply_date_precision(v: &str, precision: i32, at: usize) -> Result<String, EvalError> {
+fn apply_date_precision(v: &str, precision: i32) -> Result<String, EvalError> {
     let chars: Vec<char> = v.chars().collect();
     match precision {
-        4 => substring(&chars, 0, 4, at),
-        6 | 7 => substring(&chars, 0, 7, at),
-        8 | 10 => substring(&chars, 0, 10, at),
-        14 => substring(&chars, 0, 17, at),
+        4 => substring(&chars, 0, 4),
+        6 | 7 => substring(&chars, 0, 7),
+        8 | 10 => substring(&chars, 0, 10),
+        14 => substring(&chars, 0, 17),
         17 => Ok(v.to_string()),
-        other => Err(EvalError::execution(
-            format!("Unsupported Date precision for boundary operation: {other}"),
-            at,
-        )),
+        other => Err(EvalError::plain(format!(
+            "Unsupported Date precision for boundary operation: {other}"
+        ))),
     }
 }
 
 /// `DateTimeUtil.applyTimePrecision`.
-fn apply_time_precision(v: &str, precision: i32, at: usize) -> Result<String, EvalError> {
+fn apply_time_precision(v: &str, precision: i32) -> Result<String, EvalError> {
     let chars: Vec<char> = v.chars().collect();
     match precision {
-        2 => substring(&chars, 0, 3, at),
-        4 => substring(&chars, 0, 6, at),
-        6 => substring(&chars, 0, 9, at),
+        2 => substring(&chars, 0, 3),
+        4 => substring(&chars, 0, 6),
+        6 => substring(&chars, 0, 9),
         9 => Ok(v.to_string()),
-        other => Err(EvalError::execution(
-            format!("Unsupported Time precision for boundary operation: {other}"),
-            at,
-        )),
+        other => Err(EvalError::plain(format!(
+            "Unsupported Time precision for boundary operation: {other}"
+        ))),
     }
 }
 
 /// `DateTimeUtil.lowBoundaryForDate` and `highBoundaryForDate`.
-fn boundary_for_date(
-    value: &str,
-    precision: i32,
-    high: bool,
-    at: usize,
-) -> Result<String, EvalError> {
+fn boundary_for_date(value: &str, precision: i32, high: bool) -> Result<String, EvalError> {
     let (date, zone) = split_timezone(value);
     let mut b = date.to_string();
     let len = |b: &String| b.chars().count();
@@ -476,8 +455,8 @@ fn boundary_for_date(
     if len(&b) == 7 {
         if high {
             let chars: Vec<char> = b.chars().collect();
-            let y = parse_int(&substring(&chars, 0, 4, at)?, at)?;
-            let m = parse_int(&substring(&chars, 5, 7, at)?, at)?;
+            let y = parse_int(&substring(&chars, 0, 4)?)?;
+            let m = parse_int(&substring(&chars, 5, 7)?)?;
             b.push('-');
             b.push_str(day_count(y, m));
         } else {
@@ -502,16 +481,11 @@ fn boundary_for_date(
     } else {
         zone
     };
-    Ok(format!("{}{tz}", apply_date_precision(&b, precision, at)?))
+    Ok(format!("{}{tz}", apply_date_precision(&b, precision)?))
 }
 
 /// `DateTimeUtil.lowBoundaryForTime` and `highBoundaryForTime`.
-fn boundary_for_time(
-    value: &str,
-    precision: i32,
-    high: bool,
-    at: usize,
-) -> Result<String, EvalError> {
+fn boundary_for_time(value: &str, precision: i32, high: bool) -> Result<String, EvalError> {
     let (time, zone) = split_timezone(value);
     let mut b = time.to_string();
     let len = |b: &String| b.chars().count();
@@ -524,26 +498,25 @@ fn boundary_for_time(
     if len(&b) == 8 {
         b.push_str(if high { ".999" } else { ".000" });
     }
-    Ok(format!(
-        "{}{zone}",
-        apply_time_precision(&b, precision, at)?
-    ))
+    Ok(format!("{}{zone}", apply_time_precision(&b, precision)?))
 }
 
 /// `new DateTimeType(s)`: the text must be a date or dateTime, and the value
 /// keeps it verbatim. Always a `dateTime`, whatever precision the text has.
-fn date_time_type(s: String, at: usize) -> Result<Value, EvalError> {
+fn date_time_type(s: String) -> Result<Value, EvalError> {
     let Some(dt) = Dt::parse(&s, true) else {
-        return Err(EvalError::execution(
-            format!("Invalid date/time format: \"{s}\""),
-            at,
-        ));
+        return Err(EvalError::plain(format!(
+            "Invalid date/time format: \"{s}\""
+        )));
     };
     Ok(Value::DateTime(PartialDateTime {
         lexical: s,
         precision: dt.precision,
         offset_minutes: dt.offset,
-        occurrence: 0,
+        // A new `DateTimeType` (`:4317-4320`, `:4361-4364`). One finer than a
+        // day is rewritten to Zulu by a comparison; one cut to a day or
+        // coarser is not (`rewrite::rewrite_to_zulu`, `path.compare.015`).
+        occurrence: super::rewrite::new_occurrence(),
     }))
 }
 
@@ -590,11 +563,12 @@ impl Run<'_> {
     ) -> Result<Vec<Value>, EvalError> {
         let node = self.expr.node(id);
         let at = node.start();
+        let holder = At::node(node);
         let high = function == Function::HighBoundary;
         let base = match focus {
             [] => return Ok(Vec::new()),
             [base] => base,
-            many => return Err(focus_error(function.to_code(), many.len(), at)),
+            many => return Err(focus_error(function.to_code(), many.len(), holder)),
         };
         let mut precision: Option<i32> = None;
         if let Some(&param) = node.parameters().first() {
@@ -604,16 +578,16 @@ impl Run<'_> {
                 return Err(EvalError::execution(
                     "Error evaluating FHIRPath expression: The parameter type Multiple Values \
                      is not legal for lowBoundary parameter 0. expecting integer",
-                    at,
+                    holder,
                 ));
             };
-            precision = Some(int_of(self.model, one, at)?);
+            precision = Some(int_of(self.model, one)?);
         }
         let decimal_boundary = |value: Option<&str>, p: i32| {
             if high {
-                high_boundary_for_decimal(value, p, at)
+                high_boundary_for_decimal(value, p)
             } else {
-                low_boundary_for_decimal(value, p, at)
+                low_boundary_for_decimal(value, p)
             }
         };
 
@@ -628,12 +602,12 @@ impl Run<'_> {
         if has_type(base, &["date"]) || has_type(base, &["dateTime"]) {
             let default = if has_type(base, &["date"]) { 10 } else { 17 };
             let text = text_of(self.model, base).unwrap_or_default();
-            let s = boundary_for_date(&text, precision.unwrap_or(default), high, at)?;
-            return Ok(vec![date_time_type(s, at)?]);
+            let s = boundary_for_date(&text, precision.unwrap_or(default), high)?;
+            return Ok(vec![date_time_type(s)?]);
         }
         if has_type(base, &["time"]) {
             let text = text_of(self.model, base).unwrap_or_default();
-            let s = boundary_for_time(&text, precision.unwrap_or(9), high, at)?;
+            let s = boundary_for_time(&text, precision.unwrap_or(9), high)?;
             return Ok(vec![time_type(s)]);
         }
         if has_type(base, &["Quantity"]) {
@@ -657,14 +631,14 @@ impl Run<'_> {
         focus: &[Value],
         id: NodeId,
     ) -> Result<Vec<Value>, EvalError> {
-        let at = self.expr.node(id).start();
+        let holder = At::node(self.expr.node(id));
         let [base] = focus else {
             // Upstream names `highBoundary` in this message.
-            return Err(focus_error("highBoundary", focus.len(), at));
+            return Err(focus_error("highBoundary", focus.len(), holder));
         };
         let count = if has_type(base, &["decimal"]) {
             let text = text_of(self.model, base).unwrap_or_default();
-            decimal_precision(&text, at)?
+            decimal_precision(&text)?
         } else if has_type(base, &["date"]) || has_type(base, &["dateTime"]) {
             let text = text_of(self.model, base).unwrap_or_default();
             i64::try_from(date_precision(&text)).unwrap_or(i64::MAX)

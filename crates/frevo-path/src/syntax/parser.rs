@@ -7,7 +7,9 @@
 //! Original work Copyright HL7, Inc. and contributors, licensed under the
 //! Apache License, Version 2.0.
 //! Modified by the Frevo authors: nodes live in an arena, positions are byte
-//! offsets, and the recursion carries a depth limit — upstream's `Group` arm
+//! offsets plus HAPI's recorded line and column (`setStart`, `setOpStart`;
+//! none on a `newGroup` group or the indexer node, `path.errors.002`), and the
+//! recursion carries a depth limit — upstream's `Group` arm
 //! recurses with no counter, so 10,000 nested parentheses end the JVM with a
 //! StackOverflowError, which `path.errors.003` forbids and
 //! `path.errors.004` replaces with a returned error.
@@ -160,6 +162,10 @@ impl<'a> Parser<'a> {
         // it, and so does an execution error naming the sub-expression.
         let c = self.lexer.current_start();
         let mut result = self.add(Kind::Name, c);
+        // `result.setStart(lexer.getCurrentStartLocation().copy())`
+        // (`FHIRPathEngine.java:1076`).
+        let location = self.lexer.current_start_location();
+        self.node_mut(result).set_start_location(location);
         let mut wrapper: Option<NodeId> = None;
 
         // A leading `+` or `-` is a unary operation. The lexer cannot decide
@@ -169,9 +175,14 @@ impl<'a> Parser<'a> {
             let at = self.lexer.current_start();
             let w = self.add(Kind::Unary, at);
             let op = Operation::from_code(self.lexer.take()?);
+            // `wrapper.setStart(lexer.getCurrentLocation().copy())` after the
+            // `take()`: upstream records the column just past the token that
+            // follows the sign, and so does this.
+            let location = self.lexer.current_location();
             let node = self.node_mut(w);
             node.set_operation(op);
             node.set_proximal(proximal);
+            node.set_start_location(location);
             wrapper = Some(w);
         }
 
@@ -190,9 +201,13 @@ impl<'a> Parser<'a> {
                 let w = self.add(Kind::Unary, at);
                 let sign = &self.lexer.current_or_empty()[..1];
                 let op = Operation::from_code(sign);
+                // `wrapper.setStart(lexer.getCurrentLocation().copy())`: the
+                // column just past the signed token (`FHIRPathEngine.java:1100`).
+                let location = self.lexer.current_location();
                 let node = self.node_mut(w);
                 node.set_operation(op);
                 node.set_proximal(proximal);
+                node.set_start_location(location);
                 wrapper = Some(w);
                 self.lexer.drop_first_char_of_current();
             }
@@ -309,7 +324,8 @@ impl<'a> Parser<'a> {
         }
 
         // `name[...]`: an implicit `item()` call, which the following `.`
-        // hangs off rather than off the name.
+        // hangs off rather than off the name. Upstream builds the node with no
+        // start (`FHIRPathEngine.java:1188-1192`), so it gets no location.
         let mut focus = result;
         if self.current() == Some("[") {
             let at = self.lexer.current_start();
@@ -345,10 +361,14 @@ impl<'a> Parser<'a> {
             while self.lexer.is_op() {
                 let op = self.current().and_then(Operation::from_code);
                 let (op_start, op_end) = (self.lexer.current_start(), self.lexer.current_end());
+                // `focus.setOpStart(lexer.getCurrentStartLocation())`
+                // (`FHIRPathEngine.java:1209`).
+                let op_location = self.lexer.current_start_location();
                 {
                     let node = self.node_mut(focus);
                     node.set_operation(op);
                     node.set_op_span(op_start, op_end);
+                    node.set_op_location(op_location);
                 }
                 self.lexer.next()?;
                 let next = self.parse_expression(false)?;
@@ -629,7 +649,10 @@ impl<'a> Parser<'a> {
         start
     }
 
-    /// `newGroup` (`FHIRPathEngine.java:1315`).
+    /// `newGroup` (`FHIRPathEngine.java:1315`). Upstream sets no start on the
+    /// group, and no operator start when it takes an operator over, so an
+    /// error the group holds carries no position (`path.errors.002`); the
+    /// byte offsets are kept for the parsed form's own spans only.
     fn new_group(&mut self, next: NodeId) -> NodeId {
         let (start, end) = {
             let node = self.node(next);

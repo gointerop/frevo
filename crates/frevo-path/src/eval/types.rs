@@ -36,6 +36,7 @@ use crate::seam::node::{Node, NodeError};
 use crate::seam::value::{Primitive, Value};
 use crate::syntax::ast::{Kind, NodeId};
 
+use super::error::At;
 use super::navigate::fhir_type;
 use super::{EvalError, Run};
 
@@ -218,22 +219,20 @@ impl Run<'_> {
         tn: &str,
         holder: NodeId,
     ) -> Result<Vec<Value>, EvalError> {
-        let offset = self.expr.node(holder).start();
+        // `FHIRPATH_INVALID_TYPE` and `FHIRPATH_AS_COLLECTION` are both
+        // constructed with no location (`FHIRPathEngine.java:1882`, `:1885`),
+        // so neither carries a position suffix or an offset
+        // (`path.errors.002`, `path.strictness.003`). The type name is tested
+        // first.
         if !self.is_known_type_name(tn) {
-            return Err(EvalError::execution(
-                format!("The type {tn} is not valid"),
-                offset,
-            ));
+            return Err(EvalError::plain(format!("The type {tn} is not valid")));
         }
         if self.enforce_as_singleton && left.len() > 1 {
-            return Err(EvalError::execution(
-                format!(
-                    "Attempt to use 'as()' on more than one item ('{}', '{}')",
-                    left.len(),
-                    self.expr.render(holder)
-                ),
-                offset,
-            ));
+            return Err(EvalError::plain(format!(
+                "Attempt to use 'as()' on more than one item ('{}', '{}')",
+                left.len(),
+                self.expr.render(holder)
+            )));
         }
         Ok(left
             .iter()
@@ -264,10 +263,11 @@ impl Run<'_> {
         if texp.kind() != Kind::Name {
             return Err(EvalError::execution(
                 format!(
-                    "The expression type {:?} is not supported for parameter 0 on function is",
+                    "Error evaluating FHIRPath expression: The expression type {:?} is not \
+                     supported for parameter 0 on function is",
                     texp.kind()
                 ),
-                node.start(),
+                At::node(node),
             ));
         }
         let (ns, n) = match texp.inner() {
@@ -276,10 +276,11 @@ impl Run<'_> {
                 if inner.kind() != Kind::Name {
                     return Err(EvalError::execution(
                         format!(
-                            "The expression type {:?} is not supported for parameter 1 on function is",
+                            "Error evaluating FHIRPath expression: The expression type {:?} is \
+                             not supported for parameter 1 on function is",
                             texp.kind()
                         ),
-                        node.start(),
+                        At::node(node),
                     ));
                 }
                 (
@@ -314,23 +315,20 @@ impl Run<'_> {
 
     /// `funcAs` (`FHIRPathEngine.java:5155`).
     pub(super) fn func_as(&self, focus: &[Value], id: NodeId) -> Result<Vec<Value>, EvalError> {
-        let node = self.expr.node(id);
+        // Both errors are constructed with no location (`:5164`, `:5167`), and
+        // the type name is tested first; the holder's `toString()` is the `as`
+        // function node rendered as its name and parameters
+        // (`path.strictness.003`).
         let tn = self.param_type_name(self.param(id, 0)?);
         if !self.is_known_type_name(&tn) {
-            return Err(EvalError::execution(
-                format!("The type {tn} is not valid"),
-                node.start(),
-            ));
+            return Err(EvalError::plain(format!("The type {tn} is not valid")));
         }
         if self.enforce_as_singleton && focus.len() > 1 {
-            return Err(EvalError::execution(
-                format!(
-                    "Attempt to use 'as()' on more than one item ('{}', 'as({})')",
-                    focus.len(),
-                    self.expr.render(id)
-                ),
-                node.start(),
-            ));
+            return Err(EvalError::plain(format!(
+                "Attempt to use 'as()' on more than one item ('{}', '{}')",
+                focus.len(),
+                self.expr.render(id)
+            )));
         }
         let mut result = Vec::new();
         for b in focus {

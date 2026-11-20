@@ -28,6 +28,7 @@ use crate::seam::value::Value;
 use crate::syntax::ast::NodeId;
 
 use super::equality::{compare_deep, do_equals, is_empty};
+use super::error::At;
 use super::navigate::fhir_type;
 use super::{Context, EvalError, Run};
 
@@ -108,14 +109,11 @@ impl Run<'_> {
     pub(super) fn param(&self, id: NodeId, n: usize) -> Result<NodeId, EvalError> {
         let node = self.expr.node(id);
         node.parameters().get(n).copied().ok_or_else(|| {
-            EvalError::execution(
-                format!(
-                    "{}() requires parameter {}",
-                    node.name().unwrap_or("the function"),
-                    n + 1
-                ),
-                node.start(),
-            )
+            EvalError::plain(format!(
+                "{}() requires parameter {}",
+                node.name().unwrap_or("the function"),
+                n + 1
+            ))
         })
     }
 
@@ -133,7 +131,7 @@ impl Run<'_> {
                     "Unable to evaluate as a boolean: {}",
                     convert_list_to_string(many)
                 ),
-                self.expr.node(at).start(),
+                At::node(self.expr.node(at)),
             )),
         }
     }
@@ -249,13 +247,10 @@ impl Run<'_> {
                 }
                 None => {
                     if !is_boolean_primitive(item) {
-                        return Err(EvalError::execution(
-                            format!(
-                                "Unable to convert '{}' to a boolean",
-                                convert_to_string(item)
-                            ),
-                            self.expr.node(id).start(),
-                        ));
+                        return Err(EvalError::plain(format!(
+                            "Unable to convert '{}' to a boolean",
+                            convert_to_string(item)
+                        )));
                     }
                     as_bool_item(item)
                 }

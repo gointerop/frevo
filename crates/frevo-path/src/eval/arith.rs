@@ -38,6 +38,7 @@ use crate::seam::model::Model;
 use crate::seam::value::{Decimal, Value};
 
 use super::EvalError;
+use super::error::At;
 use super::navigate::fhir_type;
 use super::operand::{self, STRING_TYPES, has_type, int_of, is_primitive, is_quantity, text_of};
 use super::temporal;
@@ -66,7 +67,9 @@ impl Arith {
     }
 }
 
-fn error(message: String, at: usize) -> EvalError {
+/// `makeException(holder, ...)`: the holder's start, when it has one, is the
+/// position (`path.errors.002`).
+fn error(message: String, at: At) -> EvalError {
     EvalError::execution(
         format!("Error evaluating FHIRPath expression: {message}"),
         at,
@@ -182,7 +185,7 @@ fn operands<'a>(
     left: &'a [Value],
     right: &'a [Value],
     op: Arith,
-    at: usize,
+    at: At,
 ) -> Result<Option<(&'a Value, &'a Value)>, EvalError> {
     if left.is_empty() || right.is_empty() {
         return Ok(None);
@@ -240,7 +243,7 @@ fn operands<'a>(
     Ok(Some((l, r)))
 }
 
-fn incompatible(op: Arith, l: &Value, r: &Value, at: usize) -> EvalError {
+fn incompatible(op: Arith, l: &Value, r: &Value, at: At) -> EvalError {
     EvalError::execution(
         format!(
             "Error evaluating FHIRPath expression {}: left and right operand have incompatible \
@@ -258,12 +261,17 @@ fn is_date_time_type(v: &Value) -> bool {
 }
 
 /// `opPlus`, `opMinus`, `opTimes`, `opDivideBy`, `opDiv` and `opMod`.
+///
+/// `at` is the holder's start, which `makeException` reports, and `op_at` its
+/// operator's start, which `dateAdd`'s own constructions pass
+/// (`holder.getOpStart()`, `FHIRPathEngine.java:2725`, `:2731`, `:2763`).
 pub(super) fn op_arith(
     model: &dyn Model,
     left: &[Value],
     op: Arith,
     right: &[Value],
-    at: usize,
+    at: At,
+    op_at: At,
 ) -> Result<Vec<Value>, EvalError> {
     let Some((l, r)) = operands(model, left, right, op, at)? else {
         return Ok(Vec::new());
@@ -277,37 +285,37 @@ pub(super) fn op_arith(
                 return Ok(vec![Value::String(format!("{}{}", text(l), text(r)))]);
             }
             if both(&["integer"]) {
-                let sum = int_of(model, l, at)?.wrapping_add(int_of(model, r, at)?);
+                let sum = int_of(model, l)?.wrapping_add(int_of(model, r)?);
                 return Ok(int_value(sum));
             }
             if both(&numeric) {
                 let (a, b) = (
-                    operand::decimal_of(model, l, at)?,
-                    operand::decimal_of(model, r, at)?,
+                    operand::decimal_of(model, l)?,
+                    operand::decimal_of(model, r)?,
                 );
-                let (x, y, scale) = align(&a, &b, at)?;
-                let sum = x.checked_add(y).ok_or_else(|| too_wide(at))?;
-                return Ok(dec_value(make_decimal(sum, scale, at)?));
+                let (x, y, scale) = align(&a, &b, at.offset)?;
+                let sum = x.checked_add(y).ok_or_else(|| too_wide(at.offset))?;
+                return Ok(dec_value(make_decimal(sum, scale, at.offset)?));
             }
             if has_type(r, &["Quantity"]) && is_date_time_type(l) {
                 let q = operand::qty_of(r)?;
-                return Ok(vec![temporal::date_add(l, &q, false, at)?]);
+                return Ok(vec![temporal::date_add(l, &q, false, op_at)?]);
             }
             Err(incompatible(op, l, r, at))
         }
         Arith::Minus => {
             if both(&["integer"]) {
-                let diff = int_of(model, l, at)?.wrapping_sub(int_of(model, r, at)?);
+                let diff = int_of(model, l)?.wrapping_sub(int_of(model, r)?);
                 return Ok(int_value(diff));
             }
             if both(&numeric) {
                 let (a, b) = (
-                    operand::decimal_of(model, l, at)?,
-                    operand::decimal_of(model, r, at)?,
+                    operand::decimal_of(model, l)?,
+                    operand::decimal_of(model, r)?,
                 );
-                let (x, y, scale) = align(&a, &b, at)?;
-                let diff = x.checked_sub(y).ok_or_else(|| too_wide(at))?;
-                return Ok(dec_value(make_decimal(diff, scale, at)?));
+                let (x, y, scale) = align(&a, &b, at.offset)?;
+                let diff = x.checked_sub(y).ok_or_else(|| too_wide(at.offset))?;
+                return Ok(dec_value(make_decimal(diff, scale, at.offset)?));
             }
             if has_type(l, &["decimal", "integer", "Quantity"]) && has_type(r, &["Quantity"]) {
                 // Only `0 - q` produces anything: `qty.copy().setValue(abs)`.
@@ -317,39 +325,39 @@ pub(super) fn op_arith(
                 let q = operand::qty_of(r)?;
                 let value = q.value.as_deref().unwrap_or("0");
                 let magnitude = value.trim_start_matches(['-', '+']);
-                let abs = Decimal::parse(magnitude).ok_or_else(|| too_wide(at))?;
+                let abs = Decimal::parse(magnitude).ok_or_else(|| too_wide(at.offset))?;
                 return Ok(vec![q.to_value(abs)]);
             }
             if has_type(r, &["Quantity"]) && is_date_time_type(l) {
                 let q = operand::qty_of(r)?;
-                return Ok(vec![temporal::date_add(l, &q, true, at)?]);
+                return Ok(vec![temporal::date_add(l, &q, true, op_at)?]);
             }
             Err(incompatible(op, l, r, at))
         }
         Arith::Times => {
             if both(&["integer"]) {
-                let product = int_of(model, l, at)?.wrapping_mul(int_of(model, r, at)?);
+                let product = int_of(model, l)?.wrapping_mul(int_of(model, r)?);
                 return Ok(int_value(product));
             }
             if both(&numeric) {
                 let (a, b) = (
-                    operand::decimal_of(model, l, at)?,
-                    operand::decimal_of(model, r, at)?,
+                    operand::decimal_of(model, l)?,
+                    operand::decimal_of(model, r)?,
                 );
                 let mantissa = a
                     .mantissa()
                     .checked_mul(b.mantissa())
-                    .ok_or_else(|| too_wide(at))?;
+                    .ok_or_else(|| too_wide(at.offset))?;
                 return Ok(dec_value(make_decimal(
                     mantissa,
                     a.scale() + b.scale(),
-                    at,
+                    at.offset,
                 )?));
             }
             if is_quantity(model, l) && is_quantity(model, r) {
                 return Err(EvalError::unsupported(
                     "multiplying quantities through the UCUM unit algebra",
-                    at,
+                    op_at.offset,
                 ));
             }
             Err(incompatible(op, l, r, at))
@@ -358,45 +366,45 @@ pub(super) fn op_arith(
             let four = ["integer", "decimal", "unsignedInt", "positiveInt"];
             if both(&four) {
                 let (a, b) = (
-                    operand::decimal_of(model, l, at)?,
-                    operand::decimal_of(model, r, at)?,
+                    operand::decimal_of(model, l)?,
+                    operand::decimal_of(model, r)?,
                 );
-                return match divide(&a, &b, at)? {
-                    Quotient::Zero => Ok(dec_value(make_decimal(0, 0, at)?)),
+                return match divide(&a, &b, at.offset)? {
+                    Quotient::Zero => Ok(dec_value(make_decimal(0, 0, at.offset)?)),
                     Quotient::ByZero => Ok(Vec::new()),
                     Quotient::Exact(d) => Ok(dec_value(d)),
                     Quotient::Inexact => Err(EvalError::unsupported(
                         "a non-terminating quotient (the digit count belongs to \
                          org.fhir.ucum.Decimal.divide, which is not in reference/)",
-                        at,
+                        at.offset,
                     )),
                 };
             }
             if is_quantity(model, l) && is_quantity(model, r) {
                 return Err(EvalError::unsupported(
                     "dividing quantities through the UCUM unit algebra",
-                    at,
+                    at.offset,
                 ));
             }
             Err(incompatible(op, l, r, at))
         }
         Arith::Div => {
             if both(&["integer"]) {
-                let divisor = int_of(model, r, at)?;
+                let divisor = int_of(model, r)?;
                 if divisor == 0 {
                     return Ok(Vec::new());
                 }
-                return Ok(int_value(int_of(model, l, at)?.wrapping_div(divisor)));
+                return Ok(int_value(int_of(model, l)?.wrapping_div(divisor)));
             }
             if both(&numeric) {
                 let (a, b) = (
-                    operand::decimal_of(model, l, at)?,
-                    operand::decimal_of(model, r, at)?,
+                    operand::decimal_of(model, l)?,
+                    operand::decimal_of(model, r)?,
                 );
                 if a.mantissa() == 0 {
                     return Ok(int_value(0));
                 }
-                return Ok(match div_int(&a, &b, at)? {
+                return Ok(match div_int(&a, &b, at.offset)? {
                     None => Vec::new(),
                     // `new IntegerType(String)` of the truncated quotient.
                     Some(q) => int_value(q as i32),
@@ -406,33 +414,34 @@ pub(super) fn op_arith(
         }
         Arith::Mod => {
             if both(&["integer"]) {
-                let modulus = int_of(model, r, at)?;
+                let modulus = int_of(model, r)?;
                 if modulus == 0 {
                     return Ok(Vec::new());
                 }
-                return Ok(int_value(int_of(model, l, at)?.wrapping_rem(modulus)));
+                return Ok(int_value(int_of(model, l)?.wrapping_rem(modulus)));
             }
             if both(&numeric) {
                 let (a, b) = (
-                    operand::decimal_of(model, l, at)?,
-                    operand::decimal_of(model, r, at)?,
+                    operand::decimal_of(model, l)?,
+                    operand::decimal_of(model, r)?,
                 );
                 if a.mantissa() == 0 {
                     return Ok(dec_value(a));
                 }
-                let (x, y, scale) = align(&a, &b, at)?;
+                let (x, y, scale) = align(&a, &b, at.offset)?;
                 if y == 0 {
-                    return Err(EvalError::execution(
-                        format!(
-                            "org.fhir.ucum.UcumException: Attempt to divide {} by zero",
-                            a.lexical()
-                        ),
-                        at,
-                    ));
+                    // `new PathEngineException(e)` around the UcumException
+                    // (`FHIRPathEngine.java:3102`): the cause's `toString()`,
+                    // and no location, so no suffix and no offset
+                    // (`path.errors.002`).
+                    return Err(EvalError::plain(format!(
+                        "org.fhir.ucum.UcumException: Attempt to divide {} by zero",
+                        a.lexical()
+                    )));
                 }
                 let quotient = x / y;
-                let rem = x - quotient.checked_mul(y).ok_or_else(|| too_wide(at))?;
-                return Ok(dec_value(make_decimal(rem, scale, at)?));
+                let rem = x - quotient.checked_mul(y).ok_or_else(|| too_wide(at.offset))?;
+                return Ok(dec_value(make_decimal(rem, scale, at.offset)?));
             }
             Err(incompatible(op, l, r, at))
         }
@@ -445,7 +454,7 @@ pub(super) fn op_concatenate(
     model: &dyn Model,
     left: &[Value],
     right: &[Value],
-    at: usize,
+    at: At,
 ) -> Result<Vec<Value>, EvalError> {
     if left.len() > 1 {
         return Err(error(

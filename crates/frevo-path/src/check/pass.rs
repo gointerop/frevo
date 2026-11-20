@@ -31,7 +31,7 @@ use super::types::{
 use crate::seam::host::{ConstantMode, HostServices};
 use crate::seam::model::{ElementInfo, Model, TypeSet};
 use crate::seam::value::Value;
-use crate::syntax::ast::{Constant, Expression, Function, Kind, NodeId, Operation};
+use crate::syntax::ast::{At, Constant, Expression, Function, Kind, NodeId, Operation};
 
 type CheckResult<T> = Result<T, CheckError>;
 
@@ -90,12 +90,11 @@ impl TypeContext {
     }
 
     /// `setDefinedVariable`.
-    fn define(&mut self, name: &str, value: Types, offset: usize) -> CheckResult<()> {
+    fn define(&mut self, name: &str, value: Types) -> CheckResult<()> {
         if SYSTEM_VARIABLES.contains(&name) || self.defined(name).is_some() {
-            return Err(CheckError::failed(
+            return Err(CheckError::unlocated(
                 "FHIRPATH_REDEFINE_VARIABLE",
                 format!("Redefine of variable {name}"),
-                offset,
             ));
         }
         self.vars.push((name.to_string(), Rc::new(value)));
@@ -143,6 +142,11 @@ impl<'a> Pass<'a> {
 
     fn start(&self, id: NodeId) -> usize {
         self.expr.node(id).start()
+    }
+
+    /// `holder.getStart()` for the node at `id` (`path.errors.002`).
+    fn at(&self, id: NodeId) -> At {
+        At::node(self.expr.node(id))
     }
 
     /// Where the pinned engine dereferences a null type set: a
@@ -213,7 +217,7 @@ impl<'a> Pass<'a> {
                                  valid for any of the possible types: {}",
                                 focus.describe()
                             ),
-                            self.start(id),
+                            self.at(id),
                         ));
                     }
                 }
@@ -303,15 +307,11 @@ impl<'a> Pass<'a> {
                 "FHIRPATH_HO_HOST_SERVICES",
                 "Internal Error evaluating FHIRPath expression: No host services are provided \
                  (Context Reference)",
-                self.start(id),
+                self.at(id),
             ));
         };
         match host.resolve_constant_type(name, ConstantMode::NoValue) {
-            Err(e) => Err(CheckError::failed(
-                "HOST_SERVICE",
-                e.message,
-                self.start(id),
-            )),
+            Err(e) => Err(CheckError::unlocated("HOST_SERVICE", e.message)),
             Ok(Some(t)) => Ok(Types::single(
                 &t.names().iter().map(String::as_str).collect::<Vec<_>>(),
             )),
@@ -417,7 +417,7 @@ impl<'a> Pass<'a> {
             return Err(CheckError::failed(
                 "FHIRPATH_NO_TYPE",
                 "Error evaluating FHIRPath expression: No type provided at getChildTypesByName",
-                self.start(id),
+                self.at(id),
             ));
         }
         if ty == "xhtml" {
@@ -466,7 +466,7 @@ impl<'a> Pass<'a> {
                     "Error evaluating FHIRPath expression: The type '{url}' is unknown or not \
                      supported at getChildTypesByName#1"
                 ),
-                self.start(id),
+                self.at(id),
             ));
         }
         let sdl = self.type_and_descendants(owner, id)?;
@@ -641,7 +641,7 @@ impl<'a> Pass<'a> {
     /// `resolveConstantType(context, constant, ...)`, explicit mode.
     fn constant_type(&self, context: &TypeContext, id: NodeId) -> CheckResult<Types> {
         let node = self.expr.node(id);
-        let start = node.start();
+        let start = At::node(node);
         let text = match node.constant() {
             None | Some(Constant::Empty) => return Ok(Types::empty()),
             Some(Constant::Value(v)) => {
@@ -705,7 +705,7 @@ impl<'a> Pass<'a> {
             return Err(unknown());
         };
         match host.resolve_constant_type(text, ConstantMode::Explicit) {
-            Err(e) => Err(CheckError::failed("HOST_SERVICE", e.message, start)),
+            Err(e) => Err(CheckError::unlocated("HOST_SERVICE", e.message)),
             Ok(None) => Err(unknown()),
             Ok(Some(t)) => Ok(Types::single(
                 &t.names().iter().map(String::as_str).collect::<Vec<_>>(),
@@ -842,7 +842,7 @@ impl<'a> Pass<'a> {
                                 right.first().map(url_of).unwrap_or_else(|| "null".into()),
                                 left.first().map(url_of).unwrap_or_else(|| "null".into()),
                             ),
-                            self.expr.node(id).op_start(),
+                            At::op(self.expr.node(id)),
                         ));
                     }
                 }
@@ -931,13 +931,12 @@ impl<'a> Pass<'a> {
             // that Frevo's check reports an error for an input-less `iif`
             // where HAPI's raises a `NullPointerException`, so this one is a
             // verdict and not a not-implemented answer.
-            return Err(CheckError::failed(
+            return Err(CheckError::unlocated(
                 "NULL_POINTER",
                 concat!(
                     "Cannot invoke \"org.hl7.fhir.r4.fhirpath.TypeDetails.getCollectionStatus()\" ",
                     "because \"focus\" is null"
                 ),
-                self.start(id),
             ));
         }
         if focus.is_none() && sig.reads_focus() {
@@ -1039,7 +1038,7 @@ impl<'a> Pass<'a> {
     ) -> CheckResult<Types> {
         let node = self.expr.node(id);
         let name = node.name().unwrap_or("").to_string();
-        let start = node.start();
+        let start = At::node(node);
         let Some(host) = self.host else {
             // Upstream dereferences a null host service here; the parser only
             // produces `Custom` through one, so this is a parse and a check
@@ -1065,13 +1064,13 @@ impl<'a> Pass<'a> {
             Ok(t) => Ok(Types::single(
                 &t.names().iter().map(String::as_str).collect::<Vec<_>>(),
             )),
-            Err(e) => Err(CheckError::failed("HOST_SERVICE", e.message, start)),
+            Err(e) => Err(CheckError::unlocated("HOST_SERVICE", e.message)),
         }
     }
 
     fn check_focus(&self, rule: Focus, focus: &Types, id: NodeId) -> CheckResult<()> {
         let model = self.model;
-        let start = self.start(id);
+        let start = self.at(id);
         let fail = |constant: &'static str, message: String| {
             Err(CheckError::failed(constant, message, start))
         };
@@ -1228,7 +1227,7 @@ impl<'a> Pass<'a> {
                             i + 1,
                             render_details(&expected)
                         ),
-                        self.start(id),
+                        self.at(id),
                     ));
                 }
             }
@@ -1342,7 +1341,7 @@ impl<'a> Pass<'a> {
                         };
                         if let Some(name) = name {
                             let value = params.get(1).cloned().unwrap_or_else(|| focus.clone());
-                            context.define(&name, value, pn.start())?;
+                            context.define(&name, value)?;
                         }
                     }
                 }
@@ -1523,7 +1522,7 @@ fn primitive_value(v: &Value) -> Option<String> {
     })
 }
 
-fn cannot_use(what: &str, why: &str, offset: usize) -> CheckError {
+fn cannot_use(what: &str, why: &str, offset: At) -> CheckError {
     CheckError::failed(
         "FHIRPATH_CANNOT_USE",
         format!(

@@ -464,8 +464,9 @@ impl Run<'_> {
         id: NodeId,
         function: Function,
     ) -> Result<Vec<Value>, EvalError> {
-        let at = self.expr.node(id).start();
-        let fail = |message: String| EvalError::execution(message, at);
+        // The regex failures are `PatternSyntaxException`s, which carry no
+        // position (`path.errors.002`).
+        let fail = |message: String| EvalError::plain(message);
         let p0 = self.param(id, 0)?;
         let pattern_items = self.execute(context, focus, p0, true)?;
         let pattern = convert_list_to_string(&pattern_items);

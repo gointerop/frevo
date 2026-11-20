@@ -33,12 +33,15 @@ use crate::seam::value::{Decimal, Value};
 use crate::syntax::ast::{Function, NodeId};
 
 use super::arith::too_wide;
+use super::error::At;
 use super::operand::{self, has_type, int_of, qty_of, text_of};
 use super::{Context, EvalError, Run};
 
 const NUMERIC: [&str; 4] = ["integer", "decimal", "unsignedInt", "positiveInt"];
 
-fn focus_error(name: &str, count: usize, at: usize) -> EvalError {
+/// `makeExceptionPlural(focus.size(), expr, FHIRPATH_FOCUS, ...)`, held by the
+/// function node (`path.errors.002`).
+fn focus_error(name: &str, count: usize, at: At) -> EvalError {
     EvalError::execution(
         format!(
             "Error evaluating FHIRPath expression: focus for {name} can only have one value, \
@@ -48,7 +51,9 @@ fn focus_error(name: &str, count: usize, at: usize) -> EvalError {
     )
 }
 
-fn wrong_param(name: &str, index: &str, got: &str, expecting: &str, at: usize) -> EvalError {
+/// `makeException(expr, FHIRPATH_WRONG_PARAM_TYPE, ...)`, held by the function
+/// node (`path.errors.002`).
+fn wrong_param(name: &str, index: &str, got: &str, expecting: &str, at: At) -> EvalError {
     EvalError::execution(
         format!(
             "Error evaluating FHIRPath expression: The parameter type {got} is not legal for \
@@ -59,16 +64,14 @@ fn wrong_param(name: &str, index: &str, got: &str, expecting: &str, at: usize) -
 }
 
 /// `Double.parseDouble(text)`.
-fn parse_double(text: &str, at: usize) -> Result<f64, EvalError> {
+/// A `NumberFormatException`, which carries no position (`path.errors.002`).
+fn parse_double(text: &str) -> Result<f64, EvalError> {
     text.trim().parse::<f64>().map_err(|_| {
-        EvalError::execution(
-            if text.is_empty() {
-                "empty String".to_string()
-            } else {
-                format!("For input string: \"{text}\"")
-            },
-            at,
-        )
+        EvalError::plain(if text.is_empty() {
+            "empty String".to_string()
+        } else {
+            format!("For input string: \"{text}\"")
+        })
     })
 }
 
@@ -167,7 +170,7 @@ impl Run<'_> {
             return Ok(Vec::new());
         }
         let [base] = focus else {
-            return Err(focus_error(name, focus.len(), at));
+            return Err(focus_error(name, focus.len(), At::node(node)));
         };
         // `abs` also takes a quantity; every other function needs a number,
         // and a non-number is an exception built and never thrown: empty.
@@ -188,14 +191,12 @@ impl Run<'_> {
                 return integral
                     .parse::<i32>()
                     .map(|i| vec![Value::Integer(i64::from(i))])
-                    .map_err(|_| {
-                        EvalError::execution(format!("For input string: \"{integral}\""), at)
-                    });
+                    .map_err(|_| EvalError::plain(format!("For input string: \"{integral}\"")));
             }
             Function::Round => return self.func_round(context, focus, id, base),
             _ => {}
         }
-        let d = parse_double(&text, at)?;
+        let d = parse_double(&text)?;
         let result = match function {
             Function::Abs => decimal_of_double(d.abs(), at)?,
             Function::Ceiling => return Ok(vec![Value::Integer(i64::from(d.ceil() as i32))]),
@@ -205,7 +206,7 @@ impl Run<'_> {
             Function::Ln => decimal_of_double(d.ln(), at)?,
             Function::Log | Function::Power => {
                 let argument = self.number_argument(context, focus, id, name)?;
-                let e = parse_double(&argument, at)?;
+                let e = parse_double(&argument)?;
                 let computed = if function == Function::Log {
                     // `customLog(base, number)`: `Math.log(number) / Math.log(base)`.
                     d.ln() / e.ln()
@@ -235,10 +236,7 @@ impl Run<'_> {
     ) -> Result<String, EvalError> {
         let node = self.expr.node(id);
         let Some(&param) = node.parameters().first() else {
-            return Err(EvalError::execution(
-                format!("{name}() requires a parameter"),
-                node.start(),
-            ));
+            return Err(EvalError::plain(format!("{name}() requires a parameter")));
         };
         let values = self.execute(context, focus, param, true)?;
         match values.as_slice() {
@@ -248,7 +246,7 @@ impl Run<'_> {
                 "0",
                 "Multiple Values",
                 "integer or decimal",
-                node.start(),
+                At::node(node),
             )),
         }
     }
@@ -268,11 +266,17 @@ impl Run<'_> {
             let values = self.execute(context, focus, *param, true)?;
             let [one] = values.as_slice() else {
                 // Upstream's message names `power` here.
-                return Err(wrong_param("power", "0", "Multiple Values", "integer", at));
+                return Err(wrong_param(
+                    "power",
+                    "0",
+                    "Multiple Values",
+                    "integer",
+                    At::node(node),
+                ));
             };
-            places = int_of(self.model, one, at)?;
+            places = int_of(self.model, one)?;
         }
-        let decimal = operand::decimal_of(self.model, base, at)?;
+        let decimal = operand::decimal_of(self.model, base)?;
         Ok(vec![Value::Decimal(set_scale_half_up(
             &decimal, places, at,
         )?)])

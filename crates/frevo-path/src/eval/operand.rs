@@ -54,37 +54,34 @@ pub(super) fn text_of(model: &dyn Model, value: &Value) -> Option<String> {
 
 /// A decimal from a primitive that holds a number, or the error
 /// `new BigDecimal(text)` raises.
-pub(super) fn decimal_of(
-    model: &dyn Model,
-    value: &Value,
-    offset: usize,
-) -> Result<Decimal, EvalError> {
+pub(super) fn decimal_of(model: &dyn Model, value: &Value) -> Result<Decimal, EvalError> {
     if let Value::Decimal(d) = value {
         return Ok(d.clone());
     }
     let text = text_of(model, value).unwrap_or_default();
+    // A `NumberFormatException`, which carries no position (`path.errors.002`).
     Decimal::parse(&text).ok_or_else(|| {
-        EvalError::execution(
-            format!("Character array is missing \"exponent\" mark 'e' or 'E': {text}"),
-            offset,
-        )
+        EvalError::plain(format!(
+            "Character array is missing \"exponent\" mark 'e' or 'E': {text}"
+        ))
     })
 }
 
 /// A 32-bit integer as `Integer.parseInt(primitiveValue())` reads it.
-pub(super) fn int_of(model: &dyn Model, value: &Value, offset: usize) -> Result<i32, EvalError> {
+pub(super) fn int_of(model: &dyn Model, value: &Value) -> Result<i32, EvalError> {
     let text = match value {
         Value::Integer(i) => {
-            return i32::try_from(*i).map_err(|_| number_format(&i.to_string(), offset));
+            return i32::try_from(*i).map_err(|_| number_format(&i.to_string()));
         }
         other => text_of(model, other).unwrap_or_default(),
     };
-    text.parse::<i32>()
-        .map_err(|_| number_format(&text, offset))
+    text.parse::<i32>().map_err(|_| number_format(&text))
 }
 
-fn number_format(text: &str, offset: usize) -> EvalError {
-    EvalError::execution(format!("For input string: \"{text}\""), offset)
+/// `Integer.parseInt`'s `NumberFormatException`, which carries no position
+/// (`path.errors.002`).
+fn number_format(text: &str) -> EvalError {
+    EvalError::plain(format!("For input string: \"{text}\""))
 }
 
 /// The fields of a quantity that `FHIRPathEngine` reads.

@@ -41,17 +41,20 @@ use crate::syntax::ast::NodeId;
 
 use super::collection::{convert_list_to_string, convert_to_string};
 use super::equality::primitive_text;
+use super::error::At;
 use super::navigate::{children_by_name, fhir_type};
 use super::terminology::{self, CodeToCheck};
 use super::{Context, EvalError, Run};
 
 /// `I18nConstants.FHIRPATH_HO_HOST_SERVICES`.
-fn no_host_services(what: &str, offset: usize) -> EvalError {
+/// `makeException(expr, FHIRPATH_HO_HOST_SERVICES, ...)`: the function node
+/// is the holder (`FHIRPathEngine.java:5974`, `path.errors.002`).
+fn no_host_services(what: &str, at: At) -> EvalError {
     EvalError::execution(
         format!(
             "Internal Error evaluating FHIRPath expression: No host services are provided ({what})"
         ),
-        offset,
+        at,
     )
 }
 
@@ -113,7 +116,7 @@ impl Run<'_> {
         let found = match self.host {
             Some(host) => host
                 .resolve_value_set(url)
-                .map_err(|e| EvalError::execution(e.message, offset))?,
+                .map_err(|e| EvalError::plain(e.message))?,
             None => self.model.value_set(url).ok_or_else(|| {
                 EvalError::unsupported(
                     format!("memberOf() against {url}: this model carries no value sets"),
@@ -218,10 +221,7 @@ impl Run<'_> {
         let offset = self.expr.node(holder).op_start();
         // `right.get(0).primitiveValue()` raises on an empty right operand.
         let Some(first) = right.first() else {
-            return Err(EvalError::execution(
-                "Index 0 out of bounds for length 0",
-                offset,
-            ));
+            return Err(EvalError::plain("Index 0 out of bounds for length 0"));
         };
         let Some(url) = primitive_text(self.model, first) else {
             return Err(EvalError::unsupported(
@@ -247,9 +247,8 @@ impl Run<'_> {
         focus: &[Value],
         id: NodeId,
     ) -> Result<Vec<Value>, EvalError> {
-        let offset = self.expr.node(id).start();
         let Some(host) = self.host else {
-            return Err(no_host_services("conformsTo", offset));
+            return Err(no_host_services("conformsTo", At::node(self.expr.node(id))));
         };
         let [item] = focus else {
             return Ok(vec![Value::Boolean(false)]);
@@ -258,7 +257,7 @@ impl Run<'_> {
             convert_list_to_string(&self.execute(context, focus, self.param(id, 0)?, true)?);
         let answer = host
             .conforms_to_profile(item, &url)
-            .map_err(|e| EvalError::execution(e.message, offset))?;
+            .map_err(|e| EvalError::plain(e.message))?;
         Ok(vec![Value::Boolean(answer)])
     }
 
@@ -293,7 +292,7 @@ impl Run<'_> {
                 continue;
             }
             let res = match url.as_deref() {
-                Some(u) if u.starts_with('#') => self.resolve_contained(&u[1..], offset)?,
+                Some(u) if u.starts_with('#') => self.resolve_contained(&u[1..])?,
                 _ => match self.host {
                     None => None,
                     Some(host) => {
@@ -323,13 +322,12 @@ impl Run<'_> {
 
     /// The `#id` branch: the first resource in the **root** resource's
     /// `contained` whose id is `id`.
-    fn resolve_contained(&self, id: &str, offset: usize) -> Result<Option<Value>, EvalError> {
+    fn resolve_contained(&self, id: &str) -> Result<Option<Value>, EvalError> {
         let Some(Value::Node(root)) = self.root_resource else {
             // `context.rootResource.getChildByName(...)` on a null root.
-            return Err(EvalError::execution(
-                format!("resolve() of #{id} needs a root resource, and there is none"),
-                offset,
-            ));
+            return Err(EvalError::plain(format!(
+                "resolve() of #{id} needs a root resource, and there is none"
+            )));
         };
         for c in root.children("contained")? {
             let Value::Node(node) = &c else { continue };
@@ -359,7 +357,7 @@ impl Run<'_> {
         let node = self.expr.node(id);
         let name = node.name().unwrap_or("");
         let Some(host) = self.host else {
-            return Err(no_host_services(&format!("{name}()"), node.start()));
+            return Err(no_host_services(&format!("{name}()"), At::node(node)));
         };
         let mut params: Vec<Vec<Value>> = Vec::new();
         if host.param_is_type(name, 0) {
@@ -383,6 +381,6 @@ impl Run<'_> {
             }
         }
         host.execute_function(name, focus, &params)
-            .map_err(|e| EvalError::execution(e.message, node.start()))
+            .map_err(|e| EvalError::plain(e.message))
     }
 }

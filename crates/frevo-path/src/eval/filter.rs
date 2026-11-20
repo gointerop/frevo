@@ -35,6 +35,7 @@ use crate::seam::value::Value;
 use crate::syntax::ast::NodeId;
 
 use super::equality::{compare_deep, do_contains, primitive_text};
+use super::error::At;
 use super::navigate::fhir_type;
 use super::{Context, EvalError, Run};
 
@@ -154,7 +155,6 @@ impl Run<'_> {
         focus: &[Value],
         id: NodeId,
     ) -> Result<Vec<Value>, EvalError> {
-        let node = self.expr.node(id);
         let pn = self.expr.node(self.param(id, 0)?);
         let head = pn.name().unwrap_or("");
         let tn = match pn.inner() {
@@ -162,10 +162,9 @@ impl Run<'_> {
             None => format!("FHIR.{head}"),
         };
         if !self.is_known_type(&tn) {
-            return Err(EvalError::execution(
-                format!("The type {tn} is not valid"),
-                node.start(),
-            ));
+            // `FHIRPATH_INVALID_TYPE`, constructed with no location
+            // (`FHIRPathEngine.java:5207`, `path.errors.002`).
+            return Err(EvalError::plain(format!("The type {tn} is not valid")));
         }
         let mut result = Vec::new();
         for b in focus {
@@ -225,7 +224,7 @@ impl Run<'_> {
                 "Error evaluating FHIRPath expression: The function single can only be used on a singleton value but found {}",
                 focus.len()
             ),
-            self.expr.node(id).start(),
+            At::node(self.expr.node(id)),
         ))
     }
 
@@ -241,18 +240,11 @@ impl Run<'_> {
         let p = self.param(id, 0)?;
         let n1 = self.execute(context, focus, p, true)?;
         let Some(first) = n1.first() else {
-            return Err(EvalError::execution(
-                "Index 0 out of bounds for length 0",
-                self.expr.node(id).start(),
-            ));
+            return Err(EvalError::plain("Index 0 out of bounds for length 0"));
         };
         let text = primitive_text(self.model, first).unwrap_or_default();
-        text.parse::<i32>().map_err(|_| {
-            EvalError::execution(
-                format!("For input string: \"{text}\""),
-                self.expr.node(p).start(),
-            )
-        })
+        text.parse::<i32>()
+            .map_err(|_| EvalError::plain(format!("For input string: \"{text}\"")))
     }
 
     /// `funcSkip`. The loop starts at `i1`, so a negative count reaches
@@ -265,10 +257,10 @@ impl Run<'_> {
     ) -> Result<Vec<Value>, EvalError> {
         let n = self.count_argument(context, focus, id)?;
         let Ok(from) = usize::try_from(n) else {
-            return Err(EvalError::execution(
-                format!("Index {n} out of bounds for length {}", focus.len()),
-                self.expr.node(id).start(),
-            ));
+            return Err(EvalError::plain(format!(
+                "Index {n} out of bounds for length {}",
+                focus.len()
+            )));
         };
         Ok(focus.iter().skip(from).cloned().collect())
     }

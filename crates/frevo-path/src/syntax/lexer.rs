@@ -5,8 +5,9 @@
 //! Original work Copyright HL7, Inc. and contributors, licensed under the
 //! Apache License, Version 2.0.
 //! Modified by the Frevo authors: tokens are byte spans into the expression
-//! rather than fresh `String`s, positions are byte offsets rather than
-//! line/column pairs, and the four places where upstream raises an unchecked
+//! rather than fresh `String`s, positions are byte offsets, with HAPI's own
+//! line/column count kept beside them for the error suffix
+//! (`currentLocation`, `path.errors.002`), and the four places where upstream raises an unchecked
 //! Java exception on a truncated input return a `ParseError` instead
 //! (`path.errors.003` forbids a panic; `DEV-0011`).
 //!
@@ -31,6 +32,7 @@
 //!    names knows nine (no `` \` ``) and reads `\u` in base **32**
 //!    (`FHIRLexer.java:511`).
 
+use super::ast::SourceLocation;
 use super::error::ParseError;
 
 /// A token: a byte range in the expression.
@@ -71,6 +73,14 @@ pub(crate) struct Lexer<'a> {
     /// is discounted. It is the end offset a node records.
     previous_end: usize,
     allow_double_quotes: bool,
+    /// `FHIRLexer.currentLocation`: HAPI's line and column, advanced by
+    /// HAPI's own rule (`path.errors.002`). It is not derived from the byte
+    /// offset: a whitespace character advances it by two and a token by its
+    /// length once (`FHIRLexer.java:285`, `:321-324`).
+    location: SourceLocation,
+    /// `FHIRLexer.currentStartLocation`: `location` as it was when the current
+    /// token started (`FHIRLexer.java:147`).
+    start_location: SourceLocation,
 }
 
 impl<'a> Lexer<'a> {
@@ -84,6 +94,8 @@ impl<'a> Lexer<'a> {
             current: None,
             previous_end: 0,
             allow_double_quotes,
+            location: SourceLocation::START,
+            start_location: SourceLocation::START,
         };
         lexer.next()?;
         Ok(lexer)
@@ -104,6 +116,18 @@ impl<'a> Lexer<'a> {
     /// Where the current token starts: the offset a diagnostic reports.
     pub(crate) fn current_start(&self) -> usize {
         self.current_start
+    }
+
+    /// `getCurrentStartLocation()`: HAPI's line and column of the current
+    /// token's first character.
+    pub(crate) fn current_start_location(&self) -> SourceLocation {
+        self.start_location
+    }
+
+    /// `getCurrentLocation()`: HAPI's line and column just past the current
+    /// token.
+    pub(crate) fn current_location(&self) -> SourceLocation {
+        self.location
     }
 
     /// One past the current token's last byte, or the end of the source when
@@ -288,6 +312,7 @@ impl<'a> Lexer<'a> {
         self.skip_whitespace_and_comments();
         self.current = None;
         self.current_start = self.cursor;
+        self.start_location = self.location;
         let Some(ch) = self.char_at(self.cursor) else {
             return Ok(());
         };
@@ -428,6 +453,10 @@ impl<'a> Lexer<'a> {
             start: self.current_start,
             end: self.cursor,
         });
+        // `currentLocation.incColumn(cursor - currentStart)`: the token's
+        // length in UTF-16 units, as Java's string offsets count it.
+        let length = utf16_len(&self.source[self.current_start..self.cursor]);
+        self.location.inc_column(length);
         Ok(())
     }
 
@@ -480,17 +509,30 @@ impl<'a> Lexer<'a> {
     /// mapping language's metadata, which FHIRPath never reads.
     fn skip_whitespace_and_comments(&mut self) {
         let len = self.source.len();
+        // `last13`: whether the character before was a CR, so that a CRLF
+        // starts one new line and not two (`SourceLocation.checkChar`).
+        let mut last13 = false;
         while self.cursor < len {
             if self.cursor + 1 < len && self.starts_with_at(self.cursor, "//") {
                 while let Some(c) = self.char_at(self.cursor) {
                     if c == '\r' || c == '\n' {
                         break;
                     }
-                    self.bump();
+                    // Java steps once per UTF-16 unit, one column each.
+                    self.cursor += c.len_utf8();
+                    self.location.inc_column(utf16_len_char(c));
                 }
             } else if self.cursor + 1 < len && self.starts_with_at(self.cursor, "/*") {
                 while self.cursor + 1 < len && !self.starts_with_at(self.cursor, "*/") {
-                    self.bump();
+                    let Some(c) = self.char_at(self.cursor) else {
+                        break;
+                    };
+                    // `checkChar` then `incColumn()`, once per UTF-16 unit.
+                    for _ in 0..c.len_utf16() {
+                        last13 = self.location.check_char(c, last13);
+                        self.location.inc_column(1);
+                    }
+                    self.cursor += c.len_utf8();
                 }
                 if self.cursor + 1 >= len {
                     // "Unfinished comment": upstream builds the exception and
@@ -503,13 +545,28 @@ impl<'a> Lexer<'a> {
                 }
                 self.bump();
                 self.bump();
-            } else if self.char_at(self.cursor).is_some_and(is_whitespace) {
-                self.bump();
+                self.location.inc_column(2);
+            } else if let Some(c) = self.char_at(self.cursor).filter(|c| is_whitespace(*c)) {
+                // Every whitespace character is in the Basic Multilingual
+                // Plane, so this is one UTF-16 unit.
+                last13 = self.location.check_char(c, last13);
+                self.cursor += c.len_utf8();
+                self.location.inc_column(1);
             } else {
                 return;
             }
         }
     }
+}
+
+/// The length of `s` in UTF-16 code units, which is what Java's string
+/// offsets, and so HAPI's columns, count.
+fn utf16_len(s: &str) -> u32 {
+    u32::try_from(s.encode_utf16().count()).unwrap_or(u32::MAX)
+}
+
+fn utf16_len_char(c: char) -> u32 {
+    if c.len_utf16() == 2 { 2 } else { 1 }
 }
 
 /// `FHIRLexer.processConstant(String)` (`FHIRLexer.java:425`): the escape

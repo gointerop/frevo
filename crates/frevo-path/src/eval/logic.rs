@@ -23,6 +23,7 @@ use crate::seam::value::Value;
 use crate::syntax::ast::{NodeId, Operation};
 
 use super::collection::Tri;
+use super::error::At;
 use super::{Context, EvalError, Run};
 
 fn boolean(b: bool) -> Vec<Value> {
@@ -120,10 +121,10 @@ impl Run<'_> {
         if focus.len() > 1 {
             return Err(EvalError::execution(
                 format!(
-                    "The function iif can only be used on a singleton value but found {}",
+                    "Error evaluating FHIRPath expression: The function iif can only be used on a singleton value but found {}",
                     focus.len()
                 ),
-                node.start(),
+                At::node(node),
             ));
         }
         let condition = self.param(id, 0)?;

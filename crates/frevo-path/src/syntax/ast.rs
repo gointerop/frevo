@@ -1,6 +1,8 @@
 //! The parsed form: the node kinds, the function table and the operators.
 //!
-//! Derived from org.hl7.fhir.core/org.hl7.fhir.r4/src/main/java/org/hl7/fhir/r4/fhirpath/ExpressionNode.java
+//! Derived from org.hl7.fhir.core/org.hl7.fhir.r4/src/main/java/org/hl7/fhir/r4/fhirpath/ExpressionNode.java,
+//! org.hl7.fhir.core/org.hl7.fhir.utilities/src/main/java/org/hl7/fhir/utilities/SourceLocation.java
+//! and (`rep`) org.hl7.fhir.core/org.hl7.fhir.utilities/src/main/java/org/hl7/fhir/exceptions/PathEngineException.java
 //! at 73c432b5f43ddbce979978a760ec4aa81e929094.
 //! Original work Copyright HL7, Inc. and contributors, licensed under the
 //! Apache License, Version 2.0.
@@ -8,7 +10,10 @@
 //! rather than a graph of mutable objects, because the precedence pass rewires
 //! it (`organisePrecedence`) and an arena makes that safe in Rust and keeps a
 //! parsed expression to one allocation block for reuse (`path.parse.001`,
-//! `path.perf.002`). Positions are byte offsets, not line/column pairs.
+//! `path.perf.002`). A node keeps its byte offsets for its own spans and,
+//! beside them, the line and column HAPI's lexer records for it
+//! ([`SourceLocation`]), which is what an execution error's position suffix
+//! names (`path.errors.002`); a node HAPI builds without a start has none.
 
 use std::fmt;
 
@@ -42,6 +47,103 @@ pub enum Constant {
     Deferred(String),
 }
 
+/// `org.hl7.fhir.utilities.SourceLocation`: HAPI's one-based line and
+/// column, advanced by the lexer's own rule rather than derived from a byte
+/// offset (`path.errors.002`). An execution error's ` (@char C)` or
+/// ` (@line L char C)` suffix is rendered from it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct SourceLocation {
+    pub line: u32,
+    pub column: u32,
+}
+
+impl SourceLocation {
+    /// `new SourceLocation(1, 1)`, where every lexer starts
+    /// (`FHIRLexer.java:56`).
+    pub(crate) const START: SourceLocation = SourceLocation { line: 1, column: 1 };
+
+    /// `incColumn(i)`.
+    pub(crate) fn inc_column(&mut self, by: u32) {
+        self.column = self.column.saturating_add(by);
+    }
+
+    /// `newLine()`.
+    fn new_line(&mut self) {
+        self.line = self.line.saturating_add(1);
+        self.column = 1;
+    }
+
+    /// `checkChar(ch, last13)`: a CR, or an LF not preceded by a CR, starts a
+    /// new line; any other character advances the column by one. Answers
+    /// whether `ch` was a CR.
+    pub(crate) fn check_char(&mut self, ch: char, last13: bool) -> bool {
+        match ch {
+            '\r' => {
+                self.new_line();
+                true
+            }
+            '\n' => {
+                if !last13 {
+                    self.new_line();
+                }
+                false
+            }
+            _ => {
+                self.column = self.column.saturating_add(1);
+                false
+            }
+        }
+    }
+
+    /// `PathEngineException.rep(loc, expr)` for a non-null `loc`
+    /// (`PathEngineException.java:81-93`).
+    pub(crate) fn suffix(&self) -> String {
+        if self.line == 1 {
+            format!(" (@char {})", self.column)
+        } else {
+            format!(" (@line {} char {})", self.line, self.column)
+        }
+    }
+}
+
+/// Where a node, or its operator, starts: the zero-based byte offset of its
+/// first token, and HAPI's line and column for the same token. A node HAPI
+/// builds without a start -- a `newGroup` precedence group, the indexer node
+/// -- has none, and an error it holds carries no position (`path.errors.002`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct Position {
+    pub offset: usize,
+    pub location: SourceLocation,
+}
+
+/// Where an error raised about a node is attributed: the byte offset the
+/// node's text starts at, which [`EvalError::Unsupported`] always names, and
+/// the start HAPI records for it, which only some nodes have
+/// (`path.errors.002`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct At {
+    pub offset: usize,
+    pub position: Option<Position>,
+}
+
+impl At {
+    /// `holder.getStart()`.
+    pub(crate) fn node(node: &ExpressionNode) -> At {
+        At {
+            offset: node.start(),
+            position: node.position(),
+        }
+    }
+
+    /// `holder.getOpStart()`.
+    pub(crate) fn op(node: &ExpressionNode) -> At {
+        At {
+            offset: node.op_start(),
+            position: node.op_position(),
+        }
+    }
+}
+
 /// An index into an [`Expression`]'s arena.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct NodeId(pub u32);
@@ -69,6 +171,11 @@ pub struct ExpressionNode {
     end: usize,
     op_start: usize,
     op_end: usize,
+    /// `getStart()`: `None` for a node HAPI builds without one.
+    start_location: Option<SourceLocation>,
+    /// `getOpStart()`: `None` until an operator is parsed onto the node, and
+    /// for a precedence group that took an operator over.
+    op_location: Option<SourceLocation>,
 }
 
 impl ExpressionNode {
@@ -88,6 +195,8 @@ impl ExpressionNode {
             end: start,
             op_start: start,
             op_end: start,
+            start_location: None,
+            op_location: None,
         }
     }
 
@@ -137,6 +246,24 @@ impl ExpressionNode {
     /// (`path.errors.002`).
     pub fn start(&self) -> usize {
         self.start
+    }
+
+    /// `getStart()`: where HAPI records this node as starting, or `None` for
+    /// a node built without a start (`path.errors.002`).
+    pub fn position(&self) -> Option<Position> {
+        self.start_location.map(|location| Position {
+            offset: self.start,
+            location,
+        })
+    }
+
+    /// `getOpStart()`: where HAPI records this node's operator token as
+    /// starting, or `None` where it records none (`path.errors.002`).
+    pub fn op_position(&self) -> Option<Position> {
+        self.op_location.map(|location| Position {
+            offset: self.op_start,
+            location,
+        })
     }
 
     /// One past the last byte of this sub-expression.
@@ -208,6 +335,14 @@ impl ExpressionNode {
     pub(crate) fn set_op_span(&mut self, start: usize, end: usize) {
         self.op_start = start;
         self.op_end = end;
+    }
+
+    pub(crate) fn set_start_location(&mut self, location: SourceLocation) {
+        self.start_location = Some(location);
+    }
+
+    pub(crate) fn set_op_location(&mut self, location: SourceLocation) {
+        self.op_location = Some(location);
     }
 
     /// Translate this node's four offsets, for the one case where the scanned

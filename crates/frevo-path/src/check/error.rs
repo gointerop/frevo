@@ -12,13 +12,16 @@
 use std::error::Error;
 use std::fmt;
 
+use crate::syntax::ast::At;
+
 /// A check did not produce a type.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CheckError {
     /// The check failed: upstream's `PathEngineException` from the check
     /// pass. `id` is upstream's message constant (`FHIRPATH_UNKNOWN_NAME`),
     /// or `HOST_SERVICE` when the host service raised; `offset` is the byte
-    /// offset of the sub-expression it failed on.
+    /// offset of the sub-expression it failed on, present exactly when the
+    /// message carries HAPI's position suffix (`path.errors.002`).
     Failed {
         message: String,
         id: &'static str,
@@ -31,11 +34,30 @@ pub enum CheckError {
 }
 
 impl CheckError {
-    pub(crate) fn failed(id: &'static str, message: impl Into<String>, offset: usize) -> Self {
+    /// `makeException(holder, ...)` in the check pass: with a holder start
+    /// the message gets ` (@char C)` or ` (@line L char C)` and the failure
+    /// the start's byte offset; without one, neither (`path.errors.002`).
+    pub(crate) fn failed(id: &'static str, message: impl Into<String>, at: At) -> Self {
+        let mut message = message.into();
+        let offset = at.position.map(|position| {
+            message.push_str(&position.location.suffix());
+            position.offset
+        });
+        CheckError::Failed {
+            message,
+            id,
+            offset,
+        }
+    }
+
+    /// A failure HAPI raises with no location -- a `PathEngineException`
+    /// built without one, a host service's own exception, a Java runtime
+    /// exception: the message as given, and no offset (`path.errors.002`).
+    pub(crate) fn unlocated(id: &'static str, message: impl Into<String>) -> Self {
         CheckError::Failed {
             message: message.into(),
             id,
-            offset: Some(offset),
+            offset: None,
         }
     }
 

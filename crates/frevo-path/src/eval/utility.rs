@@ -33,6 +33,7 @@ use crate::syntax::ast::{Kind, NodeId};
 
 use super::collection::{convert_list_to_string, convert_to_string};
 use super::equality::primitive_text;
+use super::error::At;
 use super::navigate::{children_by_name, fhir_type};
 use super::{Context, EvalError, Run};
 
@@ -120,15 +121,12 @@ impl Run<'_> {
 
     /// The first value of an evaluated argument as text, as
     /// `nl.get(0).primitiveValue()` reads it: an empty list raises.
-    fn first_text(&self, items: &[Value], id: NodeId) -> Result<String, EvalError> {
+    fn first_text(&self, items: &[Value]) -> Result<String, EvalError> {
         match items.first() {
             Some(first) => {
                 Ok(primitive_text(self.model, first).unwrap_or_else(|| "null".to_string()))
             }
-            None => Err(EvalError::execution(
-                "Index 0 out of bounds for length 0",
-                self.expr.node(id).start(),
-            )),
+            None => Err(EvalError::plain("Index 0 out of bounds for length 0")),
         }
     }
 
@@ -142,7 +140,7 @@ impl Run<'_> {
         id: NodeId,
     ) -> Result<Vec<Value>, EvalError> {
         let nl = self.execute(context, focus, self.param(id, 0)?, true)?;
-        let name = self.first_text(&nl, id)?;
+        let name = self.first_text(&nl)?;
         match self.expr.node(id).parameters().get(1) {
             Some(&p) => {
                 let n2 = self.execute(context, focus, p, true)?;
@@ -164,10 +162,10 @@ impl Run<'_> {
         let n1 = self.execute(context, focus, self.param(id, 0)?, true)?;
         if !convert_to_boolean(&n1) {
             let n2 = self.execute(context, focus, self.param(id, 1)?, true)?;
-            let name = self.first_text(&n2, id)?;
+            let name = self.first_text(&n2)?;
             return Err(EvalError::execution(
                 format!("Error evaluating FHIRPath expression: Check failed with message '{name}'"),
-                self.expr.node(id).start(),
+                At::node(self.expr.node(id)),
             ));
         }
         Ok(focus.to_vec())
@@ -211,10 +209,7 @@ impl Run<'_> {
     ) -> Result<Vec<Value>, EvalError> {
         let nl = self.execute(context, focus, self.param(id, 0)?, true)?;
         let Some(first) = nl.first() else {
-            return Err(EvalError::execution(
-                "Index 0 out of bounds for length 0",
-                self.expr.node(id).start(),
-            ));
+            return Err(EvalError::plain("Index 0 out of bounds for length 0"));
         };
         let url = primitive_text(self.model, first);
         let mut result = Vec::new();
@@ -263,7 +258,7 @@ impl Run<'_> {
         b: usize,
     ) -> Result<Ordering, EvalError> {
         if params.is_empty() {
-            return self.compare_natural(Some(&focus[a]), Some(&focus[b]), None, self.expr.root());
+            return self.compare_natural(Some(&focus[a]), Some(&focus[b]), None);
         }
         for (at, &p) in params.iter().enumerate() {
             let pnode = self.expr.node(p);
@@ -275,7 +270,7 @@ impl Run<'_> {
             let k1 = self.sort_key(context, focus, keys, a, at, pf)?;
             let k2 = self.sort_key(context, focus, keys, b, at, pf)?;
             let sorter = self.expr.render(pf);
-            let res = self.compare_natural(k1.as_ref(), k2.as_ref(), Some(&sorter), pf)?;
+            let res = self.compare_natural(k1.as_ref(), k2.as_ref(), Some(&sorter))?;
             if res != Ordering::Equal {
                 return Ok(if reversed { res.reverse() } else { res });
             }
@@ -302,13 +297,10 @@ impl Run<'_> {
             [] => None,
             [one] => Some(one.clone()),
             _ => {
-                return Err(EvalError::execution(
-                    format!(
-                        "Multiple values found in return from sort expression '{}'",
-                        self.expr.render(pf)
-                    ),
-                    self.expr.node(pf).start(),
-                ));
+                return Err(EvalError::plain(format!(
+                    "Multiple values found in return from sort expression '{}'",
+                    self.expr.render(pf)
+                )));
             }
         };
         keys.keys[item][param] = Some(key.clone());
@@ -322,7 +314,6 @@ impl Run<'_> {
         o1: Option<&Value>,
         o2: Option<&Value>,
         sorter: Option<&str>,
-        at: NodeId,
     ) -> Result<Ordering, EvalError> {
         let (o1, o2) = match (o1, o2) {
             (None, None) => return Ok(Ordering::Equal),
@@ -331,7 +322,6 @@ impl Run<'_> {
             (Some(a), Some(b)) => (a, b),
         };
         let (t1, t2) = (fhir_type(o1), fhir_type(o2));
-        let offset = self.expr.node(at).start();
         if !is_comparable_types(t1, t2) {
             let message = match sorter {
                 None => format!(
@@ -341,11 +331,11 @@ impl Run<'_> {
                     "Cannot sort the list because the sort expression return both a '{t1}' and a '{t2}' (expression = '{s}')"
                 ),
             };
-            return Err(EvalError::execution(message, offset));
+            return Err(EvalError::plain(message));
         }
         let s1 = primitive_text(self.model, o1).unwrap_or_else(|| convert_to_string(o1));
         let s2 = primitive_text(self.model, o2).unwrap_or_else(|| convert_to_string(o2));
-        let bad = |s: &str| EvalError::execution(format!("For input string: \"{s}\""), offset);
+        let bad = |s: &str| EvalError::plain(format!("For input string: \"{s}\""));
         Ok(if is_integer_type(t1) {
             let a: i32 = s1.parse().map_err(|_| bad(&s1))?;
             let b: i32 = s2.parse().map_err(|_| bad(&s2))?;

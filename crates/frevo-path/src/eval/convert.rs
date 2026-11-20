@@ -39,6 +39,7 @@ use crate::seam::value::{Decimal, Quantity, Value};
 use crate::syntax::ast::{Function, NodeId};
 
 use super::collection::{convert_list_to_string, convert_to_string};
+use super::error::At;
 use super::navigate::fhir_type;
 use super::operand::{UCUM_SYSTEM, decimal_of, has_type, int_of, is_quantity, text_of};
 use super::{EvalError, Run};
@@ -264,8 +265,10 @@ fn time_tail(b: &[u8], mut at: usize) -> bool {
 }
 
 /// `parseQuantityString` (`:6032`): `Ok(None)` is upstream's `null`; an `Err`
-/// is the `StringIndexOutOfBoundsException` a lone quote raises.
-fn parse_quantity_string(s: &str, at: usize) -> Result<Option<Quantity>, EvalError> {
+/// is the `StringIndexOutOfBoundsException` a lone quote raises. That is a
+/// Java runtime exception, which carries no position (`path.errors.002`), so
+/// the offset of the call is not reported.
+fn parse_quantity_string(s: &str, _offset: usize) -> Result<Option<Quantity>, EvalError> {
     let s = s.trim_matches(|c: char| c <= ' ');
     let ucum = |v: &str, code: &str| -> Option<Quantity> {
         Some(Quantity {
@@ -283,10 +286,10 @@ fn parse_quantity_string(s: &str, at: usize) -> Result<Option<Quantity>, EvalErr
         }
         if unit.starts_with('\'') && unit.ends_with('\'') {
             if unit.len() < 2 {
-                return Err(EvalError::execution(
-                    format!("begin 1, end 0, length {}", unit.len()),
-                    at,
-                ));
+                return Err(EvalError::plain(format!(
+                    "begin 1, end 0, length {}",
+                    unit.len()
+                )));
             }
             return Ok(ucum(v, &unit[1..unit.len() - 1]));
         }
@@ -322,13 +325,13 @@ impl Run<'_> {
         id: NodeId,
         function: Function,
     ) -> Result<Vec<Value>, EvalError> {
-        let at = self.expr.node(id).start();
+        let at = At::node(self.expr.node(id));
         match function {
             Function::ToInteger => Ok(to_integer(focus)),
-            Function::ToDecimal => to_decimal(focus, at),
+            Function::ToDecimal => to_decimal(focus),
             Function::ToString => to_string(focus, at),
-            Function::ToBoolean => self.to_boolean(focus, at),
-            Function::ToQuantity => self.to_quantity(focus, at),
+            Function::ToBoolean => self.to_boolean(focus),
+            Function::ToQuantity => self.to_quantity(focus, at.offset),
             Function::ToDateTime | Function::ToTime => Err(EvalError::execution(
                 format!(
                     "Error evaluating FHIRPath expression: The function {} is not implemented",
@@ -336,11 +339,11 @@ impl Run<'_> {
                 ),
                 at,
             )),
-            other => self.converts_to(focus, other, at),
+            other => self.converts_to(focus, other, at.offset),
         }
     }
 
-    fn to_boolean(&self, focus: &[Value], at: usize) -> Result<Vec<Value>, EvalError> {
+    fn to_boolean(&self, focus: &[Value]) -> Result<Vec<Value>, EvalError> {
         let [one] = focus else {
             return Ok(Vec::new());
         };
@@ -348,14 +351,14 @@ impl Run<'_> {
             return Ok(vec![one.clone()]);
         }
         if is_integer_type(one) {
-            return Ok(match int_of(self.model, one, at)? {
+            return Ok(match int_of(self.model, one)? {
                 0 => vec![Value::Boolean(false)],
                 1 => vec![Value::Boolean(true)],
                 _ => Vec::new(),
             });
         }
         if is_decimal_type(one) {
-            let d = decimal_of(self.model, one, at)?;
+            let d = decimal_of(self.model, one)?;
             return Ok(if decimal_is_zero(&d) {
                 vec![Value::Boolean(false)]
             } else if decimal_is_one(&d) {
@@ -434,9 +437,9 @@ impl Run<'_> {
             Function::ConvertsToString => !has_type(one, &["dateTime", "time"]),
             Function::ConvertsToBoolean => {
                 if is_integer_type(one) {
-                    (0..=1).contains(&int_of(self.model, one, at)?)
+                    (0..=1).contains(&int_of(self.model, one)?)
                 } else if is_decimal_type(one) {
-                    let d = decimal_of(self.model, one, at)?;
+                    let d = decimal_of(self.model, one)?;
                     decimal_is_zero(&d) || decimal_is_one(&d)
                 } else if is_boolean_type(one) {
                     true
@@ -492,17 +495,14 @@ fn to_integer(focus: &[Value]) -> Vec<Value> {
     }
 }
 
-fn to_decimal(focus: &[Value], at: usize) -> Result<Vec<Value>, EvalError> {
+fn to_decimal(focus: &[Value]) -> Result<Vec<Value>, EvalError> {
     let s = convert_list_to_string(focus);
     let mut result = Vec::new();
     if is_decimal(&s, true) {
         let Some(d) = big_decimal(&s) else {
-            return Err(EvalError::execution(
-                format!(
-                    "Character {s} is neither a decimal digit number, decimal point, nor \"e\" notation exponential mark."
-                ),
-                at,
-            ));
+            return Err(EvalError::plain(format!(
+                "Character {s} is neither a decimal digit number, decimal point, nor \"e\" notation exponential mark."
+            )));
         };
         result.push(Value::Decimal(d));
     }
@@ -515,7 +515,7 @@ fn to_decimal(focus: &[Value], at: usize) -> Result<Vec<Value>, EvalError> {
     Ok(result)
 }
 
-fn to_string(focus: &[Value], at: usize) -> Result<Vec<Value>, EvalError> {
+fn to_string(focus: &[Value], at: At) -> Result<Vec<Value>, EvalError> {
     let result: Vec<Value> = focus
         .iter()
         .map(|item| Value::String(convert_to_string(item)))

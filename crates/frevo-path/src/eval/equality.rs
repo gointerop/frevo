@@ -122,18 +122,14 @@ fn dec_equal(left: &str, right: &str) -> bool {
 fn both_dates(
     left: &Value,
     right: &Value,
-    offset: usize,
 ) -> Result<Option<(temporal::Dt, temporal::Dt)>, EvalError> {
     if !(is_date_time(left) && is_date_time(right)) {
         return Ok(None);
     }
-    match (
-        temporal::from_value(left, offset)?,
-        temporal::from_value(right, offset)?,
-    ) {
+    match (temporal::from_value(left)?, temporal::from_value(right)?) {
         (Some(l), Some(r)) => {
-            temporal::check_copyable(&l, &text_for_message(left), offset)?;
-            temporal::check_copyable(&r, &text_for_message(right), offset)?;
+            temporal::check_copyable(&l, &text_for_message(left))?;
+            temporal::check_copyable(&r, &text_for_message(right))?;
             Ok(Some((l, r)))
         }
         _ => Ok(None),
@@ -144,9 +140,9 @@ fn text_for_message(value: &Value) -> String {
     super::collection::convert_to_string(value)
 }
 
-fn decimal(text: &str, offset: usize) -> Result<Decimal, EvalError> {
+fn decimal(text: &str) -> Result<Decimal, EvalError> {
     Decimal::parse(text)
-        .ok_or_else(|| EvalError::execution(format!("\"{text}\" is not a decimal value"), offset))
+        .ok_or_else(|| EvalError::plain(format!("\"{text}\" is not a decimal value")))
 }
 
 /// `qtyEqual` (`FHIRPathEngine.java:2253`) and `qtyEquivalent` (`:2324`), which
@@ -187,8 +183,8 @@ fn qty_compare(
             return Ok(None);
         }
     }
-    let a = Value::Decimal(decimal(lv, offset)?);
-    let b = Value::Decimal(decimal(rv, offset)?);
+    let a = Value::Decimal(decimal(lv)?);
+    let b = Value::Decimal(decimal(rv)?);
     if equivalent {
         do_equivalent(model, &a, &b, offset).map(Some)
     } else {
@@ -208,7 +204,7 @@ pub(super) fn do_equals(
     if is_quantity(model, left) && is_quantity(model, right) {
         return qty_compare(model, left, right, false, offset);
     }
-    if let Some((l, r)) = both_dates(left, right, offset)? {
+    if let Some((l, r)) = both_dates(left, right)? {
         return Ok(temporal::equals_using_fhir_rules(&l, &r));
     }
     let left_primitive = primitive_value_of(model, left);
@@ -317,10 +313,9 @@ pub(super) fn do_equivalent(
 ) -> Result<bool, EvalError> {
     let unboxed = |answer: Option<bool>| {
         answer.ok_or_else(|| {
-            EvalError::execution(
+            EvalError::plain(
                 "Cannot invoke \"java.lang.Boolean.booleanValue()\" because the return value \
                  of the equivalence rule is null",
-                offset,
             )
         })
     };
@@ -342,20 +337,17 @@ pub(super) fn do_equivalent(
     }
     let temporal_types = ["date", "dateTime", "time", "instant"];
     if has_type(left, &temporal_types) && has_type(right, &temporal_types) {
-        return match both_dates(left, right, offset)? {
+        return match both_dates(left, right)? {
             Some((l, r)) => Ok(temporal::equals_using_fhir_rules(&l, &r) == Some(true)),
             // `new DateTimeType(timeText)` cannot be parsed.
-            None => Err(EvalError::execution(
-                format!(
-                    "Invalid date/time format: \"{}\"",
-                    text_for_message(if has_type(left, &["time"]) {
-                        left
-                    } else {
-                        right
-                    })
-                ),
-                offset,
-            )),
+            None => Err(EvalError::plain(format!(
+                "Invalid date/time format: \"{}\"",
+                text_for_message(if has_type(left, &["time"]) {
+                    left
+                } else {
+                    right
+                })
+            ))),
         };
     }
     if has_type(left, &STRING_TYPES) && has_type(right, &STRING_TYPES) {

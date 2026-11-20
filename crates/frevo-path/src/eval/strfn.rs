@@ -236,17 +236,13 @@ impl Run<'_> {
         id: NodeId,
     ) -> Result<Vec<Value>, EvalError> {
         let node = self.expr.node(id);
-        let at = node.start();
         let p1 = self.param(id, 0)?;
         let n1 = self.execute(context, focus, p1, true)?;
         // `n1.get(0)` on an empty list raises.
         let Some(first) = n1.first() else {
-            return Err(EvalError::execution(
-                "Index 0 out of bounds for length 0",
-                at,
-            ));
+            return Err(EvalError::plain("Index 0 out of bounds for length 0"));
         };
-        let start = int_of(self.model, first, at)?;
+        let start = int_of(self.model, first)?;
         let mut length = -1;
         if node.parameters().len() == 2 {
             let p2 = self.param(id, 1)?;
@@ -275,14 +271,13 @@ impl Run<'_> {
             // `Math.min(sw.length(), i1 + i2)`, the sum wrapping as a Java int.
             let end = total.min(start.wrapping_add(length));
             let Ok(end) = usize::try_from(end) else {
-                return Err(substring_range(start, end, total, at));
+                return Err(substring_range(start, end, total));
             };
             if end < begin {
                 return Err(substring_range(
                     start,
                     i32::try_from(end).unwrap_or(0),
                     total,
-                    at,
                 ));
             }
             end
@@ -298,6 +293,6 @@ impl Run<'_> {
     }
 }
 
-fn substring_range(begin: i32, end: i32, length: i32, at: usize) -> EvalError {
-    EvalError::execution(format!("begin {begin}, end {end}, length {length}"), at)
+fn substring_range(begin: i32, end: i32, length: i32) -> EvalError {
+    EvalError::plain(format!("begin {begin}, end {end}, length {length}"))
 }

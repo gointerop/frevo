@@ -35,6 +35,7 @@ use crate::seam::model::Model;
 use crate::seam::value::{Decimal, Value};
 
 use super::EvalError;
+use super::error::At;
 use super::navigate::fhir_type;
 use super::operand::{self, STRING_TYPES, has_type, is_primitive, text_of};
 use super::temporal;
@@ -63,44 +64,43 @@ fn boolean(b: bool) -> Vec<Value> {
     vec![Value::Boolean(b)]
 }
 
-fn null_pointer(what: &str, offset: usize) -> EvalError {
-    EvalError::execution(
-        format!("Cannot invoke \"{what}\" because the value is null"),
-        offset,
-    )
+/// A `NullPointerException` upstream, which carries no position
+/// (`path.errors.002`).
+fn null_pointer(what: &str) -> EvalError {
+    EvalError::plain(format!(
+        "Cannot invoke \"{what}\" because the value is null"
+    ))
 }
 
 /// `Double.valueOf(primitiveValue())`.
-fn double_of(model: &dyn Model, value: &Value, offset: usize) -> Result<f64, EvalError> {
-    let text =
-        text_of(model, value).ok_or_else(|| null_pointer("java.lang.String.trim()", offset))?;
+fn double_of(model: &dyn Model, value: &Value) -> Result<f64, EvalError> {
+    let text = text_of(model, value).ok_or_else(|| null_pointer("java.lang.String.trim()"))?;
     text.trim()
         .parse::<f64>()
-        .map_err(|_| EvalError::execution(format!("For input string: \"{text}\""), offset))
+        .map_err(|_| EvalError::plain(format!("For input string: \"{text}\"")))
 }
 
 /// The decimal list `listChildrenByName("value")` yields for a quantity: one
 /// item, or none.
-fn value_list(q: &operand::Qty, offset: usize) -> Result<Vec<Value>, EvalError> {
+fn value_list(q: &operand::Qty) -> Result<Vec<Value>, EvalError> {
     match &q.value {
         None => Ok(Vec::new()),
         Some(text) => Decimal::parse(text)
             .map(|d| vec![Value::Decimal(d)])
-            .ok_or_else(|| {
-                EvalError::execution(format!("\"{text}\" is not a decimal value"), offset)
-            }),
+            .ok_or_else(|| EvalError::plain(format!("\"{text}\" is not a decimal value"))),
     }
 }
 
 /// `opLessThan`, `opGreater`, `opLessOrEqual` and `opGreaterOrEqual`.
 ///
-/// `at` is where an error is attributed (`holder.getStart()`).
+/// `at` is where an error is attributed (`holder.getStart()`, which a
+/// precedence group does not have, `path.errors.002`).
 pub(super) fn op_ordered(
     model: &dyn Model,
     left: &[Value],
     right: &[Value],
     kind: Ordered,
-    at: usize,
+    at: At,
 ) -> Result<Vec<Value>, EvalError> {
     if left.is_empty() || right.is_empty() {
         return Ok(Vec::new());
@@ -120,11 +120,11 @@ fn primitives(
     l: &Value,
     r: &Value,
     kind: Ordered,
-    at: usize,
+    at: At,
 ) -> Result<Vec<Value>, EvalError> {
     if has_type(l, &STRING_TYPES) && has_type(r, &STRING_TYPES) {
-        let lt = text_of(model, l).ok_or_else(|| null_pointer("java.lang.String.compareTo", at))?;
-        let rt = text_of(model, r).ok_or_else(|| null_pointer("java.lang.String.compareTo", at))?;
+        let lt = text_of(model, l).ok_or_else(|| null_pointer("java.lang.String.compareTo"))?;
+        let rt = text_of(model, r).ok_or_else(|| null_pointer("java.lang.String.compareTo"))?;
         let order = lt.encode_utf16().cmp(rt.encode_utf16());
         return Ok(boolean(kind.holds(order)));
     }
@@ -134,7 +134,7 @@ fn primitives(
         &["integer", "decimal", "unsignedInt", "positiveInt"]
     };
     if has_type(l, numeric) && has_type(r, numeric) {
-        let (a, b) = (double_of(model, l, at)?, double_of(model, r, at)?);
+        let (a, b) = (double_of(model, l)?, double_of(model, r)?);
         let holds = match kind {
             Ordered::Less => a < b,
             Ordered::Greater => a > b,
@@ -145,8 +145,7 @@ fn primitives(
     }
     let dates = ["date", "dateTime", "instant"];
     if has_type(l, &dates) && has_type(r, &dates) {
-        let (Some(a), Some(b)) = (temporal::from_value(l, at)?, temporal::from_value(r, at)?)
-        else {
+        let (Some(a), Some(b)) = (temporal::from_value(l)?, temporal::from_value(r)?) else {
             return Ok(Vec::new());
         };
         // `compareDateTimeElements` rewrites an operand that is already a
@@ -181,7 +180,7 @@ fn quantities(
     l: &Value,
     r: &Value,
     kind: Ordered,
-    at: usize,
+    at: At,
 ) -> Result<Vec<Value>, EvalError> {
     let (lq, rq) = (operand::qty_of(l)?, operand::qty_of(r)?);
     let same_units = match kind {
@@ -194,23 +193,23 @@ fn quantities(
         Ordered::LessOrEqual => match (&lq.unit, &rq.unit) {
             (None, None) => true,
             (None, Some(_)) => {
-                return Err(null_pointer("java.lang.String.equals(Object)", at));
+                return Err(null_pointer("java.lang.String.equals(Object)"));
             }
             (Some(a), Some(b)) => a == b,
             (Some(_), None) => false,
         },
     };
     if same_units {
-        let (lv, rv) = (value_list(&lq, at)?, value_list(&rq, at)?);
+        let (lv, rv) = (value_list(&lq)?, value_list(&rq)?);
         return op_ordered(model, &lv, &rv, kind, at);
     }
     // `qtyToCanonicalDecimal` answers `null` for a quantity that is not in the
     // UCUM system, and the recursive call then dereferences it.
     let ucum = Some(operand::UCUM_SYSTEM);
     if lq.system.as_deref() != ucum || rq.system.as_deref() != ucum {
-        return Err(null_pointer("org.hl7.fhir.r4.model.Base.isPrimitive()", at));
+        return Err(null_pointer("org.hl7.fhir.r4.model.Base.isPrimitive()"));
     }
-    Err(EvalError::unsupported(
+    Err(EvalError::unsupported_at(
         "ordering quantities through their UCUM canonical form",
         at,
     ))
