@@ -3705,15 +3705,45 @@ deviation from HAPI, so neither needs a `DEV-nnnn` entry: both are HAPI.
 #### Scenario: [path.strictness.005] a mis-cased type name resolves only when case is not enforced
 
 - **WHEN** `Patient.gender.as(Code)` is evaluated over `patient-example.xml`
-  with `as` case sensitivity **not** enforced, which is the server-facing
-  default
-- **THEN** the mis-cased name resolves to the FHIR type `code` and the result is
-  the `code` `male`
+  with `as` case sensitivity **not** enforced, which is what both R4
+  configurations set (`initFlags`, `FHIRPathEngine.java:211-216`;
+  `FhirPathR4`'s constructor,
+  `hapi-fhir-structures-r4/src/main/java/org/hl7/fhir/r4/hapi/fluentpath/FhirPathR4.java:34-40`)
+- **THEN** the result is the `code` `male`. `funcAs` first tests
+  `isKnownType("FHIR.Code")` (`FHIRPathEngine.java:5163-5165`, `:1904-1935`),
+  which asks the worker for `.../StructureDefinition/Code`. HAPI's
+  server-facing worker (`HapiWorkerContext.fetchTypeDefinition`,
+  `hapi-fhir-structures-r4/src/main/java/org/hl7/fhir/r4/hapi/ctx/HapiWorkerContext.java:412-414`,
+  over `DefaultProfileValidationSupport`) misses, and because the name's
+  **first letter is upper-case** retries it with that letter lower-cased and
+  finds `code` (`hapi-fhir-base/src/main/java/ca/uhn/fhir/context/support/DefaultProfileValidationSupportBundleStrategy.java:276-297`,
+  for R4, R4B and R5). The item then matches because `compareTypeNames`
+  ignores case when case is not enforced (`:1896-1902`, `:5185`)
 - **WHEN** the same expression is evaluated with case sensitivity enforced,
-  which is the harness's evaluation configuration
-- **THEN** the result is an empty collection, because `Code` does not name a
-  FHIR type
-- **AND** no live case grades either state, so both are differential-only
+  which only the setter reaches
+- **THEN** the type is still known, through the same retry, and the result is an
+  empty collection, because `Code` and `code` now compare unequal
+- **AND** `Patient.gender as Code` behaves as `as(Code)` in both states
+  (`opAs`: `isKnownType("Code")`, then `compareTypeNames`, `:1880-1890`), and
+  `Patient.gender.ofType(Code)` is empty in both, because `funcOfType` compares
+  with `equals`, not `compareTypeNames` (`:5205-5226`)
+- **AND** the retry applies only to an upper-case initial: in either state,
+  `Observation.value.as(quantity)` over `observation-example.xml` fails with the
+  message exactly `The type FHIR.quantity is not valid`
+  (`FHIRPATH_INVALID_TYPE`, `Messages.properties:336`), with no prefix, no
+  position suffix and no Frevo offset, because it is constructed without a
+  location (`path.errors.002`). HAPI's own `FhirPathEngineR4Test.testAs`
+  (`hapi-fhir-validation/src/test/java/org/hl7/fhir/r4/utils/FhirPathEngineR4Test.java:93-115`)
+  exercises only `string`, `FHIR.string`, `String` and `FHIR.String`
+- **AND** the retry belongs to HAPI's **server-facing** lookup, not to the
+  engine. The worker the vendored suite's Java harness uses resolves a type
+  name exactly (`BaseWorkerContext.fetchTypeDefinition`,
+  `org.hl7.fhir.r4/src/main/java/org/hl7/fhir/r4/context/BaseWorkerContext.java:1183-1188`),
+  so there `Patient.gender.as(Code)` fails with `The type FHIR.Code is not
+  valid`. Frevo applies the retry in every configuration, the oracle harness
+  included. No suite case names a mis-cased type in `as`, `as()` or
+  `ofType()`, so the suite's results are unaffected. Recorded as `DEV-0026`
+- **AND** no live case grades any of this, so it is differential-only
 
 #### Scenario: [path.strictness.006] lenient polymorphic names are supported by the engine and left unset by HAPI
 
@@ -3731,6 +3761,15 @@ deviation from HAPI, so neither needs a `DEV-nnnn` entry: both are HAPI.
   R4" describes two `modeTest` elements that are themselves commented out and
   are not among the 1,191; it does not describe the engine, which has the field,
   a public getter and setter, and honours it
+- **AND** with polymorphic names allowed, the choice element's **own** base
+  name navigates to nothing: `Observation.value` over `observation-example.xml`
+  evaluates to an empty collection, and `Observation.value.exists()` to
+  `false`. `getChildrenByName` (`FHIRPathEngine.java:255-279`) tests
+  `name.startsWith(n)` for each `[x]` child, so `value` matches `value[x]` with
+  an empty type suffix (`:262-264`), and an item is kept only when its
+  `fhirType()` equals that suffix ignoring case (`:273`), which no type does.
+  With polymorphic names not allowed, `Observation.value` yields the
+  `Quantity` (`path.navigation.006`)
 - **AND** no live case grades the allowed state, so it is differential-only
 
 #### Scenario: [path.strictness.008] the SQL-on-FHIR warning is off by default
@@ -3823,7 +3862,8 @@ The engine SHALL report an evaluation failure as an error carrying HAPI's messag
   expression text (0, 10 and 20 for the three expressions above), present
   exactly when HAPI's message carries a position suffix, and absent otherwise.
   The suffix in the message is computed by HAPI's column rule, never derived as
-  `offset + 1`
+  `offset + 1`. A unary sign's wrapper node is the one holder whose recorded
+  start is not its first token (`path.errors.006`)
 - **WHEN** `1 + 1 < 'a'` is evaluated, and then `(1=1) and 1 + 1 < 'a'`
 - **THEN** each fails with the message exactly
   `Error evaluating FHIRPath expression: Unable to compare values of type integer and string`,
@@ -3916,6 +3956,51 @@ The engine SHALL report an evaluation failure as an error carrying HAPI's messag
 - **AND** the result is not an empty collection, which is the failure mode
   ADR 0004 identifies as the worst available one
 
+#### Scenario: [path.errors.006] a unary sign's error position is HAPI's, just past the token after the sign
+
+- **WHEN** `-'a'` and `- 'a'` are evaluated with the static check skipped
+- **THEN** each fails with the message exactly
+  `Error evaluating FHIRPath expression -: left and right operand have incompatible or invalid types (integer, string)`
+  (`FHIRPATH_OP_INCOMPATIBLE`, `Messages.properties:350`), raised by `opMinus`
+  for `0 - 'a'` (`FHIRPathEngine.java:2977-2978`), followed by ` (@char 5)`
+  and ` (@char 7)` respectively
+- **AND** the reason is where HAPI records the sign's position. A leading `-`
+  or `+` becomes a `Unary` wrapper node carrying the sign as its operation
+  (`:1082-1088`), executed as the integer `0` followed by that operation on the
+  operand (`case Unary`, `:1470-1471`; `:1508-1522`), so the wrapper is the
+  error's holder. Its start is read with `getCurrentLocation()` **after**
+  `lexer.take()`, which has already lexed the next token
+  (`FHIRLexer.java:101-105`), so it is the column just past the operand's
+  first token, not the sign's: `-` reaches column 2 and `'a'` 5; with the
+  space, 2, 4 and then 7
+- **AND** Frevo's error offset is the zero-based byte offset of that same
+  position, just past the operand's first token: 4 for `-'a'` and 5 for
+  `- 'a'`
+- **AND** no live case grades it, so it is differential-only
+
+#### Scenario: [path.errors.007] the `iif` singleton and `is` parameter-kind errors carry HAPI's prefix and position
+
+- **WHEN** `(1 | 2).iif(true, 'a')` is evaluated
+- **THEN** it fails with the message exactly
+  `Error evaluating FHIRPath expression: The function iif can only be used on a singleton value but found 2 (@char 11)`.
+  `funcIif` throws `FHIRPATH_NO_COLLECTION` for a focus of more than one item
+  (`FHIRPathEngine.java:5007-5010`, `Messages.properties:344`) with the `iif`
+  function node as the holder, at column 11 and byte offset 8; the static
+  check only records a warning for it (`checkSingleton`, `:3839-3843`)
+- **WHEN** `1.is('x')` and `1.is(FHIR.toString())` are evaluated with the static
+  check skipped
+- **THEN** they fail with the messages exactly
+  `Error evaluating FHIRPath expression: The expression type Constant is not supported for parameter 0 on function is (@char 3)`
+  and
+  `Error evaluating FHIRPath expression: The expression type Name is not supported for parameter 1 on function is (@char 3)`
+  (`FHIRPATH_PARAM_WRONG`, `Messages.properties:352`; `funcIs`,
+  `:5102-5109`), the holder being the `is` function node, at column 3 and byte
+  offset 2
+- **AND** the second message names the kind of the **outer** parameter node
+  (`Name`), not that of the inner node that failed the test, because `funcIs`
+  passes `texp.getKind()` in both branches (`:5108`)
+- **AND** no live case grades the messages, so they are differential-only
+
 ### Requirement: The public evaluation surface
 
 The crate SHALL expose a synchronous evaluation surface that separates parsing from evaluation, so a caller can parse once and evaluate many times inside a write transaction.
@@ -3952,7 +4037,35 @@ the operations they expect.
 
 - **WHEN** a caller asks for results of one type and the expression yields
   another
-- **THEN** an error naming both types is returned, as `FhirPathR4` does
+- **THEN** an error naming both types is returned, as `FhirPathR4` does: HAPI
+  checks every result item with `theReturnType.isAssignableFrom(next.getClass())`
+  and fails on the first that is not (`FhirPathR4.java:72-77`)
+- **AND** in Frevo the requested type is a FHIR type name, or `Base`, which
+  accepts every item. An item satisfies a FHIR type when its own type is that
+  type or derives from it through the R4 `baseDefinition` chain: `code`,
+  `markdown` and `id` satisfy `string`; `url`, `canonical`, `oid` and `uuid`
+  satisfy `uri`; `positiveInt` and `unsignedInt` satisfy `integer`; `Age`,
+  `Count`, `Distance` and `Duration` satisfy
+  `Quantity`; every resource satisfies `Resource`, and a domain resource
+  `DomainResource`; every datatype satisfies `Element`. An empty result
+  satisfies any requested type
+- **AND** the error is an execution error whose message is exactly
+  `FhirPath expression returned unexpected type <item's FHIR type> - Expected <requested type>`,
+  for the first item that does not satisfy it, with no offset. So asking for
+  `string` from `Patient.birthDate` over `patient-example.xml` fails with
+  `FhirPath expression returned unexpected type date - Expected string`
+- **AND** this differs from HAPI in three recorded ways (`DEV-0027`). HAPI's
+  message is prefixed `HAPI-0256: ` (`Msg.code(256)`) and names Java classes,
+  the item's by `getSimpleName()` and the expected one by `getName()`
+  (`HAPI-0256: FhirPath expression returned unexpected type DateType - Expected org.hl7.fhir.r4.model.StringType`).
+  `IdType` extends `UriType` in Java, so HAPI accepts an `id` as a `UriType`
+  and rejects it as a `StringType`, where Frevo accepts it as `string` and
+  rejects it as `uri`. And an element whose HAPI model class is an
+  `Enumeration` (a `code` bound to a generated value set, such as
+  `Patient.gender`) is neither a `CodeType` nor a `StringType` in Java, so HAPI
+  rejects it for both, where Frevo accepts it as `code` and as `string`
+- **AND** no live case grades it, and the typed surface is not reachable over
+  HTTP, so it is graded by Frevo's own tests against these statements
 
 #### Scenario: [path.api.006] evaluation is synchronous
 

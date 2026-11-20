@@ -1139,7 +1139,10 @@ checkpoint because it changes what a gate measures.
   present exactly when the suffix is; no panic anywhere in the
   suite; depth and step limits; and a model decode error surfacing as an error
   rather than as an empty collection.
-  Satisfies `path.errors.001` through `path.errors.005`.
+  Also a unary sign's error position, read just past the operand's first token
+  as HAPI does (`path.errors.006`), and the `iif` singleton and `is`
+  parameter-kind messages (`path.errors.007`).
+  Satisfies `path.errors.001` through `path.errors.007`.
 
 - [ ] **54. Implement the public evaluation surface.** Evaluate from text,
   evaluate a parsed expression repeatedly, evaluate-first with its no-match

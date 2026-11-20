@@ -9,8 +9,8 @@ capability, because that is the layout `openspec validate` parses and
 |---|---|---:|
 | `codegen` | [`specs/codegen/spec.md`](specs/codegen/spec.md) | 49 |
 | `model` | [`specs/model/spec.md`](specs/model/spec.md) | 83 |
-| `path` | [`specs/path/spec.md`](specs/path/spec.md) | 378 |
-| **Total** | | **510** |
+| `path` | [`specs/path/spec.md`](specs/path/spec.md) | 380 |
+| **Total** | | **512** |
 
 This file carries no normative text of its own. It carries the ID registry,
 which is the thing a later change must not collide with.
@@ -146,6 +146,19 @@ clause was corrected in place to reference `path.boundary.015` and to grade
 HAPI's values (`2013-12-31T18:00:01Z`, `2014-01-01T00:05:00Z`,
 `2013-12-31T10:00:01Z`, `2014-01-01T13:05:00Z`, and the `-1`-seconds failure).
 
+After the implementer's findings on tasks 52 and 54 (`tasks/blockers.md`,
+2026-11-20, "tasks 52 and 54 need their test seams rebound"), three scenarios
+were corrected in place and **2 IDs were added**. `path.strictness.005` now
+states that `as(Code)` resolves through HAPI's server-facing upper-case-initial
+retry while `as(quantity)` raises `The type FHIR.quantity is not valid`, and
+that the suite's Java harness has no retry (`DEV-0026`); `path.strictness.006`
+states that with polymorphic names on, `Observation.value` navigates nothing;
+`path.api.005` states Frevo's FHIR-type assignability and message and the three
+differences from HAPI's Java-class check (`DEV-0027`). `path.errors.006`
+grades a unary sign's error position (just past the operand's first token) and
+`path.errors.007` the `iif` singleton and `is` parameter-kind messages. None
+was removed, renumbered, reused or repurposed.
+
 | Area | IDs allocated | Range |
 |---|---:|---|
 | `codegen.inputs.*` | 6 | `001`-`006` |
@@ -189,7 +202,7 @@ HAPI's values (`2013-12-31T18:00:01Z`, `2014-01-01T00:05:00Z`,
 | `path.utility.*` | 28 | `001`-`028` |
 | `path.check.*` | 19 | `001`-`019` |
 | `path.strictness.*` | 10 | `001`-`010` |
-| `path.errors.*` | 5 | `001`-`005` |
+| `path.errors.*` | 7 | `001`-`007` |
 | `path.api.*` | 8 | `001`-`008` |
 | `path.oracle.*` | 17 | `001`-`017` |
 | `path.perf.*` | 6 | `001`-`006` |
@@ -215,9 +228,10 @@ contain `<test ...>` text — and are leftover Java, not well-formed test
 elements. `documentFunctions` is 115 cases, not 114. The `invalid` counts are
 unaffected: 7 syntax, 29 semantic, 27 execution.
 
-**Twenty-eight scenarios have no live case in the pinned suite to grade them and
+**Thirty scenarios have no live case in the pinned suite to grade them and
 say so in their own text**: `path.subset.003`, `path.subset.013`,
-`path.compare.007`, `path.compare.011`, `path.compare.015`, `path.convert.012`,
+`path.compare.007`, `path.compare.011`, `path.compare.015`, `path.errors.006`,
+`path.errors.007`, `path.convert.012`,
 `path.datetime.003`, `path.quantity.015`, `path.quantity.018`,
 `path.boundary.012` through `path.boundary.019`, `path.env.015`,
 `path.env.016`, `path.env.017`, `path.utility.017`, `path.utility.022`,
@@ -863,6 +877,8 @@ Every allocated ID, grouped as it is grouped in the delta files.
 - `path.errors.003` — evaluation never panics
 - `path.errors.004` — evaluation is bounded for an adversarial expression
 - `path.errors.005` — an error from `frevo-model` is surfaced, not swallowed into empty
+- `path.errors.006` — a unary sign's error position is HAPI's, just past the token after the sign
+- `path.errors.007` — the `iif` singleton and `is` parameter-kind errors carry HAPI's prefix and position
 
 **Requirement: The public evaluation surface**
 

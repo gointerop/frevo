@@ -2578,3 +2578,18 @@ No test that passed before regresses; `path_strictness` stays 2/8 and
 **Decision needed.** None from the owner for item 1 and 3 (oracle-builder
 rebinds; no assertion weakens). Item 2 and the proposal defects go to the
 proposer and spec-reviewer.
+
+**Resolved in the spec, 2026-11-20 (proposer).** Verified in `FHIRPathEngine.java`,
+`ExpressionNode.java`, `FHIRLexer.java` at `73c432b5`, and `FhirPathR4.java`,
+`HapiWorkerContext.java` and `DefaultProfileValidationSupportBundleStrategy.java`
+at the pinned `hapi-fhir`. `path.strictness.005` now has `as(Code)` resolving
+through the server-facing upper-case-initial retry, `as(quantity)` raising
+`The type FHIR.quantity is not valid` in both states, `ofType(Code)` empty, and
+the suite harness's exact lookup named; Frevo applies the retry everywhere
+(`DEV-0026`). `path.strictness.006` states `Observation.value` is empty with
+polymorphic names on. `path.api.005` states Frevo's FHIR-type assignability and
+exact message, and the three differences from HAPI (`DEV-0027`, pending owner).
+New `path.errors.006` (unary sign position: `-'a'` is ` (@char 5)`, offset 4)
+and `path.errors.007` (`iif` singleton ` (@char 11)`, `is` parameter-kind
+` (@char 3)`). Item 5 (ParseError docs on whitespace) needs no spec change: no
+scenario states upstream parse-error columns.

@@ -45,8 +45,8 @@ decision.
 
 ## Entries
 
-All twenty-three entries below come from `add-fhirpath-and-codegen-r4`;
-`DEV-0013`, `DEV-0015`, `DEV-0017`, `DEV-0018`, `DEV-0019`, `DEV-0021`, `DEV-0022`, `DEV-0023`, `DEV-0024` and `DEV-0025` are pending the owner's review (see their entries);
+All twenty-five entries below come from `add-fhirpath-and-codegen-r4`;
+`DEV-0013`, `DEV-0015`, `DEV-0017`, `DEV-0018`, `DEV-0019`, `DEV-0021`, `DEV-0022`, `DEV-0023`, `DEV-0024`, `DEV-0025`, `DEV-0026` and `DEV-0027` are pending the owner's review (see their entries);
 `DEV-0012` and `DEV-0014` were ruled for HAPI (2026-11-17 and 2026-11-14).
 `DEV-0001` through `DEV-0010` are the same kind of case: the pinned R4
 `FHIRPathEngine` does something the FHIRPath specification does not describe. In
@@ -808,6 +808,71 @@ file, so its prose is not redistributable here (see `oracles/PINS.md`).
 - **Normalizer impact:** none on stored bytes. The R4 search-parameter table
   is not known to call the boundary functions (not checked against the
   generated table).
+- **Reviewed:** pending owner.
+
+### DEV-0026 — a type name with an upper-case initial is retried lower-cased in every engine, as HAPI's server-facing lookup does
+
+- **Area:** path
+- **Scenario IDs:** path.strictness.005
+- **HAPI 8.12.0 behaviour:** `as`, `as()` and `ofType()` test the type name
+  with `isKnownType`, which asks the worker for the StructureDefinition
+  (`ENGINE:1880-1882`, `1904-1935`, `5163-5165`, `5205-5207`). HAPI's
+  server-facing worker, `HapiWorkerContext` over
+  `DefaultProfileValidationSupport`, retries a miss whose first letter is
+  upper-case with that letter lower-cased, for R4, R4B and R5
+  (`hapi-fhir-base/.../DefaultProfileValidationSupportBundleStrategy.java:276-297`),
+  so `Patient.gender.as(Code)` resolves to `code` and yields `male`. The core
+  worker that the pinned suite's Java harness uses resolves exactly
+  (`BaseWorkerContext.java:1183-1188`), so there the same expression fails with
+  `The type FHIR.Code is not valid`. A lower-case initial is never retried, so
+  `as(quantity)` fails in both.
+- **Specification requirement:** FHIRPath 2.0.0 — type specifiers are
+  case-sensitive identifiers; `Code` names no type.
+- **Chosen behaviour:** HAPI's server-facing lookup, in every configuration,
+  the oracle harness included. Frevo has one engine and one model, so the retry
+  is not a property of a separate worker.
+- **Configuration flag:** none
+- **Debt:** none
+- **Rationale:** the server-facing behaviour is what an existing deployment
+  observes, through search-parameter expressions such as `value.as(String)`,
+  which the retry exists for (the comment at `:279-282`). No case in the pinned
+  suite names a mis-cased type in `as`, `as()` or `ofType()`, so the oracle
+  harness's results are the same either way. Established from the pinned
+  source; not confirmed against a live HAPI.
+- **Normalizer impact:** none on stored bytes.
+- **Reviewed:** pending owner.
+
+### DEV-0027 — the typed evaluation surface checks FHIR types, not Java classes, and its message carries no HAPI code
+
+- **Area:** path
+- **Scenario IDs:** path.api.005
+- **HAPI 8.12.0 behaviour:** `FhirPathR4.evaluate(input, path, returnType)`
+  checks each result item with `returnType.isAssignableFrom(item.getClass())`
+  and throws `HAPI-0256: FhirPath expression returned unexpected type
+  <item class simple name> - Expected <returnType fully qualified name>`
+  (`hapi-fhir-structures-r4/.../fluentpath/FhirPathR4.java:72-77`). The check
+  follows the Java class tree: `IdType` extends `UriType`, so an `id` is a
+  `UriType` and not a `StringType`; and an element held as an `Enumeration`
+  (a code with a generated value set, such as `Patient.gender`) is neither a
+  `CodeType` nor a `StringType`.
+- **Specification requirement:** none in FHIRPath; the FHIR R4 type tree
+  derives `id` from `string` and `code` from `string`.
+- **Chosen behaviour:** Frevo's caller names a FHIR type, so assignability
+  follows the R4 `baseDefinition` chain (`id` and `code` satisfy `string`;
+  `id` does not satisfy `uri`), and the message is
+  `FhirPath expression returned unexpected type <FHIR type> - Expected <FHIR type>`,
+  with no `HAPI-0256: ` prefix and no Java class names.
+- **Configuration flag:** none
+- **Debt:** none
+- **Rationale:** the typed surface is a Rust API with no Java classes to name,
+  and no HTTP response carries this message; reproducing the Java class tree
+  would make the Rust API reject a FHIR-valid request (`code` from
+  `Patient.gender`) for a reason that exists only in HAPI's Java model. Frevo
+  accepts strictly more than HAPI here and never returns a different value, so
+  this is not a wrong-answer hazard. Pending the owner's decision; if the
+  owner rules for HAPI, the message and the two assignability cases change and
+  `path.api.005` is rewritten.
+- **Normalizer impact:** none on stored bytes; not observable over HTTP.
 - **Reviewed:** pending owner.
 
 ## Considered and not recorded as deviations
