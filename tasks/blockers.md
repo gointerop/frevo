@@ -2834,3 +2834,59 @@ Frevo's server-facing configuration must raise an equivalent error for those
 operations while the oracle harness keeps the suite worker's answers, and
 `path.quantity.019` and `DEV-0029` are rewritten. The HTTP answer for the
 escaped exception is `add-server-skeleton`'s either way.
+
+## 2026-11-20 — `add-fhirpath-and-codegen-r4` — `codegen_r4.rs` seam bound; six reds left, two of them codec gaps against HAPI nobody had recorded
+
+**Raised by** the oracle-builder, after binding the five methods
+`bind_oracle!` left as `NotImplemented` (`decode`, `encode`,
+`encode_canonical`, `round_trip`, `parse_search_expression`). The test's
+`OracleGenerator` wraps `BoundGenerator` and calls
+`frevo_model::codec::decode::decode_document`, `Decoded::encode_stored`,
+`Decoded::encode_canonical` and `frevo_path::Expression::parse`, through new
+`[dev-dependencies]` on `frevo-model` and `frevo-path` in
+`crates/frevo-codegen/Cargo.toml`. The generator itself still links neither.
+`codegen_r4` went from 30/49 to 43/49. Tasks 56 and 57 are no longer blocked
+on the seam: their tests (`every_r4_specification_example_round_trips_byte_identically`,
+`the_round_trip_covers_every_resource_type_that_has_an_example`,
+`round_tripping_an_xml_example_through_the_json_codec_is_not_claimed`,
+`every_table_expression_parses`) pass. All 72 interim JSON examples round-trip,
+compared through a canonicaliser in the test that shares no code with the
+codec.
+
+Four of the six reds already have entries: `codegen.naming.002` (2026-11-11,
+`class` is not a Rust keyword), and `codegen.cardinality.002`, `.004`, `.005`
+(2026-11-12, no missing-required-element check in HAPI; for `.005`, also the
+blank-value subset in `docs/deviations.md` under `model.json.023`). Two do not:
+
+1. **`codegen.choice.004`, strict half.** `ParserState.java:660-672` puts a
+   choice element's field name (`value`) into `myParsedNonRepeatableNames`, so
+   `valueQuantity` after `valueString` calls `unexpectedRepeatingElement` and
+   `StrictErrorHandler` throws `1823`. `frevo-model` raises nothing in either
+   mode: `Decoder::shape_side` reports `UnexpectedRepeatingElement` only for an
+   array of more than one on a `0..1` element, and two distinct property names
+   resolving to one choice definition are not compared. The lenient half
+   (HAPI logs and keeps the first; the scenario wants a failure) is the
+   conflict already written at the test. **Implementer work, not a decision**:
+   raise `ReportKind::UnexpectedRepeatingElement` at the second property in
+   both modes (diagnostic in lenient, error in strict), path
+   `Observation.value`; the oracle maps that report on a choice element to
+   `DiagnosticKind::DuplicateChoiceValue`. The test's own lenient clause stays
+   red until the proposer restates it.
+2. **`codegen.binding.002`.** `frevo-model` does not check a code against its
+   required binding at all: `{"resourceType":"Patient","gender":"M"}` decodes
+   with no diagnostic in **strict** mode. HAPI 8.12.0 with the default
+   `LenientErrorHandler` rejects it: the `Enumeration` parse fails,
+   `ParserState.java:1510` calls `invalidValue` with a non-blank value, and
+   `LenientErrorHandler.java:100-108` delegates that to the strict handler,
+   `1821` (case correction does not apply; `M` folds onto no
+   `administrative-gender` code). So Frevo accepts a body HAPI answers `400`
+   to — an undocumented difference, therefore a bug. The scenario wants a
+   third behaviour (survive with a `CodeNotInRequiredBinding` diagnostic),
+   which is the conflict recorded at the test. **Decision needed** (proposer,
+   then owner): whether `codegen.binding.002` is restated to HAPI's fatal
+   `1821`, or HAPI's rejection becomes a `DEV-nnnn`. Either way the codec
+   needs a required-binding check reading `frevo_model::r4::codes`
+   (`code_enum_of_element`), and the API the oracle needs is a
+   `DecodedElement`-level or `Diagnostic`-level report the binding can map to
+   `CodeNotInRequiredBinding` (today it maps only `InvalidValue` and
+   `UnexpectedRepeatingElement`).

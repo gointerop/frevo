@@ -823,14 +823,21 @@ pub enum DiagnosticKind {
     DuplicateChoiceValue,
     /// `codegen.binding.002`.
     CodeNotInRequiredBinding,
+    /// Any other report the codec raises -- an unknown property, a JSON type
+    /// mismatch, a reference-graph condition. No `codegen.*` scenario is about
+    /// one, but each is carried rather than dropped, so an assertion that a
+    /// decode raised nothing still sees it. The message names the codec's own
+    /// condition.
+    Other,
 }
 
 impl DiagnosticKind {
-    pub const ALL: [DiagnosticKind; 4] = [
+    pub const ALL: [DiagnosticKind; 5] = [
         DiagnosticKind::MissingRequiredElement,
         DiagnosticKind::InvalidValue,
         DiagnosticKind::DuplicateChoiceValue,
         DiagnosticKind::CodeNotInRequiredBinding,
+        DiagnosticKind::Other,
     ];
 }
 
@@ -1182,17 +1189,634 @@ pub trait Codegen {
 
     /// Hand a search-parameter expression to `frevo-path`'s parser
     /// (`codegen.searchparam.005`). It lives on this trait so that the test
-    /// does not need a dependency edge `frevo-codegen` must not have; task 13
-    /// binds it to the real parser.
+    /// does not need a dependency edge `frevo-codegen` must not have; the
+    /// binding reaches the real parser through a dev-dependency, which is not
+    /// an edge of the generator itself.
     fn parse_search_expression(&self, expression: &str) -> Result<(), CodegenError>;
 }
 
 /// The generator this oracle grades.
 ///
-/// Tasks 6 to 14 replace this body with the real one. Nothing else in this file
-/// changes when they do.
+/// The generator half -- `generate`, the synthetic runs, the cross-check, the
+/// drift check, the naming rules and the table query -- is `frevo-codegen`
+/// through [`BoundGenerator`]. The codec half and the parser are the crates
+/// that already implement them, reached through dev-dependencies:
+/// `frevo-model`'s decoder over the checked-in generated tables, and
+/// `frevo-path`'s parser. See [`OracleGenerator`].
 fn generator_under_test() -> Box<dyn Codegen> {
-    Box::new(BoundGenerator)
+    Box::new(OracleGenerator::default())
+}
+
+/// [`BoundGenerator`] for everything `frevo-codegen` answers, and the real
+/// codec and parser for the five methods `bind_oracle!` leaves unbound.
+///
+/// No behaviour is invented here. Each method below is a mapping from the
+/// oracle's data model onto an existing public surface:
+///
+/// | method | surface |
+/// |---|---|
+/// | `decode` | `frevo_model::codec::decode::decode_document` |
+/// | `encode` | `frevo_model::Decoded::encode_stored` |
+/// | `encode_canonical` | `frevo_model::Decoded::encode_canonical` |
+/// | `round_trip` | the two above, over each example file |
+/// | `parse_search_expression` | `frevo_path::Expression::parse` |
+///
+/// The oracle's [`Decoded`] is a flattened view and does not carry the codec's
+/// tree, so each decode is remembered beside the view it produced and `encode`
+/// looks the view up. A view this generator did not produce is an error, never
+/// a guess.
+#[derive(Default)]
+struct OracleGenerator {
+    decodes: std::cell::RefCell<Vec<(Decoded, frevo_model::Decoded)>>,
+}
+
+impl OracleGenerator {
+    fn codec_error(message: String) -> CodegenError {
+        CodegenError::Failed {
+            exit_code: frevo_codegen::error::REFUSAL_EXIT_CODE,
+            kind: FailureKind::Codec,
+            message,
+        }
+    }
+
+    fn mode(mode: DecodeMode) -> frevo_model::ParseMode {
+        match mode {
+            DecodeMode::Lenient => frevo_model::ParseMode::Lenient,
+            DecodeMode::Strict => frevo_model::ParseMode::Strict,
+        }
+    }
+
+    /// The codec tree an oracle view was produced from.
+    fn tree(&self, decoded: &Decoded) -> Result<frevo_model::Decoded, CodegenError> {
+        self.decodes
+            .borrow()
+            .iter()
+            .rev()
+            .find(|(view, _)| view == decoded)
+            .map(|(_, tree)| tree.clone())
+            .ok_or_else(|| CodegenError::Failed {
+                exit_code: frevo_codegen::error::REFUSAL_EXIT_CODE,
+                kind: FailureKind::Other,
+                message: "this Decoded was not produced by this generator's decode, so there \
+                          is no codec tree to encode"
+                    .to_string(),
+            })
+    }
+
+    /// Whether the element at `path` (indexed, choice under its base name) is
+    /// a choice element, read from the generated type table: the owning type
+    /// is the parent occurrence's concrete type, or the resource type at the
+    /// root.
+    fn is_choice(path: &str, types_by_path: &BTreeMap<String, String>, root: &str) -> bool {
+        let Some((parent, last)) = path.rsplit_once('.') else {
+            return false;
+        };
+        let name = last.split('[').next().unwrap_or(last);
+        let owner = types_by_path
+            .get(parent)
+            .map(String::as_str)
+            .unwrap_or(if parent == root { root } else { "" });
+        frevo_model::codec::R4
+            .element(owner, name)
+            .is_some_and(|element| element.choice)
+    }
+
+    fn view(decoded: &frevo_model::Decoded) -> Decoded {
+        let types_by_path: BTreeMap<String, String> = decoded
+            .elements
+            .iter()
+            .map(|e| (e.path.clone(), e.type_name.clone()))
+            .collect();
+        let root = decoded.resource_type.as_str();
+        let values = decoded
+            .elements
+            .iter()
+            .map(|e| ElementValue {
+                path: e.path.clone(),
+                chosen_type: Self::is_choice(&e.path, &types_by_path, root)
+                    .then(|| e.type_name.clone()),
+                value: e.value.clone(),
+            })
+            .collect();
+        let mut diagnostics: Vec<Diagnostic> = decoded
+            .diagnostics
+            .iter()
+            .map(|d| {
+                let kind = match d.kind {
+                    frevo_model::ReportKind::InvalidValue => DiagnosticKind::InvalidValue,
+                    frevo_model::ReportKind::UnexpectedRepeatingElement
+                        if Self::is_choice(&d.path, &types_by_path, root) =>
+                    {
+                        DiagnosticKind::DuplicateChoiceValue
+                    }
+                    _ => DiagnosticKind::Other,
+                };
+                Diagnostic {
+                    kind,
+                    path: d.path.clone(),
+                    message: format!("{:?}: {}", d.kind, d.message),
+                }
+            })
+            .collect();
+        diagnostics.extend(decoded.reference_diagnostics.iter().map(|d| Diagnostic {
+            kind: DiagnosticKind::Other,
+            path: d.path.clone(),
+            message: format!("{:?} ({}): {}", d.issue, d.code, d.message),
+        }));
+        Decoded {
+            resource_type: decoded.resource_type.clone(),
+            diagnostics,
+            values,
+        }
+    }
+
+    fn utf8(bytes: Vec<u8>, what: &str) -> Result<String, CodegenError> {
+        String::from_utf8(bytes)
+            .map_err(|e| Self::codec_error(format!("the {what} form is not UTF-8: {e}")))
+    }
+
+    /// One example through the codec: decode, canonically re-encode, and
+    /// compare with the source, both canonicalised by [`canonical_json`] --
+    /// which is independent of the codec, so the comparison is not the codec
+    /// agreeing with itself.
+    fn round_trip_one(path: &Path) -> (RoundTripStatus, String, Option<String>) {
+        let bytes = match std::fs::read(path) {
+            Ok(bytes) => bytes,
+            Err(e) => return (RoundTripStatus::Failed, format!("unreadable: {e}"), None),
+        };
+        let resource_type = canonical_json::resource_type(&bytes);
+        let decoded = match frevo_model::codec::decode::decode_document(
+            &bytes,
+            frevo_model::DEFAULT_PARSE_MODE,
+        ) {
+            Ok(decoded) => decoded,
+            Err(e) => {
+                return (
+                    RoundTripStatus::Failed,
+                    format!("decode failed: {e}"),
+                    resource_type,
+                );
+            }
+        };
+        let encoded = match decoded.encode_canonical(frevo_model::DEFAULT_PARSE_MODE) {
+            Ok(encoded) => encoded.bytes,
+            Err(e) => {
+                return (
+                    RoundTripStatus::Failed,
+                    format!("canonical encode failed: {e}"),
+                    resource_type,
+                );
+            }
+        };
+        let source = match canonical_json::canonicalise(&bytes) {
+            Ok(source) => source,
+            Err(e) => {
+                return (
+                    RoundTripStatus::Failed,
+                    format!("the source is not JSON: {e}"),
+                    resource_type,
+                );
+            }
+        };
+        let result = match canonical_json::canonicalise(&encoded) {
+            Ok(result) => result,
+            Err(e) => {
+                return (
+                    RoundTripStatus::Failed,
+                    format!("the codec's canonical output is not JSON: {e}"),
+                    resource_type,
+                );
+            }
+        };
+        if source == result {
+            (RoundTripStatus::Passed, String::new(), resource_type)
+        } else {
+            let at = source
+                .bytes()
+                .zip(result.bytes())
+                .position(|(a, b)| a != b)
+                .unwrap_or(source.len().min(result.len()));
+            let window = |s: &str| {
+                let start = at.saturating_sub(40);
+                s.get(start..(at + 60).min(s.len()))
+                    .unwrap_or_default()
+                    .to_string()
+            };
+            (
+                RoundTripStatus::Failed,
+                format!(
+                    "first difference at byte {at}: source …{}… result …{}…",
+                    window(&source),
+                    window(&result)
+                ),
+                resource_type,
+            )
+        }
+    }
+}
+
+impl Codegen for OracleGenerator {
+    fn recorded_pin(&self) -> Result<PackagePin, CodegenError> {
+        BoundGenerator.recorded_pin()
+    }
+
+    fn generate(&self, request: &GenerateRequest) -> Result<GenerateReport, CodegenError> {
+        BoundGenerator.generate(request)
+    }
+
+    fn generate_synthetic(
+        &self,
+        request: &SyntheticRequest,
+    ) -> Result<GenerateReport, CodegenError> {
+        BoundGenerator.generate_synthetic(request)
+    }
+
+    fn cross_check(
+        &self,
+        package_dir: Option<&Path>,
+        hapi_profile_dir: &Path,
+    ) -> Result<CrossCheckReport, CodegenError> {
+        BoundGenerator.cross_check(package_dir, hapi_profile_dir)
+    }
+
+    fn drift_check(
+        &self,
+        request: &GenerateRequest,
+        checked_in_dir: &Path,
+    ) -> Result<DriftReport, CodegenError> {
+        BoundGenerator.drift_check(request, checked_in_dir)
+    }
+
+    fn round_trip(&self, examples: &[PathBuf]) -> Result<RoundTripReport, CodegenError> {
+        let interim = repo_path(EXAMPLE_DIR);
+        let all_interim = !examples.is_empty()
+            && examples
+                .iter()
+                .all(|p| p.parent().is_some_and(|dir| dir == interim));
+        let selector = if all_interim {
+            format!(
+                "interim selector: {EXAMPLE_DIR} ({} files), not the full \
+                 hl7.fhir.r4.examples#4.0.1 package (task 59)",
+                examples.len()
+            )
+        } else {
+            format!("caller-supplied selector: {} files", examples.len())
+        };
+
+        let mut counts: BTreeMap<String, usize> = frevo_model::r4::types::RESOURCE_TYPES
+            .iter()
+            .map(|t| (t.to_string(), 0))
+            .collect();
+        let mut cases = Vec::with_capacity(examples.len());
+        for path in examples {
+            let file = path
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_else(|| path.display().to_string());
+            if file.ends_with(".xml") {
+                cases.push(RoundTripCase {
+                    file,
+                    status: RoundTripStatus::NotApplicableXml,
+                    detail: "XML input; the codec under test is the JSON one".to_string(),
+                });
+                continue;
+            }
+            let (status, detail, resource_type) = Self::round_trip_one(path);
+            if let Some(count) = resource_type.and_then(|t| counts.get_mut(&t)) {
+                *count += 1;
+            }
+            cases.push(RoundTripCase {
+                file,
+                status,
+                detail,
+            });
+        }
+        Ok(RoundTripReport {
+            selector,
+            cases,
+            coverage: counts
+                .into_iter()
+                .map(|(resource_type, examples)| TypeCoverage {
+                    resource_type,
+                    examples,
+                })
+                .collect(),
+        })
+    }
+
+    fn decode(&self, json: &str, mode: DecodeMode) -> Result<Decoded, CodegenError> {
+        let tree = frevo_model::codec::decode::decode_document(json.as_bytes(), Self::mode(mode))
+            .map_err(|e| Self::codec_error(e.to_string()))?;
+        let view = Self::view(&tree);
+        self.decodes.borrow_mut().push((view.clone(), tree));
+        Ok(view)
+    }
+
+    fn encode(&self, decoded: &Decoded) -> Result<String, CodegenError> {
+        let encoded = self
+            .tree(decoded)?
+            .encode_stored(frevo_model::DEFAULT_PARSE_MODE)
+            .map_err(|e| Self::codec_error(e.to_string()))?;
+        Self::utf8(encoded.bytes, "stored")
+    }
+
+    fn encode_canonical(&self, decoded: &Decoded) -> Result<String, CodegenError> {
+        let encoded = self
+            .tree(decoded)?
+            .encode_canonical(frevo_model::DEFAULT_PARSE_MODE)
+            .map_err(|e| Self::codec_error(e.to_string()))?;
+        Self::utf8(encoded.bytes, "canonical")
+    }
+
+    fn rust_field_name(&self, element_path: &str) -> Result<String, CodegenError> {
+        BoundGenerator.rust_field_name(element_path)
+    }
+
+    fn code_variants(&self, codes: &[&str]) -> Result<Vec<EnumVariant>, CodegenError> {
+        BoundGenerator.code_variants(codes)
+    }
+
+    fn parameters_for(&self, resource_type: &str) -> Result<Vec<SearchParamRow>, CodegenError> {
+        BoundGenerator.parameters_for(resource_type)
+    }
+
+    fn parse_search_expression(&self, expression: &str) -> Result<(), CodegenError> {
+        frevo_path::Expression::parse(expression)
+            .map(|_| ())
+            .map_err(|e| CodegenError::Failed {
+                exit_code: frevo_codegen::error::REFUSAL_EXIT_CODE,
+                kind: FailureKind::Other,
+                message: format!("frevo-path refused {expression:?}: {e}"),
+            })
+    }
+}
+
+/// A canonicaliser for the round-trip comparison that shares no code with the
+/// codec: object members sorted by name, no insignificant whitespace, every
+/// number kept exactly as written, every string re-escaped minimally after
+/// decoding its escapes. Applying it to both sides is what
+/// `codegen.roundtrip.001`'s "both the source and the result are canonicalised
+/// the same way" means.
+mod canonical_json {
+    enum Json {
+        Null,
+        Bool(bool),
+        Number(String),
+        String(String),
+        Array(Vec<Json>),
+        Object(Vec<(String, Json)>),
+    }
+
+    struct Parser<'a> {
+        src: &'a [u8],
+        at: usize,
+    }
+
+    impl Parser<'_> {
+        fn fail<T>(&self, why: &str) -> Result<T, String> {
+            Err(format!("{why} at byte {}", self.at))
+        }
+
+        fn ws(&mut self) {
+            while self
+                .src
+                .get(self.at)
+                .is_some_and(|c| matches!(c, b' ' | b'\t' | b'\n' | b'\r'))
+            {
+                self.at += 1;
+            }
+        }
+
+        fn value(&mut self) -> Result<Json, String> {
+            self.ws();
+            match self.src.get(self.at) {
+                Some(b'{') => self.object(),
+                Some(b'[') => self.array(),
+                Some(b'"') => Ok(Json::String(self.string()?)),
+                Some(b't') => self.literal("true", Json::Bool(true)),
+                Some(b'f') => self.literal("false", Json::Bool(false)),
+                Some(b'n') => self.literal("null", Json::Null),
+                Some(c) if *c == b'-' || c.is_ascii_digit() => {
+                    let start = self.at;
+                    while self.src.get(self.at).is_some_and(|c| {
+                        matches!(c, b'-' | b'+' | b'.' | b'e' | b'E' | b'0'..=b'9')
+                    }) {
+                        self.at += 1;
+                    }
+                    Ok(Json::Number(
+                        String::from_utf8_lossy(&self.src[start..self.at]).to_string(),
+                    ))
+                }
+                _ => self.fail("expected a value"),
+            }
+        }
+
+        fn literal(&mut self, text: &str, value: Json) -> Result<Json, String> {
+            if self.src[self.at..].starts_with(text.as_bytes()) {
+                self.at += text.len();
+                Ok(value)
+            } else {
+                self.fail("bad literal")
+            }
+        }
+
+        fn hex4(&mut self) -> Result<u32, String> {
+            let digits = self
+                .src
+                .get(self.at..self.at + 4)
+                .and_then(|d| std::str::from_utf8(d).ok())
+                .and_then(|d| u32::from_str_radix(d, 16).ok());
+            match digits {
+                Some(v) => {
+                    self.at += 4;
+                    Ok(v)
+                }
+                None => self.fail("bad \\u escape"),
+            }
+        }
+
+        fn string(&mut self) -> Result<String, String> {
+            self.at += 1;
+            let mut out: Vec<u8> = Vec::new();
+            loop {
+                match self.src.get(self.at) {
+                    None => return self.fail("unterminated string"),
+                    Some(b'"') => {
+                        self.at += 1;
+                        return String::from_utf8(out).map_err(|e| e.to_string());
+                    }
+                    Some(b'\\') => {
+                        self.at += 1;
+                        let c = self.src.get(self.at).copied();
+                        self.at += 1;
+                        let ch = match c {
+                            Some(b'"') => '"',
+                            Some(b'\\') => '\\',
+                            Some(b'/') => '/',
+                            Some(b'b') => '\u{8}',
+                            Some(b'f') => '\u{c}',
+                            Some(b'n') => '\n',
+                            Some(b'r') => '\r',
+                            Some(b't') => '\t',
+                            Some(b'u') => {
+                                let hi = self.hex4()?;
+                                let code = if (0xD800..0xDC00).contains(&hi)
+                                    && self.src[self.at..].starts_with(b"\\u")
+                                {
+                                    self.at += 2;
+                                    let lo = self.hex4()?;
+                                    0x10000 + ((hi - 0xD800) << 10) + (lo.wrapping_sub(0xDC00))
+                                } else {
+                                    hi
+                                };
+                                char::from_u32(code).unwrap_or('\u{FFFD}')
+                            }
+                            _ => return self.fail("bad escape"),
+                        };
+                        let mut buf = [0u8; 4];
+                        out.extend_from_slice(ch.encode_utf8(&mut buf).as_bytes());
+                    }
+                    Some(c) => {
+                        out.push(*c);
+                        self.at += 1;
+                    }
+                }
+            }
+        }
+
+        fn array(&mut self) -> Result<Json, String> {
+            self.at += 1;
+            let mut items = Vec::new();
+            self.ws();
+            if self.src.get(self.at) == Some(&b']') {
+                self.at += 1;
+                return Ok(Json::Array(items));
+            }
+            loop {
+                items.push(self.value()?);
+                self.ws();
+                match self.src.get(self.at) {
+                    Some(b',') => self.at += 1,
+                    Some(b']') => {
+                        self.at += 1;
+                        return Ok(Json::Array(items));
+                    }
+                    _ => return self.fail("expected , or ]"),
+                }
+            }
+        }
+
+        fn object(&mut self) -> Result<Json, String> {
+            self.at += 1;
+            let mut members = Vec::new();
+            self.ws();
+            if self.src.get(self.at) == Some(&b'}') {
+                self.at += 1;
+                return Ok(Json::Object(members));
+            }
+            loop {
+                self.ws();
+                if self.src.get(self.at) != Some(&b'"') {
+                    return self.fail("expected a property name");
+                }
+                let name = self.string()?;
+                self.ws();
+                if self.src.get(self.at) != Some(&b':') {
+                    return self.fail("expected :");
+                }
+                self.at += 1;
+                members.push((name, self.value()?));
+                self.ws();
+                match self.src.get(self.at) {
+                    Some(b',') => self.at += 1,
+                    Some(b'}') => {
+                        self.at += 1;
+                        return Ok(Json::Object(members));
+                    }
+                    _ => return self.fail("expected , or }"),
+                }
+            }
+        }
+    }
+
+    fn parse(bytes: &[u8]) -> Result<Json, String> {
+        let bytes = bytes.strip_prefix(b"\xEF\xBB\xBF").unwrap_or(bytes);
+        let mut parser = Parser { src: bytes, at: 0 };
+        let value = parser.value()?;
+        parser.ws();
+        if parser.at != bytes.len() {
+            return parser.fail("trailing content");
+        }
+        Ok(value)
+    }
+
+    fn write_string(s: &str, out: &mut String) {
+        out.push('"');
+        for c in s.chars() {
+            match c {
+                '"' => out.push_str("\\\""),
+                '\\' => out.push_str("\\\\"),
+                '\n' => out.push_str("\\n"),
+                '\r' => out.push_str("\\r"),
+                '\t' => out.push_str("\\t"),
+                c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04x}", c as u32)),
+                c => out.push(c),
+            }
+        }
+        out.push('"');
+    }
+
+    fn write(value: &Json, out: &mut String) {
+        match value {
+            Json::Null => out.push_str("null"),
+            Json::Bool(b) => out.push_str(if *b { "true" } else { "false" }),
+            Json::Number(n) => out.push_str(n),
+            Json::String(s) => write_string(s, out),
+            Json::Array(items) => {
+                out.push('[');
+                for (i, item) in items.iter().enumerate() {
+                    if i > 0 {
+                        out.push(',');
+                    }
+                    write(item, out);
+                }
+                out.push(']');
+            }
+            Json::Object(members) => {
+                let mut sorted: Vec<&(String, Json)> = members.iter().collect();
+                sorted.sort_by(|a, b| a.0.cmp(&b.0));
+                out.push('{');
+                for (i, (name, item)) in sorted.into_iter().enumerate() {
+                    if i > 0 {
+                        out.push(',');
+                    }
+                    write_string(name, out);
+                    out.push(':');
+                    write(item, out);
+                }
+                out.push('}');
+            }
+        }
+    }
+
+    /// The canonical text of one JSON document.
+    pub fn canonicalise(bytes: &[u8]) -> Result<String, String> {
+        let mut out = String::new();
+        write(&parse(bytes)?, &mut out);
+        Ok(out)
+    }
+
+    /// The top-level `resourceType`, read without the codec, so an example the
+    /// codec cannot decode still counts toward its type's coverage.
+    pub fn resource_type(bytes: &[u8]) -> Option<String> {
+        match parse(bytes).ok()? {
+            Json::Object(members) => members.into_iter().find_map(|(name, value)| match value {
+                Json::String(s) if name == "resourceType" => Some(s),
+                _ => None,
+            }),
+            _ => None,
+        }
+    }
 }
 
 // The `struct BoundGenerator` and `impl Codegen for BoundGenerator` this
