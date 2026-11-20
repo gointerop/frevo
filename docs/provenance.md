@@ -35,7 +35,7 @@ against the specification and the oracles, not from upstream source), `empty`
 | Crate | Status | Upstream repo | Upstream module(s) | Pinned SHA |
 |---|---|---|---|---|
 | `frevo-codegen` | empty | — | — | — |
-| `frevo-model` | empty | — | (will be `generated` from R4 StructureDefinitions) | — |
+| `frevo-model` | generated (`src/r4/`); derived (`src/codec/{decode,built}.rs`) | `hapi-fhir` | `hapi-fhir-base/.../parser/{ParserState,JsonParser,LenientErrorHandler,StrictErrorHandler,ParseLocation,IParserErrorHandler,BaseParser}.java`, `hapi-fhir-base/.../util/{FhirTerser,UrlUtil}.java`, `hapi-fhir-base/.../context/FhirContext.java` | `7ab4c7c7c49281496faa1b3c2498a652457669ae` |
 | `frevo-path` | derived | `org.hl7.fhir.core` | `org.hl7.fhir.r4/.../r4/fhirpath/{FHIRLexer,ExpressionNode,FHIRPathEngine,FHIRPathConstant,TypeDetails}.java`, `org.hl7.fhir.r4/.../r4/model/{IdType,Base,BaseDateTimeType,TimeType}.java`, `org.hl7.fhir.r4/.../r4/terminologies/ValueSetCheckerSimple.java`, `org.hl7.fhir.utilities/.../{Utilities,SourceLocation}.java`, `org.hl7.fhir.utilities/.../exceptions/PathEngineException.java`, `org.hl7.fhir.r4/.../r4/model/{Narrative,XhtmlType}.java`, `org.hl7.fhir.utilities/.../xhtml/{XhtmlParser,XhtmlComposer,XhtmlNode}.java`; `hapi-fhir` `hapi-fhir-base/.../model/primitive/XhtmlDt.java` at `7ab4c7c7c49281496faa1b3c2498a652457669ae` | `73c432b5f43ddbce979978a760ec4aa81e929094` |
 | `frevo-convert` | empty | — | — | — |
 | `frevo-package` | empty | — | — | — |
@@ -164,6 +164,35 @@ was modified. Every
 other row is updated by the change that first ports into that crate;
 `openspec-guard` checks that a crate whose sources gained a provenance header
 also gained a row here.
+
+`frevo-model`'s generated tables (`src/r4/`) are not derived, as above. Its
+hand-written codec has two derived files. `src/codec/decode.rs` re-implements
+the lenient and strict decode behaviour of `hapi-fhir`'s parser at
+`7ab4c7c7c49281496faa1b3c2498a652457669ae`: `ParserState`'s
+`PrimitiveState.attributeValue`, `enteringNewElement`,
+`ContainedResourcesStateHl7Org.wereBack` and `weaveContainedResources`;
+`JsonParser`'s `parseChildren` branches, its `resourceType` check and the
+not-contained guard in `encodeResourceToJsonStreamWriter`; the fatal-condition
+rule and message texts of `LenientErrorHandler`; the `Msg.code`s and message
+texts of `StrictErrorHandler`; `ParseLocation.toString`; the condition set of
+`IParserErrorHandler`; the default handler in `FhirContext`; the encode-side
+check in `BaseParser`'s `determineReferenceText` and
+`isValidInternalReference` and `FhirTerser`'s
+`ContainedResources.referenceMatchesAContainedResource`; and
+`UrlUtil.sanitizeUrlPart` and `isNeedsSanitization`, transcribed. Its header
+names `org.hl7.fhir.core`'s `org.hl7.fhir.r4.formats.JsonParser` as the
+behavioural reference for the decoded shape (`resourceType` dispatch, choice
+property names, `contained`, the `_field` sibling), but that class is
+per-type generated Java and the decoder is driven by the generated element
+tables, so nothing is transcribed from it and its BSD-style notice is not
+engaged. `src/codec/built.rs` derives only its encode-side `#` reference
+check, from the same `BaseParser`, `FhirTerser` (`containResources` included)
+and `JsonParser` sources. All of these `hapi-fhir-base` sources are Apache-2.0,
+Copyright (C) 2014 - 2026 Smile CDR, Inc., which the existing HAPI FHIR
+section of `NOTICE` already covers. The other
+codec files (`doc`, `mod`, `nav`, `path`, `pretty`, `scan`, `stored`,
+`tables`, `provisional_r4`) are independent: they cite HAPI only for a
+`Msg.code` or a layout convention they match, not for logic they port.
 
 ## Derived harness files
 

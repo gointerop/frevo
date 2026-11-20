@@ -9,6 +9,22 @@
 //!
 //! `model.bytes.006` is the other half: a reader cannot tell this form from the
 //! stored one.
+//!
+//! The encode-side `#` reference check (`dangling_internal_references`,
+//! `check_resource`, `contained_ids`) is derived from
+//! hapi-fhir/hapi-fhir-base/src/main/java/ca/uhn/fhir/parser/BaseParser.java
+//! (`determineReferenceText`, `isValidInternalReference`),
+//! hapi-fhir/hapi-fhir-base/src/main/java/ca/uhn/fhir/util/FhirTerser.java
+//! (`containResources`, `ContainedResources.referenceMatchesAContainedResource`)
+//! and hapi-fhir/hapi-fhir-base/src/main/java/ca/uhn/fhir/parser/JsonParser.java
+//! (`encodeResourceToJsonStreamWriter`'s not-contained guard), all at
+//! 7ab4c7c7c49281496faa1b3c2498a652457669ae.
+//! Original work Copyright (C) 2014 - 2026 Smile CDR, Inc., licensed under the
+//! Apache License, Version 2.0.
+//! Modified by the Frevo authors: re-implemented in Rust as a walk over a
+//! [`BuiltNode`] tree that collects each dangling reference rather than
+//! calling an error handler while composing; the element-order serialisation
+//! in the rest of this module is not derived.
 
 use super::decode::{CodedDiagnostic, Encoded, LocalReference, ParseMode, encoded};
 use super::path::{PathStep, join, parse_path};

@@ -1,5 +1,44 @@
 //! Eager JSON decoding: structure, and primitive values.
 //!
+//! Derived from hapi-fhir/hapi-fhir-base/src/main/java/ca/uhn/fhir/parser/ParserState.java
+//! (`PrimitiveState.attributeValue`, `enteringNewElement`,
+//! `ContainedResourcesStateHl7Org.wereBack`, `weaveContainedResources` and
+//! the collection of every instantiated reference),
+//! hapi-fhir/hapi-fhir-base/src/main/java/ca/uhn/fhir/parser/JsonParser.java
+//! (`parseChildren`'s value, `null` and alternate branches, the
+//! `resourceType` check, and `encodeResourceToJsonStreamWriter`'s
+//! not-contained guard on `containResourcesInReferences`),
+//! hapi-fhir/hapi-fhir-base/src/main/java/ca/uhn/fhir/parser/LenientErrorHandler.java
+//! (which conditions are fatal, and its message texts),
+//! hapi-fhir/hapi-fhir-base/src/main/java/ca/uhn/fhir/parser/StrictErrorHandler.java
+//! (its `Msg.code`s and message texts),
+//! hapi-fhir/hapi-fhir-base/src/main/java/ca/uhn/fhir/parser/ParseLocation.java
+//! (`toString`), hapi-fhir/hapi-fhir-base/src/main/java/ca/uhn/fhir/parser/IParserErrorHandler.java
+//! (the set of conditions),
+//! hapi-fhir/hapi-fhir-base/src/main/java/ca/uhn/fhir/parser/BaseParser.java
+//! (`determineReferenceText`, `isValidInternalReference`),
+//! hapi-fhir/hapi-fhir-base/src/main/java/ca/uhn/fhir/util/FhirTerser.java
+//! (`ContainedResources.referenceMatchesAContainedResource`),
+//! hapi-fhir/hapi-fhir-base/src/main/java/ca/uhn/fhir/context/FhirContext.java
+//! (the default handler) and
+//! hapi-fhir/hapi-fhir-base/src/main/java/ca/uhn/fhir/util/UrlUtil.java
+//! (`sanitizeUrlPart` and `isNeedsSanitization`, transcribed as
+//! `sanitize_url_part`), all at 7ab4c7c7c49281496faa1b3c2498a652457669ae.
+//! Original work Copyright (C) 2014 - 2026 Smile CDR, Inc., licensed under the
+//! Apache License, Version 2.0.
+//! Modified by the Frevo authors: re-implemented in Rust as a recursive
+//! decoder over the input bytes rather than Jackson's tree driving
+//! `ParserState`'s state stack; a handler callback becomes a [`Diagnostic`]
+//! or [`CodedDiagnostic`] recorded beside the resource (lenient) or returned
+//! as an error (strict) instead of a logged warning or a thrown
+//! `DataFormatException`; each report also carries the element path and byte
+//! offset; and `sanitize_url_part` iterates Unicode scalar values rather than
+//! UTF-16 code units, which keeps the same output. The R4
+//! `org.hl7.fhir.r4.formats.JsonParser` named below is the behavioural
+//! reference for the decoded shape only: it is per-type generated Java, and
+//! nothing here is transcribed from it, since the decoder is driven by the
+//! generated element tables.
+//!
 //! Tasks 19 and 20 of `add-fhirpath-and-codegen-r4`. This is the **other**
 //! half of the codec from [`super::stored`]: where that one answers "what is
 //! at this path" without looking at anything else, this one decodes a whole
