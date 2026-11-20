@@ -91,13 +91,20 @@ impl ResourceNode {
         self.sibling
     }
 
-    fn child_nodes(&self) -> Result<Vec<(String, ResourceNode)>, NodeError> {
+    /// The child nodes, or only those named `only`. Filtering before a node is
+    /// built matters on the extraction path: `children("name")` on a
+    /// `Patient` would otherwise format a path and resolve a concrete type for
+    /// every other member too (`path.perf.002`).
+    fn child_nodes(&self, only: Option<&str>) -> Result<Vec<(String, ResourceNode)>, NodeError> {
         let children = self
             .stored
             .children_of(&self.path)
             .map_err(|e| to_node_error(&self.path, e))?;
-        let mut out = Vec::with_capacity(children.len());
+        let mut out = Vec::with_capacity(if only.is_some() { 1 } else { children.len() });
         for child in children {
+            if only.is_some_and(|name| child.name != name) {
+                continue;
+            }
             let concrete = match child.value {
                 Some(span) if self.stored.span_is_object(span) => self
                     .stored
@@ -135,16 +142,15 @@ impl Node for ResourceNode {
 
     fn children(&self, name: &str) -> Result<Vec<Value>, NodeError> {
         Ok(self
-            .child_nodes()?
+            .child_nodes(Some(name))?
             .into_iter()
-            .filter(|(child_name, _)| child_name == name)
             .map(|(_, node)| Value::Node(Arc::new(node) as Arc<dyn Node>))
             .collect())
     }
 
     fn all_children(&self) -> Result<Vec<(String, Value)>, NodeError> {
         Ok(self
-            .child_nodes()?
+            .child_nodes(None)?
             .into_iter()
             .map(|(name, node)| (name, Value::Node(Arc::new(node) as Arc<dyn Node>)))
             .collect())
@@ -156,6 +162,11 @@ impl Node for ResourceNode {
         }
         let span = self.value?;
         let lexical = self.stored.lexical_of(span).ok()?;
+        // An owned value now exists for this element, so it is materialised:
+        // this is what the meter's path log, and through it `path.perf.004`,
+        // sees of an evaluation. Navigating to a node builds no value and is
+        // not recorded, as `Stored::read` does not record an index walk.
+        self.stored.meter().materialise(&self.path);
         Some(Primitive {
             type_name: self.type_name.clone(),
             lexical,

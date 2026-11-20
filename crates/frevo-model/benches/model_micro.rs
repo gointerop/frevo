@@ -26,14 +26,21 @@
 //! The fixtures are committed beside the results (`bench/micro/fixtures/`) and
 //! checked here against the generator the tests use, so the recorded medians
 //! and the tests' in-process ratios describe the same documents.
+//!
+//! The results file is shared with the path workloads (`path_bytes.rs` here
+//! and `crates/frevo-path/benches/path_micro.rs`), so this writes through
+//! `bench/micro/record.rs`, which replaces the `model-*` rows and keeps the
+//! others.
 
 #![forbid(unsafe_code)]
 
-use std::fmt::Write as _;
+#[path = "../../../bench/micro/record.rs"]
+mod record;
+
 use std::hint::black_box;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant};
 
 use frevo_model::Resource;
 
@@ -442,127 +449,36 @@ fn diagnose(samples: usize, small: &Arc<[u8]>, large: &Arc<[u8]>) {
 // Recording
 // ---------------------------------------------------------------------------
 
-fn git(args: &[&str], repo: &Path) -> Option<String> {
-    let out = std::process::Command::new("git")
-        .args(args)
-        .current_dir(repo)
-        .output()
-        .ok()?;
-    out.status
-        .success()
-        .then(|| String::from_utf8_lossy(&out.stdout).trim().to_string())
-}
-
-/// `YYYY-MM-DDTHH:MM:SSZ` from the system clock, without a date dependency.
-fn utc_now() -> String {
-    let secs = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
-    let (days, rem) = (secs / 86_400, secs % 86_400);
-    // Howard Hinnant's civil_from_days.
-    let z = days as i64 + 719_468;
-    let era = z.div_euclid(146_097);
-    let doe = z.rem_euclid(146_097);
-    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let day = doy - (153 * mp + 2) / 5 + 1;
-    let month = if mp < 10 { mp + 3 } else { mp - 9 };
-    let year = yoe + era * 400 + i64::from(month <= 2);
-    format!(
-        "{year:04}-{month:02}-{day:02}T{:02}:{:02}:{:02}Z",
-        rem / 3600,
-        rem % 3600 / 60,
-        rem % 60
-    )
-}
-
-fn json_string(s: &str) -> String {
-    let mut out = String::with_capacity(s.len() + 2);
-    out.push('"');
-    for c in s.chars() {
-        match c {
-            '"' => out.push_str("\\\""),
-            '\\' => out.push_str("\\\\"),
-            c if (c as u32) < 0x20 => {
-                let _ = write!(out, "\\u{:04x}", c as u32);
+/// The rows as `bench/micro/record.rs` writes them: the members, in the order
+/// this bench has always recorded them.
+fn to_records(rows: &[Row]) -> Vec<record::Row> {
+    rows.iter()
+        .map(|row| {
+            let st = &row.stats;
+            let mut r = record::Row::new(row.name)
+                .str("scenario", row.scenario)
+                .str("budget", row.budget)
+                .int("fixture_bytes", row.fixture_bytes as u64)
+                .num("median_us", st.median_us, 3)
+                .num("p10_us", st.p10_us, 3)
+                .num("p90_us", st.p90_us, 3)
+                .num("min_us", st.min_us, 3)
+                .int("batch", st.batch as u64)
+                .int("samples", st.samples as u64);
+            if let Some(tokens) = row.tokens_scanned {
+                r = r.int("tokens_scanned", tokens);
             }
-            c => out.push(c),
-        }
-    }
-    out.push('"');
-    out
-}
-
-fn render(rows: &[Row], repo: &Path) -> String {
-    let commit = git(&["rev-parse", "HEAD"], repo).unwrap_or_else(|| "unknown".to_string());
-    let dirty = git(
-        &[
-            "status",
-            "--porcelain",
-            "--",
-            "crates",
-            "bench/micro",
-            ":(exclude)bench/micro/results.json",
-            ":(exclude)bench/micro/baseline.json",
-        ],
-        repo,
-    )
-    .map(|s| !s.is_empty())
-    .unwrap_or(true);
-    let cpus = std::thread::available_parallelism()
-        .map(|n| n.get())
-        .unwrap_or(0);
-    let mut s = String::new();
-    s.push_str("{\n");
-    let _ = writeln!(
-        s,
-        "  \"label\": \"frevo-model bench/micro (crates/frevo-model/benches/model_micro.rs)\","
-    );
-    let _ = writeln!(s, "  \"profile\": \"release\",");
-    let _ = writeln!(s, "  \"commit\": {},", json_string(&commit));
-    let _ = writeln!(s, "  \"worktree_dirty\": {dirty},");
-    let _ = writeln!(s, "  \"generated_at\": {},", json_string(&utc_now()));
-    let _ = writeln!(
-        s,
-        "  \"environment\": {{ \"os\": {}, \"arch\": {}, \"cpus\": {cpus} }},",
-        json_string(std::env::consts::OS),
-        json_string(std::env::consts::ARCH)
-    );
-    let _ = writeln!(
-        s,
-        "  \"method\": \"median of {SAMPLES} samples, each a batch of at least {} us, after {} ms warmup; per-operation figures in microseconds\",",
-        MIN_BATCH.as_micros(),
-        WARMUP.as_millis()
-    );
-    s.push_str("  \"workloads\": [\n");
-    for (i, row) in rows.iter().enumerate() {
-        let st = &row.stats;
-        let _ = write!(
-            s,
-            "    {{ \"name\": {}, \"scenario\": {}, \"budget\": {}, \"fixture_bytes\": {}, \
-             \"median_us\": {:.3}, \"p10_us\": {:.3}, \"p90_us\": {:.3}, \"min_us\": {:.3}, \
-             \"batch\": {}, \"samples\": {}",
-            json_string(row.name),
-            json_string(row.scenario),
-            json_string(row.budget),
-            row.fixture_bytes,
-            st.median_us,
-            st.p10_us,
-            st.p90_us,
-            st.min_us,
-            st.batch,
-            st.samples
-        );
-        if let Some(tokens) = row.tokens_scanned {
-            let _ = write!(s, ", \"tokens_scanned\": {tokens}");
-        }
-        s.push_str(" }");
-        s.push_str(if i + 1 < rows.len() { ",\n" } else { "\n" });
-    }
-    s.push_str("  ]\n}\n");
-    s
+            r.str(
+                "method",
+                &format!(
+                    "median of {} samples, each a batch of at least {} us, after {} ms warmup; per-operation figures in microseconds",
+                    st.samples,
+                    MIN_BATCH.as_micros(),
+                    WARMUP.as_millis()
+                ),
+            )
+        })
+        .collect()
 }
 
 fn main() {
@@ -626,7 +542,13 @@ fn main() {
         );
     }
     if write {
-        std::fs::write(&out, render(&rows, &repo)).expect("write the results");
+        record::write_merged(
+            &out,
+            &repo,
+            "model_micro",
+            &|name| name.starts_with("model-"),
+            &to_records(&rows),
+        );
         println!("\nwrote {}", out.display());
     }
     if diagnose_too {

@@ -20,3 +20,11 @@ frevo-path = { workspace = true }
 [[bench]]
 name = "model_micro"
 harness = false
+
+# The `bench/micro/` FHIRPath workloads that run over a byte-backed resource
+# (`path-eval-compiled`, `path-extract-patient`). They are
+# measured from this crate because `frevo-path` may not name `frevo-model`
+# (`path.api.008`) and `path.perf.004` needs this crate's span-based node.
+[[bench]]
+name = "path_bytes"
+harness = false
