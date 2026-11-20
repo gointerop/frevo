@@ -2433,17 +2433,34 @@ The engine SHALL compare, add, subtract, multiply and divide quantities by conve
     `~` and `!~` between two valued quantities raises: `path.quantity.001` to
     `.004`, `.009` to `.012`, `.017`, `1 'mg' = 1 'mg'`, and the
     `testQuantity1` to `6` and `9` to `11` cases;
-  - in `<` when the two `code` lists differ, and in `<=`, `>` and `>=` when the
-    two `unit` lists differ (`:2443`, `:2490`, `:2540`, `:2588`): `6 days < 1 week`
+  - in `<` when the two `code` lists differ, in `>` and `>=` when the two
+    `unit` lists differ, and in `<=` when the two `unit` values differ and the
+    left one is present (`:2443`, `:2490`, `:2540`, `:2588`): `6 days < 1 week`
     and `8 days > 1 week` (`path.quantity.005`), `1 'cm' < 1 's'`
     (`path.quantity.015`) and `testLessThan33` (`path.quantity.013`) raise;
   - in `*` and `/` of two quantities (`:2793`, `:3013`: `path.quantity.006`,
-    `.007`, `.008`) and in `comparable()` with a UCUM `system`
-    (`:4631`, `path.quantity.014`)
+    `.007`, `.008`);
+  - in `comparable()` only when both quantities have the system
+    `http://unitsofmeasure.org` and both have a `code` and the codes differ
+    (`funcComparable`, `:4609-4641`, the call at `:4631`): so the three suite
+    cases `Comparable/Comparable1` to `3` (`path.quantity.014`) raise, while
+    `1 'cm'.comparable(2 'cm')` is `true` (equal codes, `:4628-4630`) and a
+    quantity with no system or no code, or two different systems, is `false`
+    (`:4622-4627`) under both workers
 - **AND** an ordered comparison whose `code` (for `<`) or `unit` (for the other
   three) lists are equal never consults the worker and answers by value:
   `testLessOrEqual30` and `testGreaterThan30` (`path.quantity.013`) are `true`
   under the server-facing worker as under the suite's
+- **AND** `<=` with **no** `unit` on the left and one on the right fails
+  **before** the worker is consulted, under both workers: it evaluates
+  `lunit.equals(runit)` with a null `lunit` (`:2533-2538`), a
+  `NullPointerException`, as `path.compare.002` and `path.compare.014` state
+  for `1 'kg' <= 1 year`. So
+  `Parameters.parameter[0].value <= Parameters.parameter[2].value` over
+  `parameters-example-quantities.xml` (`1` with no unit, `1 'tablets'`) raises
+  the `NullPointerException` there too, not `HAPI-0274: `, and Frevo returns an
+  execution error (`path.errors.003`). `>` and `>=` compare the unit lists with
+  `compareDeep` and do not fail this way (`:2485-2487`, `:2583-2585`)
 - **AND** the exception is not a `FHIRException`, so `FhirPathR4` does not wrap
   it as `HAPI-0255: ` (it catches only `FHIRException`, `FhirPathR4.java:66-70`),
   and `FhirPathFilterInterceptor`, which catches only
