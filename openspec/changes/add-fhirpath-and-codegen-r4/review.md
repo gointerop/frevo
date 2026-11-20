@@ -1,5 +1,59 @@
 CHANGES_REQUESTED
 
+Forty-third review (commit `429b868`, 2026-11-20, diff against `295b604`). The
+forty-second finding is resolved in `path.api.005`. The new
+`path.navigation.025` is right on the by-name `string`, the XML-mode
+composition and its examples, and the `children()` `xhtml` item. It over-claims
+in two places, both in the HTML-mode clauses. `XC` is
+`org.hl7.fhir.utilities/src/main/java/org/hl7/fhir/utilities/xhtml/XhtmlComposer.java`
+at `73c432b5`. The detail is in the dated section at the end.
+
+1. **The CR LF rule skips the first child and never descends into it, so the
+   scenario's rule is wrong for the common narrative shape.**
+   `breakBlocksWithLines(List)` loops `for (int i = list.size() - 1; i > 0; i--)`
+   (`XC:92-103`), and both the insertion and the recursion
+   (`breakBlocksWithLines(node)`, `:101`) are inside that loop. So:
+   - A block element that is the **first** child gets no CR LF.
+   - The first child's own children are **never visited**.
+   
+   The scenario says a CR LF is inserted "before every child element named
+   `li`, ..., `table` that does not already follow a line break". HAPI instead
+   gives:
+   - `<div xmlns="http://www.w3.org/1999/xhtml"><ul><li>a</li><li>b</li></ul></div>`
+     composes in HTML mode with **no** CR LF at all. The `ul` is child 0, so
+     its `li`s are never reached. The same holds for a narrative that opens
+     with a `<table>`.
+   - `<div xmlns="http://www.w3.org/1999/xhtml">x<ul><li>a</li><li>b</li></ul></div>`
+     composes as
+     `<div xmlns="http://www.w3.org/1999/xhtml">x` CR LF `<ul><li>a</li>` CR LF `<li>b</li></ul></div>`.
+     The `ul` gets one because it is child 1, after the text `x`. Inside it,
+     only the second `li` gets one.
+   
+   Fix: state the rule as the loop does: index 1 onwards, recursion only into
+   those children, and the preceding-sibling test of `:97`. Add these two
+   examples.
+
+2. **The edit happens when the `xhtml` item's value is composed, not when
+   `children()` navigates.**
+   - `breakBlocksWithLines` runs only inside `XhtmlComposer(false).compose`,
+     which `XhtmlType.primitiveValue()` (`XhtmlType.java:107-108`, through
+     `getValue`, `:77-78`) calls on `place.getDiv()` (`:82`).
+   - `funcChildren` and `funcDescendants` (`ENGINE:4808-4836`) only collect
+     `new XhtmlType(this)`. `getChildrenByName` (`:255-279`) and
+     `filterIdType` do not compose it either.
+   - So in the scenario's example, `text.div` read after `text.children()` in
+     the same evaluation is the **unchanged** text. It gains the CR LF only if
+     the `xhtml` item's string is read first. For example:
+     - `Patient.text.children().ofType(xhtml).toString()` composes it.
+     - `Patient.text.children().ofType(xhtml) = ...` composes it.
+     - `Patient.text.children().count()` does not.
+   
+   Fix: state the trigger as "the `xhtml` item's string value is read". Give
+   one expression where the later `text.div` carries the CR LF, and one where
+   it does not.
+
+## Forty-second-review findings as raised (commit `e54ccc6`)
+
 Forty-second review (commit `e54ccc6`, 2026-11-20, diff against `637010a`).
 Both forty-first findings are resolved: `path.api.005` now states HAPI's
 semantics, and `DEV-0027` is withdrawn. Every class fact, rendering rule and
@@ -3338,3 +3392,70 @@ reused.
   is valid.
 - The headings number codegen 49, model 83 and path 380, 512 in total. No ID
   is duplicated, added, removed or renumbered.
+
+## Forty-third review - commit `429b868` (2026-11-20)
+
+Scope: the diff `295b604..429b868`. It covers the `Narrative.div` exception
+in `path.api.005`, the new `path.navigation.025`, the
+`Patient.java:1508` citation fix, the counts, task text, and the
+ancestry-table blocker's options and licence paragraph.
+
+**Forty-second finding: resolved.** `path.api.005` states that `div` by name
+is a `StringType` (`Narrative.java:364-366`) and through `*` an `XhtmlType`
+(`:343`, `Base.java:226-236`, `ENGINE:4819`, `:4833`). The two `HAPI-0256`
+cases are right, and the generation rule now carries the exception.
+
+**`path.navigation.025`, the parts that hold.**
+- `getProperty` composes with `new XhtmlComposer(true)`, which is XML mode
+  and not pretty (`XC:65-69`). `composeEx` calls `compose(XhtmlNode)`
+  (`XC:486-488`, `:105-116`), which skips `breakBlocksWithLines` when `xml`
+  is set. So the by-name value has no inserted CR LF.
+- In XML mode:
+  - An element with no children and no content is concise (`XC:318-320`,
+    `:330`).
+  - A `"` in text becomes `&quot;` (`XC:222-224`), while `&`, `<` and `>` are
+    escaped in both modes.
+  - So `say "a"<br></br>b` becomes `say &quot;a&quot;<br/>b`. Correct.
+- Attributes are written by iterating `getAttributes()` (`XC:306-311`), which
+  is a `java.util.HashMap` (`XhtmlNode.java:89`, `:139-143`). The order claim
+  is correct, and it is not over-claimed: the scenario does not state an
+  order.
+- `XhtmlNode.setValueAsString` parses with `XhtmlParser` (`:592-622`), and the
+  parser puts `xmlns` into the attribute map (`XhtmlParser.java:366`, `:400`,
+  `:409`, `:563`). So the composed `div` keeps its `xmlns`.
+- `is string`, `is FHIR.string`, `ofType(string)`, `=`, `toString()` and
+  `contains` all follow from `fhirType()` = `string`. `is xhtml` is `false`.
+- `children()` gives `status` and then `div`, in `listChildren` order
+  (`Narrative.java:340-343`).
+- `XhtmlType.primitiveValue()` is `new XhtmlComposer(false).compose(getXhtml())`
+  (`XhtmlType.java:107-108`), which is HTML mode, and it edits
+  `place.getDiv()` (`:82`).
+- The `BLOCK_NAMES` set is exactly `li`, `ul`, `ol`, `tr`, `td`, `th`, `div`
+  and `table` (`XC:49`).
+- An inserted `"\r\n"` text node is written unescaped in XML mode
+  (`XC:176-247`, not canonical). So once the node has been edited, a later
+  by-name read does contain CR LF.
+
+**`path.navigation.025`, the parts that do not hold:** see findings 1 and 2.
+
+**Blocker "the R4 Java class ancestry table": now properly framed.**
+- It gives three options, each with its consequence:
+  - (a) read the pinned Java sources, with an ADR, the BSD notice, a
+    provenance entry and a reviewed exception list;
+  - (b) reflection over the pinned jars in CI, committed as a recorded
+    artifact;
+  - (c) the StructureDefinitions plus a cited exception list.
+- The licence paragraph quotes the HL7 BSD header and names `NOTICE` and
+  `docs/provenance.md`, as constitution section 10 requires.
+- The implementer is blocked from hand-writing the table in the meantime. No
+  further request.
+
+**Registers, counts and validators.**
+- `harness/scripts/check-registries.sh` reports "registers agree" (24
+  deviations, 17 debt entries).
+- `openspec validate add-fhirpath-and-codegen-r4 --strict` reports the change
+  is valid.
+- The headings number codegen 49, model 83 and path 381, 513 in total.
+- `path.navigation.*` has 25 headings. No ID is duplicated, removed or
+  renumbered.
+- The no-live-case list (31) includes `.025`, which says "differential-only".
