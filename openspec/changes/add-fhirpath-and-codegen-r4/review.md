@@ -1,5 +1,52 @@
 CHANGES_REQUESTED
 
+Forty-second review (commit `e54ccc6`, 2026-11-20, diff against `637010a`).
+Both forty-first findings are resolved: `path.api.005` now states HAPI's
+semantics, and `DEV-0027` is withdrawn. Every class fact, rendering rule and
+table example I checked holds. One finding remains. The detail, and my
+assessment of the blocker's framing, are in the dated section at the end.
+
+1. **`Narrative.div` is navigated as a `StringType`, not an `XhtmlType`, so
+   the `@Child`-declared class is wrong for it.**
+   - `Narrative.getProperty` returns
+     `new StringType(new XhtmlComposer(true).composeEx(this.div))` for `div`
+     (`org.hl7.fhir.r4/.../model/Narrative.java:364-366`). The field's
+     `@Child` declares `XhtmlType` (`:232`), and `listChildren` offers
+     `new XhtmlType(this)` (`:343`). FHIRPath navigation goes
+     `listChildrenByName` to `getProperty` (`ENGINE:270`), so the item HAPI
+     returns is a `StringType` whose `fhirType()` is `string`.
+   - The table the scenario says `frevo-codegen` generates "from each `@Child`
+     field's declared Java type" would give `XhtmlType`. That reverses two
+     results over `patient-example.xml`, which has a `text.div`:
+     - HAPI accepts `Patient.text.div` as `string`.
+     - As `xhtml` it fails with
+       `HAPI-0256: FhirPath expression returned unexpected type StringType - Expected org.hl7.fhir.r4.model.XhtmlType`.
+     
+     It is accepted as primitive either way.
+   - This is the only such substitution in the R4 model: no other
+     `getProperty` builds a new object (`grep "new Base[] { new"` over
+     `model/*.java`).
+   - The class also depends on the route. `children()` and `descendants()`
+     navigate by `"*"` (`ENGINE:4830-4836`), and `Base.listChildrenByName("*")`
+     collects `listChildren`'s values (`Base.java:227-233`). Those are
+     `new XhtmlType(this)` (`Narrative.java:343`), so `Patient.text.children()`
+     yields an `XhtmlType` for `div`, where `Patient.text.div` yields a
+     `StringType`.
+   - The same fact is an engine behaviour that no scenario states. HAPI gives
+     `Patient.text.div` the type `string`, and its value is
+     `XhtmlComposer(true).composeEx(div)`. That decides `is(string)`,
+     `is(xhtml)`, `toString()`, `contains()` and string comparison over the
+     narrative.
+   - Fix:
+     - Add the `div` exception to `path.api.005`, with the two cases above,
+       and to the table's generation rule.
+     - Add a navigation scenario, or an explicit out-of-scope row, for the
+       type and string value of `text.div`. The exact `composeEx` rendering is
+       `org.hl7.fhir.utilities` code, so either state it or name the change
+       that will.
+
+## Forty-first-review findings as raised (commit `4fa72be`)
+
 Forty-first review (commit `4fa72be`, 2026-11-20, diff against `c692b65`).
 `ENGINE` is `org.hl7.fhir.r4/src/main/java/org/hl7/fhir/r4/fhirpath/FHIRPathEngine.java`
 at `73c432b5`, and `HAPI` is `reference/hapi-fhir` at `v8.12.0`. The new
@@ -3182,3 +3229,112 @@ is empty and `exists()` is `false`.
 - `path.errors.*` has 7 headings. No ID is duplicated, removed or renumbered.
 - The no-live-case list (30) adds `.006` and `.007`, and each of them says
   "differential-only".
+
+## Forty-second review - commit `e54ccc6` (2026-11-20)
+
+Scope: the diff `637010a..e54ccc6`. It covers `path.api.005`, the withdrawal
+of `DEV-0027`, the new out-of-scope row in `proposal.md`, task 54, `spec.md`
+and the blocker "the R4 Java class ancestry table". `MODEL` is
+`org.hl7.fhir.r4/src/main/java/org/hl7/fhir/r4/model` at `73c432b5`, and `API`
+is `hapi-fhir-base/.../org/hl7/fhir/instance/model/api` at `v8.12.0`.
+
+**Forty-first finding 1 (interface kinds): resolved.**
+- The primitive, composite and reference kinds are now specified, with the
+  callers cited. I re-checked those citations against the HAPI sources.
+- `PrimitiveType` implements `IPrimitiveType` (`MODEL/PrimitiveType.java:46-47`).
+- `IBaseEnumeration` extends `IPrimitiveType`, so an `Enumeration` is a
+  primitive.
+- `IBaseReference`, `IBaseMetaType`, `INarrative` and `IBaseExtension` each
+  extend `ICompositeType` (`API`).
+- `Reference` reaches `ICompositeType` through `BaseReference`, `Narrative`
+  through `BaseNarrative`, and `Extension` through `BaseExtension`.
+- I scanned every `MODEL` class that extends `Type`, `BackboneType`,
+  `Quantity` or a `Base*` datatype. All of them implement `ICompositeType`,
+  directly or through one of those interfaces, except `BackboneType` itself
+  (abstract) and `MoneyQuantity` and `SimpleQuantity`, which inherit it from
+  `Quantity`.
+- `BackboneElement` (`:49`) implements only `IBaseBackboneElement`, which does
+  not extend `ICompositeType`. So `ContactComponent` (`Patient.java:230`) is
+  not composite.
+
+**Forty-first finding 2: resolved.** `DEV-0027` is removed. The register
+count and pending list are updated, and `spec.md` says the number is not
+reused.
+
+**Class facts.**
+- `IdType extends UriType` (`IdType.java:120`).
+- `CodeType` and `MarkdownType` extend `StringType`.
+- `UrlType`, `CanonicalType`, `OidType`, `UuidType` and `SidType` extend
+  `UriType`.
+- `PositiveIntType` and `UnsignedIntType` extend `IntegerType`.
+- `DateType`, `DateTimeType` and `InstantType` extend `BaseDateTimeType`.
+- `Enumeration extends PrimitiveType` (`:76`).
+- `Attachment.contentType` is a `CodeType` with a binding (`Attachment.java:53-58`).
+- `Observation.status` is an `Enumeration` (`Observation.java:1715`).
+- `Patient.gender` is an `Enumeration`, but `Patient.java:269` is the
+  **contact's** `gender`. The `Patient` field is at `:1508`. This is a
+  citation slip, not a finding.
+- `Patient`, `DomainResource` and `Resource` are at the cited lines.
+- `filterIdType` (`ENGINE:280-284`) keeps an `IdType`.
+
+**Message.**
+- `Msg.code` is `String.format("%s-%04d: ", "HAPI", code)` (`Msg.java:23`,
+  `:31-32`), so the prefix is `HAPI-0256: `.
+- `FhirPathR4.java:72-77` uses `getSimpleName()` for the item and `getName()`
+  for the requested type, so a nested class renders as `ContactComponent` and
+  `org.hl7.fhir.r4.model.Patient$ContactComponent`.
+- `evaluateFirst` is `evaluate(...).stream().findFirst()` (`:80-89`), so it
+  checks the whole result.
+- `FhirPathTest.testEvaluateWrongType` (`hapi-fhir-validation`, `:68-80`)
+  asserts the `HumanName` / `StringType` message suffix.
+- `:49` and `:69` are the `2409` and `0255` wraps, and
+  `FhirPathFilterInterceptor.java:84` is `0327`. The out-of-scope row names
+  `add-server-skeleton`.
+
+**Table examples.** All are correct under HAPI. In detail:
+- Primitive: accepts `gender`, `active` and `birthDate`, and rejects `name`
+  (`HumanName`). The union puts `active` first, so the first rejected item is
+  the `HumanName`.
+- Composite: accepts `code` and `subject`, and rejects `status`
+  (`Enumeration`) and `contact` (`ContactComponent`).
+- Reference: accepts `subject`, and rejects `code` (`CodeableConcept`).
+- FHIR type names:
+  - `family` as `string` is accepted, and so is `id` as `uri`.
+  - `name` as `string` is rejected (`HumanName`), and so is `id` as `string`
+    (`IdType`).
+  - `gender` as `code` is rejected (`Enumeration`), and so is `birthDate` as
+    `string` (`DateType`).
+- The exception is `text.div` (finding 1).
+
+**The ancestry-table blocker: framed as an owner decision, with thin options.**
+- The blocker correctly identifies the conflict with constitution section 4
+  ("never translated from upstream Java"). It correctly notes that the
+  `Enumeration`-versus-`CodeType` split does not follow from the
+  StructureDefinitions (`Attachment.contentType`). It correctly forbids a
+  hand-written table meanwhile, and asks for an ADR and a provenance entry
+  under option (a).
+- Section 10 adds a further point. `org.hl7.fhir.core`'s model sources carry
+  HL7's BSD-style licence header, not Apache-2.0, so a derived table needs
+  that notice carried and the derivation recorded in `docs/provenance.md`.
+  The blocker should say so.
+- I would ask the proposer to add two concrete alternatives to "(b) names
+  another source":
+  - **(c)** Generate the table once in CI by **reflection over the pinned
+    HAPI 8.12.0 jars**: `Class.getSuperclass`/`getInterfaces`, the `@Child`
+    field types, and a live `getProperty` probe. Commit it as a recorded
+    oracle artifact, as `hapi-8.12.0-results.json` is. This reads no Java
+    source, and it captures runtime substitutions such as `Narrative.div`,
+    which a source scan of `@Child` declarations misses (finding 1).
+  - **(d)** Derive the table from the StructureDefinitions plus a small,
+    reviewed exception list of HAPI generator choices. This keeps section 4
+    intact at the cost of a maintained list.
+  
+  Neither alternative changes the scenario, so this is not a finding.
+
+**Registers, counts and validators.**
+- `harness/scripts/check-registries.sh` reports "registers agree" (24
+  deviations, 17 debt entries).
+- `openspec validate add-fhirpath-and-codegen-r4 --strict` reports the change
+  is valid.
+- The headings number codegen 49, model 83 and path 380, 512 in total. No ID
+  is duplicated, added, removed or renumbered.
