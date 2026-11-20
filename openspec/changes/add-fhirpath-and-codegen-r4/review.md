@@ -1,3 +1,57 @@
+CHANGES_REQUESTED
+
+Forty-first review (commit `4fa72be`, 2026-11-20, diff against `c692b65`).
+`ENGINE` is `org.hl7.fhir.r4/src/main/java/org/hl7/fhir/r4/fhirpath/FHIRPathEngine.java`
+at `73c432b5`, and `HAPI` is `reference/hapi-fhir` at `v8.12.0`. The new
+claims in `path.strictness.005`, `path.strictness.006`, `path.errors.006` and
+`path.errors.007` check out, and so does every column value. Two findings
+concern `path.api.005` and `DEV-0027`. My assessment of `DEV-0027` and the
+verification detail are in the dated section at the end.
+
+1. **`path.api.005` cannot express the result types that HAPI's own callers
+   ask for.** Frevo's requested type is "a FHIR type name, or `Base`". HAPI's
+   callers of `IFhirPath.evaluate`/`evaluateFirst` mostly pass Java
+   interfaces, not model classes:
+   - `IPrimitiveType`: `FieldValidatingInterceptor.java:105`,
+     `DaoResourceLinkResolver.java:466`/`:468`,
+     `ServeMediaResourceRawInterceptor.java:92`/`:100`,
+     `JpaPackageCache.java:418` and `PackageInstallerSvcImpl.java:1081`.
+   - `ICompositeType`: `SearchParameterAndValueSetRuleImpl.java:232`, which
+     raises `HAPI-0256` when a search-parameter path yields a primitive.
+   - `IBaseReference`: `BulkExportMdmFullResourceExpander.java:252` and
+     `OverridePathBasedReferentialIntegrityForDeletesInterceptor.java:123`.
+   
+   No FHIR type name has the meaning of "any primitive" or "any complex
+   datatype". `Element` accepts both. Not every primitive derives from one
+   FHIR type, and an `Enumeration` is an `IPrimitiveType`.
+   So the scenario gives a ported caller no way to match HAPI's acceptance:
+   - `IPrimitiveType` accepts `Patient.gender`, `Patient.active` and
+     `Patient.birthDate`, and rejects `Patient.name`.
+   - `ICompositeType` accepts `Observation.code` and rejects
+     `Observation.status`.
+   
+   Fix: state the requested kinds the surface supports beyond a FHIR type
+   name. At least add primitive, complex datatype, `Reference` and resource,
+   with their acceptance rules and an example for each, or state explicitly
+   that these callers are out of scope and where they will be specified.
+
+2. **`DEV-0027`'s rationale is factually wrong.** It says "Frevo accepts
+   strictly more than HAPI here and never returns a different value, so this
+   is not a wrong-answer hazard". The scenario's own text contradicts this:
+   - `IdType extends UriType` (`org.hl7.fhir.r4/.../model/IdType.java:120`),
+     so HAPI accepts an `id` result for `UriType`, and Frevo rejects it for
+     `uri`. That is strictly less than HAPI.
+   - The rationale's "not observable over HTTP" is also unestablished. The
+     interface-typed callers in finding 1 surface `HAPI-0256` in server
+     behaviour, for example an authorization rule over a search-parameter
+     path.
+   
+   Fix: correct the rationale, and list the cases where Frevo rejects what
+   HAPI accepts (`id` as `uri`). Any narrower acceptance is a potential
+   failure where HAPI succeeds, and is therefore a hazard to record.
+
+## Fortieth review header as issued (commit `b73a460`)
+
 APPROVED
 
 Fortieth review (commit `b73a460`, 2026-11-20) resolves the one finding of the
@@ -3014,3 +3068,117 @@ seconds, because `parse` leaves `myFractionalSeconds` empty when
   is valid.
 - The headings number codegen 49, model 83 and path 378, 510 in total. No ID
   is duplicated, added, removed or renumbered.
+
+## Forty-first review - commit `4fa72be` (2026-11-20)
+
+Scope: the diff `c692b65..4fa72be`: `path.strictness.005`, `.006`,
+`path.api.005`, the new `path.errors.006` and `.007`, the note in
+`path.errors.002`, `DEV-0026`, `DEV-0027`, task 53, `spec.md` and the
+blockers note.
+
+**`path.strictness.005` and `DEV-0026`: correct.**
+- `initFlags` (`ENGINE:211-216`) and `FhirPathR4`'s constructor
+  (`HAPI .../fluentpath/FhirPathR4.java:34-40`) both disable case sensitivity.
+- `funcAs` (`:5155-5193`) builds `FHIR.Code`. `isKnownType` (`:1904-1935`)
+  reaches `HapiWorkerContext.fetchTypeDefinition` (`:412-414`), which goes
+  through `fetchResource` (`:437-444`) to the validation support.
+- `DefaultProfileValidationSupportBundleStrategy.fetchStructureDefinition`
+  (`:276-297`) retries an upper-case initial lower-cased for R4, R4B and R5.
+- The loop then compares `fetchTypeDefinition("code").getType()` with
+  `compareTypeNames`, which ignores case only when case is not enforced
+  (`:1896-1902`). So the result is `male` in the default state and empty when
+  enforced.
+- `opAs` (`:1874-1893`) does the same against `fhirType()`.
+- `funcOfType` uses `equals` (`:5226`), so it is empty in both states.
+- `as(quantity)` gets no retry and so fails `isKnownType`. The error is
+  `FHIRPATH_INVALID_TYPE` (`Messages.properties:336`), built without a
+  location (`:5164`).
+- The suite's worker resolves exactly (`BaseWorkerContext.java:1183-1188`).
+- `FhirPathEngineR4Test.testAs` (`:93-115`) is as quoted.
+- The suite's mis-cased names cannot reach the retry: every `as`/`ofType`
+  argument names a real type (`HumanName`, `Period`, `Quantity`, ...), and
+  `is` does not call `isKnownType` (`funcIs`, `:5102-5150`).
+- `DEV-0026` is HAPI's server-facing behaviour, so choosing it follows the
+  owner's ruling.
+
+**`path.strictness.006`: correct.** In `getChildrenByName` (`:255-279`),
+`"value".startsWith("value")` sets `tn = ""`. The test
+`v.fhirType().equalsIgnoreCase("")` then drops the `Quantity`, so the result
+is empty and `exists()` is `false`.
+
+**`path.errors.006`: correct.**
+- `-` is a single token (`FHIRLexer.java:149-153`).
+- The `Unary` wrapper takes its operation from `lexer.take()`, which has
+  already run `next()` (`FHIRLexer.java:101-105`). It is then given
+  `setStart(getCurrentLocation())` (`ENGINE:1082-1088`).
+- For `-'a'`: `-` takes the column to 2 and `'a'` to 5, so the suffix is
+  ` (@char 5)` and the byte offset 4.
+- For `- 'a'`: 2, then 4 after the space, then 7, so ` (@char 7)` and offset 5.
+- The wrapper is proximal and carries the operation, and `case Unary` pushes
+  `0` (`:1470-1471`). So `last` is the wrapper (`:1510-1522`).
+- `opMinus` passes every guard for `0` and `'a'` and reaches
+  `FHIRPATH_OP_INCOMPATIBLE` (`:2977-2978`, `Messages.properties:350`). The
+  quoted message, ` -:` included, is right.
+
+**`path.errors.007`: correct.**
+- `funcIif` raises `FHIRPATH_NO_COLLECTION` with the `iif` node (`:5007-5009`,
+  `Messages.properties:344`).
+- In `(1 | 2).iif(true, 'a')`: `(` takes the column to 2, `1` to 3, the space
+  to 5, `|` to 6, the space to 8, `2` to 9, `)` to 10 and `.` to 11. So `iif`
+  is at column 11, byte offset 8.
+- `checkSingleton` (`:3839-3843`) only adds a warning.
+- In `1.is('x')`, the number loop steps back over a trailing `.`
+  (`FHIRLexer.java:160-170`), so `1` is one token and `is` is at column 3,
+  offset 2.
+- `funcIs` (`:5102-5109`) formats `texp.getKind()`, an enum (`Kind`,
+  `ExpressionNode.java:43-45`), so its text is `Constant` or `Name`. The
+  outer node's kind is passed in the second branch too, so `Name`. The
+  `Messages.properties:352` text matches.
+
+**`path.api.005` and `DEV-0027`: see findings 1 and 2.**
+- The HAPI facts are right:
+  - `FhirPathR4.java:72-77` uses `isAssignableFrom`, with `getSimpleName()`
+    and `getName()`, and `Msg.code(256)`.
+  - `IdType extends UriType`, and `CodeType` and `MarkdownType` extend
+    `StringType`.
+  - `Enumeration extends PrimitiveType`, so it is neither a `CodeType` nor a
+    `StringType`.
+  - `Age`, `Count`, `Distance` and `Duration` extend `Quantity`.
+- The FHIR-side derivations (`id`, `code` and `markdown` from `string`;
+  `url`, `canonical`, `oid` and `uuid` from `uri`) match R4's
+  `baseDefinition`s.
+- Assessment of the choice, as the coordinator asked. Constitution section 1
+  makes `docs/deviations.md` the exception mechanism for cases where **HAPI
+  and the specification disagree**, and tells us to choose HAPI's behaviour
+  there. `DEV-0027` states "Specification requirement: none in FHIRPath". So
+  it is not that kind of case, and the standing ruling points to HAPI's
+  semantics.
+- Recording it as "pending owner" is the right form. The choice itself has a
+  plausible case: Java classes do not exist in Rust, and HAPI rejects a `code`
+  held as an `Enumeration` when a `CodeType` is requested. But the case
+  rests on the two incorrect premises in finding 2, and the surface lacks the
+  interface kinds that HAPI's real callers use (finding 1).
+- An equivalent of HAPI's semantics is buildable without Java: a fixed table
+  that maps each FHIR type to HAPI's R4 class ancestry, including
+  `Enumeration` for a bound `code`, plus the interface kinds. So
+  "reproducing the Java class tree" is a cost, not an impossibility.
+- Until the owner rules, I would expect the open decision to be an entry in
+  `tasks/blockers.md`, not only a mention in a resolution note.
+- Not a finding for this commit: `FhirPathR4` also wraps engine errors as
+  `HAPI-0255: ` + message (`:69`) and parse errors as `HAPI-2409: ` + the
+  exception (`:49`). The starter registers `FhirPathFilterInterceptor`
+  (`StarterJpaConfig.java:432`), which surfaces them as
+  `HAPI-0327: Error parsing FHIRPath expression: ...`
+  (`FhirPathFilterInterceptor.java:80-84`). That is where the
+  `path.errors.*` messages become observable over HTTP. The server change
+  that ports the interceptor must specify that wrapping.
+
+**Registers, counts and validators.**
+- `harness/scripts/check-registries.sh` reports "registers agree" (25
+  deviations, 17 debt entries).
+- `openspec validate add-fhirpath-and-codegen-r4 --strict` reports the change
+  is valid.
+- The headings number codegen 49, model 83 and path 380, 512 in total.
+- `path.errors.*` has 7 headings. No ID is duplicated, removed or renumbered.
+- The no-live-case list (30) adds `.006` and `.007`, and each of them says
+  "differential-only".
