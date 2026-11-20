@@ -32,7 +32,7 @@ is in the dated section at the end.
      the left has one, the lists differ and the worker is reached. `<`, `>`
      and `>=` compare lists with `Base.compareDeep` and have no such NPE.
    - Fix: narrow both clauses to what the code does, add the two examples,
-     and cross-reference the existing NPE statement (`path.compare.014`,
+     and cross-reference the existing NPE statement (`path.compare.002`,
      spec `:1037`), which already gives `1 'kg' <= 1 year` that NPE.
 
 ## Forty-sixth-review findings as raised (commit `b356a10`)
