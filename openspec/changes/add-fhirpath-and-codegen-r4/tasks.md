@@ -24,7 +24,7 @@ checkpoint because it changes what a gate measures.
 
 ## Phase A — the oracle harness and the measurement ADR 0004 is waiting for
 
-- [ ] **1. Build the FHIRPath oracle harness.** Parse
+- [x] **1. Build the FHIRPath oracle harness.** Parse
   `oracles/fhirpath/tests-fhir-r4.xml` into cases: assert 103 groups and 1,191
   `<test>` elements **counted by XML parse, not by text match** — a grep says
   104 and 1,193 because the `testDollarResource` group at lines 1576-1582 is
@@ -69,6 +69,12 @@ checkpoint because it changes what a gate measures.
   `path.oracle.004`, `path.oracle.005`, `path.oracle.006`, `path.oracle.007`,
   `path.oracle.008`, `path.oracle.009`, `path.oracle.010`, `path.oracle.015`,
   `path.oracle.017`, `path.datetime.004`.
+  **Ticked 2026-11-20 (verified at `a5301eb`):** all 13 IDs carry a `covers:`
+  tag (`scenario-coverage.sh --change add-fhirpath-and-codegen-r4`: 514 of
+  514 covered, 0 unresolved) and every test tagged with one passes:
+  `fhirpath_oracle` 19 of 19, `path_datetime` 6 of 6, and `path_oracle`'s
+  three tests for this task (its two red ones are `path.oracle.012`, task 3,
+  and `.013`, task 2).
 
 - [ ] **2. Measure `helios-fhirpath` and `haste-fhirpath` through the harness and
   record the numbers in ADR 0004.** Create `harness/fhirpath-compare/`, listed
@@ -115,7 +121,7 @@ checkpoint because it changes what a gate measures.
   Satisfies `path.oracle.011`, `path.oracle.012`, `path.oracle.014`,
   `path.oracle.016`.
 
-- [ ] **4. Write the failing tests for every `path.*` scenario.** One test per
+- [x] **4. Write the failing tests for every `path.*` scenario.** One test per
   scenario ID, each carrying a `// covers: path.<area>.<nnn>` comment, with the
   oracle-backed scenarios driven from the harness's case selectors and the rest
   written directly. All 368 must fail, and none by `todo!()`, `#[ignore]` or a
@@ -124,8 +130,15 @@ checkpoint because it changes what a gate measures.
   case, and says so. `path.check.015`-`019` are driven from the in-process
   `path-check-warnings` oracle of task 4a, not from a suite selector.
   Covers all 368 `path.*` scenarios.
+  **Ticked 2026-11-20 (verified at `a5301eb`):** the spec delta now declares
+  382 `path.*` IDs (368 when this was written), and every one has an
+  executable test tagged `covers:` (`scenario-coverage.sh --change
+  add-fhirpath-and-codegen-r4`: 514 of 514 covered, 0 unresolved). No
+  `#[ignore]`, bare `#[should_panic]`, `todo!()` or `unimplemented!()` in
+  `crates/frevo-path/{src,tests}`. That the tests now pass or fail is the
+  implementation tasks' business, not this one's.
 
-- [ ] **4a. Build the `path-check-warnings` in-process oracle.** The check
+- [x] **4a. Build the `path-check-warnings` in-process oracle.** The check
   pass's warning channel is reachable by neither the vendored suite — whose
   `invalid="semantic"` selector grades only whether the check *fails* — nor the
   HTTP differential harness, which never sees the list. Build a unit oracle over
@@ -141,16 +154,24 @@ checkpoint because it changes what a gate measures.
   while discarding the warnings.
   Satisfies the oracle named by `path.check.015`, `path.check.016`,
   `path.check.017`, `path.check.018`, `path.check.019`.
+  **Ticked 2026-11-20 (verified at `a5301eb`):** `path_check_warnings` is 5
+  of 5, one test per ID `path.check.015`-`019`, each tagged `covers:`.
 
-- [ ] **5. Write the failing tests for every `codegen.*` and `model.*`
+- [x] **5. Write the failing tests for every `codegen.*` and `model.*`
   scenario.** Same discipline: one test per scenario ID with a `covers:`
   comment, 49 plus 83 of them, including the `bench/micro/` workloads as
   benchmarks with assertions on their budgets. Interim round-trip selector is
   the 103 examples in `oracles/fhir-test-cases/fetched/r4/examples/`, with the
   test reporting that it is the interim set.
   Covers all 49 `codegen.*` and 83 `model.*` scenarios.
+  **Ticked 2026-11-20 (verified at `a5301eb`):** all 49 `codegen.*` and 83
+  `model.*` IDs in the spec delta have an executable test tagged `covers:`
+  (`scenario-coverage.sh`: 514 of 514, 0 unresolved). The `bench/micro/`
+  model workloads are asserted by `model_bytes_lazy_perf.rs`, and the
+  interim selector is stated by the round-trip report
+  (`codegen_r4.rs`, `codegen.roundtrip.001` asserts it says "interim").
 
-- [ ] **5a. Build the `model-parser-errors` in-process oracle.** Three of HAPI's
+- [x] **5a. Build the `model-parser-errors` in-process oracle.** Three of HAPI's
   ten parser error conditions cannot be reached by the round-trip oracle,
   because no example in `hl7.fhir.r4.examples#4.0.1` carries a contained
   resource without an `id` or a dangling `#` reference. Build a unit oracle over
@@ -164,6 +185,9 @@ checkpoint because it changes what a gate measures.
   text is exactly `#`, or whose id part is blank, is not diagnosed on either
   side.
   Satisfies the oracle named by `model.json.024`, `model.json.025`,
+  `model.canonical.007`.
+  **Ticked 2026-11-20 (verified at `a5301eb`):** `model_parser_errors` is 6
+  of 6, covering `model.json.024`, `model.json.025` and
   `model.canonical.007`.
 
 ---
@@ -592,23 +616,19 @@ checkpoint because it changes what a gate measures.
   on a complex element.
   Satisfies `model.primext.001` through `model.primext.009`.
 
-- [ ] **23. Implement canonical and normal serialisation.** Lexicographic key
+- [x] **23. Implement canonical and normal serialisation.** Lexicographic key
   order with no whitespace for canonical; generated element order for normal;
   array order preserved in both; presented decimal form preserved;
   idempotence; and the direct-versus-round-trip equality the oracle compares.
   Satisfies `model.canonical.001` through `model.canonical.006`.
-  **Implemented, not ticked.** `model_canonical` is 5 of 6 (it was 0 of 6),
-  measured with `cargo test -p frevo-model --test model_canonical` in a
-  checkout where `oracles/fetch.sh` has run. The red one is
-  `model.canonical.005`, and not on a comparison: its corpus branch asserts
-  `files.len() >= 100` over `*.json` only, and the fetched interim directory
-  holds 103 files of which 72 are `.json` (10 `.xml`, 21 `.json.out`). All
-  72 compare equal direct-versus-round-trip. In a checkout without the fetched
-  directory, as in CI, the branch is skipped and the test passes on its
-  embedded fixtures. `model.canonical.003` passes by keeping `1.00e3` as
-  written, which the test requires and `JsonCreatorCanonical` would not do.
-  Both conflicts are in `tasks/blockers.md`, 2026-11-12, "task 23 is green
-  except where its oracle contradicts itself or the spec".
+  **Ticked 2026-11-20 (verified at `a5301eb`):** `model_canonical` is 6 of 6
+  in a checkout where `oracles/fetch.sh` has run (the fetched interim
+  directory present, so `model.canonical.005`'s corpus branch ran rather than
+  being skipped); `model.canonical.006`'s second tag, in
+  `frevo-model/src/codec/pretty.rs`, is in the lib tests, 29 of 29. The
+  earlier `model.canonical.003`/`.005` conflicts are in `tasks/blockers.md`,
+  2026-11-12, "task 23 is green except where its oracle contradicts itself or
+  the spec".
 
 - [x] **23a. Implement the encode-side dangling-internal-reference diagnostic.**
   This is the **only** error condition on the encode side, and the round-trip
@@ -635,12 +655,15 @@ checkpoint because it changes what a gate measures.
   2026-11-12): HAPI's encoder giving an id-less contained resource a UUID,
   and its encode context not being restored after a `Bundle` entry.
 
-- [ ] **24. Implement copy-on-write mutation and byte splicing.** Untouched
+- [x] **24. Implement copy-on-write mutation and byte splicing.** Untouched
   subtrees keeping their original bytes on element change, append and remove;
   the modified flag; a same-value write still marking modified; splicing at a
   contained resource's boundary; the `meta` update path.
   Satisfies `model.mutate.001` through `model.mutate.007`.
-  **Implemented, not ticked.** `model_mutate` is 6 of 7 (it was 0 of 7).
+  **Ticked 2026-11-20 (verified at `a5301eb`):** `model_mutate` is 7 of 7,
+  `model.mutate.001`-`007` each tagged `covers:`; `.007`'s `bench/micro/`
+  assertion went green when task 27's workloads landed. Earlier note, kept
+  for its design record: `model_mutate` was 6 of 7 (it was 0 of 7).
   `Stored` records each write as a replaced input span (an insertion for an
   append, an empty replacement for a removal) and `write_traced` reports
   every output run as spliced from the input or newly encoded; a write inside
@@ -648,8 +671,7 @@ checkpoint because it changes what a gate measures.
   `model.mutate.007`, and only on its last assertion (`model_mutate.rs:578`):
   every byte outside `meta` is spliced, but the test also requires a file
   under `bench/micro/` naming the `model-meta-update` workload, which is task
-  27's deliverable and was not created here. It goes green when task 27
-  lands. Measured with the `model.perf.004` workload in
+  27's deliverable and was not created here. Measured with the `model.perf.004` workload in
   `model_bytes_lazy_perf.rs`, release build, median of five runs each: the
   4 KiB metadata update went from 3.8 us to 4.1 us and the 64 KiB one stayed
   at about 49 us (noise 48-75 us on both sides). That test was already red
@@ -862,7 +884,7 @@ checkpoint because it changes what a gate measures.
   as the pinned engine's.
   Satisfies `path.math.001` through `path.math.011`.
 
-- [ ] **38. Implement date and dateTime arithmetic.** Calendar-duration addition
+- [x] **38. Implement date and dateTime arithmetic.** Calendar-duration addition
   and subtraction with the engine's month-end behaviour, precision preservation,
   and the offset comparison case. `today()` and `now()` read the engine's
   configured time zone rather than the process default, and `now()` is read
@@ -870,6 +892,11 @@ checkpoint because it changes what a gate measures.
   caches none.
   Satisfies `path.math.012`, `path.math.013`, `path.math.014`,
   `path.datetime.001` through `path.datetime.007`.
+  **Ticked 2026-11-20 (verified at `a5301eb`):** every test tagged with one
+  of the ten IDs passes -- `path_datetime` 6 of 6, `fhirpath_oracle` 19 of
+  19 (`path.datetime.004`), and the `path_math` tests
+  tagged `path.math.012`-`014` (that binary's three red tests are `.003`,
+  `.005` and `path.mathfn.001`, tasks 37 and 39).
 
 - [ ] **39. Implement math functions.** `abs`, `ceiling`, `floor`, `round`,
   `sqrt`, `exp`, `ln`, `log`, `power`, `truncate`, with the empty-focus and
@@ -878,7 +905,7 @@ checkpoint because it changes what a gate measures.
   binary `double`, while `round` and `truncate` are exact.
   Satisfies `path.mathfn.001` through `path.mathfn.011`.
 
-- [ ] **40. Implement string functions: the base set.** `upper`, `lower`,
+- [x] **40. Implement string functions: the base set.** `upper`, `lower`,
   `toChars`, `indexOf`, `substring` with its out-of-range rule, `startsWith`,
   `endsWith`, `contains`, `length`, counting UTF-16 code units as a Java `String` does,
   rather than bytes; `toChars` yields one item per UTF-16 unit and `substring`
@@ -889,6 +916,9 @@ checkpoint because it changes what a gate measures.
   two scenarios.
   Satisfies `path.string.001` through `path.string.007`, `path.string.012`,
   `path.string.020` through `path.string.024`.
+  **Ticked 2026-11-20 (verified at `a5301eb`):** `path_string` is 31 of 31,
+  which carries every tag for the 13 IDs above; no other test tagged with one
+  of them fails.
 
 - [x] **41. Implement string functions: the R3 additions that need no regular
   expression engine.** `replace` (a literal substitution: the pinned
@@ -1077,7 +1107,7 @@ checkpoint because it changes what a gate measures.
   includes `001`-`004`, `013` and `014`; `path.check.002`'s test asserts 27 of
   the 29 semantic-invalid cases graded `passed` at the check stage.
 
-- [ ] **50a. Implement the check pass's warning channel.** The surface that
+- [x] **50a. Implement the check pass's warning channel.** The surface that
   returns a warning list beside the inferred type; a warning never failing the
   check; collection-status warnings for an operand, a function parameter and a
   focus; the SQL-on-FHIR choice warnings behind their setting;
@@ -1088,11 +1118,11 @@ checkpoint because it changes what a gate measures.
   `path-check-warnings` oracle of task 4a grades by — neither the vendored suite
   nor the HTTP differential can see this channel at all.
   Satisfies `path.check.015` through `path.check.019`, `path.strictness.008`.
-  **Not ticked.** `path_check_warnings` is 5 of 5 (`015`-`019`), but
-  `path.strictness.008` still fails: its seam's `settings()` answers
-  `NotImplemented`. The crate now has the surface (`Evaluator::settings`,
-  `EngineSettings::for_version`), so it needs only the rebind recorded in
-  `tasks/blockers.md`, 2026-11-20, "tasks 52 and 54".
+  **Ticked 2026-11-20 (verified at `a5301eb`):** `path_check_warnings` is 5
+  of 5 (`015`-`019`) and the `path_strictness` test tagged
+  `path.strictness.008` passes (that binary's one red test is
+  `path.strictness.002`, task 52). The earlier `NotImplemented` seam for
+  `.008` has been rebound.
 
 - [x] **51. Confirm the check pass's non-narrowing behaviour on type guards.**
   **No narrowing is implemented** — the owner ruled on 2026-11-12 to match HAPI
@@ -1215,20 +1245,29 @@ checkpoint because it changes what a gate measures.
 
 ## Phase E — the round-trip oracle and closing out
 
-- [ ] **56. Wire the `r4-example-roundtrip` oracle.** Decode, canonically
+- [x] **56. Wire the `r4-example-roundtrip` oracle.** Decode, canonically
   re-encode and compare byte-for-byte for every example, with per-file
   reporting, per-resource-type coverage counts including types with no example,
   and XML inputs reported `not-applicable-xml` rather than `passed`. Run against
   the interim 103-example selector until task 59 lands the full package.
   Satisfies `codegen.roundtrip.001`, `codegen.roundtrip.002`,
   `codegen.roundtrip.003`.
+  **Ticked 2026-11-20 (verified at `a5301eb`):** `codegen_r4` is 50 of 50
+  with the interim directory fetched; the three tagged tests assert the 72
+  JSON examples byte-identical, the report naming itself interim, one case
+  per file, 146 coverage rows with 69 covered and 77 listed at zero, and the
+  XML inputs not claimed. Re-run against the full package when task 59
+  lands.
 
-- [ ] **57. Check every generated search-parameter expression against the
+- [x] **57. Check every generated search-parameter expression against the
   parser.** All 1,375 expressions parse; a parameter with no expression recorded
   as having none rather than an empty one. This is the first real integration of
   `frevo-codegen`'s output with `frevo-path`, and the first place the two can
   disagree.
   Satisfies `codegen.searchparam.005`.
+  **Ticked 2026-11-20 (verified at `a5301eb`):** `codegen_r4`'s
+  `every_table_expression_parses`, the one test tagged
+  `codegen.searchparam.005`, passes (50 of 50 in that binary).
 
 - [ ] **58. Run the full gate set and close the loop.** `cargo fmt --all
   --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo

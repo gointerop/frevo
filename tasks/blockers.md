@@ -2958,6 +2958,12 @@ this repository has allow.
    (`hasTemplateIdOf`), after which the branch becomes `false`. Every other
    branch of `funcComparable` that needs no UCUM service is HAPI's; two
    different UCUM codes stay `Unsupported` until task 43.
+   **Resolved 2026-11-20.** The oracle-builder retargeted both tests off
+   `comparable()` in `62d8a13`; `func_comparable`
+   (`crates/frevo-path/src/eval/equality.rs`) now answers `false` for a focus
+   that is empty, has more than one item, or is one item whose FHIR type is
+   not `Quantity`, before evaluating the argument, as `:4610-4612` does. Two
+   different UCUM codes remain `Unsupported` (task 43, owner-blocked).
 5. **The `<=` null-`unit` NullPointerException text is not HAPI's exact
    JVM text.** `path.quantity.019` asks only for an execution error with no
    offset, which is what it is. The JVM's helpful message for
