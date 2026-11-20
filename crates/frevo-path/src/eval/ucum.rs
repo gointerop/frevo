@@ -1,0 +1,899 @@
+//! The UCUM essence data: `ucum-essence.xml` read into the prefixes, base units
+//! and defined units the unit algebra works from (`design.md` section 5,
+//! `path.quantity.016`).
+//!
+//! Original Frevo work, **not** a port. Upstream reads this file through
+//! `org.fhir.ucum.UcumEssenceService` (`org.fhir:ucum`), whose source is not
+//! under `reference/` at any pin in `reference/PINS.md`, so nothing here is
+//! derived from it. What is read is the file's own format: the `root` element
+//! in the `http://unitsofmeasure.org/ucum-essence` namespace with its `version`
+//! attribute, and its `prefix`, `base-unit` and `unit` children.
+//!
+//! What this module does **not** do yet is the algebra itself -- canonical
+//! form, commensurability, multiplication and division of units (task 43). The
+//! digits that algebra produces are `org.fhir.ucum.Decimal`'s and the reduction
+//! is `org.fhir.ucum.Converter`'s, and neither can be specified without their
+//! source; see `tasks/blockers.md`. The defining expressions are therefore kept
+//! here as the file states them, as text, and no number in them is
+//! interpreted.
+//!
+//! The data is never embedded in the binary or committed: it is loaded at run
+//! time from a path the operator or CI supplies
+//! (`oracles/fhir-test-cases/fetched/ucum/ucum-essence.xml` in the oracle run).
+//! An absent or unparseable file is a [`UcumLoadError`], never an empty table:
+//! treating units as unknown would silently move every quantity comparison onto
+//! the no-UCUM branch (`path.quantity.015`).
+
+use std::collections::HashMap;
+use std::error::Error;
+use std::fmt;
+use std::path::{Path, PathBuf};
+
+/// The namespace of the essence file's root element.
+pub const UCUM_ESSENCE_NAMESPACE: &str = "http://unitsofmeasure.org/ucum-essence";
+
+/// A UCUM essence file could not be loaded.
+///
+/// Carries the path (when the data came from a file) and a message naming what
+/// was wrong, so a failed run says which file and why.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UcumLoadError {
+    path: Option<PathBuf>,
+    message: String,
+}
+
+impl UcumLoadError {
+    fn new(message: impl Into<String>) -> Self {
+        UcumLoadError {
+            path: None,
+            message: message.into(),
+        }
+    }
+
+    fn at(mut self, path: &Path) -> Self {
+        self.path = Some(path.to_path_buf());
+        self
+    }
+
+    /// The file that failed to load, if the data came from a file.
+    pub fn path(&self) -> Option<&Path> {
+        self.path.as_deref()
+    }
+
+    /// What was wrong, without the path.
+    pub fn message(&self) -> &str {
+        &self.message
+    }
+}
+
+impl fmt::Display for UcumLoadError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match &self.path {
+            Some(path) => write!(
+                f,
+                "UCUM essence data {} could not be loaded: {}",
+                path.display(),
+                self.message
+            ),
+            None => write!(f, "UCUM essence data could not be loaded: {}", self.message),
+        }
+    }
+}
+
+impl Error for UcumLoadError {}
+
+/// A `prefix` element: a scale factor a metric unit may carry.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UcumPrefix {
+    /// The case-sensitive code (`Code`), as `k`.
+    pub code: String,
+    /// The case-insensitive code (`CODE`), as `K`.
+    pub code_upper: String,
+    /// The `name` text, as `kilo`.
+    pub name: String,
+    /// The `printSymbol` text with its markup removed, if present.
+    pub print_symbol: Option<String>,
+    /// The factor, exactly as the `value` element's `value` attribute states
+    /// it (`1e3`).
+    pub value: String,
+}
+
+/// A `base-unit` element: one of the dimensions every unit reduces to.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UcumBaseUnit {
+    /// The case-sensitive code (`Code`), as `m`.
+    pub code: String,
+    /// The case-insensitive code (`CODE`), as `M`.
+    pub code_upper: String,
+    /// The dimension symbol (`dim`), as `L`.
+    pub dim: String,
+    /// The `name` text, as `meter`.
+    pub name: String,
+    /// The `property` text, as `length`.
+    pub property: Option<String>,
+}
+
+/// The `function` of a special unit: a non-linear conversion upstream
+/// implements in code, named here as the file names it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UcumFunction {
+    /// The function's name (`name`), as `Cel`.
+    pub name: String,
+    /// Its magnitude (`value`), as the file states it.
+    pub value: String,
+    /// Its unit (`Unit`), as `K`.
+    pub unit: String,
+}
+
+/// A `unit` element: a unit defined in terms of other units.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UcumUnit {
+    /// The case-sensitive code (`Code`), as `[in_i]`.
+    pub code: String,
+    /// The case-insensitive code (`CODE`); one unit in the 2.0.1 file (`L`)
+    /// has none.
+    pub code_upper: Option<String>,
+    /// `isMetric="yes"`: the unit may take a prefix.
+    pub is_metric: bool,
+    /// `isSpecial="yes"`: the conversion is a function, not a factor.
+    pub is_special: bool,
+    /// `isArbitrary="yes"`: the unit is not commensurable with anything else.
+    pub is_arbitrary: bool,
+    /// The `class` attribute, as `si` or `dimless`.
+    pub class: Option<String>,
+    /// Every `name` child, in document order.
+    pub names: Vec<String>,
+    /// The `printSymbol` text with its markup removed, if present.
+    pub print_symbol: Option<String>,
+    /// The `property` text, as `length`.
+    pub property: Option<String>,
+    /// The defining unit term (`value/@Unit`), as `cm`.
+    pub value_unit: String,
+    /// The defining term in case-insensitive form (`value/@UNIT`).
+    pub value_unit_upper: Option<String>,
+    /// The defining magnitude (`value/@value`), exactly as stated; absent for
+    /// most special units.
+    pub value: Option<String>,
+    /// The conversion function of a special unit.
+    pub function: Option<UcumFunction>,
+}
+
+/// The UCUM essence data, loaded from `ucum-essence.xml`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UcumEssence {
+    version: String,
+    revision: Option<String>,
+    revision_date: Option<String>,
+    prefixes: Vec<UcumPrefix>,
+    base_units: Vec<UcumBaseUnit>,
+    units: Vec<UcumUnit>,
+    prefix_index: HashMap<String, usize>,
+    base_unit_index: HashMap<String, usize>,
+    unit_index: HashMap<String, usize>,
+}
+
+impl UcumEssence {
+    /// Load the essence data from `path`.
+    ///
+    /// An absent, unreadable or unparseable file, or one that is XML but not
+    /// UCUM essence data, is an error naming the file.
+    pub fn load(path: &Path) -> Result<UcumEssence, UcumLoadError> {
+        let text = std::fs::read_to_string(path)
+            .map_err(|e| UcumLoadError::new(format!("cannot read the file: {e}")).at(path))?;
+        UcumEssence::parse(&text).map_err(|e| e.at(path))
+    }
+
+    /// Read the essence data from the text of `ucum-essence.xml`.
+    pub fn parse(text: &str) -> Result<UcumEssence, UcumLoadError> {
+        let root = xml::parse_document(text).map_err(UcumLoadError::new)?;
+        UcumEssence::from_root(&root)
+    }
+
+    /// The root element's `version` attribute, as `2.0.1`. This is what a run
+    /// reports beside its results (`path.quantity.016`).
+    pub fn version(&self) -> &str {
+        &self.version
+    }
+
+    /// The root element's `revision` attribute, as the file states it.
+    pub fn revision(&self) -> Option<&str> {
+        self.revision.as_deref()
+    }
+
+    /// The root element's `revision-date` attribute, as the file states it.
+    pub fn revision_date(&self) -> Option<&str> {
+        self.revision_date.as_deref()
+    }
+
+    /// Every prefix, in document order.
+    pub fn prefixes(&self) -> &[UcumPrefix] {
+        &self.prefixes
+    }
+
+    /// Every base unit, in document order.
+    pub fn base_units(&self) -> &[UcumBaseUnit] {
+        &self.base_units
+    }
+
+    /// Every defined unit, in document order.
+    pub fn units(&self) -> &[UcumUnit] {
+        &self.units
+    }
+
+    /// The prefix with case-sensitive code `code`.
+    pub fn prefix(&self, code: &str) -> Option<&UcumPrefix> {
+        self.prefix_index.get(code).map(|&i| &self.prefixes[i])
+    }
+
+    /// The base unit with case-sensitive code `code`.
+    pub fn base_unit(&self, code: &str) -> Option<&UcumBaseUnit> {
+        self.base_unit_index.get(code).map(|&i| &self.base_units[i])
+    }
+
+    /// The defined unit with case-sensitive code `code`.
+    pub fn unit(&self, code: &str) -> Option<&UcumUnit> {
+        self.unit_index.get(code).map(|&i| &self.units[i])
+    }
+
+    fn from_root(root: &xml::Element) -> Result<UcumEssence, UcumLoadError> {
+        if root.name != "root" {
+            return Err(UcumLoadError::new(format!(
+                "the root element is <{}>, not the UCUM essence <root>",
+                root.name
+            )));
+        }
+        match root.attr("xmlns") {
+            Some(UCUM_ESSENCE_NAMESPACE) => {}
+            Some(other) => {
+                return Err(UcumLoadError::new(format!(
+                    "the root element is in namespace {other:?}, not {UCUM_ESSENCE_NAMESPACE:?}"
+                )));
+            }
+            None => {
+                return Err(UcumLoadError::new(format!(
+                    "the root element is not in the {UCUM_ESSENCE_NAMESPACE:?} namespace"
+                )));
+            }
+        }
+        let version = match root.attr("version") {
+            Some(v) if !v.trim().is_empty() => v.to_owned(),
+            _ => {
+                return Err(UcumLoadError::new(
+                    "the root element has no version attribute",
+                ));
+            }
+        };
+
+        let mut essence = UcumEssence {
+            version,
+            revision: root.attr("revision").map(str::to_owned),
+            revision_date: root.attr("revision-date").map(str::to_owned),
+            prefixes: Vec::new(),
+            base_units: Vec::new(),
+            units: Vec::new(),
+            prefix_index: HashMap::new(),
+            base_unit_index: HashMap::new(),
+            unit_index: HashMap::new(),
+        };
+
+        for child in root.elements() {
+            match child.name.as_str() {
+                "prefix" => {
+                    let prefix = read_prefix(child)?;
+                    insert_unique(
+                        &mut essence.prefix_index,
+                        &prefix.code,
+                        essence.prefixes.len(),
+                        "prefix",
+                    )?;
+                    essence.prefixes.push(prefix);
+                }
+                "base-unit" => {
+                    let base = read_base_unit(child)?;
+                    insert_unique(
+                        &mut essence.base_unit_index,
+                        &base.code,
+                        essence.base_units.len(),
+                        "base-unit",
+                    )?;
+                    essence.base_units.push(base);
+                }
+                "unit" => {
+                    let unit = read_unit(child)?;
+                    insert_unique(
+                        &mut essence.unit_index,
+                        &unit.code,
+                        essence.units.len(),
+                        "unit",
+                    )?;
+                    essence.units.push(unit);
+                }
+                other => {
+                    return Err(UcumLoadError::new(format!(
+                        "unexpected element <{other}> in the UCUM essence root"
+                    )));
+                }
+            }
+        }
+
+        if essence.base_units.is_empty() {
+            return Err(UcumLoadError::new("the file defines no base units"));
+        }
+        if essence.units.is_empty() {
+            return Err(UcumLoadError::new("the file defines no units"));
+        }
+        Ok(essence)
+    }
+}
+
+fn insert_unique(
+    index: &mut HashMap<String, usize>,
+    code: &str,
+    at: usize,
+    kind: &str,
+) -> Result<(), UcumLoadError> {
+    if index.insert(code.to_owned(), at).is_some() {
+        return Err(UcumLoadError::new(format!(
+            "<{kind}> code {code:?} is defined twice"
+        )));
+    }
+    Ok(())
+}
+
+fn required<'a>(element: &'a xml::Element, attr: &str) -> Result<&'a str, UcumLoadError> {
+    match element.attr(attr) {
+        Some(v) if !v.is_empty() => Ok(v),
+        _ => Err(UcumLoadError::new(format!(
+            "<{}{}> has no {attr} attribute",
+            element.name,
+            element
+                .attr("Code")
+                .map(|c| format!(" Code={c:?}"))
+                .unwrap_or_default()
+        ))),
+    }
+}
+
+fn yes(element: &xml::Element, attr: &str) -> Result<bool, UcumLoadError> {
+    match element.attr(attr) {
+        None | Some("no") => Ok(false),
+        Some("yes") => Ok(true),
+        Some(other) => Err(UcumLoadError::new(format!(
+            "<{} Code={:?}> has {attr}={other:?}, which is neither \"yes\" nor \"no\"",
+            element.name,
+            element.attr("Code").unwrap_or_default()
+        ))),
+    }
+}
+
+fn child_text(element: &xml::Element, name: &str) -> Option<String> {
+    element
+        .elements()
+        .find(|c| c.name == name)
+        .map(|c| c.text().trim().to_owned())
+}
+
+fn value_element(element: &xml::Element) -> Result<&xml::Element, UcumLoadError> {
+    element
+        .elements()
+        .find(|c| c.name == "value")
+        .ok_or_else(|| {
+            UcumLoadError::new(format!(
+                "<{} Code={:?}> has no <value>",
+                element.name,
+                element.attr("Code").unwrap_or_default()
+            ))
+        })
+}
+
+fn read_prefix(element: &xml::Element) -> Result<UcumPrefix, UcumLoadError> {
+    let value = value_element(element)?;
+    Ok(UcumPrefix {
+        code: required(element, "Code")?.to_owned(),
+        code_upper: required(element, "CODE")?.to_owned(),
+        name: child_text(element, "name").unwrap_or_default(),
+        print_symbol: child_text(element, "printSymbol"),
+        value: required(value, "value")?.to_owned(),
+    })
+}
+
+fn read_base_unit(element: &xml::Element) -> Result<UcumBaseUnit, UcumLoadError> {
+    Ok(UcumBaseUnit {
+        code: required(element, "Code")?.to_owned(),
+        code_upper: required(element, "CODE")?.to_owned(),
+        dim: required(element, "dim")?.to_owned(),
+        name: child_text(element, "name").unwrap_or_default(),
+        property: child_text(element, "property"),
+    })
+}
+
+fn read_unit(element: &xml::Element) -> Result<UcumUnit, UcumLoadError> {
+    let value = value_element(element)?;
+    let function = match value.elements().find(|c| c.name == "function") {
+        Some(f) => Some(UcumFunction {
+            name: required(f, "name")?.to_owned(),
+            value: required(f, "value")?.to_owned(),
+            unit: required(f, "Unit")?.to_owned(),
+        }),
+        None => None,
+    };
+    let is_special = yes(element, "isSpecial")?;
+    if is_special && function.is_none() && value.attr("value").is_none() {
+        return Err(UcumLoadError::new(format!(
+            "special <unit Code={:?}> has neither a <function> nor a value",
+            element.attr("Code").unwrap_or_default()
+        )));
+    }
+    Ok(UcumUnit {
+        code: required(element, "Code")?.to_owned(),
+        code_upper: element.attr("CODE").map(str::to_owned),
+        is_metric: yes(element, "isMetric")?,
+        is_special,
+        is_arbitrary: yes(element, "isArbitrary")?,
+        class: element.attr("class").map(str::to_owned),
+        names: element
+            .elements()
+            .filter(|c| c.name == "name")
+            .map(|c| c.text().trim().to_owned())
+            .collect(),
+        print_symbol: child_text(element, "printSymbol"),
+        property: child_text(element, "property"),
+        value_unit: required(value, "Unit")?.to_owned(),
+        value_unit_upper: value.attr("UNIT").map(str::to_owned),
+        value: value.attr("value").map(str::to_owned),
+        function,
+    })
+}
+
+/// A minimal, strict XML reader: enough for the essence file and strict
+/// enough that a file which is not well-formed is refused rather than read in
+/// part. No DTD, no external entities, only the five predefined entities and
+/// character references.
+mod xml {
+    #[derive(Debug)]
+    pub(super) struct Element {
+        pub(super) name: String,
+        attrs: Vec<(String, String)>,
+        children: Vec<Node>,
+    }
+
+    #[derive(Debug)]
+    enum Node {
+        Element(Element),
+        Text(String),
+    }
+
+    impl Element {
+        pub(super) fn attr(&self, name: &str) -> Option<&str> {
+            self.attrs
+                .iter()
+                .find(|(n, _)| n == name)
+                .map(|(_, v)| v.as_str())
+        }
+
+        pub(super) fn elements(&self) -> impl Iterator<Item = &Element> {
+            self.children.iter().filter_map(|c| match c {
+                Node::Element(e) => Some(e),
+                Node::Text(_) => None,
+            })
+        }
+
+        /// The text content, markup removed.
+        pub(super) fn text(&self) -> String {
+            let mut out = String::new();
+            self.collect_text(&mut out);
+            out
+        }
+
+        fn collect_text(&self, out: &mut String) {
+            for child in &self.children {
+                match child {
+                    Node::Text(t) => out.push_str(t),
+                    Node::Element(e) => e.collect_text(out),
+                }
+            }
+        }
+    }
+
+    struct Reader<'a> {
+        src: &'a str,
+        pos: usize,
+    }
+
+    /// Parse a whole document and return its root element.
+    pub(super) fn parse_document(src: &str) -> Result<Element, String> {
+        let src = src.strip_prefix('\u{feff}').unwrap_or(src);
+        let mut r = Reader { src, pos: 0 };
+        r.skip_misc()?;
+        if r.rest().starts_with("<!DOCTYPE") {
+            return Err(r.error("a DOCTYPE is not accepted"));
+        }
+        if !r.rest().starts_with('<') {
+            return Err(r.error("the file is not XML: no root element"));
+        }
+        let root = r.element()?;
+        r.skip_misc()?;
+        if !r.rest().is_empty() {
+            return Err(r.error("content after the root element"));
+        }
+        Ok(root)
+    }
+
+    impl<'a> Reader<'a> {
+        fn rest(&self) -> &'a str {
+            &self.src[self.pos..]
+        }
+
+        fn error(&self, what: &str) -> String {
+            let line = self.src[..self.pos].matches('\n').count() + 1;
+            format!("not well-formed XML at line {line}: {what}")
+        }
+
+        fn eat(&mut self, s: &str) -> bool {
+            if self.rest().starts_with(s) {
+                self.pos += s.len();
+                true
+            } else {
+                false
+            }
+        }
+
+        fn skip_ws(&mut self) {
+            let trimmed = self.rest().trim_start_matches([' ', '\t', '\r', '\n']);
+            self.pos = self.src.len() - trimmed.len();
+        }
+
+        fn skip_until(&mut self, end: &str, what: &str) -> Result<(), String> {
+            match self.rest().find(end) {
+                Some(i) => {
+                    self.pos += i + end.len();
+                    Ok(())
+                }
+                None => Err(self.error(&format!("unterminated {what}"))),
+            }
+        }
+
+        /// Whitespace, comments and processing instructions (including the
+        /// XML declaration) outside the root element.
+        fn skip_misc(&mut self) -> Result<(), String> {
+            loop {
+                self.skip_ws();
+                if self.eat("<?") {
+                    self.skip_until("?>", "processing instruction")?;
+                } else if self.eat("<!--") {
+                    self.skip_until("-->", "comment")?;
+                } else {
+                    return Ok(());
+                }
+            }
+        }
+
+        fn name(&mut self) -> Result<String, String> {
+            let rest = self.rest();
+            let end = rest
+                .find(|c: char| !(c.is_alphanumeric() || matches!(c, '_' | '-' | '.' | ':')))
+                .unwrap_or(rest.len());
+            let name = &rest[..end];
+            if name.is_empty() || name.starts_with(['-', '.']) || name.starts_with(char::is_numeric)
+            {
+                return Err(self.error("expected a name"));
+            }
+            self.pos += end;
+            Ok(name.to_owned())
+        }
+
+        fn element(&mut self) -> Result<Element, String> {
+            if !self.eat("<") {
+                return Err(self.error("expected '<'"));
+            }
+            let name = self.name()?;
+            let mut attrs: Vec<(String, String)> = Vec::new();
+            loop {
+                let before = self.pos;
+                self.skip_ws();
+                if self.eat("/>") {
+                    return Ok(Element {
+                        name,
+                        attrs,
+                        children: Vec::new(),
+                    });
+                }
+                if self.eat(">") {
+                    break;
+                }
+                if self.pos == before {
+                    return Err(self.error("expected whitespace before an attribute"));
+                }
+                let attr = self.name()?;
+                self.skip_ws();
+                if !self.eat("=") {
+                    return Err(self.error(&format!("attribute {attr} has no '='")));
+                }
+                self.skip_ws();
+                let quote = match self.rest().chars().next() {
+                    Some(q @ ('"' | '\'')) => q,
+                    _ => return Err(self.error(&format!("attribute {attr} is not quoted"))),
+                };
+                self.pos += 1;
+                let end = self
+                    .rest()
+                    .find(quote)
+                    .ok_or_else(|| self.error(&format!("attribute {attr} is not closed")))?;
+                let raw = &self.rest()[..end];
+                if raw.contains('<') {
+                    return Err(self.error(&format!("'<' in the value of attribute {attr}")));
+                }
+                let value = self.unescape(raw)?;
+                self.pos += end + 1;
+                if attrs.iter().any(|(n, _)| *n == attr) {
+                    return Err(self.error(&format!("attribute {attr} is repeated")));
+                }
+                attrs.push((attr, value));
+            }
+
+            let mut children = Vec::new();
+            loop {
+                if self.eat("</") {
+                    let close = self.name()?;
+                    self.skip_ws();
+                    if !self.eat(">") {
+                        return Err(self.error("expected '>' after an end tag"));
+                    }
+                    if close != name {
+                        return Err(self.error(&format!("</{close}> closes <{name}>")));
+                    }
+                    return Ok(Element {
+                        name,
+                        attrs,
+                        children,
+                    });
+                }
+                if self.eat("<!--") {
+                    self.skip_until("-->", "comment")?;
+                } else if self.eat("<![CDATA[") {
+                    let end = self
+                        .rest()
+                        .find("]]>")
+                        .ok_or_else(|| self.error("unterminated CDATA section"))?;
+                    children.push(Node::Text(self.rest()[..end].to_owned()));
+                    self.pos += end + 3;
+                } else if self.eat("<?") {
+                    self.skip_until("?>", "processing instruction")?;
+                } else if self.rest().starts_with('<') {
+                    children.push(Node::Element(self.element()?));
+                } else if self.rest().is_empty() {
+                    return Err(self.error(&format!("<{name}> is not closed")));
+                } else {
+                    let end = self.rest().find('<').unwrap_or(self.rest().len());
+                    let raw = &self.rest()[..end];
+                    let text = self.unescape(raw)?;
+                    self.pos += end;
+                    children.push(Node::Text(text));
+                }
+            }
+        }
+
+        fn unescape(&self, raw: &str) -> Result<String, String> {
+            if !raw.contains('&') {
+                return Ok(raw.to_owned());
+            }
+            let mut out = String::with_capacity(raw.len());
+            let mut rest = raw;
+            while let Some(i) = rest.find('&') {
+                out.push_str(&rest[..i]);
+                rest = &rest[i + 1..];
+                let end = rest
+                    .find(';')
+                    .ok_or_else(|| self.error("an entity reference has no ';'"))?;
+                let entity = &rest[..end];
+                rest = &rest[end + 1..];
+                let ch = match entity {
+                    "lt" => '<',
+                    "gt" => '>',
+                    "amp" => '&',
+                    "quot" => '"',
+                    "apos" => '\'',
+                    _ => {
+                        let code = if let Some(hex) = entity
+                            .strip_prefix("#x")
+                            .or_else(|| entity.strip_prefix("#X"))
+                        {
+                            u32::from_str_radix(hex, 16).ok()
+                        } else if let Some(dec) = entity.strip_prefix('#') {
+                            dec.parse::<u32>().ok()
+                        } else {
+                            return Err(self.error(&format!("unknown entity &{entity};")));
+                        };
+                        code.and_then(char::from_u32).ok_or_else(|| {
+                            self.error(&format!("invalid character reference &{entity};"))
+                        })?
+                    }
+                };
+                out.push(ch);
+            }
+            out.push_str(rest);
+            Ok(out)
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const MINIMAL: &str = r#"<?xml version="1.0" encoding="ascii"?>
+<root xmlns="http://unitsofmeasure.org/ucum-essence" version="2.0.1"
+      revision="$Revision: 439 $">
+   <!-- a comment -->
+   <prefix Code="k" CODE="K">
+      <name>kilo</name>
+      <printSymbol>k</printSymbol>
+      <value value="1e3">1 &#215; 10<sup>3</sup>
+      </value>
+   </prefix>
+   <base-unit Code="m" CODE="M" dim="L">
+      <name>meter</name>
+      <printSymbol>m</printSymbol>
+      <property>length</property>
+   </base-unit>
+   <base-unit Code="K" CODE="K" dim="C">
+      <name>kelvin</name>
+      <property>temperature</property>
+   </base-unit>
+   <unit Code="[in_i]" CODE="[IN_I]" isMetric="no" class="intcust">
+      <name>inch</name>
+      <printSymbol>in</printSymbol>
+      <property>length</property>
+      <value Unit="cm" UNIT="CM" value="254e-2">2.54</value>
+   </unit>
+   <unit Code="Cel" CODE="CEL" isMetric="yes" isSpecial="yes" class="si">
+      <name>degree Celsius</name>
+      <printSymbol>&#176;C</printSymbol>
+      <property>temperature</property>
+      <value Unit="cel(1 K)" UNIT="CEL(1 K)">
+         <function name="Cel" value="1" Unit="K"/>
+      </value>
+   </unit>
+</root>"#;
+
+    // covers: path.quantity.016
+    #[test]
+    fn reads_the_version_and_the_three_tables() {
+        let essence = UcumEssence::parse(MINIMAL).unwrap();
+        assert_eq!(essence.version(), "2.0.1");
+        assert_eq!(essence.revision(), Some("$Revision: 439 $"));
+        assert_eq!(essence.revision_date(), None);
+
+        let kilo = essence.prefix("k").unwrap();
+        assert_eq!(kilo.code_upper, "K");
+        assert_eq!(kilo.name, "kilo");
+        assert_eq!(kilo.value, "1e3");
+
+        let metre = essence.base_unit("m").unwrap();
+        assert_eq!(metre.dim, "L");
+        assert_eq!(metre.property.as_deref(), Some("length"));
+        assert!(essence.base_unit("s").is_none());
+
+        let inch = essence.unit("[in_i]").unwrap();
+        assert!(!inch.is_metric && !inch.is_special && !inch.is_arbitrary);
+        assert_eq!(inch.value_unit, "cm");
+        assert_eq!(inch.value.as_deref(), Some("254e-2"));
+        assert_eq!(inch.names, ["inch"]);
+
+        let celsius = essence.unit("Cel").unwrap();
+        assert!(celsius.is_metric && celsius.is_special);
+        assert_eq!(celsius.print_symbol.as_deref(), Some("\u{b0}C"));
+        assert_eq!(celsius.value, None);
+        assert_eq!(
+            celsius.function,
+            Some(UcumFunction {
+                name: "Cel".into(),
+                value: "1".into(),
+                unit: "K".into()
+            })
+        );
+    }
+
+    // covers: path.quantity.016
+    #[test]
+    fn the_pinned_essence_file_loads_completely() {
+        // Fetched, not vendored (`design.md` section 5): `bash oracles/fetch.sh`.
+        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../oracles/fhir-test-cases/fetched/ucum/ucum-essence.xml");
+        let essence = UcumEssence::load(&path).unwrap_or_else(|e| panic!("{e}"));
+        assert_eq!(essence.version(), "2.0.1");
+        assert_eq!(essence.prefixes().len(), 24);
+        assert_eq!(essence.base_units().len(), 7);
+        assert_eq!(essence.units().len(), 303);
+        assert_eq!(essence.unit("[pi]").unwrap().value_unit, "1");
+        assert_eq!(essence.unit("L").unwrap().code_upper, None);
+        assert!(essence.units().iter().filter(|u| u.is_special).count() >= 20);
+        assert!(essence.unit("[m/s2/Hz^(1/2)]").unwrap().is_special);
+        assert_eq!(
+            essence.prefix("u").unwrap().print_symbol.as_deref(),
+            Some("\u{3bc}")
+        );
+    }
+
+    // covers: path.quantity.016
+    #[test]
+    fn a_missing_file_names_the_path() {
+        let path = Path::new("does/not/exist/ucum-essence.xml");
+        let err = UcumEssence::load(path).unwrap_err();
+        assert_eq!(err.path(), Some(path));
+        assert!(err.to_string().contains("ucum-essence.xml"), "{err}");
+        assert!(!err.message().is_empty());
+    }
+
+    // covers: path.quantity.016
+    #[test]
+    fn xml_that_is_not_ucum_is_refused() {
+        for (text, needle) in [
+            ("<tests name=\"x\"/>", "not the UCUM essence"),
+            ("<root version=\"1\"/>", "namespace"),
+            (
+                "<root xmlns=\"http://example.org\" version=\"1\"/>",
+                "namespace",
+            ),
+            (
+                "<root xmlns=\"http://unitsofmeasure.org/ucum-essence\"/>",
+                "version",
+            ),
+            (
+                "<root xmlns=\"http://unitsofmeasure.org/ucum-essence\" version=\"2\"/>",
+                "no base units",
+            ),
+        ] {
+            let err = UcumEssence::parse(text).unwrap_err();
+            assert!(err.message().contains(needle), "{text}: {err}");
+        }
+    }
+
+    // covers: path.quantity.016
+    #[test]
+    fn malformed_xml_is_refused() {
+        for text in [
+            "",
+            "not xml",
+            "<root>",
+            "<root></toor>",
+            "<root a=\"1\" a=\"2\"/>",
+            "<root a=1/>",
+            "<root>&nbsp;</root>",
+            "<root/><root/>",
+            "<!DOCTYPE root><root/>",
+        ] {
+            let err = UcumEssence::parse(text).unwrap_err();
+            assert!(err.message().contains("XML"), "{text:?}: {err}");
+        }
+    }
+
+    // covers: path.quantity.016
+    #[test]
+    fn a_unit_with_a_bad_flag_or_no_value_is_refused() {
+        let bad_flag = MINIMAL.replace("isMetric=\"no\"", "isMetric=\"maybe\"");
+        assert!(
+            UcumEssence::parse(&bad_flag)
+                .unwrap_err()
+                .message()
+                .contains("isMetric")
+        );
+        let no_value = MINIMAL.replace(
+            "<value Unit=\"cm\" UNIT=\"CM\" value=\"254e-2\">2.54</value>",
+            "",
+        );
+        assert!(
+            UcumEssence::parse(&no_value)
+                .unwrap_err()
+                .message()
+                .contains("no <value>")
+        );
+        let twice = MINIMAL.replace("Code=\"Cel\"", "Code=\"[in_i]\"");
+        assert!(
+            UcumEssence::parse(&twice)
+                .unwrap_err()
+                .message()
+                .contains("twice")
+        );
+    }
+}

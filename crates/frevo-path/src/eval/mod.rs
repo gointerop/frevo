@@ -53,6 +53,7 @@ mod strregex;
 mod temporal;
 mod terminology;
 mod types;
+mod ucum;
 mod utility;
 mod xhtml;
 mod xhtml_entities;
@@ -73,6 +74,10 @@ use std::sync::{Arc, Mutex};
 pub use api::PathError;
 pub use error::EvalError;
 pub use settings::{EngineSettings, InvalidVersion};
+pub use ucum::{
+    UCUM_ESSENCE_NAMESPACE, UcumBaseUnit, UcumEssence, UcumFunction, UcumLoadError, UcumPrefix,
+    UcumUnit,
+};
 
 use self::error::At;
 

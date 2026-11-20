@@ -38,7 +38,10 @@ pub use check::{
     CheckError, CheckFocus, CheckOptions, CheckOutcome, CheckRequest, CheckWarning, Checker,
     CollectionStatus, WarningId,
 };
-pub use eval::{EngineSettings, EvalError, Evaluator, InvalidVersion, PathError};
+pub use eval::{
+    EngineSettings, EvalError, Evaluator, InvalidVersion, PathError, UCUM_ESSENCE_NAMESPACE,
+    UcumBaseUnit, UcumEssence, UcumFunction, UcumLoadError, UcumPrefix, UcumUnit,
+};
 
 pub use seam::host::{ConstantMode, FunctionDetails, HostError, HostServices};
 pub use seam::model::{ElementInfo, Model, TypeSet};

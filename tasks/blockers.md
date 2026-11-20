@@ -997,6 +997,10 @@ and not resolved.
    the test passes on its embedded fixtures. *Decision needed:* the
    oracle-builder either counts the JSON files (72) or selects the XML too and
    reports it `not-applicable-xml` as task 56 says. The test was not edited.
+   **Resolved, 2026-11-20 (oracle-builder):** the completeness check now
+   counts the selector's files (at least 100 of the 103, any format) and
+   requires the 72 `.json` files, every one of which is graded; the XML
+   inputs are task 56's `not-applicable-xml` and are not graded here.
 2. **`model.canonical.003` requires `1.00e3` to survive canonicalisation**
    (`model_canonical.rs:722`), which the codec does by copying every
    primitive token's bytes. `specs/model/spec.md:401` requires "the canonical
@@ -2725,3 +2729,45 @@ creates nothing, under `DEV-0028`/`DEBT-0018`), that an unparseable narrative
 fails by name and reports its stored text through `*`, and that an XML
 document's narrative is its markup, so the harness's `text_content()` reading
 (`tests/oracle/engine.rs:1589-1594`) is a test defect for the oracle-builder.
+
+## 2026-11-20 — `add-fhirpath-and-codegen-r4` — task 43: the UCUM unit algebra cannot be ported; `org.fhir.ucum` is not under `reference/`
+
+**Raised by** the implementer of task 43. Task 43 asks for canonical-form
+conversion, commensurability and unit multiplication/division "from the
+pinned `ucum-essence.xml`". Upstream that algebra is
+`org.fhir.ucum.UcumEssenceService`, `Canonical`, `Converter`, the UCUM
+expression parser and `org.fhir.ucum.Decimal` (`org.fhir:ucum`, the version
+`fhir_core_version` 6.9.12 resolves). None of it is in any repository pinned in
+`reference/PINS.md` (searched `reference/` for `ucum`: only HAPI's
+`UcumServiceUtil` wrapper and changelogs). The differential oracle grades the
+**digits** of canonical values (`1 '[in_i]' = 2.54 'cm'`, `comparable()`,
+quantity `*` and `/`), and those are `Decimal`'s precision rules and
+`Converter`'s reduction order, so writing the algebra from the UCUM
+specification would be inventing HAPI's behaviour, which CLAUDE.md section 1
+forbids. Same root cause as the 2026-11-17 `org.fhir.ucum.Decimal` entry above.
+
+**Done in this task (commit on `change/add-fhirpath-and-codegen-r4`).**
+`crates/frevo-path/src/eval/ucum.rs` — original work, not a port — loads the
+essence file at run time from a caller-supplied path (never embedded or
+committed), reports its `version` (`2.0.1`), and fails with a
+`UcumLoadError` naming the file for an absent, unreadable, malformed or
+non-UCUM file. The public API is `frevo_path::UcumEssence::{load, parse,
+version, prefix, base_unit, unit, ...}`. No arithmetic is done on the file's
+numbers; they are kept as text.
+
+**Still open.**
+1. Owner: vendor `fhir-ucum` (the `org.fhir:ucum` source at the version
+   `org.hl7.fhir.core` 6.9.12 declares) under `reference/` and pin it in
+   `reference/PINS.md`, after which canonical form, commensurability and unit
+   `*`/`/` can be ported with provenance; or accept the gap in
+   `docs/known-gaps.md`. Task 43 stays unticked until then.
+2. Oracle-builder: `crates/frevo-path/tests/path_quantity.rs:690`
+   (`ucum_oracle_under_test`) is bound to `UnboundUcum`, which answers
+   `NotImplemented`, so `path.quantity.016`'s test cannot pass whatever the
+   library does. `ucum_version` and `load_ucum` can be bound to
+   `UcumEssence::load(..).map(|e| e.version().to_owned())`, mapping a
+   `UcumLoadError` to `EngineError::Diagnostic` with its `Display` text.
+   `evaluate_with_ucum` stays unbound until the algebra and task 44 exist.
+3. Still owed from `design.md` section 5: the `NOTICE` entry for
+   Regenstrief's UCUM copyright (a `chore/oracles-*` change). The fetched file
+   carries no licence text itself; it is git-ignored and was not committed.
