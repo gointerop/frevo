@@ -228,11 +228,16 @@ fn eval_with(expr: &str, inp: Option<&SuiteInput>, settings: Settings) -> Vec<Re
         .unwrap_or_else(|e| panic!("{expr:?} must evaluate under {settings:?}: {e}"))
 }
 
-/// `expr` must fail at evaluation under `settings`, with a real diagnostic.
-fn eval_failure_with(expr: &str, inp: Option<&SuiteInput>, settings: Settings) -> String {
+/// `expr` must fail at evaluation under `settings`, with a real diagnostic;
+/// answers its message and its offset.
+fn eval_failure_and_offset_with(
+    expr: &str,
+    inp: Option<&SuiteInput>,
+    settings: Settings,
+) -> (String, Option<usize>) {
     match engine_for_version("4.0.1").evaluate_with(expr, inp, settings) {
         Ok(items) => panic!("{expr:?} must fail under {settings:?}, but returned {items:?}"),
-        Err(EngineError::Diagnostic { message, .. }) => message,
+        Err(EngineError::Diagnostic { message, offset }) => (message, offset),
         Err(e) => panic!("{expr:?} must fail with a diagnostic, not: {e}"),
     }
 }
@@ -347,13 +352,35 @@ fn the_as_singleton_rule_rejects_a_multi_item_focus_when_enforced() {
     //         throw ... FHIRPATH_AS_COLLECTION
     //
     // so with the rule enforced a three-item focus raises.
+    //
+    // `FHIRPATH_AS_COLLECTION` (Messages.properties:301) has no
+    // `Error evaluating FHIRPath expression:` prefix; `{0}` is the item count
+    // and `{1}` the holder's `ExpressionNode.toString` (ExpressionNode.java:
+    // 396-464): the `as` function node for `funcAs` (:5166-5167), and for
+    // `opAs` the `Patient` node that carries the operation (:1510-1519,
+    // :1884-1885). Both are built without a location, so neither message has
+    // a position suffix and there is no offset (path.errors.002).
     let enforcing = Settings::PRE_R5_DEFAULT.enforcing_as();
-    let message = eval_failure_with("Patient.name as HumanName", Some(&patient), enforcing);
-    assert!(
-        !message.is_empty(),
-        "the as-collection error must carry a message"
-    );
-    eval_failure_with("Patient.name.as(HumanName)", Some(&patient), enforcing);
+    for (expr, want) in [
+        (
+            "Patient.name.as(HumanName)",
+            "Attempt to use 'as()' on more than one item ('3', 'as(HumanName)')",
+        ),
+        (
+            "Patient.name as HumanName",
+            "Attempt to use 'as()' on more than one item ('3', 'Patient.name as HumanName')",
+        ),
+    ] {
+        let (message, offset) = eval_failure_and_offset_with(expr, Some(&patient), enforcing);
+        assert_eq!(
+            message, want,
+            "{expr}: HAPI's as-collection message, exactly"
+        );
+        assert_eq!(
+            offset, None,
+            "{expr}: the as-collection error is built without a location"
+        );
+    }
 
     // A singleton focus is fine under the same setting, so the rejection is
     // about the size and not about `as`.

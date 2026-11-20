@@ -296,6 +296,33 @@ fn execution_error_of(expr: &str, inp: Option<&SuiteInput>, static_check: bool) 
     }
 }
 
+/// Assert `expr` is an execution error whose message is exactly `message`
+/// and whose offset is exactly `offset`: the zero-based byte offset of the
+/// failing node's first token, present exactly where HAPI's message carries a
+/// position suffix (path.errors.002).
+fn expect_error_at(
+    expr: &str,
+    inp: Option<&SuiteInput>,
+    static_check: bool,
+    message: &str,
+    offset: Option<usize>,
+) {
+    match run_expr(expr, inp, static_check) {
+        Err(EngineError::Diagnostic {
+            message: got,
+            offset: got_offset,
+        }) => {
+            assert_eq!(got, message, "{expr} must raise exactly this error");
+            assert_eq!(
+                got_offset, offset,
+                "{expr} must report the failing node's zero-based byte offset"
+            );
+        }
+        Err(other) => panic!("{expr:?} must be an execution error, but did not run: {other}"),
+        Ok(items) => panic!("{expr:?} must be an execution error, but yielded {items:?}"),
+    }
+}
+
 /// Assert `expr` is an execution error whose message is exactly `message`.
 fn expect_error(expr: &str, inp: Option<&SuiteInput>, static_check: bool, message: &str) {
     assert_eq!(
@@ -1004,18 +1031,29 @@ fn a_quantitys_boundary_precision_is_not_range_checked() {
 // covers: path.boundary.013
 #[test]
 fn precision_on_an_empty_or_many_item_focus_raises_naming_high_boundary() {
-    // `funcPrecision` names `highBoundary` in its singleton error.
-    expect_error(
+    // `funcPrecision` names `highBoundary` in its singleton error. The holder
+    // is the `precision` function node, whose start is set, so
+    // `makeExceptionPlural` appends its column (path.errors.002's rule): `{}`
+    // and `.` are a token each, so `precision` is at column 4 (byte offset 3);
+    // in `(1.5 | 2.5).precision()` the two spaces count 2 each, so it is at
+    // column 15 (byte offset 12).
+    expect_error_at(
         "{}.precision()",
         None,
         true,
-        &format!("{PREFIX}focus for highBoundary can only have one value, but has 0 values"),
+        &format!(
+            "{PREFIX}focus for highBoundary can only have one value, but has 0 values (@char 4)"
+        ),
+        Some(3),
     );
-    expect_error(
+    expect_error_at(
         "(1.5 | 2.5).precision()",
         None,
         true,
-        &format!("{PREFIX}focus for highBoundary can only have one value, but has 2 values"),
+        &format!(
+            "{PREFIX}focus for highBoundary can only have one value, but has 2 values (@char 15)"
+        ),
+        Some(12),
     );
 
     // The boundaries are empty on an empty focus, not errors.
@@ -1023,17 +1061,23 @@ fn precision_on_an_empty_or_many_item_focus_raises_naming_high_boundary() {
     assert_eq!(eval("{}.highBoundary()"), empty());
 
     // And raise on a many-item focus, each naming itself.
-    expect_error(
+    expect_error_at(
         "(1.5 | 2.5).lowBoundary()",
         None,
         true,
-        &format!("{PREFIX}focus for lowBoundary can only have one value, but has 2 values"),
+        &format!(
+            "{PREFIX}focus for lowBoundary can only have one value, but has 2 values (@char 15)"
+        ),
+        Some(12),
     );
-    expect_error(
+    expect_error_at(
         "(1.5 | 2.5).highBoundary()",
         None,
         true,
-        &format!("{PREFIX}focus for highBoundary can only have one value, but has 2 values"),
+        &format!(
+            "{PREFIX}focus for highBoundary can only have one value, but has 2 values (@char 15)"
+        ),
+        Some(12),
     );
 }
 
@@ -1187,17 +1231,19 @@ fn a_time_boundary_precision_below_nine_keeps_a_trailing_separator() {
 // covers: path.boundary.017
 #[test]
 fn the_precision_argument_must_be_a_single_value_read_as_an_integer() {
-    // Both functions name `lowBoundary` in this error.
+    // Both functions name `lowBoundary` in this error. The holder is the
+    // function node: `1.587` is one token, so the function name is at column 7
+    // (byte offset 6), under path.errors.002's rule.
     let multiple = format!(
         "{PREFIX}The parameter type Multiple Values is not legal for lowBoundary parameter 0. \
-         expecting integer"
+         expecting integer (@char 7)"
     );
     for expr in [
         "1.587.lowBoundary(1 | 2)",
         "1.587.highBoundary(1 | 2)",
         "1.587.lowBoundary({})",
     ] {
-        expect_error(expr, None, false, &multiple);
+        expect_error_at(expr, None, false, &multiple, Some(6));
     }
 
     // The item's primitive text is read with `Integer.parseInt`.

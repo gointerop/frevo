@@ -1679,7 +1679,10 @@ fn engine_error(e: EvalError) -> EngineError {
         EvalError::Unsupported { .. } => EngineError::NotImplemented,
         EvalError::Execution { message, offset } => EngineError::Diagnostic {
             message,
-            offset: Some(offset),
+            // `.into()` accepts both `usize` and `Option<usize>`: the
+            // offset is absent where HAPI's failing node has no start
+            // (path.errors.002).
+            offset: offset.into(),
         },
         EvalError::Node(e) => EngineError::Diagnostic {
             message: e.to_string(),

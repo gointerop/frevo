@@ -866,18 +866,21 @@ fn check_passes_its_input_through_when_the_condition_holds() {
     // (FHIRPathEngine.java:3544-3547) calls `checkParamTypes` with a singleton
     // `string` as the type of the first parameter, and `checkParamTypes` raises
     // `FHIRPATH_WRONG_PARAM_TYPE` for any other type (:3820-3831).
-    const WRONG_PARAM: &str = "The parameter type http://hl7.org/fhirpath/System.Boolean is not \
+    // The message is exact: the `Error evaluating FHIRPath expression:`
+    // prefix `makeException` adds, then the template (Messages.properties:371),
+    // then the column of the `check` function node, which is the holder
+    // (`checkParamTypes(exp, ...)`, :3545): `Patient` is 7 characters and `.`
+    // one more, so `check` starts at column 9 (path.errors.002's rule).
+    const WRONG_PARAM: &str = "Error evaluating FHIRPath expression: \
+                               The parameter type http://hl7.org/fhirpath/System.Boolean is not \
                                legal for check parameter 1. expecting \
-                               SINGLETON[http://hl7.org/fhirpath/System.String]";
+                               SINGLETON[http://hl7.org/fhirpath/System.String] (@char 9)";
     for expr in [
         "Patient.check(true, 'm')",
         "Patient.check(active.exists(), 'm')",
     ] {
         let message = expect_patient_check_failure(expr);
-        assert!(
-            message.contains(WRONG_PARAM),
-            "{expr}: unexpected check message {message:?}"
-        );
+        assert_eq!(message, WRONG_PARAM, "{expr}: the check message, exactly");
     }
 
     // `check` is not in `isExpressionParameter` (:3804-3817), so the condition

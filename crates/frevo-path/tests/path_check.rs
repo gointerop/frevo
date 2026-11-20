@@ -193,24 +193,36 @@ fn check_failure_at(
     }
 }
 
-/// The `FHIRPATH_PRIMITIVE_ONLY` diagnostic for `toString`, exactly: the
-/// template at `Messages.properties:353` with `{0}` bound to `toString`, which
-/// `makeException` passes through unchanged and suffixes with no location,
-/// because neither `FHIRPathTests` nor the harness sets one
-/// (`FHIRPathEngine.java:584-594`). `path.check.005` states it, and
-/// `path.check.006` to `.012` refer to it.
+/// The `FHIRPATH_PRIMITIVE_ONLY` diagnostic for `toString`, before its
+/// position: the template at `Messages.properties:353` with `{0}` bound to
+/// `toString`, which `makeException` passes through unchanged with no
+/// ` (at ...)` fragment, because neither `FHIRPathTests` nor the harness sets
+/// a location (`FHIRPathEngine.java:584-594`). The full message is this text
+/// followed by ` (@char N)`, the column of the `toString` function node under
+/// `path.errors.002`'s rule. `path.check.005` states it, and `path.check.006`
+/// to `.012` refer to it.
 const PRIMITIVE_ONLY_ID: &str = "FHIRPATH_PRIMITIVE_ONLY";
 const PRIMITIVE_ONLY_TO_STRING: &str =
     "Error evaluating FHIRPath expression: The function toString can only be used on primitives";
 
 /// `expr`, checked at `Observation.effective` as `context_types`, must fail
-/// with exactly the `FHIRPATH_PRIMITIVE_ONLY` diagnostic for `toString`.
-fn fails_primitive_only(expr: &str, context_types: &[&str]) {
+/// with exactly the `FHIRPATH_PRIMITIVE_ONLY` diagnostic for `toString`,
+/// suffixed ` (@char {column})`.
+///
+/// `column` is HAPI's lexer column of the `toString` token, written out per
+/// call site rather than derived: it starts at 1, a token adds its length and
+/// each space adds 2 (`FHIRLexer.java:285`, `:321-324`), so for these
+/// single-line expressions it is one plus the byte offset plus the number of
+/// spaces before `toString` -- `$this is dateTime implies $this.toString()`
+/// is byte offset 32 after four spaces, column 37, as HAPI's record shows
+/// (`hapi-8.12.0-results.json:1046`).
+fn fails_primitive_only(expr: &str, context_types: &[&str], column: usize) {
     let (id, message) =
         check_failure_at(expr, "Observation", "Observation.effective", context_types);
+    let want = format!("{PRIMITIVE_ONLY_TO_STRING} (@char {column})");
     assert_eq!(
         (id, message.as_str()),
-        (PRIMITIVE_ONLY_ID, PRIMITIVE_ONLY_TO_STRING),
+        (PRIMITIVE_ONLY_ID, want.as_str()),
         "{expr:?} as {context_types:?} must fail with the primitive-only diagnostic for toString"
     );
 }
@@ -605,7 +617,7 @@ fn an_is_guard_in_implies_does_not_narrow_the_type_the_other_operand_is_checked_
     // `:2027`). So `toString()` on the right is checked against the declared
     // `Period`, and fails exactly as the unguarded expression does.
     let guarded = "$this is dateTime implies $this.toString().length() > 10";
-    fails_primitive_only(guarded, &["Period"]);
+    fails_primitive_only(guarded, &["Period"], 37);
 
     // So the three implies-guard cases the suite expects to pass the check end
     // at the check stage graded `failed` -- parity with HAPI, whose harness
@@ -620,10 +632,12 @@ fn an_is_guard_in_implies_does_not_narrow_the_type_the_other_operand_is_checked_
     fails_primitive_only(
         "($this is dateTime or $this is instant) implies $this.toString().length() >= 10",
         &["Period"],
+        63,
     );
     fails_primitive_only(
         "($this is Period).not() implies $this.toString().length() >= 10",
         &["Period"],
+        43,
     );
 
     // The same guard passes the check when the focus includes a primitive:
@@ -683,7 +697,7 @@ fn the_same_expression_without_the_guard_fails_the_check() {
     // `path.check.005`.
     let unguarded = "$this.toString().length() > 10";
     let guarded = "$this is dateTime implies $this.toString().length() > 10";
-    fails_primitive_only(unguarded, &["Period"]);
+    fails_primitive_only(unguarded, &["Period"], 7);
     expect_at_check(
         "isSemanticChecks",
         "isEffectOnLogic3Base",
@@ -710,12 +724,24 @@ fn the_same_expression_without_the_guard_fails_the_check() {
     );
 
     // For each of the three context types the guarded and the unguarded
-    // expression get the same check outcome, message for message: the guard
-    // changes nothing the check pass observes.
+    // expression get the same check outcome: the guard changes nothing the
+    // check pass observes. Where both fail, the message id and the message
+    // text are the same and only the position suffix differs, because the
+    // `toString` node sits at a different column: ` (@char 37)` for the
+    // guarded form and ` (@char 7)` for this one (path.errors.002). Each
+    // suffix is asserted on its own before the rest is compared.
+    let without_suffix = |verdict: Option<(&'static str, String)>, suffix: &str| {
+        verdict.map(|(id, message)| {
+            let text = message.strip_suffix(suffix).unwrap_or_else(|| {
+                panic!("the message must end with the position {suffix:?}: {message:?}")
+            });
+            (id, text.to_string())
+        })
+    };
     for context_types in [&["Period"][..], &["dateTime"][..], &[][..]] {
         assert_eq!(
-            verdict_at_effective(guarded, context_types),
-            verdict_at_effective(unguarded, context_types),
+            without_suffix(verdict_at_effective(guarded, context_types), " (@char 37)"),
+            without_suffix(verdict_at_effective(unguarded, context_types), " (@char 7)"),
             "the guard must not change the check outcome as {context_types:?}"
         );
     }
@@ -734,6 +760,7 @@ fn the_is_function_does_not_narrow_and_only_of_type_and_as_retype_the_focus() {
     fails_primitive_only(
         "$this.is(dateTime) implies $this.toString().length() >= 10",
         &["Period"],
+        36,
     );
     expect_at_check("isSemanticChecks", "isGuardFnImplies", CaseStatus::Failed);
 
@@ -788,6 +815,7 @@ fn and_does_not_narrow_its_right_operand() {
     fails_primitive_only(
         "$this is dateTime and $this.toString().length() >= 10",
         &["Period"],
+        33,
     );
 
     // So the three `and`-guard cases the suite expects to pass end at the check
@@ -804,10 +832,12 @@ fn and_does_not_narrow_its_right_operand() {
     fails_primitive_only(
         "($this is dateTime and %resource.status = 'final') implies $this.toString().length() >= 10",
         &["Period"],
+        74,
     );
     fails_primitive_only(
         "(%resource.status = 'final' and $this is dateTime) implies $this.toString().length() >= 10",
         &["Period"],
+        74,
     );
 
     // `isGuardAndBad` fails the check and is graded `passed`.
@@ -831,7 +861,7 @@ fn or_and_xor_do_not_narrow_their_right_operand() {
     // its left operand false when typing its right.
     let or = "$this is Period or $this.toString().length() >= 10";
     let xor = "$this is dateTime xor $this.toString().length() >= 10";
-    fails_primitive_only(or, &["Period"]);
+    fails_primitive_only(or, &["Period"], 30);
 
     // So the three `or`-guard cases the suite expects to pass end at the check
     // stage, and Frevo grades all three `failed`.
@@ -841,6 +871,7 @@ fn or_and_xor_do_not_narrow_their_right_operand() {
     fails_primitive_only(
         "$this is Period or (%resource.status = 'final' implies $this.toString().length() >= 10)",
         &["Period"],
+        70,
     );
 
     // `isGuardOr` and `isGuardOrInnerImplies` are `hapi-cannot-pass` because
@@ -878,8 +909,8 @@ fn or_and_xor_do_not_narrow_their_right_operand() {
     ] {
         expect_at_check("isSemanticChecks", name, CaseStatus::Passed);
     }
-    fails_primitive_only(xor, &["Period"]);
-    fails_primitive_only(or, &["Period", "Timing"]);
+    fails_primitive_only(xor, &["Period"], 33);
+    fails_primitive_only(or, &["Period", "Timing"], 30);
 
     // With `Period|dateTime` the same `or` expression (`isGuardOr2`) and its
     // `xor` counterpart (`isGuardXorBad2`) pass the check, because the focus
@@ -908,14 +939,17 @@ fn iif_does_not_narrow_either_branch() {
     fails_primitive_only(
         "iif($this is dateTime, $this.toString().length() >= 10, true)",
         &["Period"],
+        33,
     );
     fails_primitive_only(
         "iif($this is Period, true, $this.toString().length() >= 10)",
         &["Period"],
+        38,
     );
     fails_primitive_only(
         "iif($this is Period, $this.toString().length() >= 10, true)",
         &["Period"],
+        31,
     );
 
     // So `isGuardIifTrue` and `isGuardIifElse` end at the check stage graded
@@ -941,10 +975,12 @@ fn a_guard_that_can_never_be_true_leaves_the_other_operand_checked_as_usual() {
     fails_primitive_only(
         "$this is dateTime implies $this.toString().length() >= 10",
         &["Period", "Timing"],
+        37,
     );
     fails_primitive_only(
         "$this is Period implies ($this is dateTime implies $this.toString().length() >= 10)",
         &["Period", "Timing"],
+        66,
     );
 
     // So `isGuardImpliesEmpty` and `isGuardNested` end at the check stage
@@ -1006,11 +1042,12 @@ fn a_context_type_naming_several_types_checks_against_all_of_them() {
     passes_at_effective("$this.toString()", &["Period", "dateTime"]);
     passes_at_effective(or, &["Period", "dateTime"]);
     passes_at_effective(xor, &["Period", "dateTime"]);
-    fails_primitive_only("$this.toString()", &["Period", "Timing"]);
-    fails_primitive_only(or, &["Period", "Timing"]);
+    fails_primitive_only("$this.toString()", &["Period", "Timing"], 7);
+    fails_primitive_only(or, &["Period", "Timing"], 30);
     fails_primitive_only(
         "$this is Period or $this is Timing or $this.toString().length() >= 10",
         &["Period", "Timing"],
+        53,
     );
 
     // Every `Period|Timing` case in the suite, and how each is graded.

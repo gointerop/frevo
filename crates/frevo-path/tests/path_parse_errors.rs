@@ -563,11 +563,25 @@ fn an_execution_error_carries_hapis_message_and_a_position_only_where_hapi_has_o
     // `new PathEngineException(fmt, constName, holder.getStart(), holder.toString())`
     // (FHIRPathEngine.java:584-593), and that constructor appends only
     // `rep(location, expression)` (org.hl7.fhir.utilities/.../PathEngineException.java:81-93):
-    // ` (@char N)`, one-based, and never the sub-expression's text.
+    // ` (@char C)` or ` (@line L char C)`, and never the sub-expression's
+    // text. `C` is HAPI's lexer **column**, not the byte offset plus one: it
+    // starts at 1 (`SourceLocation(1, 1)`, FHIRLexer.java:56), a token adds
+    // its length, and a whitespace character adds 2 (`checkChar` then
+    // `incColumn`, FHIRLexer.java:321-324). So in `(1=1) and 1 < 'a'` the `1`
+    // is at byte offset 10 and column 13 (`(1=1)` reaches 6, the space 8,
+    // `and` 11, the space 13). An LF starts line 2 at column 1, and the
+    // `incColumn()` that follows makes it column 2. Frevo's `offset` is the
+    // separate, zero-based byte offset of the failing node's first token.
     for (expr, suffix, want_offset) in [
         ("1 < 'a'", " (@char 1)", 0),
-        ("(1=1) and 1 < 'a'", " (@char 11)", 10),
-        ("(1=1) and (1=1) and 1 < 'a'", " (@char 21)", 20),
+        ("(1=1) and 1 < 'a'", " (@char 13)", 10),
+        ("(1=1) and (1=1) and 1 < 'a'", " (@char 25)", 20),
+        (
+            "(1=1) and
+1 < 'a'",
+            " (@line 2 char 2)",
+            10,
+        ),
         // A parenthesised group is built by `parseExpression`, which sets its
         // start (:1076, :1135-1143).
         ("(1 + 1) < 'a'", " (@char 1)", 0),
@@ -602,6 +616,23 @@ fn an_execution_error_carries_hapis_message_and_a_position_only_where_hapi_has_o
         assert_eq!(
             offset, None,
             "{expr:?}: a newGroup holder has no start, so there is no offset"
+        );
+    }
+
+    // The decimal arm of `opMod` wraps its `UcumException` as
+    // `new PathEngineException(e)` (FHIRPathEngine.java:3102), whose message
+    // is the cause's `toString()` and carries no location: no suffix, and no
+    // offset. The cause's text is `org.fhir.ucum`'s, whose source is not in
+    // `reference/`, so only the absence of a position is asserted.
+    for expr in ["5.5 mod 0", "5 mod 0.0"] {
+        let (message, offset) = expect_evaluation_error(expr);
+        assert!(
+            !message.contains("(@"),
+            "{expr:?}: a wrapped UcumException carries no position suffix: {message:?}"
+        );
+        assert_eq!(
+            offset, None,
+            "{expr:?}: `new PathEngineException(e)` has no location, so there is no offset"
         );
     }
 }

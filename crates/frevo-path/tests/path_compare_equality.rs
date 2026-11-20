@@ -580,6 +580,124 @@ fn an_ordered_comparison_rewrites_a_datetime_literal_for_that_evaluation_only() 
         "an uncompared literal keeps its own string"
     );
 
+    // The rewrite is not limited to elements and `@` literals: it applies to
+    // any `DateTimeType` finer than a day that reaches an ordered comparison,
+    // including the values the evaluation builds itself.
+    //
+    // `DateTimeType.now()` (:4772-4776) otherwise renders in the JVM zone; once
+    // compared it renders in Zulu. Its value is the clock's, so only its type,
+    // its count and its Zulu designator are asserted.
+    let now = eval("now().where($this > @2000-01-01T00:00:00Z)");
+    assert_eq!(now.len(), 1, "now() is one value: {now:?}");
+    match &now[0] {
+        ResultItem::Primitive { fhir_type, value } => {
+            assert_eq!(fhir_type, "dateTime", "now() is a dateTime: {now:?}");
+            assert!(
+                value.ends_with('Z'),
+                "now(), once compared, renders in Zulu: {value:?}"
+            );
+        }
+        other => panic!("now() must be a primitive dateTime, not {other:?}"),
+    }
+    // `dateAdd` returns a `DateTimeType` copy (:2706-2708, :2715-2716).
+    assert_eq!(
+        eval("(@2012-04-15T10:00:00+02:00 + 1 day).where($this < @2013-01-01T00:00:00Z)"),
+        date_time("2012-04-16T08:00:00Z"),
+        "a dateTime built by date arithmetic is rewritten"
+    );
+    assert_eq!(
+        eval("@2012-04-15T10:00:00+02:00.lowBoundary().where($this < @2013-01-01T00:00:00Z)"),
+        date_time("2012-04-15T08:00:00.000Z"),
+        "a dateTime built by lowBoundary is rewritten"
+    );
+
+    // For a boundary, what decides is the precision of the **built** value,
+    // not the type of the focus: both functions build a `DateTimeType` for a
+    // `date` focus too (:4317-4320, :4361-4364). At precision 17 a `date` focus
+    // gains a time and the `+14:00` low-boundary offset
+    // (`DateTimeUtil.lowBoundaryForDate`, DateTimeUtil.java:65-90), so it is
+    // finer than a day and is rewritten; at precision 8 a `dateTime` focus is
+    // cut to a day (`applyDatePrecision`, :130-144) and is never rewritten.
+    assert_eq!(
+        eval("@2014-01-01.lowBoundary(17).where($this < @2015-01-01T00:00:00Z)"),
+        date_time("2013-12-31T10:00:00.000Z"),
+        "a date focus's precision-17 boundary (2014-01-01T00:00:00.000+14:00) is rewritten"
+    );
+    assert_eq!(
+        eval("@2014-01-01T08.lowBoundary(8).where($this < @2015-01-01T00:00:00Z)"),
+        date_time("2014-01-01"),
+        "a dateTime focus's day-precision boundary is unchanged"
+    );
+
+    // A precision-14 boundary is `path.boundary.015`'s malformed text (17
+    // characters, then the offset), which `BaseDateTimeType.parse` reads with
+    // the offset at index 17 (`getOffsetIndex`, BaseDateTimeType.java:330-342;
+    // :470-480), the seconds from the offset's first two characters
+    // (`substring(17, 19)`, :491) and the zone from the offset (:479); the
+    // comparison then rewrites it to Zulu.
+    for (expr, want) in [
+        (
+            // text `2014-01-01T08:00:+14:00`, seconds `+1`
+            "@2014-01-01T08.lowBoundary(14).where($this < @2015-01-01T00:00:00Z)",
+            "2013-12-31T18:00:01Z",
+        ),
+        (
+            // text `2014-01-01T08:05:+08:00`, seconds `+0`
+            "@2014-01-01T08:05+08:00.lowBoundary(14).where($this < @2015-01-01T00:00:00Z)",
+            "2014-01-01T00:05:00Z",
+        ),
+        (
+            // a `date` focus, text `2014-01-01T00:00:+14:00`
+            "@2014-01-01.lowBoundary(14).where($this < @2015-01-01T00:00:00Z)",
+            "2013-12-31T10:00:01Z",
+        ),
+        (
+            // text `2014-01-01T08:05:-05:00`, seconds `-0`
+            "@2014-01-01T08:05-05:00.highBoundary(14).where($this < @2015-01-01T00:00:00Z)",
+            "2014-01-01T13:05:00Z",
+        ),
+    ] {
+        assert_eq!(
+            eval(expr),
+            date_time(want),
+            "{expr}: the precision-14 boundary, rewritten to Zulu"
+        );
+    }
+    // Seconds `-1` (no offset on the focus, so `-12:00`) fail while the
+    // boundary is built, before any comparison is reached.
+    assert_eq!(
+        expect_evaluation_error_over(
+            "@2014-01-01T08.highBoundary(14).where($this < @2015-01-01T00:00:00Z)",
+            None
+        ),
+        "Invalid date/time format: \"2014-01-01T08:00:-12:00\"",
+        "the precision-14 high boundary with seconds `-1` fails as path.boundary.015 states"
+    );
+
+    // A `date + quantity` result and `today()` are `DateType` values and are
+    // never rewritten.
+    assert_eq!(
+        eval("(@2012-04-15 + 1 day).where($this < @2013-01-01)"),
+        vec![ResultItem::Primitive {
+            fhir_type: "date".to_string(),
+            value: "2012-04-16".to_string(),
+        }],
+        "a date built by date arithmetic is a date and is not rewritten"
+    );
+    let today = eval("today().where($this > @2000-01-01)");
+    assert_eq!(today.len(), 1, "today() is one value: {today:?}");
+    match &today[0] {
+        ResultItem::Primitive { fhir_type, value } => {
+            assert_eq!(fhir_type, "date", "today() is a date: {today:?}");
+            assert_eq!(
+                value.len(),
+                10,
+                "today(), compared, is still a day-precision date: {value:?}"
+            );
+        }
+        other => panic!("today() must be a primitive date, not {other:?}"),
+    }
+
     // An offset-less literal is placed in the evaluation zone first
     // (path.datetime.004): at the suite's zone, offset 0.
     assert_eq!(
