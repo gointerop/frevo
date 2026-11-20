@@ -1,4 +1,15 @@
-CHANGES_REQUESTED
+APPROVED
+
+Forty-eighth review (commits `30e32a3` and `f675156`, 2026-11-20).
+- `30e32a3` resolves the forty-seventh finding.
+- `f675156` rewrites the eight codegen and model parser scenarios to HAPI
+  8.12.0's parser. Every message text, message code and lenient/strict outcome
+  matches the pinned `hapi-fhir` sources.
+
+The detail, and two non-blocking notes, are in the dated section at the end.
+The earlier record follows.
+
+## Forty-seventh-review findings as raised (commit `cd6f9a3`)
 
 Forty-seventh review (commit `cd6f9a3`, 2026-11-20, diff against `0503660`).
 Both forty-sixth findings are resolved: `path.quantity.019` and `DEV-0029`
@@ -3885,3 +3896,135 @@ an unreachable branch.
   is duplicated, removed or renumbered.
 - The oracle-builder's uncommitted `Cargo.lock` and `crates/frevo-codegen`
   edits in the worktree were left untouched.
+
+## Forty-eighth review - commits `30e32a3`, `f675156` (2026-11-20)
+
+Scope: the diff `aec41a9..f675156`.
+- `path.quantity.019`.
+- The codegen scenarios `codegen.naming.002`, `codegen.cardinality.002`,
+  `.004`, `.005`, `codegen.choice.004` and `codegen.binding.002`.
+- The model scenarios `model.json.023` and `.025`.
+- The "Considered and not recorded" note in `docs/deviations.md`, task 21,
+  `spec.md` and the blockers note.
+
+`P` is `reference/hapi-fhir/hapi-fhir-base/src/main/java/ca/uhn/fhir/parser`
+at `v8.12.0`.
+
+**Forty-seventh finding: resolved.**
+- `comparable()` now consults the worker only for two UCUM-system quantities
+  whose codes are both present and differ (`ENGINE:4609-4641`).
+  `1 'cm'.comparable(2 'cm')` is `true`.
+- `<=` with no left unit fails at `lunit.equals` (`:2533-2538`) before the
+  worker, under both workers, with the `parameters-example-quantities.xml`
+  example.
+- `<=` with a left unit only reaches the worker, because
+  `lunit.equals(null)` is `false`.
+
+**The handlers.**
+- `LenientErrorHandler` sets `myErrorOnInvalidValue = true` (`:52`), and its
+  no-argument constructor sets `myLogErrors = true` (`:59-61`).
+- `invalidValue` (`:100-108`) logs when the value is blank or the flag is off.
+  Otherwise it **passes the call to `STRICT_ERROR_HANDLER.invalidValue`**. So
+  with the default handler a non-blank invalid value is fatal and a blank one
+  is not.
+- `missingRequiredElement` (`:137-141`) and `unexpectedRepeatingElement`
+  (`:183-190`) only log.
+- `StrictErrorHandler.invalidValue` (`:56-59`) throws
+  `Msg.code(1821) + describeLocation(loc) + "Invalid attribute value \"" + sanitizeUrlPart(value) + "\": " + error`.
+- `unexpectedRepeatingElement` (`:76-79`) throws `1823`,
+  `... Multiple repetitions of non-repeatable element '<name>' found during parse`.
+- `describeLocation(null)` is `""`, and otherwise it is `toString() + " "`
+  (`ParseErrorHandler.java:24-30`).
+- `ParseLocation.toString()` is `[element="<name>"]` (`:55-57`).
+- The JPA server's request parsing uses `FhirContext`'s default lenient
+  handler. The `disableAllErrors()` handlers in `JpaStorageResourceParser`,
+  `TolerantJsonParser` and `BatchResourceLoader` read stored resources, not
+  requests.
+
+**`codegen.cardinality.005`, `model.json.023` and `.025` (blank value):
+correct.**
+- A JSON scalar goes through `enteringNewElement` and then
+  `attributeValue("value", asString)` (`P/JsonParser.java:1485-1491`).
+- For `""`, `PrimitiveState.attributeValue` (`P/ParserState.java:1454-1457`)
+  calls `invalidValue(ParseLocation.fromElementName(childName), "", "Attribute value must not be empty (\"\")")`
+  and sets no value.
+- Lenient mode logs, so the element has no value. Strict mode gives
+  `HAPI-1821: [element="status"] Invalid attribute value "": Attribute value must not be empty ("")`,
+  and for a blank `reference` the same with `[element="reference"]`.
+
+**`codegen.cardinality.002` and `.004`: correct.**
+- No `getMin()` is read in `ParserState`.
+- The JSON parser's `missingRequiredElement` sites are only the extension
+  `url`/`value` checks (`:1503`, `:1514`, `:1995`, `:2004`), and the XML
+  parser's are likewise (`XmlParser.java:205`, `:217`, `:514`, `:597`).
+- An empty array runs its loop zero times (`P/JsonParser.java:1439-1457`). So
+  there is no diagnostic in either mode.
+
+**`codegen.choice.004`: correct.**
+- `enteringNewElement` (`P/ParserState.java:640-672`) records a `0..1`
+  child's name, and for a choice child that is
+  `RuntimeChildChoiceDefinition.getField().getName()`, which is `value`.
+- A second `value[x]` property fails `myParsedNonRepeatableNames.add`, so it
+  calls `unexpectedRepeatingElement(null, "value")` and pushes
+  `SwallowChildrenWholeState`.
+- Strict mode gives
+  `HAPI-1823: Multiple repetitions of non-repeatable element 'value' found during parse`,
+  with no location. Lenient mode logs and drops the second property, keeping
+  the first in document order.
+
+**`codegen.binding.002`: correct.**
+- `Enumeration.parse` calls `AdministrativeGenderEnumFactory.fromCode`
+  (`Enumeration.java:163-167`), which throws
+  `IllegalArgumentException("Unknown AdministrativeGender code 'M'")`
+  (`Enumerations.java:257-269`).
+- `ParserState.java:1482-1514` catches it. `getCodeCaseInsensitive("M")`
+  looks up `m` and finds no match, so it reports
+  `invalidValue(loc, "M", e.getMessage())`.
+- The default lenient handler hands that to the strict handler. The message
+  is `HAPI-1821: [element="gender"] Invalid attribute value "M": Unknown AdministrativeGender code 'M'`
+  in both modes.
+- `"Male"` matches `male` ignoring case. `invalidValue` is called **first**,
+  with `Case discrepancy detected in code value 'Male' (should be 'male')`,
+  so with the default handlers it is fatal before the correction runs.
+
+**`codegen.naming.002`: correct.**
+- Rust 2024 has 38 strict keywords (`as` through `while`, with `Self`) and 14
+  reserved ones (`abstract`, `become`, `box`, `do`, `final`, `gen`, `macro`,
+  `override`, `priv`, `try`, `typeof`, `unsized`, `virtual`, `yield`). That is
+  52 names, as listed, with `gen` (2024 edition) included.
+- `union`, `raw`, `safe` and `macro_rules` are weak keywords.
+- `class` is not a Rust keyword.
+- FHIR R4 does hit the list beyond `type` and `use`, with
+  `StructureDefinition.abstract`. It is covered by the rule.
+
+**No `DEV` entry, against constitution section 1.**
+- The register is for cases where HAPI and the FHIR specification disagree.
+- `binding.002` now agrees with the specification, which requires a code in
+  the required value set.
+- The blank-value, missing-`1..1` and two-choice-values cases are documents the
+  specification calls non-conformant. HAPI's parser accepts them leniently,
+  and in the choice case it drops data. The specification assigns detection to
+  validation, and FHIR REST's create allows a server to accept without full
+  validation. So recording these under "Considered and not recorded", with the
+  reasoning, is defensible.
+- I do not find a scenario that contradicts a FHIR **requirement** placed on a
+  parser.
+
+Non-blocking notes:
+1. `codegen.binding.002` makes the decode check depend on "the set
+   `path.api.005` describes", the `code` elements HAPI holds as `Enumeration`.
+   That set is the subject of the open blocker "the R4 Java class ancestry
+   table". Task 21's binding part is therefore blocked with it, and the
+   blocker entry could say so.
+2. The choice case loses data silently under the default handler. It is HAPI
+   parity, but the "Considered and not recorded" note could name the data
+   loss, as `DEBT-*` entries do for wrong answers, so the owner sees it at the
+   checkpoint.
+
+**Registers, counts and validators.**
+- `harness/scripts/check-registries.sh` reports "registers agree" (26
+  deviations, 19 debt entries).
+- `openspec validate add-fhirpath-and-codegen-r4 --strict` reports the change
+  is valid.
+- The headings number codegen 49, model 83 and path 382, 514 in total. No ID
+  is duplicated, added, removed or renumbered.
