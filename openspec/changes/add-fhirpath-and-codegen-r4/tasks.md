@@ -1147,7 +1147,13 @@ checkpoint because it changes what a gate measures.
 - [ ] **54. Implement the public evaluation surface.** Evaluate from text,
   evaluate a parsed expression repeatedly, evaluate-first with its no-match
   case, the unexpected-return-type error, and synchronous evaluation callable
-  from inside a transaction.
+  from inside a transaction. The return-type check is HAPI's (`path.api.005`,
+  rewritten after the forty-first review): `Base`, the primitive, composite and
+  reference kinds or a FHIR type name standing for its R4 model class, accepted
+  by the R4 Java class ancestry from a generated table, with HAPI's exact
+  `HAPI-0256: ` message and Java class names. The table's generator is blocked
+  on the owner (`tasks/blockers.md`, 2026-11-20, "the R4 Java class ancestry
+  table"); the FHIR-type check already implemented must be replaced.
   Satisfies `path.api.001` through `path.api.006`.
   **Implemented, not ticked.** `src/eval/api.rs`: `Evaluator::{parse,
   evaluate_text, evaluate_text_as, evaluate_first_text, evaluate_first,

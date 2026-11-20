@@ -4040,32 +4040,109 @@ the operations they expect.
 - **THEN** an error naming both types is returned, as `FhirPathR4` does: HAPI
   checks every result item with `theReturnType.isAssignableFrom(next.getClass())`
   and fails on the first that is not (`FhirPathR4.java:72-77`)
-- **AND** in Frevo the requested type is a FHIR type name, or `Base`, which
-  accepts every item. An item satisfies a FHIR type when its own type is that
-  type or derives from it through the R4 `baseDefinition` chain: `code`,
-  `markdown` and `id` satisfy `string`; `url`, `canonical`, `oid` and `uuid`
-  satisfy `uri`; `positiveInt` and `unsignedInt` satisfy `integer`; `Age`,
-  `Count`, `Distance` and `Duration` satisfy
-  `Quantity`; every resource satisfies `Resource`, and a domain resource
-  `DomainResource`; every datatype satisfies `Element`. An empty result
-  satisfies any requested type
-- **AND** the error is an execution error whose message is exactly
-  `FhirPath expression returned unexpected type <item's FHIR type> - Expected <requested type>`,
-  for the first item that does not satisfy it, with no offset. So asking for
-  `string` from `Patient.birthDate` over `patient-example.xml` fails with
-  `FhirPath expression returned unexpected type date - Expected string`
-- **AND** this differs from HAPI in three recorded ways (`DEV-0027`). HAPI's
-  message is prefixed `HAPI-0256: ` (`Msg.code(256)`) and names Java classes,
-  the item's by `getSimpleName()` and the expected one by `getName()`
-  (`HAPI-0256: FhirPath expression returned unexpected type DateType - Expected org.hl7.fhir.r4.model.StringType`).
-  `IdType` extends `UriType` in Java, so HAPI accepts an `id` as a `UriType`
-  and rejects it as a `StringType`, where Frevo accepts it as `string` and
-  rejects it as `uri`. And an element whose HAPI model class is an
-  `Enumeration` (a `code` bound to a generated value set, such as
-  `Patient.gender`) is neither a `CodeType` nor a `StringType` in Java, so HAPI
-  rejects it for both, where Frevo accepts it as `code` and as `string`
-- **AND** no live case grades it, and the typed surface is not reachable over
-  HTTP, so it is graded by Frevo's own tests against these statements
+- **AND** the requested type is one of what HAPI's own callers pass to
+  `IFhirPath.evaluate` and `evaluateFirst`:
+  - `Base` (HAPI's `IBase` or `Base`), which accepts every item;
+  - the interface kind **primitive** (`IPrimitiveType`, passed by
+    `FieldValidatingInterceptor.java:105`, `DaoResourceLinkResolver.java:466`,
+    `:468`, `ServeMediaResourceRawInterceptor.java:92`, `:100`,
+    `JpaPackageCache.java:418`, `PackageInstallerSvcImpl.java:1081`);
+  - the interface kind **composite** (`ICompositeType`,
+    `SearchParameterAndValueSetRuleImpl.java:232`);
+  - the interface kind **reference** (`IBaseReference`,
+    `BulkExportMdmFullResourceExpander.java:252`,
+    `OverridePathBasedReferentialIntegrityForDeletesInterceptor.java:123`);
+  - a FHIR type name, standing for HAPI's R4 model class for that type
+    (`string` for `StringType`, `HumanName` for `HumanName`, `Patient` for
+    `Patient`, and the abstract `Resource`, `DomainResource`, `Element` and
+    `BackboneElement` for the classes of the same names)
+- **AND** an item is accepted exactly when the requested type is among the
+  **R4 Java class ancestry** of the item's HAPI model class: the class, its
+  superclasses and every interface they implement, directly or through
+  another interface, as declared in the pinned model sources
+  (`reference/org.hl7.fhir.core/org.hl7.fhir.r4/src/main/java/org/hl7/fhir/r4/model/*.java`
+  at `73c432b5`, and the `org.hl7.fhir.instance.model.api` interfaces in
+  `reference/hapi-fhir/hapi-fhir-base` at `v8.12.0`). The facts that decide
+  the examples below are:
+  - every primitive class extends `PrimitiveType`, which implements
+    `IPrimitiveType`: `StringType`, with `CodeType` and `MarkdownType` under
+    it; `UriType`, with `UrlType`, `CanonicalType`, `OidType`, `UuidType`,
+    `SidType` and **`IdType`** under it (`IdType.java:120`); `IntegerType`,
+    with `PositiveIntType` and `UnsignedIntType` under it; `BaseDateTimeType`,
+    with `DateType`, `DateTimeType` and `InstantType` under it; and
+    `BooleanType`, `DecimalType`, `Base64BinaryType`, `TimeType`, `XhtmlType`;
+  - a `code` element that HAPI's model declares as `Enumeration<...>` (for
+    example `Patient.gender`, `Patient.java:269`; `Observation.status`,
+    `Observation.java:1715`) is an **`Enumeration`**, which extends
+    `PrimitiveType` and is neither a `CodeType` nor a `StringType`
+    (`Enumeration.java:76`); every other `code` element is a `CodeType`;
+  - every complex datatype class implements `ICompositeType`, directly or
+    through `IBaseReference` (`Reference`), `IBaseMetaType` (`Meta`),
+    `INarrative` (`Narrative`) or `IBaseExtension` (`Extension`); `Age`,
+    `Count`, `Distance`, `Duration`, `MoneyQuantity` and `SimpleQuantity`
+    extend `Quantity`;
+  - a resource's nested component (`Patient.contact`, a `ContactComponent`)
+    extends `BackboneElement` and is **not** an `ICompositeType`
+    (`Patient.java:230`, `BackboneElement.java:49`);
+  - a resource extends `DomainResource` or `Resource` (`Patient.java:53`,
+    `DomainResource.java:48`, `Resource.java:45`);
+  - values the engine builds have the class the engine builds: a string,
+    integer, decimal, boolean, date, dateTime or time result is a
+    `StringType`, `IntegerType`, `DecimalType`, `BooleanType`, `DateType`,
+    `DateTimeType` or `TimeType`, a quantity a `Quantity`, and `Resource.id`
+    an `IdType` (`filterIdType`, `FHIRPathEngine.java:280-284`)
+- **AND** the table of each FHIR type's R4 class ancestry, and of which `code`
+  elements are `Enumeration`s, is generated by `frevo-codegen` from those
+  pinned sources (each class's `extends` and `implements` clauses, and each
+  `@Child` field's declared Java type), emitted as an `@generated` table and
+  never hand-written; the decision to read upstream Java for it is open in
+  `tasks/blockers.md` (2026-11-20, "the R4 Java class ancestry table")
+- **AND** every result item is checked, not only the first, and the error is
+  raised for the first item that is not accepted, also by the evaluate-first
+  operation, which checks the whole result before taking its first item
+  (`FhirPathR4.java:80-89`). An empty result satisfies any requested type
+- **AND** the error is an execution error, with no offset, whose message is
+  exactly
+  `HAPI-0256: FhirPath expression returned unexpected type <item class> - Expected <requested type>`
+  (`Msg.code(256)`, `Msg.java:23`, `:31-32`, rendered `HAPI-` and the code as
+  four digits and `: `). `<item class>` is the item's class's Java simple name
+  (`getSimpleName()`): `HumanName`, `Enumeration`, `IdType`, `DateType`, or a
+  nested component's own name without its outer class, `ContactComponent`.
+  `<requested type>` is the requested type's Java fully qualified name
+  (`getName()`): `org.hl7.fhir.r4.model.<Class>` for a model class, with `$`
+  before a nested class's name (`org.hl7.fhir.r4.model.Patient$ContactComponent`),
+  and `org.hl7.fhir.instance.model.api.IPrimitiveType`,
+  `org.hl7.fhir.instance.model.api.ICompositeType`,
+  `org.hl7.fhir.instance.model.api.IBaseReference` and
+  `org.hl7.fhir.instance.model.api.IBase` for the kinds
+- **AND** over `patient-example.xml` and `observation-example.xml`:
+  - primitive: `Patient.gender` (an `Enumeration`), `Patient.active` and
+    `Patient.birthDate` are accepted; `Patient.name` fails with
+    `HAPI-0256: FhirPath expression returned unexpected type HumanName - Expected org.hl7.fhir.instance.model.api.IPrimitiveType`;
+    and `Patient.active | Patient.name` fails the same way, also through
+    evaluate-first
+  - composite: `Observation.code` and `Observation.subject` are accepted;
+    `Observation.status` fails with
+    `HAPI-0256: FhirPath expression returned unexpected type Enumeration - Expected org.hl7.fhir.instance.model.api.ICompositeType`,
+    and `Patient.contact` with
+    `HAPI-0256: FhirPath expression returned unexpected type ContactComponent - Expected org.hl7.fhir.instance.model.api.ICompositeType`
+  - reference: `Observation.subject` is accepted; `Observation.code` fails
+    with
+    `HAPI-0256: FhirPath expression returned unexpected type CodeableConcept - Expected org.hl7.fhir.instance.model.api.IBaseReference`
+  - FHIR type names: `Patient.name.family` as `string` and `Patient.id` as
+    `uri` are accepted; `Patient.name` as `string` fails with
+    `HAPI-0256: FhirPath expression returned unexpected type HumanName - Expected org.hl7.fhir.r4.model.StringType`
+    (`FhirPathTest.testEvaluateWrongType`); `Patient.id` as `string` with
+    `... unexpected type IdType - Expected org.hl7.fhir.r4.model.StringType`;
+    `Patient.gender` as `code` with
+    `... unexpected type Enumeration - Expected org.hl7.fhir.r4.model.CodeType`;
+    and `Patient.birthDate` as `string` with
+    `... unexpected type DateType - Expected org.hl7.fhir.r4.model.StringType`
+- **AND** the wrapping of a parse or evaluation failure inside `FhirPathR4`
+  (`HAPI-2409: `, `HAPI-0255: `, `FhirPathR4.java:49`, `:69`) is not part of
+  this scenario; see the proposal's out-of-scope table
+- **AND** no live case grades it, so it is graded by Frevo's own tests against
+  these statements and by the server changes whose callers pass these types
 
 #### Scenario: [path.api.006] evaluation is synchronous
 

@@ -153,11 +153,20 @@ states that `as(Code)` resolves through HAPI's server-facing upper-case-initial
 retry while `as(quantity)` raises `The type FHIR.quantity is not valid`, and
 that the suite's Java harness has no retry (`DEV-0026`); `path.strictness.006`
 states that with polymorphic names on, `Observation.value` navigates nothing;
-`path.api.005` states Frevo's FHIR-type assignability and message and the three
-differences from HAPI's Java-class check (`DEV-0027`). `path.errors.006`
+`path.api.005` states the typed surface's acceptance and message. `path.errors.006`
 grades a unary sign's error position (just past the operand's first token) and
 `path.errors.007` the `iif` singleton and `is` parameter-kind messages. None
 was removed, renumbered, reused or repurposed.
+
+After the forty-first review, `path.api.005` was rewritten in place to HAPI's
+semantics under the owner's standing ruling: the requested type is `Base`,
+the primitive, composite or reference interface kind, or a FHIR type name
+standing for its R4 model class; acceptance follows the R4 Java class
+ancestry (`IdType` under `UriType`, an `Enumeration` for a model-declared
+bound code, a resource's component not composite), from a table generated from
+the pinned model sources; and the message is HAPI's, `HAPI-0256: ` and Java
+class names included. `DEV-0027` was withdrawn (its number is not reused). No
+ID was added.
 
 | Area | IDs allocated | Range |
 |---|---:|---|

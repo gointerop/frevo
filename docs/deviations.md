@@ -45,8 +45,8 @@ decision.
 
 ## Entries
 
-All twenty-five entries below come from `add-fhirpath-and-codegen-r4`;
-`DEV-0013`, `DEV-0015`, `DEV-0017`, `DEV-0018`, `DEV-0019`, `DEV-0021`, `DEV-0022`, `DEV-0023`, `DEV-0024`, `DEV-0025`, `DEV-0026` and `DEV-0027` are pending the owner's review (see their entries);
+All twenty-four entries below come from `add-fhirpath-and-codegen-r4`;
+`DEV-0013`, `DEV-0015`, `DEV-0017`, `DEV-0018`, `DEV-0019`, `DEV-0021`, `DEV-0022`, `DEV-0023`, `DEV-0024`, `DEV-0025` and `DEV-0026` are pending the owner's review (see their entries);
 `DEV-0012` and `DEV-0014` were ruled for HAPI (2026-11-17 and 2026-11-14).
 `DEV-0001` through `DEV-0010` are the same kind of case: the pinned R4
 `FHIRPathEngine` does something the FHIRPath specification does not describe. In
@@ -840,39 +840,6 @@ file, so its prose is not redistributable here (see `oracles/PINS.md`).
   harness's results are the same either way. Established from the pinned
   source; not confirmed against a live HAPI.
 - **Normalizer impact:** none on stored bytes.
-- **Reviewed:** pending owner.
-
-### DEV-0027 — the typed evaluation surface checks FHIR types, not Java classes, and its message carries no HAPI code
-
-- **Area:** path
-- **Scenario IDs:** path.api.005
-- **HAPI 8.12.0 behaviour:** `FhirPathR4.evaluate(input, path, returnType)`
-  checks each result item with `returnType.isAssignableFrom(item.getClass())`
-  and throws `HAPI-0256: FhirPath expression returned unexpected type
-  <item class simple name> - Expected <returnType fully qualified name>`
-  (`hapi-fhir-structures-r4/.../fluentpath/FhirPathR4.java:72-77`). The check
-  follows the Java class tree: `IdType` extends `UriType`, so an `id` is a
-  `UriType` and not a `StringType`; and an element held as an `Enumeration`
-  (a code with a generated value set, such as `Patient.gender`) is neither a
-  `CodeType` nor a `StringType`.
-- **Specification requirement:** none in FHIRPath; the FHIR R4 type tree
-  derives `id` from `string` and `code` from `string`.
-- **Chosen behaviour:** Frevo's caller names a FHIR type, so assignability
-  follows the R4 `baseDefinition` chain (`id` and `code` satisfy `string`;
-  `id` does not satisfy `uri`), and the message is
-  `FhirPath expression returned unexpected type <FHIR type> - Expected <FHIR type>`,
-  with no `HAPI-0256: ` prefix and no Java class names.
-- **Configuration flag:** none
-- **Debt:** none
-- **Rationale:** the typed surface is a Rust API with no Java classes to name,
-  and no HTTP response carries this message; reproducing the Java class tree
-  would make the Rust API reject a FHIR-valid request (`code` from
-  `Patient.gender`) for a reason that exists only in HAPI's Java model. Frevo
-  accepts strictly more than HAPI here and never returns a different value, so
-  this is not a wrong-answer hazard. Pending the owner's decision; if the
-  owner rules for HAPI, the message and the two assignability cases change and
-  `path.api.005` is rewritten.
-- **Normalizer impact:** none on stored bytes; not observable over HTTP.
 - **Reviewed:** pending owner.
 
 ## Considered and not recorded as deviations
