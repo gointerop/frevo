@@ -2890,3 +2890,19 @@ blank-value subset in `docs/deviations.md` under `model.json.023`). Two do not:
    `DecodedElement`-level or `Diagnostic`-level report the binding can map to
    `CodeNotInRequiredBinding` (today it maps only `InvalidValue` and
    `UnexpectedRepeatingElement`).
+
+**Resolved in the spec, 2026-11-20 (proposer)**, for this entry and the
+2026-11-11 (`codegen.naming.002`) and 2026-11-12 (missing-required-element)
+entries, under the owner's standing ruling; verified in `ParserState.java`,
+`JsonParser.java`, `LenientErrorHandler.java`, `StrictErrorHandler.java`,
+`ParseLocation.java` (`hapi-fhir` `v8.12.0`) and `Enumerations.java`
+(`org.hl7.fhir.core` `73c432b5`). `codegen.naming.002` states the exact Rust
+2024 keyword list (52 names, `gen` included; `class` is not escaped).
+`codegen.cardinality.002` and `.004`: no minimum-cardinality check, either mode,
+no diagnostic. `codegen.cardinality.005`: blank value, lenient diagnostic,
+strict `1821`; `model.json.023` and `.025` now say the same for a blank
+`reference` in strict mode. `codegen.choice.004`: strict `1823` naming `value`
+at the second property; lenient keeps the first and drops the second.
+`codegen.binding.002`: `1821` in both default modes, case discrepancy included.
+No deviation was needed: these are parser behaviours the FHIR specification
+leaves to validation (`docs/deviations.md`, "Considered and not recorded").

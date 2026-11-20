@@ -164,12 +164,32 @@ element is addressed by its base name, which is the name FHIRPath navigates by.
   with exactly one `type` entry
 - **THEN** it is generated as a choice element, addressed by its base name
 
-#### Scenario: [codegen.choice.004] two values for the same choice element are rejected on decode
+#### Scenario: [codegen.choice.004] a second value for the same choice element is a repeated non-repeatable element
 
-- **WHEN** a JSON document carries both `valueString` and `valueQuantity` for
-  `Observation.value[x]`
-- **THEN** decoding fails with an error naming the element path and both
-  properties
+- **WHEN** a JSON document carries `valueString` and then `valueQuantity` for
+  `Observation.value[x]`, decoded in strict mode
+- **THEN** decoding fails at the **second** property with HAPI's
+  repeated-element error, message code `1823`:
+  `HAPI-1823: Multiple repetitions of non-repeatable element 'value' found during parse`.
+  HAPI's `ParserState.enteringNewElement` records each `0..1` child it enters
+  under the choice's field name, `value` for every `value[x]` property
+  (`RuntimeChildChoiceDefinition.getField().getName()`), so the second property
+  is a repetition (`hapi-fhir-base/src/main/java/ca/uhn/fhir/parser/ParserState.java:660-672`), and
+  `StrictErrorHandler.unexpectedRepeatingElement` throws with no location
+  (`StrictErrorHandler.java:76-79`; `describeLocation(null)` is empty,
+  `ParseErrorHandler.java:24-30`). The message names `value`, not either JSON
+  property
+- **WHEN** the same document is decoded in lenient mode, the default
+- **THEN** decoding **succeeds**: `LenientErrorHandler.unexpectedRepeatingElement`
+  only logs (`LenientErrorHandler.java:183-190`) and the parser swallows the
+  second property and everything under it (`SwallowChildrenWholeState`,
+  `ParserState.java:670`), so `Observation.value` holds the **first** property
+  in document order, the `string` `6.3`, and the `Quantity` is not part of the
+  decoded resource; a repeated-element diagnostic naming `value` is returned
+  where HAPI logs
+- **AND** a canonical encode of the decoded resource emits only `valueString`
+- **AND** a document with only one `value[x]` property decodes cleanly in both
+  modes
 
 ### Requirement: Cardinality
 
@@ -182,19 +202,21 @@ repeating element preserves order.
 - **WHEN** `Patient.birthDate` (`0..1`) is generated
 - **THEN** it is absent or holds exactly one value
 
-#### Scenario: [codegen.cardinality.002] `1..1` is required and single, and its absence is a diagnostic rather than a rejection
+#### Scenario: [codegen.cardinality.002] `1..1` is required and single, and its absence is not checked on decode
 
 - **WHEN** `Observation.status` (`1..1`) is generated
 - **THEN** the element holds at most one value and records that its minimum
   cardinality is 1
-- **WHEN** an `Observation` document with no `status` is decoded in lenient mode,
-  the default
-- **THEN** decoding **succeeds** with the element absent and returns a
-  missing-required-element diagnostic naming `Observation.status`, because
-  `LenientErrorHandler.missingRequiredElement` logs a warning and returns — a
-  server asked to store that resource answers `2xx`
-- **WHEN** the same document is decoded in strict mode
-- **THEN** decoding fails, naming `Observation.status`
+- **WHEN** an `Observation` document with no `status` is decoded, in lenient or
+  strict mode
+- **THEN** decoding **succeeds** in both modes with the element absent and **no**
+  diagnostic: HAPI's parser checks no minimum cardinality while decoding.
+  `ParserState` never consults a child's `getMin()`, and the four call sites of
+  `missingRequiredElement` in the JSON parser concern only an extension's `url`
+  and `value` (`hapi-fhir-base/src/main/java/ca/uhn/fhir/parser/JsonParser.java:1503`, `:1514` on decode,
+  `:1995`, `:2004` on encode), so neither error handler is reached. A server
+  asked to store that resource answers `2xx` unless a validator rejects it,
+  which is not this change's
 - **AND** in neither mode is the element given a default value
 
 #### Scenario: [codegen.cardinality.003] `0..*` is an ordered list
@@ -204,21 +226,35 @@ repeating element preserves order.
 - **THEN** the three values are returned in document order
 - **AND** re-serialising preserves that order
 
-#### Scenario: [codegen.cardinality.005] a required element present but empty is treated as absent
+#### Scenario: [codegen.cardinality.005] a required element present but blank has no value, and strict mode rejects it
 
-- **WHEN** a document carries `"status": ""` for a `1..1` required element
-- **THEN** the lenient decode returns an invalid-value diagnostic rather than
-  failing, because a blank value is the one invalid value
-  `LenientErrorHandler` logs instead of raising (`model.json.023`)
-- **AND** the strict decode fails, naming the element
+- **WHEN** an `Observation` document carries `"status": ""` for the `1..1`
+  element `Observation.status`, decoded in lenient mode
+- **THEN** decoding **succeeds**, `Observation.status` has no value, and an
+  invalid-value diagnostic is returned where HAPI logs: a `value` of `""` is
+  reported through `invalidValue` with the error `Attribute value must not be
+  empty ("")` before any value is set (`hapi-fhir-base/src/main/java/ca/uhn/fhir/parser/ParserState.java:1454-1457`),
+  and `LenientErrorHandler.invalidValue` logs a blank value and returns
+  (`LenientErrorHandler.java:100-108`). No missing-required-element diagnostic is
+  returned (`codegen.cardinality.002`)
+- **WHEN** the same document is decoded in strict mode
+- **THEN** decoding fails with message code `1821`:
+  `HAPI-1821: [element="status"] Invalid attribute value "": Attribute value must not be empty ("")`
+  (`StrictErrorHandler.java:56-59`; the location renders as
+  `[element="<name>"] `, `ParseLocation.java:55-57`). The same holds for every
+  blank primitive value, a blank `Reference.reference` included
+  (`model.json.023`, `model.json.025`)
 
 #### Scenario: [codegen.cardinality.004] `1..*` is an ordered list whose minimum is recorded
 
-- **WHEN** a `1..*` element is generated
+- **WHEN** a `1..*` element, `Appointment.participant`, is generated
 - **THEN** it records that its minimum cardinality is 1 and preserves order
-- **WHEN** a document gives it an empty array, decoded in lenient mode
-- **THEN** decoding succeeds with the element absent and returns a
-  missing-required-element diagnostic; the strict decode fails
+- **WHEN** a document gives it an empty array, `"participant": []`, decoded in
+  lenient or strict mode
+- **THEN** decoding **succeeds** in both modes with the element absent and no
+  diagnostic: the JSON parser iterates the array's entries and an empty array
+  has none (`hapi-fhir-base/src/main/java/ca/uhn/fhir/parser/JsonParser.java:1439-1457`), and no minimum
+  cardinality is checked (`codegen.cardinality.002`)
 
 ### Requirement: Value-set bindings
 
@@ -234,11 +270,33 @@ every other coded element open.
   `unknown`
 - **AND** the enumeration round-trips to and from exactly those code strings
 
-#### Scenario: [codegen.binding.002] a code outside a required binding is preserved, not dropped
+#### Scenario: [codegen.binding.002] a code outside a required binding is rejected on decode in both modes
 
-- **WHEN** a document carries `"gender": "M"` for `Patient.gender`
-- **THEN** decoding reports the code as not in the required binding
-- **AND** re-serialising the resource unchanged still emits `"gender": "M"`
+- **WHEN** a document carries `"gender": "M"` for `Patient.gender`, decoded in
+  lenient mode (the default) or strict mode
+- **THEN** decoding **fails** in both modes with message code `1821`:
+  `HAPI-1821: [element="gender"] Invalid attribute value "M": Unknown AdministrativeGender code 'M'`.
+  HAPI's model holds `Patient.gender` as an `Enumeration`, whose factory throws
+  `IllegalArgumentException("Unknown AdministrativeGender code 'M'")`
+  (`org.hl7.fhir.r4/src/main/java/org/hl7/fhir/r4/model/Enumerations.java:256-269`);
+  `ParserState` reports it through `invalidValue` with that message
+  (`hapi-fhir-base/src/main/java/ca/uhn/fhir/parser/ParserState.java:1482-1514`), and the default
+  `LenientErrorHandler` hands a non-blank invalid value to the strict handler
+  (`LenientErrorHandler.java:100-108`), which throws
+  (`StrictErrorHandler.java:56-59`). A server asked to store that resource
+  answers `400`
+- **AND** a code that matches a binding code ignoring case is corrected **and**
+  still reported first: `"gender": "Male"` calls `invalidValue` with
+  `Case discrepancy detected in code value 'Male' (should be 'male')`
+  (`ParserState.java:1488-1503`), so it fails the same way in both default
+  modes, with that text after `Invalid attribute value "Male": `
+- **AND** a blank code is a blank value: `"gender": ""` follows
+  `codegen.cardinality.005` (lenient: no value and a diagnostic; strict: `1821`)
+- **AND** the check applies to exactly the `code` elements HAPI's R4 model holds
+  as an `Enumeration`, which is the set `path.api.005` describes; an element
+  HAPI holds as a `CodeType` accepts any code, even under a `required` binding
+  (`Attachment.contentType`, `Attachment.java:58`). Frevo's generated
+  enumerations must cover that set, and the decode checks a code against them
 
 #### Scenario: [codegen.binding.003] extensible, preferred and example bindings generate no enumeration
 
@@ -266,9 +324,24 @@ collision-free and reversible, so the JSON property name is always recoverable.
 
 #### Scenario: [codegen.naming.002] a FHIR name that is a Rust keyword is escaped deterministically
 
-- **WHEN** `Encounter.class`, `ElementDefinition.type` and
-  `OperationDefinition.use`-style elements are generated
-- **THEN** each gets a deterministic non-keyword Rust name
+- **WHEN** `ElementDefinition.type`, `Identifier.use`, `Claim.use` and
+  `Encounter.class` are generated
+- **THEN** a snake_case name that is a Rust 2024 strict or reserved keyword gets
+  one `_` appended, and every other name is left as it is: `type` becomes
+  `type_`, `use` becomes `use_`, and `class` stays `class`, because it is a
+  keyword in Java but not in Rust
+- **AND** the keyword list is exactly the Rust 2024 strict keywords `as`,
+  `async`, `await`, `break`, `const`, `continue`, `crate`, `dyn`, `else`,
+  `enum`, `extern`, `false`, `fn`, `for`, `if`, `impl`, `in`, `let`, `loop`,
+  `match`, `mod`, `move`, `mut`, `pub`, `ref`, `return`, `self`, `Self`,
+  `static`, `struct`, `super`, `trait`, `true`, `type`, `unsafe`, `use`,
+  `where`, `while`, and the reserved keywords `abstract`, `become`, `box`, `do`,
+  `final`, `gen`, `macro`, `override`, `priv`, `try`, `typeof`, `unsized`,
+  `virtual`, `yield`: 52 names. Weak keywords (`union`, `raw`, `safe`,
+  `macro_rules`) are valid identifiers and are not escaped; a raw identifier
+  (`r#type`) is never emitted
+- **AND** the escape is deterministic: the same FHIR name always yields the same
+  Rust name
 - **AND** the FHIR property names `class`, `type` and `use` are still what is
   read and written
 

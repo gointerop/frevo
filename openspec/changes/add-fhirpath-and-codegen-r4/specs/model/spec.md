@@ -280,7 +280,13 @@ scenario govern each of the ten is recorded in
 - **THEN** decoding **fails**, because an invalid value is the other condition
   `LenientErrorHandler` treats as fatal by default, on the stated grounds that
   ignoring it loses data silently
-- **AND** a blank value is **not** fatal: it is logged and parsing continues
+- **AND** a blank value is **not** fatal in lenient mode: it is logged and
+  parsing continues, and the element has no value
+  (`LenientErrorHandler.java:100-108`)
+- **AND** in strict mode a blank value **is** fatal, with message code `1821`
+  and the error `Attribute value must not be empty ("")`
+  (`ParserState.java:1454-1457`, `StrictErrorHandler.java:56-59`), as
+  `codegen.cardinality.005` states
 - **AND** a server asked to store a resource with an invalid primitive value
   answers `400 Bad Request`
 
@@ -315,7 +321,13 @@ scenario govern each of the ten is recorded in
   the decode collected, so a reference that appears **before** its target in
   document order still resolves and produces no diagnostic
 - **AND** a reference whose text is exactly `#`, or whose text is blank, is
-  **not** diagnosed: only a `#` followed by at least one character is looked up
+  **not** diagnosed as an invalid reference: only a `#` followed by at least one
+  character is looked up
+- **AND** a blank `reference` is a blank primitive value, so in strict mode it
+  fails before any lookup with
+  `HAPI-1821: [element="reference"] Invalid attribute value "": Attribute value must not be empty ("")`
+  (`model.json.023`); a `reference` of exactly `#` decodes cleanly in both
+  modes
 - **WHEN** the same document is decoded in strict mode
 - **THEN** decoding fails with a data-format error carrying HAPI's message code
   `1826` and the text "Resource has invalid reference: #org1"

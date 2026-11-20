@@ -984,14 +984,17 @@ Recorded so the reasoning is not re-derived:
     `parseAlternates` (`:1274-1332`) handles `extension`, `modifierExtension`,
     `id` and `fhir_comments` without ever consulting whether the element is
     primitive. `design.md` section 3 states the Frevo behaviour deliberately.
-  - `model.json.023`'s **blank** clause, which is a subset rather than a
-    superset: Frevo does not report a blank primitive value at all, where
-    `StrictErrorHandler.invalidValue` would throw `1821`. It cannot, because
-    `model.json.025` requires `{"reference": ""}` to decode cleanly in strict
-    mode, and a blank value is reached by the same callback. Lenient mode
-    matches HAPI either way --- `LenientErrorHandler.java:100-108` logs a blank
-    value and continues --- which is the mode that decides observable
-    behaviour.
+  - `model.json.023`'s **blank** clause was a subset here until 2026-11-20:
+    the spec now states HAPI's strict `1821` for a blank primitive value,
+    `{"reference": ""}` included (`model.json.023`, `model.json.025`,
+    `codegen.cardinality.005`), so it is no longer a difference.
+- **No minimum-cardinality check on decode, and the first of two choice values
+  kept leniently.** HAPI's parser accepts a resource missing a `1..1` or `1..*`
+  element in both modes, and in lenient mode keeps the first of two `value[x]`
+  properties and drops the second (`codegen.cardinality.002`, `.004`,
+  `codegen.choice.004`). The FHIR specification makes such a resource
+  non-conformant, but it is a validator's finding, not a parser's; Frevo
+  matches HAPI's parser, so there is no deviation to record.
 - **Double quotes rejected as string delimiters.** `allowDoubleQuotes` is off by
   default and both HAPI wrappers leave it off; FHIRPath uses single quotes, so
   the default agrees with the specification. No divergence.

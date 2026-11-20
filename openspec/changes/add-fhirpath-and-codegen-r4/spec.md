@@ -203,6 +203,19 @@ was added**: `path.quantity.019`, the `HAPI-0274: ` failures of HAPI's
 server-facing worker, which Frevo does not reproduce (`DEV-0029`, pending the
 owner). None was removed, renumbered, reused or repurposed.
 
+After the forty-seventh review, `path.quantity.019` was narrowed in place
+(`comparable()` consults the worker only for two UCUM codes that differ; `<=`
+with no left unit fails on a null before the worker). Under the owner's
+standing ruling, six codegen scenarios and two model scenarios were rewritten
+in place to HAPI's parser: `codegen.naming.002` (the exact Rust 2024 keyword
+list; `class` is not escaped), `codegen.cardinality.002` and `.004` (no
+minimum-cardinality check on decode, in either mode), `codegen.cardinality.005`
+(a blank value: lenient diagnostic, strict `1821`), `codegen.choice.004`
+(strict `1823` at the second property; lenient keeps the first),
+`codegen.binding.002` (an out-of-binding code is `1821` in both default modes),
+and `model.json.023` and `model.json.025` (a blank value, a blank `reference`
+included, is `1821` in strict mode). No ID was added.
+
 | Area | IDs allocated | Range |
 |---|---:|---|
 | `codegen.inputs.*` | 6 | `001`-`006` |

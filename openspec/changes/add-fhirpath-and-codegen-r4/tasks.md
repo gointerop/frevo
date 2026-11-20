@@ -533,11 +533,19 @@ checkpoint because it changes what a gate measures.
   by default, matching the handler `FhirContext` installs: an unknown property,
   a JSON type mismatch, a single object where an array belongs, an array where a
   single value belongs, a duplicate key (last wins), a `null` in a non-primitive
-  array and a missing required element all **succeed** and return a diagnostic
-  beside the resource. The two genuinely fatal conditions fail in both modes: an
+  array, a blank primitive value and a second value for a choice element all
+  **succeed** and return a diagnostic beside the resource; a missing required
+  element succeeds in **both** modes with no diagnostic, because HAPI's parser
+  checks no minimum cardinality (`codegen.cardinality.002`, `.004`, revised
+  2026-11-20). The two genuinely fatal conditions fail in both modes: an
   extension carrying both a value and nested extensions, and a non-blank invalid
-  primitive value. Strict mode turns every diagnostic into an error and changes
-  nothing else, with identical paths and offsets. Non-UTF-8 input fails in both.
+  primitive value, which includes a code outside the binding of an element
+  HAPI's model holds as an `Enumeration` (`1821`, `codegen.binding.002`, checked
+  against `frevo_model::r4::codes`). Strict mode turns every diagnostic into an
+  error and changes nothing else, with identical paths and offsets: a blank
+  value, a blank `reference` included, is `1821` (`codegen.cardinality.005`,
+  `model.json.023`, `model.json.025`), and a second choice value is `1823` at
+  the second property (`codegen.choice.004`). Non-UTF-8 input fails in both.
   This task is the one the differential gate would otherwise catch on day one,
   so it comes before any other decoding work lands.
   Cover **all ten** of HAPI's parser error conditions, not the seven that are
