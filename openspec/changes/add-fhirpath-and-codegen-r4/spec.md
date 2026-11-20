@@ -180,6 +180,15 @@ by-name `text.div` string (XML mode, no line-break insertion) stays graded; the
 only, and its HTML-mode string and the edit it makes are `DEV-0028` and
 `DEBT-0018`.
 
+After the implementer's findings on task 31 (`tasks/blockers.md`, 2026-11-20,
+"`path.navigation.025` asserts two results the pinned engine does not give"),
+`path.navigation.025` was corrected in place: `text.div is FHIR.string` is
+`false` (the operator does not read a namespace; the function form does), the
+static check rejects `contains` on `div` with `FHIRPATH_STRING_SING_ONLY`, a
+narrative with no `div` still yields an `xhtml` child, an unparseable stored
+narrative fails by name, and an XML document's narrative is its markup. No ID
+was added.
+
 | Area | IDs allocated | Range |
 |---|---:|---|
 | `codegen.inputs.*` | 6 | `001`-`006` |

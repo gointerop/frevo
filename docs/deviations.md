@@ -863,15 +863,20 @@ file, so its prose is not redistributable here (see `oracles/PINS.md`).
   gets one before `<ul>` and one before the second `<li>`. The edit happens when
   the item's string is read (`Patient.text.children().ofType(xhtml).toString()`),
   not when it is navigated (`Patient.text.children().count()`), and it stays on
-  the resource object, so a later `text.div` over it includes the CR LFs.
+  the resource object, so a later `text.div` over it includes the CR LFs. With
+  no `div` at all, `*` navigation still yields the `XhtmlType`, and reading its
+  string creates an empty `div` on the narrative (`getDiv`,
+  `Narrative.java:316-323`) and gives `<div></div>`; `text.div` is then
+  `<div/>`.
 - **Specification requirement:** FHIR R4 defines `Narrative.div` as type
   `xhtml`, so `text.div is xhtml` is `true`, and FHIRPath navigation does not
   change the value it returns.
 - **Chosen behaviour:** HAPI for navigation by name (`string`, XML-mode
   composition, no edit; `path.navigation.025`). For the `xhtml` item from `*`
   navigation, the type is HAPI's but the string is Frevo's: the same XML-mode
-  composition, with no CR LF insertion and no edit of the stored narrative.
-  That part is a **difference from HAPI**.
+  composition, with no CR LF insertion and no edit of the stored narrative
+  (`<div/>` for an absent `div`, which stays absent). That part is a
+  **difference from HAPI**.
 - **Configuration flag:** none
 - **Debt:** DEBT-0018
 - **Rationale:** the HTML-mode composer is a second serialiser with its own

@@ -523,7 +523,9 @@ them is the whole reason that decision is safe to make.
   insertion exactly as its loop works (from the last child down to the second,
   never the first child nor below it; `XhtmlComposer.java:85-104`), HTML-mode
   void elements and `&nbsp;` (`:228-229`, `:313-350`), and the edit of the
-  stored node that makes a later `text.div` include the inserted CR LFs.
+  stored node that makes a later `text.div` include the inserted CR LFs; and,
+  for a narrative with no `div`, the empty `div` that reading the item's string
+  creates (`<div></div>`, after which `text.div` is `<div/>`).
 - **Why deferred:** constitution section 1 and the owner's decision of
   2026-11-08: no flag or second code path is built speculatively; the HTML-mode
   composer is a second serialiser, and the edit of the input conflicts with the

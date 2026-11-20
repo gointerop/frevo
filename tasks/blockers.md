@@ -2712,3 +2712,16 @@ unticked until then.
   a `NodeError` (HAPI could never hold one; its parser rejects the resource);
   through `*` the item reports its stored text, because a `Primitive` cannot
   carry an error. Neither is in the spec.
+
+**Resolved in the spec, 2026-11-20 (proposer).** Verified in
+`FHIRPathEngine.java` (`executeTypeName` `:1531-1539`, `opIs` `:1940-1965`,
+`funcIs` `:5095-5145`, `checkContextString` `:3865-3869`), `Narrative.java`
+(`:316-323`, `:343`, `:364-366`) and `Configuration.java:85-98` at `73c432b5`.
+`path.navigation.025` now says `is FHIR.string` is `false` (and the function
+forms `true`), that the check rejects `contains` on `div` with the exact
+message (` (@char 18)`), that a `div`-less narrative still has an `xhtml`
+child (HAPI's string read creates an empty `div`; Frevo gives `<div/>` and
+creates nothing, under `DEV-0028`/`DEBT-0018`), that an unparseable narrative
+fails by name and reports its stored text through `*`, and that an XML
+document's narrative is its markup, so the harness's `text_content()` reading
+(`tests/oracle/engine.rs:1589-1594`) is a test defect for the oracle-builder.

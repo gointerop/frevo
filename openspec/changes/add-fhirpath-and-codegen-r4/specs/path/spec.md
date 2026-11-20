@@ -454,14 +454,38 @@ The engine SHALL navigate a resource through the node trait, addressing a polymo
   answers `div` with `new StringType(new XhtmlComposer(true).composeEx(div))`
   (`Narrative.java:364-366`), the parsed node re-serialised in XML mode, not
   pretty (`XhtmlComposer.java:59-68`, `:105-116`, `:486-488`)
-- **AND** so `Patient.text.div is string` and `Patient.text.div is FHIR.string`
-  are `true`, `Patient.text.div is xhtml` is `false`,
-  `Patient.text.div.ofType(string)` returns the item,
-  `Patient.text.div.toString()` and
-  `Patient.text.div = '<div xmlns="http://www.w3.org/1999/xhtml">hi</div>'` give
-  that string and `true`, and `Patient.text.div.contains('>hi<')` is `true`.
-  The static check types `div` as `xhtml` from the element definition, which
-  is in the string-like set, so the string functions pass the check
+- **AND** with the static check skipped, as `FhirPathR4` runs it:
+  - `Patient.text.div is string` is `true` and `Patient.text.div is xhtml` is
+    `false`: the `is` operator reads its right operand as plain text
+    (`executeTypeName`, `FHIRPathEngine.java:1531-1539`) and `opIs` compares it
+    with `fhirType()` and then with `sd.getType()` along the base chain
+    (`:1940-1965`);
+  - so `Patient.text.div is FHIR.string` is **`false`**: the text
+    `FHIR.string` equals neither `string` nor any `getType()` in the chain, and
+    the item, built by `getProperty`, is not `disallowExtensions`, so the
+    System branch does not apply;
+  - the function form reads a namespace (`funcIs`, `:5095-5145`), so
+    `Patient.text.div.is(string)` and `Patient.text.div.is(FHIR.string)` are
+    `true` and `Patient.text.div.is(xhtml)` is `false`;
+  - `Patient.text.div.ofType(string)` returns the item,
+    `Patient.text.div.toString()` and
+    `Patient.text.div = '<div xmlns="http://www.w3.org/1999/xhtml">hi</div>'`
+    give that string and `true`, and `Patient.text.div.contains('>hi<')` is
+    `true`, because at evaluation `contains` accepts the item's `string` type
+- **AND** the static check rejects the string functions on `div`: it types
+  `div` as `xhtml` from the element definition, and `checkContextString`
+  (`:3496-3502`, `:3865-3869`) accepts only a focus type reached by
+  `TypeDetails.hasType` from `string`, `code`, `uri`, `url`, `canonical` or `id`,
+  which `xhtml` is not; the 12-type string-like set (`:2407`) is used only at
+  evaluation. So checking `Patient.text.div.contains('>hi<')` against
+  `Patient` fails with
+  `Error evaluating FHIRPath expression: The function contains can only be used on string, uri, url, code, id but found [http://hl7.org/fhir/StructureDefinition/xhtml] (@char 18)`
+  (`FHIRPATH_STRING_SING_ONLY`, `Messages.properties:363`; the holder is the
+  `contains` node, column 18, byte offset 17; `TypeDetails.describe`,
+  `TypeDetails.java:450-452`)
+- **AND** the stored narrative is the `div` element's **markup**: in a JSON
+  document the `div` string, and in an XML document the serialised `div`
+  element with its descendants, not its text content
 - **AND** the value is the composition, not the stored text: in XML mode an
   element with no children and no content is written self-closed and a `"` in
   text is written `&quot;` (`XhtmlComposer.java:176-230`, `:313-350`), so a
@@ -492,6 +516,25 @@ The engine SHALL navigate a resource through the node trait, addressing a polymo
   function, rendering the result), not when `children()` navigates
   (`XhtmlType.java:77-78`, `:107-108`). That difference is `DEV-0028`, and
   the HTML-mode value and the edit are owed as `DEBT-0018`
+- **WHEN** the narrative has a `status` and **no** `div`
+- **THEN** `Patient.text.div` is empty (`getProperty` returns no value for a
+  null `div`, `Narrative.java:364-366`), but `Patient.text.children()` still
+  yields the `status` code and one `xhtml` item, so `.count()` is `2`:
+  `listChildren` adds `new XhtmlType(this)` unconditionally (`:343`)
+- **AND** in HAPI, reading that item's string calls `getDiv()`, which creates
+  an empty `div` on the narrative (`Narrative.java:316-323`, auto-create being
+  `Configuration`'s default, `Configuration.java:85-98`) and composes it in HTML
+  mode as `<div></div>`; a later `text.div` over that resource object is then
+  `<div/>`. In Frevo the item's string is `<div/>`, the XML-mode composition of
+  that empty `div`, and nothing is created, so `text.div` stays empty. Both are
+  part of `DEV-0028` and `DEBT-0018`
+- **WHEN** the stored narrative is markup the XHTML parser rejects
+- **THEN** `Patient.text.div` fails with the model's error, surfaced as
+  `path.errors.005` requires, and the `xhtml` item from `children()` reports
+  the stored text unchanged. HAPI has no counterpart: its parser rejects such a
+  resource when it is read, so no FHIRPath evaluation over it exists; whether
+  Frevo admits such a resource at all is decided where resources are ingested
+  (`add-store-crud`)
 - **AND** no live case grades it, so it is differential-only
 
 ### Requirement: Collection predicates
