@@ -943,9 +943,11 @@ checkpoint because it changes what a gate measures.
   as HAPI answers them (the side-dependent unit guard of `qtyEqual` and
   `qtyEquivalent`, and execution errors carrying HAPI's recorded
   `NullPointerException` text; `path.quantity.009`, `.011`-`.013`, `DEV-0017`,
-  `DEBT-0019`), `comparable()`, the incommensurable-comparison result, and the unknown-unit
+  `DEBT-0019`), the suite worker's answers in every configuration where HAPI's
+  server-facing worker raises `HAPI-0274: ` (`path.quantity.019`,
+  `DEV-0029`), `comparable()`, the incommensurable-comparison result, and the unknown-unit
   and non-UCUM-system behaviours.
-  Satisfies `path.quantity.001` through `path.quantity.018`.
+  Satisfies `path.quantity.001` through `path.quantity.019`.
 
 - [x] **45. Implement the boundary functions.** `lowBoundary`, `highBoundary` and
   `precision` as the pinned engine computes them: decimal boundaries edited as

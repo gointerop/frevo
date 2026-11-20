@@ -2812,3 +2812,25 @@ which the oracle-builder amends `path_quantity.rs`. The rest of
 cases are execution errors in Frevo with HAPI's recorded JVM message. The
 spec-prose differences are in `DEV-0017`, the wrong answers in `DEBT-0019`. The
 UCUM-dependent scenarios are unchanged and stay blocked on the owner.
+
+## 2026-11-20 — `add-fhirpath-and-codegen-r4` — quantity operations under HAPI's server-facing worker
+
+**Raised by** the proposer, after the forty-sixth review. HAPI's server-facing
+FHIRPath engine (`FhirPathR4`, and the engine `SearchParamExtractorR4` builds)
+runs on `HapiWorkerContext`, whose `getUcumService()` throws
+`UnsupportedOperationException("HAPI-0274: ")`
+(`hapi-fhir-structures-r4/src/main/java/org/hl7/fhir/r4/hapi/ctx/HapiWorkerContext.java:372-374`).
+Every quantity `=`/`~`, every ordered quantity comparison whose unit or code
+lists differ, quantity `*` and `/`, and `comparable()` over UCUM units
+therefore raise there, while the pinned suite, run on a worker with UCUM,
+records answers (`path.quantity.019`). The exception escapes `FhirPathR4`'s
+`HAPI-0255` wrapping and `FhirPathFilterInterceptor`'s catch. The spec chooses
+the suite's answers in every Frevo configuration (`DEV-0029`).
+
+**Decision needed.** Either (a) confirm `DEV-0029`: Frevo answers with UCUM
+everywhere, and the differential harness expects a HAPI `HAPI-0274` failure
+where Frevo answers; or (b) rule for HAPI's server behaviour, in which case
+Frevo's server-facing configuration must raise an equivalent error for those
+operations while the oracle harness keeps the suite worker's answers, and
+`path.quantity.019` and `DEV-0029` are rewritten. The HTTP answer for the
+escaped exception is `add-server-skeleton`'s either way.

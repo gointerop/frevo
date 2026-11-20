@@ -45,8 +45,8 @@ decision.
 
 ## Entries
 
-All twenty-five entries below come from `add-fhirpath-and-codegen-r4`;
-`DEV-0013`, `DEV-0015`, `DEV-0017`, `DEV-0018`, `DEV-0019`, `DEV-0021`, `DEV-0022`, `DEV-0023`, `DEV-0024`, `DEV-0025`, `DEV-0026` and `DEV-0028` are pending the owner's review (see their entries);
+All twenty-six entries below come from `add-fhirpath-and-codegen-r4`;
+`DEV-0013`, `DEV-0015`, `DEV-0017`, `DEV-0018`, `DEV-0019`, `DEV-0021`, `DEV-0022`, `DEV-0023`, `DEV-0024`, `DEV-0025`, `DEV-0026`, `DEV-0028` and `DEV-0029` are pending the owner's review (see their entries);
 `DEV-0012` and `DEV-0014` were ruled for HAPI (2026-11-17 and 2026-11-14).
 `DEV-0001` through `DEV-0010` are the same kind of case: the pinned R4
 `FHIRPathEngine` does something the FHIRPath specification does not describe. In
@@ -514,7 +514,7 @@ file, so its prose is not redistributable here (see `oracles/PINS.md`).
 
 - **Area:** path
 - **Scenario IDs:** path.equality.001, path.equality.002, path.equality.004, path.equality.005, path.equality.012, path.compare.001, path.compare.002, path.compare.003, path.compare.004, path.combine.001, path.math.001, path.math.003, path.math.005, path.math.006, path.math.007, path.math.008, path.compare.013, path.compare.014, path.compare.015, path.quantity.009, path.quantity.011, path.quantity.012, path.quantity.013
-- **HAPI 8.12.0 behaviour:** HAPI fails 38 cases of its own pinned suite
+- **HAPI 8.12.0 behaviour:** HAPI fails 43 cases of its own pinned suite
   (`oracles/fhirpath/hapi-8.12.0-results.json`) on these mechanisms.
   `removeTrailingZeros` (`ENGINE:2161-2182`) strips zeros from a number written
   with no decimal point, so `100 = 1.0` is `true` and `10 = 10.0` is `false`
@@ -894,6 +894,39 @@ file, so its prose is not redistributable here (see `oracles/PINS.md`).
   question in `tasks/blockers.md` ("element rewrite after the evaluation").
   No suite case, search parameter or known invariant reads the string of a
   `children()` or `descendants()` item of a narrative. Pending the owner.
+- **Normalizer impact:** none on stored bytes.
+- **Reviewed:** pending owner.
+
+### DEV-0029 — quantity operations answer with UCUM in every configuration, where HAPI's server-facing worker raises `HAPI-0274: `
+
+- **Area:** path
+- **Scenario IDs:** path.quantity.019
+- **HAPI 8.12.0 behaviour:** `HapiWorkerContext.getUcumService()` throws
+  `UnsupportedOperationException("HAPI-0274: ")`
+  (`hapi-fhir-structures-r4/.../hapi/ctx/HapiWorkerContext.java:372-374`), and
+  it is the worker of `FhirPathR4` (`FhirPathR4.java:34-36`, the R4
+  `newFhirPath()`, `FhirR4.java:54-57`) and of `SearchParamExtractorR4`
+  (`:99-101`). So under HAPI's server-facing engine every `=`/`~` between two
+  valued quantities, every ordered comparison whose `code` or `unit` lists
+  differ, quantity `*` and `/`, and `comparable()` over UCUM units raise
+  (`ENGINE:2265`, `2338`, `2443`, `2490`, `2540`, `2588`, `2793`, `3013`,
+  `4631`). The suite's worker carries a UCUM service
+  (`TestingUtilities.java:89`), so the pinned suite records UCUM-backed answers.
+- **Specification requirement:** FHIRPath 2.0.0 — quantities compare, add and
+  multiply through UCUM; none of these operations is an error.
+- **Chosen behaviour:** the suite worker's UCUM-backed answers, in every
+  configuration, as `DEV-0026` does for the type-name retry: Frevo has one
+  engine and one model, and its UCUM data is always loaded
+  (`path.quantity.016`).
+- **Configuration flag:** none
+- **Debt:** none
+- **Rationale:** Frevo answers where HAPI's server raises; it never answers
+  differently from the suite's recorded value, so this is not a wrong-answer
+  hazard. It is a genuine difference in observable behaviour, for example a
+  `_fhirpath` response or a search-parameter expression comparing quantities,
+  and the owner's decision is requested in `tasks/blockers.md` (2026-11-20,
+  "quantity operations under HAPI's server-facing worker"). Established from
+  the pinned source; not confirmed against a live HAPI.
 - **Normalizer impact:** none on stored bytes.
 - **Reviewed:** pending owner.
 

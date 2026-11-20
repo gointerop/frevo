@@ -9,8 +9,8 @@ capability, because that is the layout `openspec validate` parses and
 |---|---|---:|
 | `codegen` | [`specs/codegen/spec.md`](specs/codegen/spec.md) | 49 |
 | `model` | [`specs/model/spec.md`](specs/model/spec.md) | 83 |
-| `path` | [`specs/path/spec.md`](specs/path/spec.md) | 381 |
-| **Total** | | **513** |
+| `path` | [`specs/path/spec.md`](specs/path/spec.md) | 382 |
+| **Total** | | **514** |
 
 This file carries no normative text of its own. It carries the ID registry,
 which is the thing a later change must not collide with.
@@ -196,6 +196,13 @@ rewritten in place to HAPI's recorded results, with the cases HAPI fails graded
 `failed` under `path.oracle.012` and HAPI's `NullPointerException` text as
 Frevo's execution-error message (`DEV-0017`, `DEBT-0019`). No ID was added.
 
+After the forty-sixth review, the quantity requirement states that its
+scenarios grade the suite's worker, `path.quantity.015`'s no-UCUM clause was
+corrected to a branch neither HAPI configuration nor Frevo reaches, and **1 ID
+was added**: `path.quantity.019`, the `HAPI-0274: ` failures of HAPI's
+server-facing worker, which Frevo does not reproduce (`DEV-0029`, pending the
+owner). None was removed, renumbered, reused or repurposed.
+
 | Area | IDs allocated | Range |
 |---|---:|---|
 | `codegen.inputs.*` | 6 | `001`-`006` |
@@ -232,7 +239,7 @@ Frevo's execution-error message (`DEV-0017`, `DEBT-0019`). No ID was added.
 | `path.string.*` | 29 | `001`-`029` |
 | `path.convert.*` | 14 | `001`-`014` |
 | `path.datetime.*` | 7 | `001`-`007` |
-| `path.quantity.*` | 18 | `001`-`018` |
+| `path.quantity.*` | 19 | `001`-`019` |
 | `path.boundary.*` | 19 | `001`-`019` |
 | `path.types.*` | 13 | `001`-`013` |
 | `path.env.*` | 17 | `001`-`017` |
@@ -265,10 +272,10 @@ contain `<test ...>` text — and are leftover Java, not well-formed test
 elements. `documentFunctions` is 115 cases, not 114. The `invalid` counts are
 unaffected: 7 syntax, 29 semantic, 27 execution.
 
-**Thirty-one scenarios have no live case in the pinned suite to grade them and
+**Thirty-two scenarios have no live case in the pinned suite to grade them and
 say so in their own text**: `path.subset.003`, `path.subset.013`,
 `path.compare.007`, `path.compare.011`, `path.compare.015`, `path.errors.006`,
-`path.errors.007`, `path.navigation.025`, `path.convert.012`,
+`path.errors.007`, `path.navigation.025`, `path.quantity.019`, `path.convert.012`,
 `path.datetime.003`, `path.quantity.015`, `path.quantity.018`,
 `path.boundary.012` through `path.boundary.019`, `path.env.015`,
 `path.env.016`, `path.env.017`, `path.utility.017`, `path.utility.022`,
@@ -783,6 +790,7 @@ Every allocated ID, grouped as it is grouped in the delta files.
 - `path.quantity.016` — UCUM data comes from the pinned `ucum-essence.xml`
 - `path.quantity.018` — a quantity whose system is not UCUM is not canonicalised
 - `path.quantity.017` — a quantity with an unknown unit code does not crash
+- `path.quantity.019` — under HAPI's server-facing worker every UCUM-consulting quantity operation raises `HAPI-0274: `
 
 **Requirement: Boundary functions**
 

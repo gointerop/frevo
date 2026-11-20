@@ -2228,7 +2228,7 @@ The engine SHALL implement `today`, `now` and `precision`, and SHALL take the ev
 
 ### Requirement: Quantities and UCUM
 
-The engine SHALL compare, add, subtract, multiply and divide quantities by converting to UCUM canonical form from the pinned `ucum-essence.xml`, and SHALL implement `comparable`.
+The engine SHALL compare, add, subtract, multiply and divide quantities by converting to UCUM canonical form from the pinned `ucum-essence.xml`, and SHALL implement `comparable`, answering as HAPI's engine does under the suite's worker (`path.quantity.019`).
 
 #### Scenario: [path.quantity.001] quantities in commensurable UCUM units compare equal after conversion
 
@@ -2380,9 +2380,14 @@ The engine SHALL compare, add, subtract, multiply and divide quantities by conve
 - **THEN** the result is a boolean, because the engine converts each operand to
   its canonical magnitude and compares the two decimals with no dimension check
   — `0.01 < 1` is `true`
-- **WHEN** the same expression is evaluated with no UCUM data available
-- **THEN** the result is `false`, which is what the engine returns outright for
-  two quantities whose unit codes differ when no UCUM service is configured
+- **AND** the engine also has a branch for a worker whose `getUcumService()`
+  returns `null`: there two quantities whose `code` (for `<`) or `unit` (for
+  `<=`, `>`, `>=`) lists differ compare `false` outright
+  (`FHIRPathEngine.java:2443-2445`, `:2490-2492`, `:2540-2542`, `:2588-2590`).
+  Neither HAPI configuration reaches it: the suite's worker has a UCUM service,
+  and HAPI's server-facing worker throws (`path.quantity.019`). Frevo has no
+  configuration without UCUM data (`path.quantity.016`), so the branch is not
+  reachable in Frevo and is not graded
 - **AND** this differs from the FHIRPath specification, which requires
   incommensurable quantities to be an error or empty; the divergence is
   recorded as `DEV-0005` and resolved as HAPI's behaviour
@@ -2409,6 +2414,52 @@ The engine SHALL compare, add, subtract, multiply and divide quantities by conve
   recorded by the harness and matched, rather than assumed; it is not the same
   as the no-UCUM-data case in `path.quantity.015`
 - **AND** no live case grades it, so it is differential-only
+
+#### Scenario: [path.quantity.019] under HAPI's server-facing worker every UCUM-consulting quantity operation raises `HAPI-0274: `
+
+- **WHEN** a quantity operation that consults the worker's UCUM service is
+  evaluated by HAPI's server-facing engine: `FhirPathR4`, the `newFhirPath()`
+  of every R4 context (`hapi-fhir-structures-r4/src/main/java/org/hl7/fhir/r4/hapi/ctx/FhirR4.java:54-57`),
+  built on `HapiWorkerContext` (`FhirPathR4.java:34-36`), which is also the
+  worker of `SearchParamExtractorR4`
+  (`hapi-fhir-jpaserver-searchparam/.../SearchParamExtractorR4.java:99-101`)
+- **THEN** evaluation fails with `java.lang.UnsupportedOperationException`
+  whose message is exactly `HAPI-0274: `, because
+  `HapiWorkerContext.getUcumService()` throws it
+  (`hapi-fhir-structures-r4/src/main/java/org/hl7/fhir/r4/hapi/ctx/HapiWorkerContext.java:372-374`)
+  and the engine calls it:
+  - in `qtyEqual` and `qtyEquivalent` for every pair of quantities that both
+    have a value (`FHIRPathEngine.java:2265`, `:2338`), so every `=`, `!=`,
+    `~` and `!~` between two valued quantities raises: `path.quantity.001` to
+    `.004`, `.009` to `.012`, `.017`, `1 'mg' = 1 'mg'`, and the
+    `testQuantity1` to `6` and `9` to `11` cases;
+  - in `<` when the two `code` lists differ, and in `<=`, `>` and `>=` when the
+    two `unit` lists differ (`:2443`, `:2490`, `:2540`, `:2588`): `6 days < 1 week`
+    and `8 days > 1 week` (`path.quantity.005`), `1 'cm' < 1 's'`
+    (`path.quantity.015`) and `testLessThan33` (`path.quantity.013`) raise;
+  - in `*` and `/` of two quantities (`:2793`, `:3013`: `path.quantity.006`,
+    `.007`, `.008`) and in `comparable()` with a UCUM `system`
+    (`:4631`, `path.quantity.014`)
+- **AND** an ordered comparison whose `code` (for `<`) or `unit` (for the other
+  three) lists are equal never consults the worker and answers by value:
+  `testLessOrEqual30` and `testGreaterThan30` (`path.quantity.013`) are `true`
+  under the server-facing worker as under the suite's
+- **AND** the exception is not a `FHIRException`, so `FhirPathR4` does not wrap
+  it as `HAPI-0255: ` (it catches only `FHIRException`, `FhirPathR4.java:66-70`),
+  and `FhirPathFilterInterceptor`, which catches only
+  `FhirPathExecutionException` (`FhirPathFilterInterceptor.java:80-84`), lets
+  it escape. What the server then answers over HTTP is `add-server-skeleton`'s
+- **AND** Frevo does not reproduce these failures: in every configuration it
+  answers as the suite's worker does (the other `path.quantity.*` scenarios),
+  recorded as `DEV-0029`, pending the owner (`tasks/blockers.md`, 2026-11-20,
+  "quantity operations under HAPI's server-facing worker")
+- **AND** every other `path.quantity.*` scenario states the engine's answer
+  under the **suite's worker**, the `TestingUtilities` context that
+  `FHIRPathTests` evaluates with, which carries a UCUM service
+  (`org.hl7.fhir.r4/src/main/java/org/hl7/fhir/r4/test/utils/TestingUtilities.java:89`);
+  that is what the pinned suite's expectations and HAPI's recorded run reflect
+- **AND** no live case grades it: the suite runs under its own worker. It is
+  differential-only, against a live HAPI 8.12.0
 
 #### Scenario: [path.quantity.017] a quantity with an unknown unit code does not crash
 
