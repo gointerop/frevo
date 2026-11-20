@@ -1186,6 +1186,30 @@ checkpoint because it changes what a gate measures.
   `bench/micro/` path workloads plus the suite wall-clock, with their budgets
   and the first baseline.
   Satisfies `path.perf.001` through `path.perf.006`.
+  **Implemented, not ticked.** `path_perf` is 5 of 6. The workloads are
+  `crates/frevo-path/benches/path_micro.rs` (`path-compile`,
+  `path-suite-wallclock`, over the committed oracle harness included by path)
+  and `crates/frevo-model/benches/path_bytes.rs` (`path-eval-compiled`,
+  `path-extract-patient`, over the byte-backed `ResourceNode`, `R4Model` and
+  `ServerHostServices` with an application context -- they live in
+  `frevo-model` because `path.perf.004` needs a byte-backed resource and
+  `path.api.008` forbids the edge the other way). All three `bench/micro/`
+  benches now write through `bench/micro/record.rs`, which replaces only the
+  writer's own rows. Baseline and results recorded at `584e668`, clean tree,
+  release, on a Windows host and not the reference environment: compile
+  7.85 us, eval 3.48 us (one parse), extract 136.7 us with 0 of 19
+  materialised elements untouched, suite 0.219 s. `ResourceNode::children`
+  now filters by name before building nodes (eval 5.11 -> 3.38 us, extract
+  234 -> 136 us) and `primitive()` records the element as materialised, so
+  `.004`'s zero is measured rather than vacuous. Red: `path.perf.005`, whose
+  in-process half requires zero `did-not-run` and the run has 35 (the
+  `toQuantity`/UCUM quantity cases); the recorded 0.219 s is within budget.
+  Finding for the oracle: the in-process ratio halves of `path.perf.001` and
+  `.002` (last-50/last-100 against first, debug profile) fail intermittently
+  under parallel load -- about half of `cargo test` runs, while every
+  `--test-threads=1` run and every isolated run passes (e.g. "first 50
+  compiles median 35.50 us, the last 50 median 68.95 us" with the other five
+  tests running beside it).
 
 ---
 
