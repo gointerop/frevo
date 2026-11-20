@@ -287,7 +287,16 @@ The engine SHALL navigate a resource through the node trait, addressing a polymo
 
 - **WHEN** `Patient.name.prefix` is evaluated over `patient-example.xml`, which
   has none
-- **THEN** the result is an empty collection (`testJoin/testJoinEmpty`)
+- **THEN** the result is an empty collection
+- **AND** the suite grades the same absence with `testBasics/testSimpleNone`
+  (`name.suffix`, expecting no output), which HAPI passes
+  (`oracles/fhirpath/hapi-8.12.0-results.json:18`) and Frevo must pass
+- **AND** `testJoin/testJoinEmpty` (`name.prefix.join(',')`) is **not** a
+  grading case for this scenario: navigation yields empty, but `join` then adds
+  one empty string (`funcJoin`, `FHIRPathEngine.java:4547-4567`), so HAPI's
+  recorded status is `failed` (`hapi-8.12.0-results.json:457`) and Frevo's
+  required status is `failed` too, under `path.string.015` and
+  `path.oracle.012`
 
 #### Scenario: [path.navigation.006] a polymorphic element is navigated by its base name
 
@@ -426,9 +435,15 @@ The engine SHALL navigate a resource through the node trait, addressing a polymo
 
 #### Scenario: [path.navigation.024] the miscellaneous accessor cases all hold
 
-- **WHEN** the `testMiscellaneousAccessorTests`, `testBasics` and
-  `testObservations` groups' cases are evaluated
-- **THEN** every case yields its stated output
+- **WHEN** the `testMiscellaneousAccessorTests` (3 cases), `testBasics` (8) and
+  `testObservations` (10) groups' cases are evaluated
+- **THEN** every case HAPI passes yields its stated output: all 3, 7 of the 8
+  and all 10
+- **AND** the one exception is `testBasics/testEscapedIdentifierUnicode`, which
+  HAPI fails at the check stage (`oracles/fhirpath/hapi-8.12.0-results.json:20`)
+  and Frevo must fail the same way, as `path.navigation.001` states: its
+  required status is `failed` (parity under `path.oracle.012`), and a Frevo pass
+  would be listed `ahead-of-hapi`, not accepted as a pass of this scenario
 
 ### Requirement: Collection predicates
 
@@ -1034,6 +1049,58 @@ The engine SHALL implement the four ordered comparison operators as `FHIRPathEng
 - **AND** the specification does not describe the mutation; HAPI's recorded run
   is `failed` for `testLessThan28`, and Frevo matches it as parity
   (`path.oracle.012`)
+- **AND** a `dateTime` **literal** operand is rewritten the same way, within
+  the evaluation that compared it; `path.compare.015` states what that is
+  observable through and why it does not outlive the evaluation
+- **AND** this scenario grades the rewrite **within one evaluation** only.
+  Upstream the operand is the caller's own in-memory element object, so the
+  Zulu string also remains on that resource after the evaluation returns;
+  whether Frevo must reproduce that past the end of an evaluation is not decided
+  by this scenario (`tasks/blockers.md`, 2026-11-20, "element rewrite after the
+  evaluation"), and no scenario grades it until the owner rules
+- **AND** returning the Zulu string of a value only because it was compared is a
+  wrong answer, not an error; the flag that would restore the operand's own
+  string is `DEBT-0017` (origin `DEV-0017`)
+
+#### Scenario: [path.compare.015] an ordered comparison rewrites a `dateTime` literal for the rest of that evaluation, and only for the value it produced
+
+- **WHEN** `(@2012-04-15T10:00:00+02:00).select($this < @2013-01-01T00:00:00Z and $this.toString() = '2012-04-15T08:00:00Z')`
+  is evaluated
+- **THEN** the result is the single boolean `true`: the literal is the focus of
+  `select`, `$this` is that same value (`funcSelect`, `changeThis`,
+  `FHIRPathEngine.java:6263-6273`, `:4726-4734`), the comparison sets it to Zulu
+  (`compareDateTimeElements`, `:635-648`; `setTimeZoneZulu`,
+  `BaseDateTimeType.java:690-694`), and `and` evaluates its right operand after
+  its left (`:1508-1525`; `preOperate`, `:1542`, short-circuits only a `false` left), so `toString()` reads `2012-04-15T08:00:00Z`
+- **AND** `(@2012-04-15T10:00:00+02:00).select(($this < @2013-01-01T00:00:00Z) and $this.toString() = '2012-04-15T10:00:00+02:00')`
+  is the single boolean `false`
+- **AND** an offset-less literal is placed in the evaluation zone first
+  (`path.datetime.004`): at the suite's zone, offset 0,
+  `(@2012-04-15T10:00:00).select($this < @2013-01-01T00:00:00Z and $this.toString() = '2012-04-15T10:00:00Z')`
+  is `true`
+- **AND** a literal whose precision is a day or coarser (`@2012-04-15`, a
+  `DateType`) is never rewritten, and neither is an `instant`, because neither
+  is a `DateTimeType` and `compareDateTimeElements` compares a copy
+  (`:636-637`)
+- **AND** a **second occurrence** of the same literal text is a separate value
+  and is not rewritten:
+  `(@2012-04-15T10:00:00+02:00 < @2013-01-01T00:00:00Z) and @2012-04-15T10:00:00+02:00.toString() = '2012-04-15T10:00:00+02:00'`
+  is `true` (the lexer ends the literal before `.toString`: a `.` is part of a
+  date token only at the millisecond position, `FHIRLexer.java:335-338`). A
+  `@` literal is held in the parsed expression as its text
+  (`processConstant` returns a `FHIRConstant`, `:1335-1336`), and every
+  evaluation of the node builds a new value from that text (`resolveConstant`,
+  `processDateConstant`, `:1653-1672`, `:1674-1736`)
+- **AND** therefore the rewrite does **not** persist across evaluations of one
+  parsed expression:
+  `(@2012-04-15T10:00:00+02:00).select($this.toString() = '2012-04-15T10:00:00+02:00' and $this < @2013-01-01T00:00:00Z)`,
+  parsed once and evaluated twice, is `true` on both evaluations (the string is
+  read before the comparison, and the second evaluation starts from the
+  literal's text again); a rewrite carried over from the first evaluation would
+  make the second one `false`
+- **AND** no live case grades it, so it is differential-only. The
+  specification does not describe the mutation (`DEV-0017`); the wrong-answer
+  hazard is `DEBT-0017`
 
 #### Scenario: [path.compare.014] `<=` with a unit-less left quantity and a unit-bearing right quantity fails
 
@@ -1943,8 +2010,28 @@ The engine SHALL implement `today`, `now` and `precision`, and SHALL take the ev
 - **AND** changing the machine's local time zone changes neither result, which
   is the property `FHIRPathTests.test` has to obtain by calling
   `TimeZone.setDefault` because the engine reads the platform default
-- **AND** the oracle harness sets that configuration to `UTC+1100`, so the
-  suite's result does not depend on where it runs
+- **AND** the oracle harness sets that configuration to **offset 0 (UTC)**, so
+  the suite's result does not depend on where it runs. That is the zone HAPI's
+  recorded run used: `FHIRPathTests.test` calls
+  `TimeZone.setDefault(TimeZone.getTimeZone("UTC+1100"))`
+  (`org.hl7.fhir.r4/src/test/java/org/hl7/fhir/r4/test/FHIRPathTests.java:174`),
+  but `UTC+1100` is not a zone id `java.util.TimeZone` recognises (a custom id
+  needs the `GMT` prefix), so `getTimeZone` returns `GMT`, raw offset 0. The
+  comment above that line ("Grahame is in UTC+11") states the intent, not the
+  effect
+- **AND** the record confirms offset 0: `testEquality/testEquality23` and
+  `testNEquality/testNEquality17`
+  (`@2012-04-15T15:00:00Z = / != @2012-04-15T10:00:00`, expecting no output)
+  are `passed` (`oracles/fhirpath/hapi-8.12.0-results.json:496`, `:530`). At
+  offset 0 the offset-less operand is `10:00Z`, five hours from `15:00Z` and
+  inside the +-14 hour window, so the answer is empty; at +11:00 it would be
+  `23:00Z` the previous day, sixteen hours away, and the answer `false`
+- **AND** at the harness's offset 0 Frevo's required status is `passed` for
+  `testEquality23`, `testNEquality17`, `testLiterals/testDateTimeGreaterThanDate2`
+  (`now() > today()`, expecting no output, `hapi-8.12.0-results.json:104`;
+  `today()` and the Zulu form of `now()` then always fall on the same day, so
+  the comparison is undecided), and the four clock cases `testToday/testToday1`,
+  `testToday2`, `testNow/testNow1` and `testNow2`, at any time of day
 - **AND** the zone the engine reads also decides how a `dateTime` **without** a
   UTC offset is placed on the time line. For `=` against one with an offset it
   sets the +-14 hour window of `couldBeTheSameTime`
@@ -1952,9 +2039,12 @@ The engine SHALL implement `today`, `now` and `precision`, and SHALL take the ev
   `:721-723`), so the answer is `false` or empty by zone. For `<`, `>`, `<=`
   and `>=`, `compareDateTimeElements` converts both operands to Zulu when finer
   than a day (`FHIRPathEngine.java:643-648`), so
-  `@2015-02-04T10:00:00 < @2015-02-04T05:30:00Z` depends on the zone too. The
-  suite evaluates at `UTC+1100`; Frevo reads a missing offset as the configured
-  evaluation zone, which for the oracle harness is the same `UTC+1100`, and as
+  `@2015-02-04T10:00:00 < @2015-02-04T05:30:00Z` depends on the zone too: at
+  offset 0, `<` and `<=` are `false` and `>` and `>=` are `true` (`10:00Z` is
+  after `05:30Z`); on an engine configured at +11:00 (660 minutes), `<` and `<=`
+  are `true` and `>` and `>=` are `false` (`23:00Z` the previous day). The
+  suite evaluates at offset 0; Frevo reads a missing offset as the configured
+  evaluation zone, which for the oracle harness is the same offset 0, and as
   UTC where none is configured. Recorded as `DEV-0018`
 
 #### Scenario: [path.datetime.005] `precision()` reports the component count of a date, dateTime or time
@@ -3562,7 +3652,7 @@ deviation from HAPI, so neither needs a `DEV-nnnn` entry: both are HAPI.
 
 ### Requirement: Execution errors
 
-The engine SHALL report an evaluation failure as an error naming the sub-expression, and SHALL never panic or substitute an empty collection for a failure.
+The engine SHALL report an evaluation failure as an error carrying HAPI's message and the position of the failing sub-expression, and SHALL never panic or substitute an empty collection for a failure.
 
 #### Scenario: [path.errors.001] 21 of the 27 execution-invalid oracle cases fail at evaluation; the other 6 fail at parse, as for HAPI
 
@@ -3576,11 +3666,33 @@ The engine SHALL report an evaluation failure as an error naming the sub-express
   `path.oracle.005`'s stage rule, as `path.oracle.014` states. HAPI fails them
   the same way (`FHIRPathTests.java:199-202`)
 
-#### Scenario: [path.errors.002] an error names the expression and the position
+#### Scenario: [path.errors.002] an error carries HAPI's message and the position of the failing sub-expression, not its text
 
-- **WHEN** any execution error is reported
-- **THEN** the error names the sub-expression and its offset within the
-  expression
+- **WHEN** `1 < 'a'` is evaluated, and then `(1=1) and 1 < 'a'` and
+  `(1=1) and (1=1) and 1 < 'a'`
+- **THEN** each fails with an execution error whose message is exactly
+  `Error evaluating FHIRPath expression: Unable to compare values of type integer and string`
+  followed by ` (@char 1)`, ` (@char 11)` and ` (@char 21)` respectively:
+  `makeException` formats `FHIRPATH_CANT_COMPARE` with both `fhirType()`s
+  (`FHIRPathEngine.java:2435`, `:584-594`) and constructs
+  `PathEngineException(message, id, holder.getStart(), holder.toString())`,
+  whose constructor appends only `rep(location, expression)`
+  (`org.hl7.fhir.utilities/src/main/java/org/hl7/fhir/exceptions/PathEngineException.java:81-93`)
+- **AND** the error's offset is the position of the failing operator node's
+  start within the whole expression, 0, 10 and 20 (zero-based) for the three
+  expressions; `@char` is the same position one-based (`SourceLocation` starts
+  at column 1, `FHIRLexer.java:56`)
+- **AND** the message does **not** contain the failing sub-expression's text
+  (`1 < 'a'`): the `expression` argument is used only when the location is
+  `null` and the expression text is empty, where `rep` appends ` (@~` and the
+  empty text and `)`; with a non-null location on a later line it appends
+  ` (@line L char C)` instead of ` (@char C)`
+- **AND** an engine with no `location` configured, which is every engine the
+  suite and the harness run, adds no ` (at ...)` fragment
+  (`FHIRPATH_LOCATION`, `:586-588`)
+- **AND** this holds for every execution error raised through `makeException`
+  or `makeExceptionPlural` (`:572-582`); the 21 evaluation-stage cases of
+  `path.errors.001` are graded on their stage, not on their message
 
 #### Scenario: [path.errors.003] evaluation never panics
 
@@ -3812,6 +3924,11 @@ The oracle harness SHALL run every case in the vendored suite without modifying 
   the suite has exactly one `<output type="Quantity">` while
   `LowBoundary/LowBoundaryQuantity` and `HighBoundary/HighBoundaryQuantity`
   expect `1.58650000 'cm'` and `1.58750000 'm'` from a bare `<output>`
+- **AND** that one typed case is `testTypes/testStringIntegerLiteralToQuantity`
+  (`'1'.toQuantity()`, expecting `1 '1'`, `tests-fhir-r4.xml:413`), in group
+  `testTypes`, not `testLiterals`; HAPI records it `passed`
+  (`oracles/fhirpath/hapi-8.12.0-results.json:186`), and it is graded together
+  with the two boundary cases, all three required `passed`
 - **AND** every other result item is compared as a primitive, and a non-Quantity
   result item that is not a primitive fails the case
 

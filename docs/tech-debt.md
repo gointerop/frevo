@@ -474,3 +474,36 @@ them is the whole reason that decision is safe to make.
   `crates/frevo-path/src/eval/boundary.rs` and the flag plumbing.
 - **Status:** open
 - **Reviewed:** not yet. Raised 2026-11-18.
+
+### DEBT-0017 — an ordered comparison changes a `dateTime`'s string to its Zulu form
+
+- **Area:** path
+- **Origin:** `DEV-0017`, change `add-fhirpath-and-codegen-r4`, raised from the
+  implementer's findings of 2026-11-20 (`tasks/blockers.md`)
+- **Owed:** a configuration flag, defaulting to HAPI's behaviour, under which
+  `<`, `<=`, `>` and `>=` compare a `dateTime` without changing it, so that a
+  later read of the compared element (`path.compare.013`, `testLessThan28`) or
+  of the compared literal's value through `$this` (`path.compare.015`) returns
+  the string the resource or the expression carried, and not the Zulu
+  rendering of the same instant. Also owed: an upstream report to
+  `org.hl7.fhir.core` (`compareDateTimeElements`, `FHIRPathEngine.java:635-648`,
+  writes to its operand instead of to a copy).
+- **Why deferred:** constitution section 1 and the owner's decision of
+  2026-11-08: no flag is added speculatively. HAPI fails `testLessThan28` the
+  same way, so parity is exact; no consumer, search parameter or IG invariant is
+  known to compare a `dateTime` and then read the same value's string within
+  one expression.
+- **Cost if unpaid:** an expression that compares a `dateTime` and then renders,
+  string-compares or returns the same value gets `2012-04-15T08:00:00Z` where
+  the input said `2012-04-15T10:00:00+02:00`: the same instant, a different
+  string, silently. A `toString()`, `=` on strings, `startsWith`, or a returned
+  value shown to a user is wrong; the same answer HAPI gives.
+- **Trigger:** a differential diff or consumer report involving a compared
+  `dateTime` read back in the same expression; an IG invariant or generated
+  search-parameter expression that compares a `dateTime` and reads it again; or
+  a re-pin of `org.hl7.fhir.core` that changes `compareDateTimeElements` or
+  `BaseDateTimeType.setTimeZoneZulu`.
+- **Size:** small; the rewrite is confined to
+  `crates/frevo-path/src/eval/rewrite.rs`, and the flag would skip it.
+- **Status:** open
+- **Reviewed:** not yet. Raised 2026-11-20.

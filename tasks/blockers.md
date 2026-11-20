@@ -2358,3 +2358,44 @@ Also found, not decided (proposal defects, not implemented):
 4. `fhirpath_oracle.rs:998` addresses `testLiterals/testStringIntegerLiteralToQuantity`,
    which is in group `testTypes` (`hapi-8.12.0-results.json:186`). Needs the
    oracle-builder.
+
+**Resolved in the spec, 2026-11-20 (proposer)**, under the owner's standing
+ruling; each claim above was checked against `reference/` at the pins and
+`oracles/fhirpath/hapi-8.12.0-results.json`. `path.datetime.004` and `DEV-0018`
+now state the suite zone as offset 0 (`TimeZone.getTimeZone("UTC+1100")`
+returns `GMT`, raw offset 0, confirmed on a local JDK). `path.errors.002` now
+states HAPI's message (`... (@char N)`, no sub-expression text).
+`path.navigation.005` no longer names `testJoinEmpty` as a pass;
+`path.navigation.024` excepts `testEscapedIdentifierUnicode`; `path.oracle.009`
+names `testTypes/testStringIntegerLiteralToQuantity`. Finding 2 was **wrong in
+its premise** for the R4 engine: a `@` literal is held as a `FHIRConstant`
+(text, `FHIRPathEngine.java:1336`) and rebuilt on every evaluation
+(`:1653-1672`, `:1674-1736`), so the literal's rewrite lasts only for the
+evaluation that compared it, observable through `$this`; that is the new
+`path.compare.015`. The hazard is `DEBT-0017`. The test changes are the
+oracle-builder's (listed in the proposer's hand-off): `fhirpath_oracle.rs`
+(the zone test and constant, the `testStringIntegerLiteralToQuantity` address),
+`oracle/engine.rs:136`, `path_navigation.rs:603-604` and `:1203`,
+`path_parse_errors.rs:556-571`, and new tests for `path.compare.015`.
+
+## 2026-11-20 — `add-fhirpath-and-codegen-r4` — element rewrite after the evaluation
+
+**Raised by** the proposer, while amending `path.compare.013`. Upstream,
+`compareDateTimeElements` (`FHIRPathEngine.java:635-648`) calls
+`setTimeZoneZulu(true)` on the operand **object**, and for an element that
+object is part of the caller's in-memory resource. So in HAPI the Zulu string
+stays on the resource after the evaluation returns: a second evaluation over
+the same resource object, or any later code reading that element, sees
+`...Z` instead of the original offset. Frevo's evaluation never writes its
+input; its rewrite is a per-evaluation overlay dropped at the end
+(`crates/frevo-path/src/eval/rewrite.rs`, module header). Within one
+evaluation the two agree (`path.compare.013` grades only that). After the
+evaluation they differ, and nothing records the difference: it is not a spec
+prose deviation (the specification describes no mutation) and not yet a known
+gap. Where this is observable at the server level is unestablished — every HAPI
+request parses its own resource, so it needs a caller that evaluates twice over
+one parsed object (for example several search parameters or invariants over
+the same resource in one request). Decision needed: either Frevo reproduces the
+persistence (contradicting constitution section 6's bytes-as-stored design for
+the input) and a scenario is added, or the difference is recorded as a known
+gap or a deviation with the owner's approval. Until then no scenario grades it.

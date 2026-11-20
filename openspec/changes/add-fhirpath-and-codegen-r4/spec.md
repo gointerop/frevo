@@ -9,8 +9,8 @@ capability, because that is the layout `openspec validate` parses and
 |---|---|---:|
 | `codegen` | [`specs/codegen/spec.md`](specs/codegen/spec.md) | 49 |
 | `model` | [`specs/model/spec.md`](specs/model/spec.md) | 83 |
-| `path` | [`specs/path/spec.md`](specs/path/spec.md) | 377 |
-| **Total** | | **509** |
+| `path` | [`specs/path/spec.md`](specs/path/spec.md) | 378 |
+| **Total** | | **510** |
 
 This file carries no normative text of its own. It carries the ID registry,
 which is the thing a later change must not collide with.
@@ -88,6 +88,29 @@ with no value). None was removed, renumbered, reused or repurposed. The spec-pro
 HAPI gives are `DEBT-0016`. The delta changed after `review.md` was
 `APPROVED`, so the spec-reviewer must re-review it.
 
+Revision after the implementer's findings of 2026-11-20 (`tasks/blockers.md`,
+2026-11-20, "the suite's `UTC+1100` is GMT in Java"), under the owner's standing
+ruling that HAPI 8.12.0's observable behaviour is the reference. **6 existing
+scenarios were rewritten in place**: `path.datetime.004` (the suite zone is
+offset 0, not +11:00: `TimeZone.getTimeZone("UTC+1100")` is `GMT`, and HAPI's
+record passes `testEquality23` and `testNEquality17`, which only offset 0
+gives), `path.errors.002` (HAPI's message carries ` (@char N)` and never the
+sub-expression's text; the requirement sentence above it was corrected to
+match), `path.navigation.005` (`testJoin/testJoinEmpty` is not its grading
+case: HAPI fails it through `join`, `path.string.015`),
+`path.navigation.024` (`testBasics/testEscapedIdentifierUnicode` is the one
+case of the three groups that HAPI fails, as `path.navigation.001` already
+said), `path.oracle.009` (the one typed `Quantity` case is
+`testTypes/testStringIntegerLiteralToQuantity`, named with its group) and
+`path.compare.013` (scoped to one evaluation, with its wrong-answer hazard
+named). **1 ID was added**: `path.compare.015`, the rewrite of a `dateTime`
+**literal**, which is observable through `$this` within the evaluation and,
+because the R4 engine holds a `@` literal as text and builds a fresh value on
+every evaluation, does not persist across evaluations of one parse. None was
+removed, renumbered, reused or repurposed. The hazard is `DEBT-0017` (origin
+`DEV-0017`); `DEV-0018` was restated for offset 0. The delta changed after
+`review.md` was `APPROVED`, so the spec-reviewer must re-review it.
+
 | Area | IDs allocated | Range |
 |---|---:|---|
 | `codegen.inputs.*` | 6 | `001`-`006` |
@@ -117,7 +140,7 @@ HAPI gives are `DEBT-0016`. The delta changed after `review.md` was
 | `path.subset.*` | 13 | `001`-`013` |
 | `path.combine.*` | 6 | `001`-`006` |
 | `path.equality.*` | 12 | `001`-`012` |
-| `path.compare.*` | 14 | `001`-`014` |
+| `path.compare.*` | 15 | `001`-`015` |
 | `path.logic.*` | 10 | `001`-`010` |
 | `path.math.*` | 14 | `001`-`014` |
 | `path.mathfn.*` | 11 | `001`-`011` |
@@ -157,9 +180,9 @@ contain `<test ...>` text — and are leftover Java, not well-formed test
 elements. `documentFunctions` is 115 cases, not 114. The `invalid` counts are
 unaffected: 7 syntax, 29 semantic, 27 execution.
 
-**Twenty-seven scenarios have no live case in the pinned suite to grade them and
+**Twenty-eight scenarios have no live case in the pinned suite to grade them and
 say so in their own text**: `path.subset.003`, `path.subset.013`,
-`path.compare.007`, `path.compare.011`, `path.convert.012`,
+`path.compare.007`, `path.compare.011`, `path.compare.015`, `path.convert.012`,
 `path.datetime.003`, `path.quantity.015`, `path.quantity.018`,
 `path.boundary.012` through `path.boundary.019`, `path.env.015`,
 `path.env.016`, `path.env.017`, `path.utility.017`, `path.utility.022`,
@@ -548,6 +571,7 @@ Every allocated ID, grouped as it is grouped in the delta files.
 - `path.compare.010` — a Period invariant written with raw comparison and one written with boundaries differ
 - `path.compare.013` — an ordered comparison of a dateTime rewrites the operand's stored string to Zulu
 - `path.compare.014` — `<=` with a unit-less left quantity and a unit-bearing right quantity fails
+- `path.compare.015` — an ordered comparison rewrites a `dateTime` literal for the rest of that evaluation, and only for the value it produced
 
 **Requirement: Boolean logic**
 
@@ -800,7 +824,7 @@ Every allocated ID, grouped as it is grouped in the delta files.
 **Requirement: Execution errors**
 
 - `path.errors.001` — 21 of the 27 execution-invalid oracle cases fail at evaluation; the other 6 fail at parse, as for HAPI
-- `path.errors.002` — an error names the expression and the position
+- `path.errors.002` — an error carries HAPI's message and the position of the failing sub-expression, not its text
 - `path.errors.003` — evaluation never panics
 - `path.errors.004` — evaluation is bounded for an adversarial expression
 - `path.errors.005` — an error from `frevo-model` is surfaced, not swallowed into empty

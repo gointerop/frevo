@@ -59,8 +59,11 @@ checkpoint because it changes what a gate measures.
   while the unordered branch compares the plain string value with no prefix and
   matches each item against any expected element on type-and-value. Never strip
   the `@` from an expectation or normalise it away on either side; that is
-  weakening the oracle under constitution rule 3. Fix the evaluation time zone to `UTC+1100`, as
-  `FHIRPathTests.test` does. The harness runs against a trait object, so it
+  weakening the oracle under constitution rule 3. Fix the evaluation time zone at
+  offset 0 (UTC), which is what `FHIRPathTests.test` actually runs at: its
+  `TimeZone.getTimeZone("UTC+1100")` is an id Java does not recognise and
+  returns `GMT` (`path.datetime.004`, revised 2026-11-20; the harness constant
+  `SUITE_TIME_ZONE_OFFSET_MINUTES` is 0, not 660). The harness runs against a trait object, so it
   works before any engine exists.
   Satisfies `path.oracle.001`, `path.oracle.002`, `path.oracle.003`,
   `path.oracle.004`, `path.oracle.005`, `path.oracle.006`, `path.oracle.007`,
@@ -817,9 +820,12 @@ checkpoint because it changes what a gate measures.
   multi-item operand yields **empty** and not an error, `<` rejects
   `unsignedInt` and `positiveInt` while its three mirrors accept them, and all
   four compare numerics through a binary `double`; and the two `Period`
-  invariant forms.
+  invariant forms; and the Zulu rewrite of a compared `dateTime`, for an element
+  within the evaluation (`path.compare.013`) and for a literal's value within
+  the evaluation, never carried into a later evaluation of the same parse
+  (`path.compare.015`).
   Satisfies `path.equality.001` through `path.equality.012`, `path.compare.001`
-  through `path.compare.014`.
+  through `path.compare.015`.
 
 - [x] **36. Implement boolean logic.** The four operators' three-valued truth
   tables, the singleton-evaluation rule for a non-boolean operand, both
@@ -1098,7 +1104,8 @@ checkpoint because it changes what a gate measures.
 - [ ] **53. Implement error reporting and the bounds.** 21 of the 27
   `invalid="execution"` cases failing at evaluation after a clean parse and
   check, with the 6 `documentFunctions` ones failing at parse, graded `failed`,
-  as for HAPI; errors naming the sub-expression and offset; no panic anywhere in the
+  as for HAPI; errors carrying HAPI's message, which ends ` (@char N)` and never
+  contains the sub-expression's text, and the sub-expression's offset; no panic anywhere in the
   suite; depth and step limits; and a model decode error surfacing as an error
   rather than as an empty collection.
   Satisfies `path.errors.001` through `path.errors.005`.
