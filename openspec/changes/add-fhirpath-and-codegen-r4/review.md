@@ -1,5 +1,16 @@
 APPROVED
 
+Forty-fifth review (commit `23a7568`, 2026-11-20). The corrected
+`path.navigation.025` matches the pinned engine. That includes two claims I
+had passed in the forty-third and forty-fourth reviews and which were wrong:
+`is FHIR.string` was given as `true`, and `contains` on `div` was said to pass
+the check. The detail is in the dated section at the end. The earlier record
+follows.
+
+## Forty-fourth review header as issued (commit `e30696c`)
+
+APPROVED
+
 Forty-fourth review (commit `e30696c`, 2026-11-20) resolves both findings of
 the forty-third review. It narrows `path.navigation.025` to what Frevo builds,
 and records the HTML-mode item string as `DEV-0028` (pending the owner) and
@@ -3533,6 +3544,84 @@ Non-blocking notes, for the owner's checkpoint:
    `add-narrative`. The trigger list could name that ruling explicitly.
 
 **Registers, counts and validators.**
+- `harness/scripts/check-registries.sh` reports "registers agree" (25
+  deviations, 18 debt entries).
+- `openspec validate add-fhirpath-and-codegen-r4 --strict` reports the change
+  is valid.
+- The headings number codegen 49, model 83 and path 381, 513 in total. No ID
+  is duplicated, added, removed or renumbered.
+
+## Forty-fifth review - commit `23a7568` (2026-11-20)
+
+Scope: the diff `0c631b1..23a7568`. It covers `path.navigation.025`,
+`DEV-0028`, `DEBT-0018`, the `spec.md` note and the blockers note. `ENGINE`
+is the R4 `FHIRPathEngine.java` at `73c432b5`.
+
+**`is` on the by-name `div`: correct.**
+- The `is` operator's right operand goes through `executeTypeName`
+  (`ENGINE:1531-1539`), which yields the plain text: `string`, or
+  `FHIR.string` for a qualified name.
+- `opIs` (`:1940-1965`) takes neither the `elementmodel` branch nor the
+  `disallowExtensions` branch. The `StringType` built by `Narrative.getProperty`
+  is created without `noExtensions()`. So `opIs` compares the text with
+  `fhirType()`, which is `string`, and then with `sd.getType()` up the base
+  chain of the `string` StructureDefinition.
+- That gives `true` for `string`, and `false` for `FHIR.string` and for
+  `xhtml`.
+- `funcIs` (`:5095-5145`) splits a namespace and compares the name, so
+  `.is(string)` and `.is(FHIR.string)` are `true` and `.is(xhtml)` is
+  `false`. Correct.
+- My forty-third and forty-fourth reviews accepted "`is FHIR.string` is
+  `true`". That was wrong, and this commit fixes it.
+
+**The static check on `contains`: correct.**
+- `case Contains` calls `checkContextString(focus, "contains", exp, true)`
+  (`:3498-3502`).
+- `checkContextString` (`:3865-3869`) tests `TypeDetails.hasType` for
+  `string`, `code`, `uri`, `url`, `canonical` and `id`. `hasType`
+  (`TypeDetails.java:243-300`) walks each **requested** type's base chain:
+  `code` → `string`, `uri` → `string`, and so on. It never reaches `xhtml`,
+  whose type URL is the only one in the focus.
+- So it throws `FHIRPATH_STRING_SING_ONLY` (`Messages.properties:363`). The
+  focus renders through `describe()`, which is `Utilities.sorted(types)`
+  printed as a list (`TypeDetails.java:450-452`).
+- The holder is `exp`, the `contains` function node. In
+  `Patient.text.div.contains('>hi<')`, `Patient` takes the column to 8, `.`
+  to 9, `text` to 13, `.` to 14, `div` to 17 and `.` to 18. `contains`
+  therefore starts at column 18, byte offset 17, with no whitespace.
+- The message is exactly:
+  `Error evaluating FHIRPath expression: The function contains can only be used on string, uri, url, code, id but found [http://hl7.org/fhir/StructureDefinition/xhtml] (@char 18)`.
+- At evaluation, `contains` on the `StringType` succeeds.
+
+**Narrative with no `div`: correct.**
+- `getProperty` returns no value for a null `div` (`Narrative.java:364-366`).
+  `listChildren` always adds `new XhtmlType(this)` (`:343`). So `text.div` is
+  empty and `children().count()` is `2`.
+- `XhtmlType.getXhtml()` calls `place.getDiv()` (`XhtmlType.java:82`).
+  `getDiv` auto-creates `new XhtmlNode(Element, "div")`
+  (`Narrative.java:316-323`), because `Configuration`'s static `status`
+  defaults to 0, auto-create (`Configuration.java:85-98`).
+- In HTML mode an element with no children or content that is not a void
+  element is written open/close. `allChildrenAreText()` is `true` for no
+  children (`XhtmlNode.java:353-361`), so the result is `<div></div>`.
+- A later by-name read composes in XML mode, which is self-closing and has no
+  `xmlns` because none was created, so it gives `<div/>`. Correct.
+- Frevo's `<div/>`, with nothing created, is recorded as part of `DEV-0028`
+  and `DEBT-0018`, both extended consistently.
+
+**Unparseable narrative.**
+- `XhtmlNode.setValueAsString` rethrows any parser failure as a
+  `RuntimeException` (`XhtmlNode.java:613-626`).
+- HAPI's `ParserState.XhtmlStateHl7Org.doPop` calls it during resource
+  parsing (`ParserState.java:1830-1834`). So HAPI rejects such a resource at
+  read, and "no counterpart" is right.
+- The Frevo-side behaviour is stated and testable. Admission is correctly
+  deferred to `add-store-crud`.
+
+**Registers, counts and validators.**
+- `DEV-0028` remains a stated difference from HAPI, pending the owner.
+- My forty-fourth note on `DEBT-0018`'s "Why deferred" still stands, and it
+  is non-blocking.
 - `harness/scripts/check-registries.sh` reports "registers agree" (25
   deviations, 18 debt entries).
 - `openspec validate add-fhirpath-and-codegen-r4 --strict` reports the change
