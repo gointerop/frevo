@@ -643,6 +643,7 @@ impl Run<'_> {
             Some(Function::ConformsTo) => self.func_conforms_to(context, focus, id),
             Some(Function::MemberOf) => self.func_member_of(context, focus, id),
             Some(Function::Resolve) => self.func_resolve(focus, id),
+            Some(Function::Comparable) => self.func_comparable(context, focus, id),
             Some(Function::Custom) => self.func_custom(context, focus, id),
             None => Err(EvalError::unsupported(
                 format!("the function {}()", node.name().unwrap_or("?")),

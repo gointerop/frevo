@@ -714,12 +714,12 @@ fn snake_case(name: &str) -> String {
 
 /// Rust's keywords, reserved words included, so an escaped name is never a
 /// keyword in a later edition (`codegen.naming.002`).
-const RUST_KEYWORDS: [&str; 51] = [
+const RUST_KEYWORDS: [&str; 52] = [
     "as", "break", "const", "continue", "crate", "dyn", "else", "enum", "extern", "false", "fn",
     "for", "if", "impl", "in", "let", "loop", "match", "mod", "move", "mut", "pub", "ref",
     "return", "self", "Self", "static", "struct", "super", "trait", "true", "type", "unsafe",
-    "use", "where", "while", "async", "await", "abstract", "become", "box", "do", "final", "macro",
-    "override", "priv", "try", "typeof", "unsized", "virtual", "yield",
+    "use", "where", "while", "async", "await", "abstract", "become", "box", "do", "final", "gen",
+    "macro", "override", "priv", "try", "typeof", "unsized", "virtual", "yield",
 ];
 
 /// Two elements of one type that would take the same Rust name is a refusal,

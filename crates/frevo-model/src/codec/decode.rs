@@ -95,7 +95,8 @@ pub enum ReportKind {
     /// Also carries the malformed-JSON case, which has no handler callback
     /// because Jackson would have refused the document before HAPI saw it.
     IncorrectJsonType,
-    /// `IParserErrorHandler.unexpectedRepeatingElement` (`model.json.015`).
+    /// `IParserErrorHandler.unexpectedRepeatingElement` (`model.json.015`,
+    /// `codegen.choice.004`).
     UnexpectedRepeatingElement,
     /// A repeated JSON property name (`model.json.016`).
     DuplicateProperty,
@@ -961,11 +962,18 @@ impl Value {
         }
     }
 
+    /// The primitive this value is, when it has a value. A valueless
+    /// primitive answers `None`, as `hasValue()` would upstream.
     fn primitive(&self) -> Option<Primitive> {
         match self {
-            Value::Primitive(primitive) => Some(*primitive),
-            Value::Object(_) => None,
+            Value::Primitive(primitive) if !primitive.valueless => Some(*primitive),
+            Value::Primitive(_) | Value::Object(_) => None,
         }
+    }
+
+    /// Whether this is a primitive that holds no value.
+    fn is_valueless(&self) -> bool {
+        matches!(self, Value::Primitive(primitive) if primitive.valueless)
     }
 }
 
@@ -978,9 +986,18 @@ impl Value {
 /// survive because nothing re-renders them. The lexical form is produced on
 /// demand rather than stored, so a decode that nobody reads a value out of
 /// allocates nothing per primitive.
+///
+/// `valueless` is set when `ParserState` would have reported the text through
+/// a non-fatal `invalidValue` and set nothing: a `""` value, or a
+/// whitespace-only one its type refuses (`ParserState.java:1454-1514`,
+/// `LenientErrorHandler.java:100-108`). The element is still there — it may
+/// carry an `id` or extensions on its `_field` side — but it has no value, so
+/// the element list reports none and re-emission writes none
+/// (`codegen.cardinality.005`, `model.json.023`).
 #[derive(Debug, Clone, Copy)]
 struct Primitive {
     raw: Span,
+    valueless: bool,
 }
 
 #[derive(Debug)]
@@ -1046,6 +1063,50 @@ impl<'p> Loc<'p> {
         }
         out
     }
+}
+
+/// The element a value is being shaped for: the type that owns it, its
+/// definition, and the JSON property name it was read under -- which is what
+/// `ParseLocation` names (`ParserState.java:1455`, `:1483`), the typed name for
+/// a choice (`valueString`).
+#[derive(Debug, Clone, Copy)]
+struct Field<'k> {
+    owner: &'static str,
+    def: &'static ElementDef,
+    key: &'k [u8],
+}
+
+/// `StrictErrorHandler.unexpectedRepeatingElement`'s text after its code, with
+/// no location, which is how `ParserState.enteringNewElement` calls it
+/// (`StrictErrorHandler.java:76-79`, `ParserState.java:669`).
+fn repeated_element_message(name: &str) -> String {
+    format!("Multiple repetitions of non-repeatable element '{name}' found during parse")
+}
+
+/// `ca.uhn.fhir.util.UrlUtil.sanitizeUrlPart(CharSequence)`: HTML-encode the
+/// six characters it names and drop every other control character
+/// (`UrlUtil.java:510-560`).
+fn sanitize_url_part(text: &str) -> std::borrow::Cow<'_, str> {
+    if !text
+        .chars()
+        .any(|c| matches!(c, '\'' | '"' | '<' | '>') || c < ' ')
+    {
+        return std::borrow::Cow::Borrowed(text);
+    }
+    let mut out = String::with_capacity(text.len() + 10);
+    for c in text.chars() {
+        match c {
+            '\'' => out.push_str("&apos;"),
+            '"' => out.push_str("&quot;"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            '\n' => out.push_str("&#10;"),
+            '\r' => out.push_str("&#13;"),
+            c if c >= ' ' => out.push(c),
+            _ => {}
+        }
+    }
+    std::borrow::Cow::Owned(out)
 }
 
 struct Decoder<'a> {
@@ -1219,11 +1280,39 @@ impl Decoder<'_> {
                 continue;
             }
             let choice = def.choice.then_some(concrete);
+            let here = at.child(def.name);
+            // `ParserState.enteringNewElement` at `:660-672` records each
+            // `0..1` child it enters under the choice's *field* name --
+            // `RuntimeChildChoiceDefinition.getField().getName()`, `value` for
+            // every `value[x]` property -- so a second property spelling a
+            // different type of the same choice is a repetition. The handler is
+            // told with no location, and the property is swallowed whole with
+            // everything under it (`SwallowChildrenWholeState`, `:670`), so the
+            // first in document order is the value (`codegen.choice.004`).
+            if def.choice
+                && !def.repeating
+                && !is_sibling
+                && props.iter().any(|prop| {
+                    prop.def.name == def.name && prop.choice != choice && prop.value.is_some()
+                })
+            {
+                self.report(Diagnostic::new(
+                    ReportKind::UnexpectedRepeatingElement,
+                    &here.render(),
+                    key_offset,
+                    repeated_element_message(def.name),
+                ));
+                continue;
+            }
             // A `_field` sibling carries only the `id` and `extension` of
             // `Element`, whatever the element's own type is.
             let item_type: &'static str = if is_sibling { "Element" } else { concrete };
-            let here = at.child(def.name);
-            let shape = self.shape_side(def, item_type, raw, &here, is_sibling);
+            let field = Field {
+                owner: type_name,
+                def,
+                key: key_bytes,
+            };
+            let shape = self.shape_side(field, item_type, raw, &here, is_sibling);
             let position = props
                 .iter()
                 .position(|prop| prop.def.name == def.name && prop.choice == choice);
@@ -1285,12 +1374,13 @@ impl Decoder<'_> {
     /// as `item_type`.
     fn shape_side(
         &mut self,
-        def: &'static ElementDef,
+        field: Field<'_>,
         item_type: &'static str,
         raw: &Raw,
         at: &Loc<'_>,
         is_sibling: bool,
     ) -> Shape {
+        let def = field.def;
         match raw {
             Raw::Array { items, start } => {
                 // `ParserState.enteringNewElement` at `:662-672` adds the
@@ -1306,14 +1396,9 @@ impl Decoder<'_> {
                         ReportKind::UnexpectedRepeatingElement,
                         &at.render(),
                         *start,
-                        format!(
-                            "{} is not a repeating element, so only the first of the {} \
-                             repetitions given is kept",
-                            def.name,
-                            items.len()
-                        ),
+                        repeated_element_message(def.name),
                     ));
-                    let first = self.shape_item(item_type, &items[0], &at.at(None));
+                    let first = self.shape_item(item_type, &items[0], &at.at(None), field);
                     return Shape::Array(vec![first]);
                 }
                 let mut out = Vec::with_capacity(items.len());
@@ -1338,7 +1423,7 @@ impl Decoder<'_> {
                             ),
                         ));
                     }
-                    out.push(self.shape_item(item_type, item, &here));
+                    out.push(self.shape_item(item_type, item, &here, field));
                 }
                 Shape::Array(out)
             }
@@ -1366,7 +1451,7 @@ impl Decoder<'_> {
                     );
                 }
                 let here = at.at(def.repeating.then_some(0));
-                Shape::Single(self.shape_item(item_type, single, &here))
+                Shape::Single(self.shape_item(item_type, single, &here, field))
             }
         }
     }
@@ -1393,7 +1478,13 @@ impl Decoder<'_> {
 
     /// One item of one side. `None` is a `null` hole, which means "nothing at
     /// this index" for this side and nothing more.
-    fn shape_item(&mut self, item_type: &'static str, raw: &Raw, at: &Loc<'_>) -> Option<Value> {
+    fn shape_item(
+        &mut self,
+        item_type: &'static str,
+        raw: &Raw,
+        at: &Loc<'_>,
+        field: Field<'_>,
+    ) -> Option<Value> {
         if let Raw::Scalar(span) = raw {
             if span.of(self.bytes) == b"null" {
                 return None;
@@ -1440,7 +1531,9 @@ impl Decoder<'_> {
                     .finding(found),
                 );
             }
-            return Some(Value::Primitive(self.shape_primitive(item_type, *span, at)));
+            return Some(Value::Primitive(
+                self.shape_primitive(item_type, *span, at, field),
+            ));
         }
         self.shape_object(item_type, raw, at).map(Value::Object)
     }
@@ -1448,9 +1541,21 @@ impl Decoder<'_> {
     /// A primitive value. Its bytes are kept verbatim for re-emission; its
     /// lexical form is the string's text or the number's or boolean's own
     /// characters.
-    fn shape_primitive(&mut self, type_name: &str, span: Span, at: &Loc<'_>) -> Primitive {
-        let primitive = Primitive { raw: span };
-        self.check_value_rule(type_name, span, at);
+    fn shape_primitive(
+        &mut self,
+        type_name: &str,
+        span: Span,
+        at: &Loc<'_>,
+        field: Field<'_>,
+    ) -> Primitive {
+        let has_value = self.check_value(type_name, span, at, field);
+        let primitive = Primitive {
+            raw: span,
+            valueless: !has_value,
+        };
+        if !has_value {
+            return primitive;
+        }
         // `integer`, `positiveInt` and `unsignedInt` carry a declared range,
         // and a value outside it is reported naming the element path and the
         // declared type (`model.json.011`, `model.json.012`). An `xhtml` div
@@ -1492,49 +1597,149 @@ impl Decoder<'_> {
         self.diagnostics.push(diagnostic);
     }
 
-    /// Check a primitive's value against its type's value rule
-    /// (`model.json.023`).
+    /// Check a primitive's value the way `ParserState.PrimitiveState.attributeValue`
+    /// does (`ParserState.java:1452-1514`), and answer whether the element
+    /// holds a value afterwards (`model.json.023`, `codegen.cardinality.005`,
+    /// `codegen.binding.002`).
     ///
-    /// A **blank** value is not reported. `LenientErrorHandler.invalidValue`
-    /// logs it rather than raising it (`LenientErrorHandler.java:100-108`), so
-    /// it is not fatal; and it is not recorded as a diagnostic either, because
-    /// `StrictErrorHandler.invalidValue` throws unconditionally and the
-    /// `model-parser-errors` oracle requires `{"reference": ""}` to decode
-    /// cleanly in **strict** mode. Reporting it would therefore break
-    /// `model.json.025`'s blank-reference clause, so strict mode is a subset of
-    /// HAPI's here rather than a match. `docs/deviations.md` records that under
-    /// "Lenient request parsing".
+    /// In HAPI's order:
     ///
-    /// `xhtml` and `base64Binary` have no rule applied: the first is opaque
-    /// markup and the second is already its encoded text, so neither is
-    /// parsed, decoded or validated here or anywhere else.
-    fn check_value_rule(&mut self, type_name: &str, span: Span, at: &Loc<'_>) {
-        let Some(rule) = ValueRule::of(type_name) else {
-            return;
-        };
+    /// 1. A value of exactly `""` is reported through `invalidValue` with
+    ///    `Attribute value must not be empty ("")` before anything is set
+    ///    (`:1454-1457`).
+    /// 2. Otherwise `setValueAsString` runs. For an element HAPI's model holds
+    ///    as an `Enumeration` it is the enum factory that refuses an unknown
+    ///    code, with `Unknown <Enum> code '<code>'`; a code that matches a
+    ///    binding code ignoring case is reported first with the
+    ///    case-discrepancy text (`:1482-1503`). The `Enumeration` set is read
+    ///    from the generated required-binding enumerations,
+    ///    [`crate::r4::codes`]: see `tasks/blockers.md`, "the R4 Java class
+    ///    ancestry table", for why that may not yet be exactly HAPI's set.
+    /// 3. For every other type the value rule of [`ValueRule`] stands in for
+    ///    the Java type's parser.
+    ///
+    /// Which of those is fatal is `LenientErrorHandler.invalidValue`'s rule
+    /// (`LenientErrorHandler.java:100-108`): a **blank** value -- `isBlank`,
+    /// empty or whitespace only -- is logged and parsing continues, so it is a
+    /// diagnostic, which strict mode raises as `1821`; any other invalid value
+    /// is handed to the strict handler and aborts the decode in both modes. A
+    /// value that was reported and not set leaves the element with no value.
+    ///
+    /// `xhtml` is not a `PrimitiveState` upstream (`XhtmlState` reads the div
+    /// as markup), so none of this applies to it, and `base64Binary` has no
+    /// rule: it is already its encoded text.
+    fn check_value(&mut self, type_name: &str, span: Span, at: &Loc<'_>, field: Field<'_>) -> bool {
+        if type_name == "xhtml" {
+            return true;
+        }
         let bytes = self.bytes;
         let raw = token_value(bytes, span);
+        let quoted = bytes.get(span.start) == Some(&b'"');
+        if quoted && raw.is_empty() {
+            self.invalid_value(
+                field,
+                at,
+                span.start,
+                type_name,
+                "",
+                "Attribute value must not be empty (\"\")".to_string(),
+            );
+            return false;
+        }
         // Resolving escapes would allocate per primitive, and none of the
         // rules below admits a backslash, so it is done only when there is one
         // to resolve -- an escape could still spell a legal character.
-        let resolved = raw
-            .contains(&b'\\')
-            .then(|| self.lexical(Primitive { raw: span }));
+        let resolved = raw.contains(&b'\\').then(|| {
+            self.lexical(Primitive {
+                raw: span,
+                valueless: false,
+            })
+        });
         let value = resolved.as_ref().map_or(raw, |text| text.as_bytes());
-        if is_blank(value) || rule.holds(value) {
-            return;
+
+        if type_name == "code" {
+            if let Some(codes) = self.enumeration_of(field) {
+                let text = String::from_utf8_lossy(value);
+                if codes.variant(&text).is_some() {
+                    return true;
+                }
+                // `RuntimeChildPrimitiveEnumerationDatatypeDefinition
+                // .getCodeCaseInsensitive` lower-cases with `Locale.US`.
+                let lower = text.to_lowercase();
+                let error = match codes
+                    .codes()
+                    .find(|code| code.to_lowercase() == lower)
+                    .filter(|code| *code != text)
+                {
+                    Some(corrected) => format!(
+                        "Case discrepancy detected in code value '{text}' (should be '{corrected}')"
+                    ),
+                    None => format!("Unknown {} code '{text}'", codes.rust_name),
+                };
+                let text = text.into_owned();
+                return !self.invalid_value(field, at, span.start, type_name, &text, error);
+            }
+        }
+
+        let Some(rule) = ValueRule::of(type_name) else {
+            return true;
+        };
+        if rule.holds(value) {
+            return true;
         }
         let text = String::from_utf8_lossy(value).into_owned();
-        let path = at.render();
-        self.report(
-            Diagnostic::new(
-                ReportKind::InvalidValue,
-                &path,
-                span.start,
-                format!("\"{text}\" is not a valid {type_name} value"),
-            )
-            .expecting(type_name),
+        let error = format!("\"{text}\" is not a valid {type_name} value");
+        !self.invalid_value(field, at, span.start, type_name, &text, error)
+    }
+
+    /// The required-binding enumeration of the `code` element `field` is, if
+    /// HAPI holds it as an `Enumeration`. The snapshot's binding is consulted
+    /// first, a binary search, so that the common unbound `code` (every
+    /// `Coding.code`) costs no scan of the enumeration table.
+    fn enumeration_of(&self, field: Field<'_>) -> Option<&'static crate::r4::codes::CodeEnum> {
+        let meta = crate::r4::elements::element_meta(field.owner, field.def.name)?;
+        if meta.binding?.strength != "required" {
+            return None;
+        }
+        crate::r4::codes::code_enum_of_element(&format!("{}.{}", field.owner, field.def.name))
+    }
+
+    /// Report `invalidValue` for `value` on `field`, worded as
+    /// `StrictErrorHandler.invalidValue` words it after its code
+    /// (`StrictErrorHandler.java:56-59`): the location as
+    /// `[element="<name>"] ` (`ParseLocation.java:55-57`), where the name is
+    /// the JSON property the value was read under, then
+    /// `Invalid attribute value "<value>": <error>` with the value passed
+    /// through `UrlUtil.sanitizeUrlPart`.
+    ///
+    /// Returns `true` when the report is the non-fatal kind -- the value is
+    /// blank -- which is when the element is left with no value; a fatal
+    /// report aborts the decode, so what the element holds no longer matters.
+    fn invalid_value(
+        &mut self,
+        field: Field<'_>,
+        at: &Loc<'_>,
+        offset: usize,
+        type_name: &str,
+        value: &str,
+        error: String,
+    ) -> bool {
+        let element = String::from_utf8_lossy(field.key);
+        let message = format!(
+            "[element=\"{element}\"] Invalid attribute value \"{}\": {error}",
+            sanitize_url_part(value)
         );
+        let diagnostic = Diagnostic::new(ReportKind::InvalidValue, &at.render(), offset, message)
+            .expecting(type_name);
+        if is_blank(value.as_bytes()) {
+            // Logged, not raised, by `LenientErrorHandler`; raised as `1821`
+            // by strict mode like every other diagnostic.
+            self.diagnostics.push(diagnostic);
+            true
+        } else {
+            self.report(diagnostic);
+            false
+        }
     }
 
     /// The two sides of one element are index-aligned, so their array lengths
@@ -1610,7 +1815,9 @@ impl Decoder<'_> {
     }
 
     fn side_has_an_item(shape: Option<&Shape>) -> bool {
-        shape.is_some_and(|shape| (0..shape.len()).any(|index| shape.at(index).is_some()))
+        shape.is_some_and(|shape| {
+            (0..shape.len()).any(|index| shape.at(index).is_some_and(|value| !value.is_valueless()))
+        })
     }
 
     /// Record a `Reference` for the weaving pass.
@@ -1845,7 +2052,11 @@ impl Decoder<'_> {
         for def in ordered_elements(&self.tables, object.type_name) {
             for prop in object.props.iter().filter(|prop| prop.def.name == def.name) {
                 let property = prop.property();
-                if let Some(shape) = &prop.value {
+                if let Some(shape) = prop
+                    .value
+                    .as_ref()
+                    .filter(|shape| !Self::is_valueless(shape))
+                {
                     self.emit_member(&property, shape, &mut first, out);
                 }
                 if let Some(shape) = &prop.sibling {
@@ -1857,6 +2068,13 @@ impl Decoder<'_> {
             }
         }
         out.push(b'}');
+    }
+
+    /// Whether a value side is a single primitive with no value, which
+    /// writes nothing at all: a primitive that holds no value is not
+    /// composed upstream, and its `_field` side, if any, still is.
+    fn is_valueless(shape: &Shape) -> bool {
+        matches!(shape, Shape::Single(Some(value)) if value.is_valueless())
     }
 
     fn emit_member(&self, property: &str, shape: &Shape, first: &mut bool, out: &mut Vec<u8>) {
@@ -1889,6 +2107,9 @@ impl Decoder<'_> {
     fn emit_value(&self, value: Option<&Value>, out: &mut Vec<u8>) {
         match value {
             None => out.extend_from_slice(b"null"),
+            Some(Value::Primitive(primitive)) if primitive.valueless => {
+                out.extend_from_slice(b"null");
+            }
             Some(Value::Primitive(primitive)) => {
                 out.extend_from_slice(primitive.raw.of(self.bytes));
             }
@@ -2061,7 +2282,11 @@ impl Decoder<'_> {
         }
         for prop in &object.props {
             let property = prop.property();
-            if let Some(shape) = &prop.value {
+            if let Some(shape) = prop
+                .value
+                .as_ref()
+                .filter(|shape| !Self::is_valueless(shape))
+            {
                 members.push((property.clone(), Some(shape)));
             }
             if let Some(shape) = &prop.sibling {
@@ -2108,6 +2333,9 @@ impl Decoder<'_> {
     fn emit_value_canonical(&self, value: Option<&Value>, out: &mut Vec<u8>) {
         match value {
             None => out.extend_from_slice(b"null"),
+            Some(Value::Primitive(primitive)) if primitive.valueless => {
+                out.extend_from_slice(b"null");
+            }
             Some(Value::Primitive(primitive)) => {
                 out.extend_from_slice(primitive.raw.of(self.bytes));
             }

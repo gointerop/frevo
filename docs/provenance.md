@@ -83,7 +83,8 @@ comparison — `src/eval/{equality,compare,operand,temporal}.rs`
 (`opEquivalent`, `opNotEquivalent`, `doEquivalent`, `qtyEqual`,
 `qtyEquivalent`, `opLessThan`, `opGreater`, `opLessOrEqual`,
 `opGreaterOrEqual`, `compareDateTimeElements`, `compareTimeElements`,
-`funcHasValue`, `FHIR_TYPES_STRING`, `Base.java`'s `hasType` and
+`funcHasValue`, `funcComparable` (its branches that need no UCUM service),
+`FHIR_TYPES_STRING`, `Base.java`'s `hasType` and
 `isPrimitive`, `BaseDateTimeType.java`'s `equalsUsingFhirPathRules`,
 `compareTimes` and `getHighEdge`, `TimeType.java`'s field readers, and
 `Utilities.java`'s `equivalent` and `equivalentNumber`) — extend the first

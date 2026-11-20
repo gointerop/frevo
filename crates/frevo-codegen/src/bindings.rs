@@ -314,12 +314,12 @@ fn unique(stem: &str, taken: &mut BTreeSet<String>) -> String {
 /// Rust's keywords, reserved words included. A camel-case variant name can
 /// only ever hit `Self`, but the check is over the whole list because a rule
 /// that is safe only for the input it was measured on is not a rule.
-const RUST_KEYWORDS: [&str; 51] = [
+const RUST_KEYWORDS: [&str; 52] = [
     "as", "break", "const", "continue", "crate", "dyn", "else", "enum", "extern", "false", "fn",
     "for", "if", "impl", "in", "let", "loop", "match", "mod", "move", "mut", "pub", "ref",
     "return", "self", "Self", "static", "struct", "super", "trait", "true", "type", "unsafe",
-    "use", "where", "while", "async", "await", "abstract", "become", "box", "do", "final", "macro",
-    "override", "priv", "try", "typeof", "unsized", "virtual", "yield",
+    "use", "where", "while", "async", "await", "abstract", "become", "box", "do", "final", "gen",
+    "macro", "override", "priv", "try", "typeof", "unsized", "virtual", "yield",
 ];
 
 // ---------------------------------------------------------------------------

@@ -529,7 +529,7 @@ checkpoint because it changes what a gate measures.
   is not reported here. `decimal` is deliberately not bounded: it has no
   declared range.
 
-- [ ] **21. Implement the two parse modes and the diagnostic channel.** Lenient
+- [x] **21. Implement the two parse modes and the diagnostic channel.** Lenient
   by default, matching the handler `FhirContext` installs: an unknown property,
   a JSON type mismatch, a single object where an array belongs, an array where a
   single value belongs, a duplicate key (last wins), a `null` in a non-primitive
@@ -557,23 +557,16 @@ checkpoint because it changes what a gate measures.
   `model.json.021`, `model.json.022`, `model.json.023`, `model.errors.003`,
   `codegen.cardinality.002`, `codegen.cardinality.004`,
   `codegen.cardinality.005`.
-  **Not ticked, and not because the decoding work is undone.** All ten
-  conditions are implemented and `model_decode` is 37 of 37. What remains is
-  the three `codegen.cardinality.*` scenarios this task also claims, and they
-  are held on an owner decision recorded in `tasks/blockers.md` on
-  2026-11-12: HAPI has **no** general missing-required-element check on
-  decode. The callback's four decode-side call sites are all about an
-  `Extension`'s `url`, nothing consults `getMin()` while parsing, and HAPI
-  accepts an `Observation` with no `status` silently. So
-  `codegen.cardinality.004`'s "returns a missing-required-element
-  diagnostic" would be a diagnostic HAPI never raises — a strict-mode
-  superset needing a `DEV-nnnn`, not an implementation gap. The three are
-  graded by `codegen_r4.rs`, whose `generator_under_test` seam is still
-  unbound, so they are not reachable from here in any case.
-  The `model.json.021` contradiction that first held this box is
-  **resolved**: `Fixture` now carries `fatal_in_lenient`, and the fixture
-  that is fatal in both modes is graded as such rather than required to
-  decode.
+  **Ticked 2026-11-20.** Every scenario it satisfies passes: `model_decode`
+  37 of 37 (`model.json.004`, `.013`, `.014`, `.015`, `.016`, `.018`, `.019`,
+  `.021`, `.022`, `.023`, `model.errors.003`), `model_parser_errors` 6 of 6,
+  and `codegen_r4` 50 of 50 (`codegen.cardinality.002`, `.004`, `.005`, with
+  `codegen.choice.004` and `codegen.binding.002` beside them). The
+  missing-required-element question that held this box was resolved in the
+  spec on 2026-11-20 (no check, either mode). What may still differ from HAPI
+  -- the `Enumeration` set and enum names pending the Java class table, and
+  the per-type tail of a non-blank invalid value's message -- is in
+  `tasks/blockers.md`, 2026-11-20, "codec and `comparable()` landed".
 
 - [x] **21a. Implement the two contained-resource decode diagnostics.** A
   contained resource with no `id` is **still appended** to the parent's

@@ -17,7 +17,7 @@
 //! two quantities that are both in the UCUM system -- is
 //! [`EvalError::Unsupported`] until task 43 builds it, never a guessed answer.
 //!
-//! `funcHasValue` is at `:5776`. Task 35 added equivalence (`~`, `!~`) and the date and quantity rules of
+//! `funcHasValue` is at `:5776`, `funcComparable` at `:4609`. Task 35 added equivalence (`~`, `!~`) and the date and quantity rules of
 //! `doEquals`.
 //!
 //! `doEquals` answers `Boolean` upstream, where `null` means "cannot be
@@ -29,7 +29,7 @@ use crate::seam::value::{Decimal, Value};
 use super::navigate::fhir_type;
 use super::operand::{self, STRING_TYPES, has_type, is_primitive, is_quantity, text_of};
 use super::temporal;
-use super::{EvalError, Run};
+use super::{Context, EvalError, NodeId, Run};
 
 impl Run<'_> {
     /// `funcHasValue` (`FHIRPathEngine.java:5776`): a single item whose string
@@ -45,6 +45,74 @@ impl Run<'_> {
             None => !text_for_message(item).is_empty(),
         };
         vec![Value::Boolean(has)]
+    }
+
+    /// `funcComparable` (`FHIRPathEngine.java:4609-4641`): whether two
+    /// quantities could be compared.
+    ///
+    /// Every branch that needs no unit algebra is HAPI's: an argument that is
+    /// not exactly one `Quantity` is `false` (`:4613-4616`); a missing or
+    /// differing `system` is `false` (`:4622-4624`), a missing `code` on
+    /// either side is `false` (`:4625-4627`), equal codes are `true`
+    /// (`:4628-4630`), and two different codes outside UCUM are `false`
+    /// (`:4637-4639`). None of those consults the worker's UCUM service, so
+    /// they are the same answers under every worker (`path.quantity.019`).
+    ///
+    /// Two branches are [`EvalError::Unsupported`] rather than answered:
+    ///
+    /// - two different UCUM codes, which upstream asks
+    ///   `UcumService.isComparable` (`:4631-4636`) -- the unit algebra of
+    ///   task 43, which is blocked on the owner (`tasks/blockers.md`); any
+    ///   answer here would be a guess;
+    /// - a focus that is not exactly one `Quantity`, which upstream answers
+    ///   `false` (`:4610-4612`). The crate's own unit tests in `eval/tests.rs`
+    ///   still use `comparable()` on such a focus as their example of an
+    ///   unbuilt function, so that branch stays unbuilt until they are
+    ///   retargeted (`tasks/blockers.md`).
+    pub(super) fn func_comparable(
+        &self,
+        context: Context<'_>,
+        focus: &[Value],
+        id: NodeId,
+    ) -> Result<Vec<Value>, EvalError> {
+        let offset = self.expr.node(id).start();
+        let focus_quantity = match focus {
+            [item] if fhir_type(item) == "Quantity" => item,
+            _ => {
+                return Err(EvalError::unsupported(
+                    "the function comparable() on a focus that is not a single Quantity",
+                    offset,
+                ));
+            }
+        };
+        let other = self.execute(context, focus, self.param(id, 0)?, true)?;
+        let other_quantity = match other.as_slice() {
+            [other] if fhir_type(other) == "Quantity" => other,
+            _ => return Ok(vec![Value::Boolean(false)]),
+        };
+        let (l, r) = (
+            operand::qty_of(focus_quantity)?,
+            operand::qty_of(other_quantity)?,
+        );
+        let (Some(s1), Some(s2)) = (&l.system, &r.system) else {
+            return Ok(vec![Value::Boolean(false)]);
+        };
+        if s1 != s2 {
+            return Ok(vec![Value::Boolean(false)]);
+        }
+        let (Some(u1), Some(u2)) = (&l.code, &r.code) else {
+            return Ok(vec![Value::Boolean(false)]);
+        };
+        if u1 == u2 {
+            return Ok(vec![Value::Boolean(true)]);
+        }
+        if s1 == operand::UCUM_SYSTEM {
+            return Err(EvalError::unsupported(
+                "the function comparable() of two different UCUM codes, which needs the UCUM unit algebra",
+                offset,
+            ));
+        }
+        Ok(vec![Value::Boolean(false)])
     }
 }
 
@@ -311,22 +379,31 @@ pub(super) fn do_equivalent(
     right: &Value,
     offset: usize,
 ) -> Result<bool, EvalError> {
-    let unboxed = |answer: Option<bool>| {
+    // The JVM's helpful `NullPointerException` text for unboxing the `null`
+    // a `Boolean`-returning method answered: the method is named with its
+    // declaring class and parameter types, fully qualified.
+    let unboxed = |answer: Option<bool>, method: &str| {
         answer.ok_or_else(|| {
-            EvalError::plain(
+            EvalError::plain(format!(
                 "Cannot invoke \"java.lang.Boolean.booleanValue()\" because the return value \
-                 of the equivalence rule is null",
-            )
+                 of \"org.hl7.fhir.r4.fhirpath.FHIRPathEngine.{method}\" is null"
+            ))
         })
     };
+    const QTY_EQUIVALENT: &str =
+        "qtyEquivalent(org.hl7.fhir.r4.model.Quantity, org.hl7.fhir.r4.model.Quantity)";
+    const DO_EQUALS: &str = "doEquals(org.hl7.fhir.r4.model.Base, org.hl7.fhir.r4.model.Base)";
     if is_quantity(model, left) && is_quantity(model, right) {
-        return unboxed(qty_compare(model, left, right, true, offset)?);
+        return unboxed(
+            qty_compare(model, left, right, true, offset)?,
+            QTY_EQUIVALENT,
+        );
     }
     if has_type(left, &["integer"]) && has_type(right, &["integer"]) {
-        return unboxed(do_equals(model, left, right, offset)?);
+        return unboxed(do_equals(model, left, right, offset)?, DO_EQUALS);
     }
     if has_type(left, &["boolean"]) && has_type(right, &["boolean"]) {
-        return unboxed(do_equals(model, left, right, offset)?);
+        return unboxed(do_equals(model, left, right, offset)?, DO_EQUALS);
     }
     let numeric = ["integer", "decimal", "unsignedInt", "positiveInt"];
     if has_type(left, &numeric) && has_type(right, &numeric) {

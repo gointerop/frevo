@@ -2906,3 +2906,64 @@ at the second property; lenient keeps the first and drops the second.
 `codegen.binding.002`: `1821` in both default modes, case discrepancy included.
 No deviation was needed: these are parser behaviours the FHIR specification
 leaves to validation (`docs/deviations.md`, "Considered and not recorded").
+
+---
+
+## 2026-11-20 — `add-fhirpath-and-codegen-r4` — codec and `comparable()` landed to HAPI's parser; what still may differ
+
+**Raised by** the implementer of the codec half of task 21, `codegen.naming.002`
+and the non-UCUM part of `path.quantity.019`. Nothing here blocks a test; each
+item is a place where the implementation is HAPI's only as far as the inputs
+this repository has allow.
+
+1. **The `Enumeration` set (`codegen.binding.002`) is the generated
+   required-binding set, not HAPI's.** The decoder checks a `code` element
+   against `frevo_model::r4::codes::code_enum_of_element` when the snapshot
+   binds it `required` and the value set closed during generation
+   (`Decoder::enumeration_of` in `crates/frevo-model/src/codec/decode.rs`).
+   HAPI checks exactly the elements its Java model declares as
+   `Enumeration<...>`; which ones those are is the open decision in "the R4
+   Java class ancestry table" above. No ancestry table was hand-written. Known
+   so far: `Attachment.contentType` (a `CodeType` upstream) is open here too,
+   because `mimetypes` does not expand (`UNRESOLVED_REQUIRED_BINDINGS`). Other
+   elements may still be checked here and not upstream, or the reverse, until
+   that decision lands; the fix then is to read the generated table, not to
+   patch the codec.
+2. **The enum name in `Unknown <Enum> code '<code>'` is the generated
+   `CodeEnum::rust_name`**, the value-set URL stem in UpperCamelCase
+   (`administrative-gender` -> `AdministrativeGender`). HAPI's text uses the
+   Java enum's simple name, which the R4 Java generator took from the
+   element's `elementdefinition-bindingName` extension, not from the URL. They
+   agree for `Patient.gender` and for the common `*-status` sets; they are not
+   known to agree everywhere. Same decision as item 1 (the Java class table
+   would carry the name).
+3. **The tail of a non-blank, non-enum invalid value's message is Frevo's
+   own.** The message now starts as `StrictErrorHandler.invalidValue`'s does
+   (`[element="birthDate"] Invalid attribute value "not-a-date": `), but what
+   follows is `"not-a-date" is not a valid date value`, not the text the Java
+   primitive's `setValueAsString` throws (for a date, `BaseDateTimeType`'s own
+   message). This predates this change. A `400` body's diagnostics text will
+   differ from HAPI's in that tail; the code (`1821`) and fatality are HAPI's.
+   **Decision needed** (proposer): whether `model.json.023` states the per-type
+   upstream texts, which would then be ported type by type.
+4. **`comparable()` on a focus that is not exactly one `Quantity` is still
+   `EvalError::Unsupported`.** HAPI answers `false` (`FHIRPathEngine.java:4610-4612`).
+   Two of the crate's own unit tests, `every_unimplemented_function_is_unsupported_and_never_empty`
+   and `an_unsupported_feature_deep_inside_navigation_still_surfaces`
+   (`crates/frevo-path/src/eval/tests.rs`), use
+   `Patient.birthDate.comparable(...)`, `{}.name.comparable(...)` and
+   `Patient.name.prefix.comparable(...)` as their example of an unbuilt
+   function, and an implementer may not change a test. **Oracle-builder
+   work**: retarget those two tests to a function that is still unbuilt
+   (`hasTemplateIdOf`), after which the branch becomes `false`. Every other
+   branch of `funcComparable` that needs no UCUM service is HAPI's; two
+   different UCUM codes stay `Unsupported` until task 43.
+5. **The `<=` null-`unit` NullPointerException text is not HAPI's exact
+   JVM text.** `path.quantity.019` asks only for an execution error with no
+   offset, which is what it is. The JVM's helpful message for
+   `lunit.equals(runit)` names the local variable (`"lunit"`, or
+   `"<localN>"` when the class was compiled without a local variable table),
+   which cannot be read from source alone; Frevo's text is
+   `Cannot invoke "java.lang.String.equals(Object)" because the value is null`.
+   Recording it so a differential diff on the text is expected, not a
+   surprise.

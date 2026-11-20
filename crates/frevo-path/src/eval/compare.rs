@@ -207,7 +207,12 @@ fn quantities(
     // UCUM system, and the recursive call then dereferences it.
     let ucum = Some(operand::UCUM_SYSTEM);
     if lq.system.as_deref() != ucum || rq.system.as_deref() != ucum {
-        return Err(null_pointer("org.hl7.fhir.r4.model.Base.isPrimitive()"));
+        // `left.get(0).isPrimitive()` on the one-item list holding that
+        // `null` (`FHIRPathEngine.java:2413`), worded as the JVM words it.
+        return Err(EvalError::plain(
+            "Cannot invoke \"org.hl7.fhir.r4.model.Base.isPrimitive()\" because the return \
+             value of \"java.util.List.get(int)\" is null",
+        ));
     }
     Err(EvalError::unsupported_at(
         "ordering quantities through their UCUM canonical form",
