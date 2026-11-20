@@ -10,19 +10,20 @@
 //! # Why one file and one seam
 //!
 //! `frevo-codegen` is a generator: its observable surface is a command that
-//! verifies an input package, writes files, and reports what it found. None of
-//! that exists yet. Every test below drives real inputs — the pinned package,
-//! the HAPI cross-check tree, the interim example set, hand-written synthetic
-//! StructureDefinitions — through [`generator_under_test`], which today returns
-//! a binding whose every method answers [`CodegenError::NotImplemented`].
+//! verifies an input package, writes files, and reports what it found. Every
+//! test below drives real inputs — the pinned package, the HAPI cross-check
+//! tree, the interim example set, hand-written synthetic StructureDefinitions —
+//! through [`generator_under_test`], which is bound to the real surfaces: the
+//! generator through `frevo_codegen`'s `BoundGenerator`, and the codec and the
+//! FHIRPath parser through `frevo-model` and `frevo-path` (see
+//! [`OracleGenerator`]).
 //!
-//! `NotImplemented` is an **error value, not a verdict**. It can never be read
-//! as a pass, including on the scenarios that require the generator to *refuse*
-//! (`codegen.inputs.002`, `codegen.inputs.003`, `codegen.inputs.006`,
-//! `codegen.naming.003`): those tests assert the refusal's *kind* and the
-//! content of its message, so a generator that produced nothing at all fails
-//! them. One edit to [`generator_under_test`] points the whole file at the real
-//! generator.
+//! [`CodegenError::NotImplemented`] remains an **error value, not a verdict**.
+//! It can never be read as a pass, including on the scenarios that require the
+//! generator to *refuse* (`codegen.inputs.002`, `codegen.inputs.003`,
+//! `codegen.inputs.006`, `codegen.naming.003`): those tests assert the
+//! refusal's *kind* and the content of its message, so a generator that
+//! produced nothing at all fails them.
 //!
 //! # Provenance
 //!
@@ -42,38 +43,32 @@
 //! `hapi-fhir/hapi-fhir-base/src/main/java/ca/uhn/fhir/parser/` at the same
 //! SHA, and HAPI's own JUnit class is named where one covers the case.
 //!
-//! # Three conflicts between this delta and HAPI, flagged and not coded around
+//! # The decode scenarios follow HAPI's parser
 //!
-//! Each is written to the scenario **as the delta states it**, with the
-//! upstream evidence recorded at the test, and reported to the owner rather
-//! than silently reinterpreted.
+//! Three conflicts this file once flagged between the delta and HAPI were
+//! resolved in the spec on 2026-11-20 (`tasks/blockers.md`, "`codegen_r4.rs`
+//! seam bound; six reds left"), and the tests now assert HAPI's behaviour as
+//! the approved delta restates it:
 //!
-//! 1. `codegen.cardinality.002` and `codegen.cardinality.004` require a
-//!    missing-required-element diagnostic for `Observation.status` and for a
-//!    `1..*` element given an empty array, and a strict-mode failure.
-//!    `IParserErrorHandler.missingRequiredElement` has exactly four call sites
-//!    in HAPI's JSON parser — `JsonParser.java:1503`, `:1514`, `:1995` and
-//!    `:2004` — and all four are about `Extension.url` or `Extension.value`.
-//!    `ParserState.java` contains no minimum-cardinality check at all. HAPI
-//!    therefore reports **nothing** for a missing `Observation.status`, in
-//!    either mode, and a strict parse of that document succeeds.
-//! 2. `codegen.choice.004` requires a decode of a document carrying both
-//!    `valueString` and `valueQuantity` to **fail** with an error naming the
-//!    element path and both properties. HAPI routes the second one to
-//!    `unexpectedRepeatingElement` keyed on the choice **field** name — the
-//!    `RuntimeChildChoiceDefinition.getField().getName()` at
-//!    `ParserState.java:663-671`, which is `value`, neither a path nor both
-//!    property names — and `LenientErrorHandler.unexpectedRepeatingElement`
-//!    only logs, so the default decode succeeds with the first value kept.
-//!    Only `StrictErrorHandler` throws (`Msg.code(1823)`).
-//! 3. `codegen.binding.002` requires a decode of `"gender": "M"` to survive and
-//!    re-serialise unchanged. The surviving-raw-string half is confirmed by
-//!    HAPI's own `CaseInsensitiveEnumParsingR4Test` — but that test installs a
-//!    mock error handler. With the default `LenientErrorHandler`, an unknown
-//!    enum code reaches `invalidValue` (`ParserState.java:1510`) with a
-//!    non-blank value, and `LenientErrorHandler.invalidValue` delegates a
-//!    non-blank invalid value to the strict handler, which throws. So the delta
-//!    needs to say which decode configuration preserves the code.
+//! 1. `codegen.cardinality.002` and `.004`: no minimum-cardinality check on
+//!    decode, in either mode, and no diagnostic.
+//!    `IParserErrorHandler.missingRequiredElement`'s four call sites in
+//!    `JsonParser.java` (`:1503`, `:1514`, `:1995`, `:2004`) are all about
+//!    `Extension.url` or `Extension.value`.
+//! 2. `codegen.choice.004`: strict mode fails at the second `value[x]`
+//!    property with `HAPI-1823` naming `value`, the choice field name
+//!    (`ParserState.java:660-672`); lenient mode keeps the first and drops the
+//!    second with a repeated-element diagnostic.
+//! 3. `codegen.binding.002`: a code outside `Patient.gender`'s enumeration is
+//!    `HAPI-1821` in **both** default modes, because
+//!    `LenientErrorHandler.invalidValue` hands a non-blank invalid value to the
+//!    strict handler (`LenientErrorHandler.java:100-108`). HAPI's
+//!    `CaseInsensitiveEnumParsingR4Test` keeps the raw code only because it
+//!    installs a mock error handler.
+//!
+//! A decode failure that carries HAPI's message code reaches these tests as
+//! `HAPI-<code>: <message>`, which is how `Msg.code` renders it, so the
+//! approved delta's message texts are asserted exactly.
 //!
 //! Scenario coverage: all 49 `codegen.*` scenarios.
 
@@ -815,14 +810,16 @@ pub enum DecodeMode {
 /// The diagnostic conditions the `codegen.*` scenarios reach.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum DiagnosticKind {
-    /// `codegen.cardinality.002`, `codegen.cardinality.004`.
+    /// A missing-required-element report. HAPI's parser checks no minimum
+    /// cardinality on decode, so `codegen.cardinality.002`, `.004` and `.005`
+    /// assert that this is **never** returned. The codec has no such report
+    /// today, so nothing maps to it; it is kept so the absence is asserted by
+    /// name.
     MissingRequiredElement,
-    /// `codegen.cardinality.005`.
+    /// `codegen.cardinality.005`, `codegen.binding.002` (a blank code).
     InvalidValue,
-    /// `codegen.choice.004`.
+    /// `codegen.choice.004`, lenient mode.
     DuplicateChoiceValue,
-    /// `codegen.binding.002`.
-    CodeNotInRequiredBinding,
     /// Any other report the codec raises -- an unknown property, a JSON type
     /// mismatch, a reference-graph condition. No `codegen.*` scenario is about
     /// one, but each is carried rather than dropped, so an assertion that a
@@ -832,11 +829,10 @@ pub enum DiagnosticKind {
 }
 
 impl DiagnosticKind {
-    pub const ALL: [DiagnosticKind; 5] = [
+    pub const ALL: [DiagnosticKind; 4] = [
         DiagnosticKind::MissingRequiredElement,
         DiagnosticKind::InvalidValue,
         DiagnosticKind::DuplicateChoiceValue,
-        DiagnosticKind::CodeNotInRequiredBinding,
         DiagnosticKind::Other,
     ];
 }
@@ -1330,6 +1326,25 @@ impl OracleGenerator {
         }
     }
 
+    /// A decode failure as the seam reports it.
+    ///
+    /// A condition HAPI has a message code for is rendered the way
+    /// `Msg.code(n) + message` renders it upstream, `HAPI-<n>: <message>`, so
+    /// that the decode scenarios can assert the approved delta's texts exactly
+    /// (`codegen.choice.004`, `codegen.cardinality.005`, `codegen.binding.002`).
+    /// A condition with no HAPI code keeps the codec's own `Display`, which
+    /// names its kind, path and offset.
+    fn failure_message(failure: &frevo_model::codec::decode::DecodeFailure) -> String {
+        use frevo_model::codec::decode::DecodeFailure;
+        match failure {
+            DecodeFailure::Report(report) => match report.code {
+                Some(code) => format!("HAPI-{code}: {}", report.message),
+                None => failure.to_string(),
+            },
+            DecodeFailure::Coded(coded) => format!("HAPI-{}: {}", coded.code, coded.message),
+        }
+    }
+
     fn utf8(bytes: Vec<u8>, what: &str) -> Result<String, CodegenError> {
         String::from_utf8(bytes)
             .map_err(|e| Self::codec_error(format!("the {what} form is not UTF-8: {e}")))
@@ -1506,7 +1521,7 @@ impl Codegen for OracleGenerator {
 
     fn decode(&self, json: &str, mode: DecodeMode) -> Result<Decoded, CodegenError> {
         let tree = frevo_model::codec::decode::decode_document(json.as_bytes(), Self::mode(mode))
-            .map_err(|e| Self::codec_error(e.to_string()))?;
+            .map_err(|e| Self::codec_error(Self::failure_message(&e)))?;
         let view = Self::view(&tree);
         self.decodes.borrow_mut().push((view.clone(), tree));
         Ok(view)
@@ -1947,15 +1962,43 @@ pub fn example_set() -> ExampleSet {
     }
 }
 
-/// Rust's keywords, so "a deterministic non-keyword Rust name" is checkable
-/// rather than asserted (`codegen.naming.002`).
-pub const RUST_KEYWORDS: [&str; 51] = [
-    "as", "break", "const", "continue", "crate", "dyn", "else", "enum", "extern", "false", "fn",
-    "for", "if", "impl", "in", "let", "loop", "match", "mod", "move", "mut", "pub", "ref",
-    "return", "self", "Self", "static", "struct", "super", "trait", "true", "type", "unsafe",
-    "use", "where", "while", "async", "await", "abstract", "become", "box", "do", "final", "macro",
-    "override", "priv", "try", "typeof", "unsized", "virtual", "yield",
+/// The Rust 2024 strict keywords, exactly as `codegen.naming.002` lists them
+/// (38 names).
+pub const RUST_STRICT_KEYWORDS: [&str; 38] = [
+    "as", "async", "await", "break", "const", "continue", "crate", "dyn", "else", "enum", "extern",
+    "false", "fn", "for", "if", "impl", "in", "let", "loop", "match", "mod", "move", "mut", "pub",
+    "ref", "return", "self", "Self", "static", "struct", "super", "trait", "true", "type",
+    "unsafe", "use", "where", "while",
 ];
+
+/// The Rust 2024 reserved keywords, exactly as `codegen.naming.002` lists them
+/// (14 names, `gen` included: it is reserved from the 2024 edition).
+pub const RUST_RESERVED_KEYWORDS: [&str; 14] = [
+    "abstract", "become", "box", "do", "final", "gen", "macro", "override", "priv", "try",
+    "typeof", "unsized", "virtual", "yield",
+];
+
+/// Rust's keywords, strict and reserved: the 52 names `codegen.naming.002`
+/// escapes, so "a deterministic non-keyword Rust name" is checkable rather
+/// than asserted.
+pub const RUST_KEYWORDS: [&str; 52] = {
+    let mut all = [""; 52];
+    let mut i = 0;
+    while i < RUST_STRICT_KEYWORDS.len() {
+        all[i] = RUST_STRICT_KEYWORDS[i];
+        i += 1;
+    }
+    let mut j = 0;
+    while j < RUST_RESERVED_KEYWORDS.len() {
+        all[i + j] = RUST_RESERVED_KEYWORDS[j];
+        j += 1;
+    }
+    all
+};
+
+/// Weak keywords: valid identifiers, which `codegen.naming.002` leaves as they
+/// are.
+pub const RUST_WEAK_KEYWORDS: [&str; 4] = ["union", "raw", "safe", "macro_rules"];
 
 /// `true` when `name` is a plain, non-raw, non-keyword Rust identifier.
 pub fn is_plain_rust_identifier(name: &str) -> bool {
@@ -3168,60 +3211,120 @@ fn a_choice_element_with_a_single_permitted_type_is_still_a_choice() {
 
 // covers: codegen.choice.004
 #[test]
-fn two_values_for_the_same_choice_element_are_rejected_on_decode() {
+fn a_second_choice_value_fails_a_strict_decode_with_hapi_1823_naming_value() {
     let generator = generator_under_test();
 
-    // CONFLICT WITH HAPI, written to the scenario as the delta states it.
-    //
-    // The delta requires this decode to fail with an error naming the element
-    // path and both properties. HAPI does not do that. `ParserState`'s
-    // `enteringNewElement` keys the non-repeatable check on the choice field
-    // name -- `RuntimeChildChoiceDefinition.getField().getName()`, which is
-    // `value` -- and calls `unexpectedRepeatingElement(null, "value")`
-    // (ParserState.java:663-671). `LenientErrorHandler` only logs that, and
-    // the parser pushes `SwallowChildrenWholeState`, so the default decode
-    // succeeds with `valueString` kept and `valueQuantity` dropped. Only
-    // `StrictErrorHandler` throws, with `Msg.code(1823)` and a message naming
-    // `value` alone.
-    //
-    // Both modes are asserted here so the two halves of the conflict are
-    // separately visible when this goes red.
-    for mode in [DecodeMode::Strict, DecodeMode::Lenient] {
-        let error = generator
-            .decode(OBSERVATION_WITH_TWO_CHOICE_VALUES, mode)
-            .err()
-            .unwrap_or_else(|| {
-                panic!(
-                    "two values for Observation.value[x] must fail to decode in {mode:?} mode. \
-                     In lenient mode this is the conflict with HAPI recorded above: HAPI keeps \
-                     the first value and logs unexpectedRepeatingElement (code \
-                     {CODE_UNEXPECTED_REPEATING_ELEMENT})."
-                )
-            });
-        let (_, kind, message) = error.refusal("two values for one choice element");
-        assert_eq!(kind, FailureKind::Codec);
-        assert!(
-            message.contains("Observation.value"),
-            "the error must name the element path; it said {message:?}"
-        );
-        for property in ["valueString", "valueQuantity"] {
-            assert!(
-                message.contains(property),
-                "the error must name {property} as well; it said {message:?}"
-            );
-        }
-    }
+    // `ParserState.enteringNewElement` records each `0..1` child it enters in
+    // `myParsedNonRepeatableNames` under the choice's *field* name --
+    // `RuntimeChildChoiceDefinition.getField().getName()`, `value` for every
+    // `value[x]` property -- so `valueQuantity` after `valueString` is a
+    // repetition (ParserState.java:660-672). `StrictErrorHandler` throws
+    // `Msg.code(1823)` with no location (StrictErrorHandler.java:76-79;
+    // `describeLocation(null)` is empty, ParseErrorHandler.java:24-30), so the
+    // message names `value` and neither JSON property.
+    let error = generator
+        .decode(OBSERVATION_WITH_TWO_CHOICE_VALUES, DecodeMode::Strict)
+        .err()
+        .unwrap_or_else(|| {
+            panic!(
+                "two values for Observation.value[x] must fail a strict decode with HAPI's \
+                 repeated-element error (code {CODE_UNEXPECTED_REPEATING_ELEMENT})"
+            )
+        });
+    let (_, kind, message) = error.refusal("two values for one choice element, strict");
+    assert_eq!(kind, FailureKind::Codec);
+    assert_eq!(
+        message,
+        "HAPI-1823: Multiple repetitions of non-repeatable element 'value' found during parse",
+        "HAPI's StrictErrorHandler.unexpectedRepeatingElement text, exactly"
+    );
+    assert_eq!(CODE_UNEXPECTED_REPEATING_ELEMENT, 1823);
 
-    // One value for the same element decodes cleanly, so the rejection is
-    // about the duplication and not about the element.
-    let single = generator
-        .decode(
-            &observation_with_value("valueString", r#""6.3""#),
-            DecodeMode::Strict,
-        )
-        .unwrap_or_else(|e| panic!("one value for a choice element must decode: {e}"));
-    assert_eq!(single.at("Observation.value").len(), 1);
-    assert_eq!(single.diagnostics, Vec::<Diagnostic>::new());
+    // One value for the same element decodes cleanly in both modes, so the
+    // failure is about the repetition and not about the element.
+    for mode in [DecodeMode::Strict, DecodeMode::Lenient] {
+        let single = generator
+            .decode(&observation_with_value("valueString", r#""6.3""#), mode)
+            .unwrap_or_else(|e| {
+                panic!("one value for a choice element must decode in {mode:?} mode: {e}")
+            });
+        assert_eq!(single.at("Observation.value").len(), 1, "{mode:?}");
+        assert_eq!(single.diagnostics, Vec::<Diagnostic>::new(), "{mode:?}");
+    }
+}
+
+// covers: codegen.choice.004
+#[test]
+fn a_second_choice_value_is_dropped_with_a_diagnostic_in_a_lenient_decode() {
+    let generator = generator_under_test();
+
+    // `LenientErrorHandler.unexpectedRepeatingElement` only logs
+    // (LenientErrorHandler.java:183-190), and the parser pushes
+    // `SwallowChildrenWholeState` for the second property
+    // (ParserState.java:670), so the first property in document order is the
+    // value and the `Quantity` and everything under it are gone.
+    let decoded = generator
+        .decode(OBSERVATION_WITH_TWO_CHOICE_VALUES, DecodeMode::Lenient)
+        .unwrap_or_else(|e| {
+            panic!(
+                "a lenient decode of two values for Observation.value[x] must succeed, \
+                 keeping the first: {e}"
+            )
+        });
+
+    let values = decoded.at("Observation.value");
+    assert_eq!(
+        values.len(),
+        1,
+        "Observation.value holds one value, the first: {values:?}"
+    );
+    assert_eq!(
+        values[0].chosen_type.as_deref(),
+        Some("string"),
+        "the first property in document order, valueString, is the value"
+    );
+    assert_eq!(values[0].value.as_deref(), Some("6.3"));
+    let swallowed: Vec<&ElementValue> = decoded
+        .values
+        .iter()
+        .filter(|v| v.path.starts_with("Observation.value."))
+        .collect();
+    assert_eq!(
+        swallowed,
+        Vec::<&ElementValue>::new(),
+        "the Quantity's children are swallowed with it"
+    );
+
+    // A repeated-element diagnostic naming `value`, where HAPI logs.
+    assert_eq!(
+        decoded.kinds(),
+        vec![DiagnosticKind::DuplicateChoiceValue],
+        "exactly one condition, the repeated choice element: {:?}",
+        decoded.diagnostics
+    );
+    let diagnostic = decoded
+        .diagnostic(DiagnosticKind::DuplicateChoiceValue)
+        .expect("the repeated-element diagnostic");
+    assert_eq!(diagnostic.path, "Observation.value");
+    assert!(
+        diagnostic.message.contains("'value'"),
+        "the diagnostic names the choice field `value`: {:?}",
+        diagnostic.message
+    );
+    assert_eq!(decoded.diagnostics.len(), 1, "{:?}", decoded.diagnostics);
+
+    // A canonical encode of what was decoded emits only the first property.
+    let canonical = generator
+        .encode_canonical(&decoded)
+        .unwrap_or_else(|e| panic!("canonical encoding must succeed: {e}"));
+    assert!(
+        canonical.contains(r#""valueString":"6.3""#),
+        "the kept value is emitted: {canonical}"
+    );
+    assert!(
+        !canonical.contains("valueQuantity"),
+        "the dropped value is not part of the decoded resource: {canonical}"
+    );
 }
 
 // ===========================================================================
@@ -3273,7 +3376,7 @@ fn zero_to_one_is_optional_and_single() {
 
 // covers: codegen.cardinality.002
 #[test]
-fn one_to_one_is_required_and_single_and_its_absence_is_a_diagnostic() {
+fn one_to_one_is_required_and_single_and_its_absence_is_not_checked_on_decode() {
     let generator = generator_under_test();
     let report = pinned_run(generator.as_ref(), "cardinality-002");
 
@@ -3281,61 +3384,46 @@ fn one_to_one_is_required_and_single_and_its_absence_is_a_diagnostic() {
     assert_eq!(status.max, Max::One, "the element holds at most one value");
     assert_eq!(status.min, 1, "and records that its minimum is 1");
 
-    // CONFLICT WITH HAPI, written to the scenario as the delta states it.
-    //
-    // `missingRequiredElement` has exactly four call sites in HAPI's JSON
-    // parser -- JsonParser.java:1503, :1514, :1995 and :2004 -- and all four
-    // are about `Extension.url` or `Extension.value`. `ParserState.java`
-    // carries no minimum-cardinality check at all, so HAPI reports *nothing*
-    // for a missing `Observation.status` and a strict parse of this document
-    // succeeds. The delta's "because LenientErrorHandler.missingRequiredElement
-    // logs a warning and returns" is true of the handler and false of the
-    // parser, which never calls it here.
-    let lenient = generator
-        .decode(OBSERVATION_WITHOUT_STATUS, DecodeMode::Lenient)
-        .unwrap_or_else(|e| {
-            panic!("a lenient decode of an Observation with no status must succeed: {e}")
-        });
-    assert_eq!(
-        lenient.at("Observation.status"),
-        Vec::<&ElementValue>::new(),
-        "the element stays absent"
-    );
-    let diagnostic = lenient
-        .diagnostic(DiagnosticKind::MissingRequiredElement)
-        .unwrap_or_else(|| {
-            panic!(
-                "the lenient decode must return a missing-required-element diagnostic. \
-                 This is the conflict with HAPI recorded above: HAPI's JSON parser never \
-                 calls missingRequiredElement for a resource element. It returned {:?}",
-                lenient.kinds()
-            )
-        });
-    assert_eq!(
-        diagnostic.path, "Observation.status",
-        "the diagnostic must name the element"
-    );
-
-    // Strict mode fails, naming the same element.
-    let error = generator
-        .decode(OBSERVATION_WITHOUT_STATUS, DecodeMode::Strict)
-        .expect_err("a strict decode of an Observation with no status must fail");
-    let (_, kind, message) = error.refusal("a missing required element in strict mode");
-    assert_eq!(kind, FailureKind::Codec);
-    assert!(
-        message.contains("Observation.status"),
-        "the strict failure must name Observation.status; it said {message:?}"
-    );
-
-    // And in neither mode is the element given a default value.
-    assert!(
-        lenient
-            .values
-            .iter()
-            .all(|v| v.path != "Observation.status"),
-        "a required element must not be defaulted: {:?}",
-        lenient.at("Observation.status")
-    );
+    // HAPI's parser checks no minimum cardinality while decoding: `ParserState`
+    // never consults a child's `getMin()`, and the four call sites of
+    // `missingRequiredElement` in the JSON parser concern only an extension's
+    // `url` and `value` (JsonParser.java:1503, :1514 on decode, :1995, :2004 on
+    // encode). So neither error handler is reached, and a strict decode of
+    // this document succeeds exactly as a lenient one does.
+    for mode in [DecodeMode::Lenient, DecodeMode::Strict] {
+        let decoded = generator
+            .decode(OBSERVATION_WITHOUT_STATUS, mode)
+            .unwrap_or_else(|e| {
+                panic!(
+                    "a {mode:?} decode of an Observation with no status must succeed: HAPI's \
+                     parser checks no minimum cardinality. It failed with: {e}"
+                )
+            });
+        assert_eq!(
+            decoded.at("Observation.status"),
+            Vec::<&ElementValue>::new(),
+            "{mode:?}: the element stays absent"
+        );
+        assert!(
+            decoded
+                .values
+                .iter()
+                .all(|v| !v.path.starts_with("Observation.status")),
+            "{mode:?}: a required element must not be defaulted: {:?}",
+            decoded.values
+        );
+        assert!(
+            decoded
+                .diagnostic(DiagnosticKind::MissingRequiredElement)
+                .is_none(),
+            "{mode:?}: no missing-required-element diagnostic"
+        );
+        assert_eq!(
+            decoded.diagnostics,
+            Vec::<Diagnostic>::new(),
+            "{mode:?}: no diagnostic at all"
+        );
+    }
 }
 
 // covers: codegen.cardinality.003
@@ -3451,61 +3539,61 @@ fn one_to_many_is_an_ordered_list_whose_minimum_is_recorded() {
         Some("declined")
     );
 
-    // One participant is enough, so the diagnostic below is about emptiness.
+    // One participant decodes cleanly too.
     let one = generator
         .decode(APPOINTMENT_WITH_ONE_PARTICIPANT, DecodeMode::Strict)
         .unwrap_or_else(|e| panic!("one participant must decode: {e}"));
     assert_eq!(one.diagnostics, Vec::<Diagnostic>::new());
 
-    // CONFLICT WITH HAPI, as recorded at `codegen.cardinality.002`: HAPI's
-    // JSON parser calls `missingRequiredElement` only for `Extension.url` and
-    // `Extension.value`, so an empty array for a `1..*` element is accepted
-    // with no diagnostic in either mode.
-    let lenient = generator
-        .decode(APPOINTMENT_WITH_EMPTY_PARTICIPANT, DecodeMode::Lenient)
-        .unwrap_or_else(|e| panic!("an empty array must decode leniently: {e}"));
-    assert_eq!(
-        lenient.at("Appointment.participant"),
-        Vec::<&ElementValue>::new(),
-        "the element is absent, not an empty list"
-    );
-    assert_eq!(
-        lenient.repeats("Appointment.participant"),
-        Vec::<&ElementValue>::new()
-    );
-    let diagnostic = lenient
-        .diagnostic(DiagnosticKind::MissingRequiredElement)
-        .unwrap_or_else(|| {
-            panic!(
-                "an empty array for a 1..* element must return a missing-required-element \
-                 diagnostic. This is the conflict with HAPI recorded at \
-                 codegen.cardinality.002. It returned {:?}",
-                lenient.kinds()
-            )
-        });
-    assert_eq!(diagnostic.path, "Appointment.participant");
-
-    let error = generator
-        .decode(APPOINTMENT_WITH_EMPTY_PARTICIPANT, DecodeMode::Strict)
-        .expect_err("the strict decode must fail");
-    let (_, kind, message) = error.refusal("an empty array for a 1..* element");
-    assert_eq!(kind, FailureKind::Codec);
-    assert!(
-        message.contains("Appointment.participant"),
-        "the failure must name the element; it said {message:?}"
-    );
+    // An empty array for the `1..*` element: the JSON parser iterates the
+    // array's entries and an empty array has none (JsonParser.java:1439-1457),
+    // and no minimum cardinality is checked (`codegen.cardinality.002`). So
+    // the decode succeeds in both modes, with the element absent and no
+    // diagnostic.
+    for mode in [DecodeMode::Lenient, DecodeMode::Strict] {
+        let decoded = generator
+            .decode(APPOINTMENT_WITH_EMPTY_PARTICIPANT, mode)
+            .unwrap_or_else(|e| {
+                panic!(
+                    "an empty array for a 1..* element must decode in {mode:?} mode: HAPI's \
+                     parser checks no minimum cardinality. It failed with: {e}"
+                )
+            });
+        assert_eq!(
+            decoded.at("Appointment.participant"),
+            Vec::<&ElementValue>::new(),
+            "{mode:?}: the element is absent, not an empty list"
+        );
+        assert_eq!(
+            decoded.repeats("Appointment.participant"),
+            Vec::<&ElementValue>::new(),
+            "{mode:?}"
+        );
+        assert!(
+            decoded
+                .diagnostic(DiagnosticKind::MissingRequiredElement)
+                .is_none(),
+            "{mode:?}: no missing-required-element diagnostic"
+        );
+        assert_eq!(
+            decoded.diagnostics,
+            Vec::<Diagnostic>::new(),
+            "{mode:?}: no diagnostic at all"
+        );
+    }
 }
 
 // covers: codegen.cardinality.005
 #[test]
-fn a_required_element_present_but_empty_is_treated_as_absent() {
+fn a_required_element_present_but_blank_has_no_value_and_strict_mode_rejects_it() {
     let generator = generator_under_test();
 
-    // `ParserState.java:1454-1456`: a `value` of `""` short-circuits before
+    // `ParserState.java:1454-1457`: a `value` of `""` short-circuits before
     // `setValueAsString`, calling `invalidValue(location, "", "Attribute value
     // must not be empty (\"\")")`. `LenientErrorHandler.invalidValue` logs a
-    // blank value and raises every other invalid one, which is why a blank is
-    // the one invalid value that survives a lenient decode (`model.json.023`).
+    // blank value and returns (LenientErrorHandler.java:100-108), which is why
+    // a blank is the one invalid value that survives a lenient decode
+    // (`model.json.023`).
     let lenient = generator
         .decode(OBSERVATION_WITH_BLANK_STATUS, DecodeMode::Lenient)
         .unwrap_or_else(|e| {
@@ -3515,34 +3603,56 @@ fn a_required_element_present_but_empty_is_treated_as_absent() {
         .diagnostic(DiagnosticKind::InvalidValue)
         .unwrap_or_else(|| {
             panic!(
-                "a blank value must return an invalid-value diagnostic, not a \
-                 missing-required-element one; it returned {:?}",
-                lenient.kinds()
+                "a blank value must return an invalid-value diagnostic where HAPI logs; it \
+                 returned {:?}",
+                lenient.diagnostics
             )
         });
+    assert_eq!(
+        diagnostic.path, "Observation.status",
+        "the diagnostic must name the element"
+    );
     assert!(
-        diagnostic.path.contains("status"),
-        "the diagnostic must name the element; it named {:?}",
-        diagnostic.path
+        diagnostic
+            .message
+            .contains(r#"Attribute value must not be empty ("")"#),
+        "the diagnostic carries HAPI's invalid-value error: {:?}",
+        diagnostic.message
+    );
+    assert!(
+        lenient
+            .diagnostic(DiagnosticKind::MissingRequiredElement)
+            .is_none(),
+        "no missing-required-element diagnostic (codegen.cardinality.002): {:?}",
+        lenient.diagnostics
     );
     assert_eq!(
-        lenient.at("Observation.status"),
-        Vec::<&ElementValue>::new(),
-        "a blank value is treated as absent, not stored as an empty string"
+        lenient.kinds(),
+        vec![DiagnosticKind::InvalidValue],
+        "the invalid-value diagnostic is the only one: {:?}",
+        lenient.diagnostics
+    );
+    assert!(
+        lenient
+            .at("Observation.status")
+            .iter()
+            .all(|v| v.value.is_none()),
+        "Observation.status has no value, not an empty string: {:?}",
+        lenient.at("Observation.status")
     );
 
-    // The strict decode fails, naming the element.
+    // The strict decode fails with `1821` (StrictErrorHandler.java:56-59),
+    // the location rendered as `[element="<name>"] ` (ParseLocation.java:55-57).
     let error = generator
         .decode(OBSERVATION_WITH_BLANK_STATUS, DecodeMode::Strict)
         .expect_err("the strict decode of a blank required value must fail");
-    let (_, kind, message) = error.refusal("a blank required value");
+    let (_, kind, message) = error.refusal("a blank required value, strict");
     assert_eq!(kind, FailureKind::Codec);
-    assert!(
-        message.contains("status"),
-        "the failure must name the element; it said {message:?}"
+    assert_eq!(
+        message,
+        r#"HAPI-1821: [element="status"] Invalid attribute value "": Attribute value must not be empty ("")"#,
+        "HAPI's StrictErrorHandler.invalidValue text, exactly"
     );
-    // The invalid-value condition, not the missing-element one: HAPI's codes
-    // for the two differ, and conflating them would hide which one fired.
     assert_eq!(CODE_INVALID_VALUE, 1821);
 }
 
@@ -3626,71 +3736,115 @@ fn a_required_binding_generates_a_closed_enumeration() {
 
 // covers: codegen.binding.002
 #[test]
-fn a_code_outside_a_required_binding_is_preserved_not_dropped() {
+fn a_code_outside_a_required_binding_is_rejected_on_decode_in_both_modes() {
     let generator = generator_under_test();
 
-    // CONFLICT WITH HAPI, written to the scenario as the delta states it.
+    // HAPI's R4 model holds `Patient.gender` as an `Enumeration`, whose factory
+    // throws `IllegalArgumentException("Unknown AdministrativeGender code
+    // 'M'")` (org.hl7.fhir.r4 Enumerations.java:256-269). `ParserState` reports
+    // it through `invalidValue` with that message (ParserState.java:1482-1514),
+    // and the default `LenientErrorHandler` hands a non-blank invalid value to
+    // the strict handler (LenientErrorHandler.java:100-108), which throws
+    // `Msg.code(1821)` (StrictErrorHandler.java:56-59). So both default modes
+    // fail, and a server asked to store the resource answers 400.
     //
-    // The preserved-raw-string half is HAPI's own documented behaviour:
-    // `CaseInsensitiveEnumParsingR4Test.testEnumValueNotCorrectable_single`
-    // asserts `getGenderElement().getValue()` is null while
-    // `getValueAsString()` is the original `FooBar`, because
-    // `PrimitiveType.setValueAsString` assigns the lexical form before `parse`
-    // throws. But that test installs a mock error handler. With the default
-    // `LenientErrorHandler`, the unknown code reaches `invalidValue`
-    // (ParserState.java:1510) with a non-blank value, and
-    // `LenientErrorHandler.invalidValue` delegates a non-blank invalid value to
-    // `StrictErrorHandler`, which throws `Msg.code(1821)`. So the delta needs
-    // to say which decode configuration this scenario is about.
-    let decoded = generator
-        .decode(PATIENT_WITH_GENDER_M, DecodeMode::Lenient)
-        .unwrap_or_else(|e| {
+    // HAPI's own `CaseInsensitiveEnumParsingR4Test` keeps the raw code only
+    // because it installs a mock error handler; no default configuration does.
+    for mode in [DecodeMode::Lenient, DecodeMode::Strict] {
+        let error = generator
+            .decode(PATIENT_WITH_GENDER_M, mode)
+            .err()
+            .unwrap_or_else(|| {
+                panic!(
+                    "\"gender\": \"M\" must fail a {mode:?} decode: M is not an \
+                     AdministrativeGender code, and HAPI rejects it in both default modes \
+                     (code {CODE_INVALID_VALUE})"
+                )
+            });
+        let (_, kind, message) = error.refusal("a code outside a required binding");
+        assert_eq!(kind, FailureKind::Codec, "{mode:?}");
+        assert_eq!(
+            message,
+            r#"HAPI-1821: [element="gender"] Invalid attribute value "M": Unknown AdministrativeGender code 'M'"#,
+            "{mode:?}: HAPI's text, exactly"
+        );
+    }
+
+    // A code that matches a binding code ignoring case is corrected *and*
+    // still reported first: `ParserState.java:1488-1503` calls `invalidValue`
+    // with the case-discrepancy text, so it fails the same way in both modes.
+    let male = r#"{"resourceType":"Patient","gender":"Male"}"#;
+    for mode in [DecodeMode::Lenient, DecodeMode::Strict] {
+        let error = generator.decode(male, mode).err().unwrap_or_else(|| {
             panic!(
-                "a code outside a required binding must survive the decode so that it can \
-                 be re-serialised: {e}. This is the conflict with HAPI recorded above."
+                "\"gender\": \"Male\" must fail a {mode:?} decode: HAPI reports the case \
+                 discrepancy through invalidValue before correcting it"
             )
         });
+        let (_, kind, message) = error.refusal("a code differing from a binding code in case");
+        assert_eq!(kind, FailureKind::Codec, "{mode:?}");
+        assert_eq!(
+            message,
+            r#"HAPI-1821: [element="gender"] Invalid attribute value "Male": Case discrepancy detected in code value 'Male' (should be 'male')"#,
+            "{mode:?}: HAPI's text, exactly"
+        );
+    }
 
-    let diagnostic = decoded
-        .diagnostic(DiagnosticKind::CodeNotInRequiredBinding)
+    // A blank code is a blank value and follows `codegen.cardinality.005`:
+    // lenient keeps no value and returns a diagnostic, strict fails with 1821.
+    let blank = r#"{"resourceType":"Patient","gender":""}"#;
+    let lenient = generator
+        .decode(blank, DecodeMode::Lenient)
+        .unwrap_or_else(|e| panic!("a blank gender must survive a lenient decode: {e}"));
+    let diagnostic = lenient
+        .diagnostic(DiagnosticKind::InvalidValue)
         .unwrap_or_else(|| {
             panic!(
-                "the decode must report the code as not in the required binding; it \
-                 reported {:?}",
-                decoded.kinds()
+                "a blank code must return an invalid-value diagnostic; it returned {:?}",
+                lenient.diagnostics
             )
         });
     assert_eq!(diagnostic.path, "Patient.gender");
     assert!(
-        diagnostic.message.contains('M'),
-        "the diagnostic must name the code; it said {:?}",
-        diagnostic.message
+        lenient
+            .at("Patient.gender")
+            .iter()
+            .all(|v| v.value.is_none()),
+        "a blank code leaves Patient.gender with no value: {:?}",
+        lenient.at("Patient.gender")
     );
-
-    // The code is preserved, not dropped and not coerced.
-    let values = decoded.at("Patient.gender");
-    assert_eq!(values.len(), 1, "the element must survive");
+    let error = generator
+        .decode(blank, DecodeMode::Strict)
+        .expect_err("a blank gender must fail a strict decode");
+    let (_, kind, message) = error.refusal("a blank code, strict");
+    assert_eq!(kind, FailureKind::Codec);
     assert_eq!(
-        values[0].value.as_deref(),
-        Some("M"),
-        "the lexical value is kept exactly"
+        message,
+        r#"HAPI-1821: [element="gender"] Invalid attribute value "": Attribute value must not be empty ("")"#
     );
 
-    // And re-serialising the resource unchanged still emits it.
-    let encoded = generator
-        .encode(&decoded)
-        .unwrap_or_else(|e| panic!("re-encoding must succeed: {e}"));
-    assert!(
-        encoded.contains(r#""gender":"M""#),
-        "re-serialisation must emit the original code: {encoded}"
+    // A code inside the binding decodes cleanly in both modes, so the
+    // rejection is about the code and not about the element.
+    for mode in [DecodeMode::Lenient, DecodeMode::Strict] {
+        let decoded = generator
+            .decode(PATIENT_WITH_GENDER_FEMALE, mode)
+            .unwrap_or_else(|e| panic!("a code inside the binding must decode in {mode:?}: {e}"));
+        assert_eq!(decoded.diagnostics, Vec::<Diagnostic>::new(), "{mode:?}");
+    }
+
+    // The check is HAPI's `Enumeration` set, not every `required` binding: an
+    // element HAPI holds as a `CodeType` accepts any code, even under a
+    // required binding (`Attachment.contentType`, Attachment.java:58).
+    let content_type = concat!(
+        r#"{"resourceType":"Patient","#,
+        r#""photo":[{"contentType":"application/x-frevo-not-registered"}]}"#
     );
-    let canonical = generator
-        .encode_canonical(&decoded)
-        .unwrap_or_else(|e| panic!("canonical re-encoding must succeed: {e}"));
-    assert!(
-        canonical.contains(r#""gender":"M""#),
-        "including in canonical form: {canonical}"
-    );
+    for mode in [DecodeMode::Lenient, DecodeMode::Strict] {
+        let decoded = generator.decode(content_type, mode).unwrap_or_else(|e| {
+            panic!("Attachment.contentType is a CodeType upstream and accepts any code: {e}")
+        });
+        assert_eq!(decoded.diagnostics, Vec::<Diagnostic>::new(), "{mode:?}");
+    }
 }
 
 // covers: codegen.binding.003
@@ -3943,24 +4097,28 @@ fn a_fhir_name_that_is_a_rust_keyword_is_escaped_deterministically() {
     let generator = generator_under_test();
     let report = pinned_run(generator.as_ref(), "naming-002");
 
-    // `OperationDefinition.use` does not exist in R4 -- the scenario says
-    // "`OperationDefinition.use`-style", and the real `use` elements are on
-    // `Identifier`, `HumanName`, `Address`, `ContactPoint` and `Claim`.
-    for (type_name, fhir_name) in [
-        ("Encounter", "class"),
-        ("ElementDefinition", "type"),
-        ("Identifier", "use"),
-        ("Claim", "use"),
+    // A snake_case name that is a Rust 2024 strict or reserved keyword gets one
+    // `_` appended; every other name is left as it is. `class` is a keyword in
+    // Java, not in Rust, so it stays `class`.
+    //
+    // `OperationDefinition.use` does not exist in R4; the real `use` elements
+    // are on `Identifier`, `HumanName`, `Address`, `ContactPoint` and `Claim`.
+    for (type_name, fhir_name, rust_name) in [
+        ("ElementDefinition", "type", "type_"),
+        ("Identifier", "use", "use_"),
+        ("Claim", "use", "use_"),
+        ("Encounter", "class", "class"),
     ] {
         let element = report.ty_or_panic(type_name).element_or_panic(fhir_name);
-
-        // A deterministic non-keyword Rust name.
+        assert_eq!(
+            element.rust_name, rust_name,
+            "{type_name}.{fhir_name} must be named {rust_name:?}"
+        );
         assert!(
             is_plain_rust_identifier(&element.rust_name),
             "{type_name}.{fhir_name} must get a non-keyword, non-raw Rust name; it got {:?}",
             element.rust_name
         );
-        assert_ne!(element.rust_name, fhir_name);
 
         // Deterministic: the rule answers the same way every time it is asked.
         let first = generator
@@ -3981,30 +4139,53 @@ fn a_fhir_name_that_is_a_rust_keyword_is_escaped_deterministically() {
         );
     }
 
-    // Two different keywords must not collapse onto one escape.
-    let class_name = report
-        .ty_or_panic("Encounter")
-        .element_or_panic("class")
-        .rust_name
-        .clone();
-    let type_name = report
-        .ty_or_panic("ElementDefinition")
-        .element_or_panic("type")
-        .rust_name
-        .clone();
-    let use_name = report
-        .ty_or_panic("Identifier")
-        .element_or_panic("use")
-        .rust_name
-        .clone();
-    let distinct: BTreeSet<&str> = [class_name.as_str(), type_name.as_str(), use_name.as_str()]
-        .into_iter()
-        .collect();
+    // The keyword list is exactly the 52 names the scenario gives: 38 strict
+    // and 14 reserved, all distinct.
     assert_eq!(
-        distinct.len(),
-        3,
-        "class, type and use must escape to three different names: {distinct:?}"
+        RUST_STRICT_KEYWORDS.len() + RUST_RESERVED_KEYWORDS.len(),
+        52
     );
+    let distinct: BTreeSet<&str> = RUST_KEYWORDS.into_iter().collect();
+    assert_eq!(distinct.len(), 52, "the 52 keywords are distinct");
+    assert!(RUST_KEYWORDS.contains(&"gen"), "`gen` is reserved in 2024");
+    assert!(!RUST_KEYWORDS.contains(&"class"));
+
+    // Asked of every keyword, the rule escapes it with one `_`. `Self` is on
+    // the list but no snake_case name can spell it, so the rule is asked
+    // about the lower-case names. The rule is total (`codegen.naming.002`
+    // "deterministic"), so a path the package does not contain is still
+    // answered.
+    let mut wrong = Vec::new();
+    for keyword in RUST_KEYWORDS.iter().filter(|k| **k != "Self") {
+        let path = format!("Synthetic.{keyword}");
+        let name = generator
+            .rust_field_name(&path)
+            .unwrap_or_else(|e| panic!("{path}: {e}"));
+        if name != format!("{keyword}_") {
+            wrong.push(format!("{keyword} -> {name}"));
+        }
+    }
+    assert!(
+        wrong.is_empty(),
+        "every Rust 2024 strict or reserved keyword gets one `_` appended: {wrong:?}"
+    );
+
+    // And nothing else is escaped: weak keywords, Java-only keywords, and
+    // ordinary FHIR names stay as they are. No raw identifier is emitted.
+    for name in RUST_WEAK_KEYWORDS
+        .iter()
+        .chain(["class", "default", "interface", "status", "value"].iter())
+    {
+        let path = format!("Synthetic.{name}");
+        let rust = generator
+            .rust_field_name(&path)
+            .unwrap_or_else(|e| panic!("{path}: {e}"));
+        assert_eq!(
+            &rust, name,
+            "{name} is not a Rust 2024 keyword and stays as it is"
+        );
+        assert!(!rust.starts_with("r#"), "no raw identifier is emitted");
+    }
 
     // And the wire form is unchanged on a real document.
     let encounter = concat!(

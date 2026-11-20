@@ -33,7 +33,9 @@
 //! - `ParserState.weaveContainedResources()` is the post-decode pass that
 //!   raises 1826. It tests `isNotBlank(ref)` and
 //!   `ref.startsWith("#") && ref.length() > 1`, so a reference of exactly `#`
-//!   or a blank one is never looked up at all;
+//!   or a blank one is never looked up at all. A blank one is a blank
+//!   primitive value, though, so strict mode rejects it first with 1821
+//!   (`invalidValue`, `StrictErrorHandler.java:56-59`; `model.json.023`);
 //! - `BaseParser.determineReferenceText` and `BaseParser.isValidInternalReference`
 //!   raise 2724 on encode. `isValidInternalReference` returns true for a
 //!   non-local reference, for a reference whose value is exactly `#`, and for
@@ -60,6 +62,9 @@ use frevo_model::codec::decode as codec;
 pub const CODE_CONTAINED_RESOURCE_WITH_NO_ID: u32 = 1819;
 /// `StrictErrorHandler.unknownReference`.
 pub const CODE_UNKNOWN_REFERENCE: u32 = 1826;
+/// `StrictErrorHandler.invalidValue`, which a blank `reference` reaches in
+/// strict mode before any lookup (`model.json.025`).
+pub const CODE_INVALID_VALUE: u32 = 1821;
 /// `StrictErrorHandler.invalidInternalReference` — the only error condition on
 /// the encode side.
 pub const CODE_INVALID_INTERNAL_REFERENCE: u32 = 2724;
@@ -490,27 +495,61 @@ fn a_bare_hash_or_a_blank_reference_is_never_looked_up_on_decode() {
     let oracle = oracle_under_test();
 
     // `weaveContainedResources` tests `isNotBlank(ref)` and
-    // `ref.startsWith("#") && ref.length() > 1`, so neither of these is looked
-    // up at all — in either mode.
-    for (fixture, what) in [
-        (REFERENCE_TO_THE_CONTAINER, "a reference of exactly #"),
+    // `ref.startsWith("#") && ref.length() > 1`, so none of these is looked up
+    // at all. A reference of exactly `#` and a non-local one decode cleanly in
+    // both modes; a blank one does in lenient mode, where
+    // `LenientErrorHandler.invalidValue` logs a blank value and returns
+    // (`LenientErrorHandler.java:100-108`).
+    for (fixture, what, modes) in [
+        (
+            REFERENCE_TO_THE_CONTAINER,
+            "a reference of exactly #",
+            &[ParseMode::Lenient, ParseMode::Strict][..],
+        ),
         (
             REFERENCE_WITH_BLANK_ID_PART,
             "a reference with a blank id part",
+            &[ParseMode::Lenient][..],
         ),
-        (NON_LOCAL_REFERENCE, "a non-local reference"),
+        (
+            NON_LOCAL_REFERENCE,
+            "a non-local reference",
+            &[ParseMode::Lenient, ParseMode::Strict][..],
+        ),
     ] {
-        for mode in [ParseMode::Lenient, ParseMode::Strict] {
+        for &mode in modes {
             let out = oracle
                 .decode(fixture, mode)
-                .unwrap_or_else(|e| panic!("{what} must decode cleanly in {mode:?}: {e}"));
+                .unwrap_or_else(|e| panic!("{what} must decode in {mode:?}: {e}"));
             assert!(
                 !out.codes().contains(&CODE_UNKNOWN_REFERENCE),
-                "{what} must not be diagnosed in {mode:?}: {:?}",
+                "{what} must not be diagnosed as an invalid reference in {mode:?}: {:?}",
                 out.codes()
             );
         }
     }
+
+    // A blank `reference` is a blank primitive value, so in strict mode it
+    // fails **before** any lookup, with `invalidValue`'s code and not
+    // `unknownReference`'s: `ParserState.java:1454-1457` reports
+    // `Attribute value must not be empty ("")` and
+    // `StrictErrorHandler.invalidValue` throws it (`StrictErrorHandler.java:56-59`),
+    // rendered `HAPI-1821: [element="reference"] Invalid attribute value "": ...`
+    // (`model.json.023`, `codegen.cardinality.005`).
+    let err = oracle
+        .decode(REFERENCE_WITH_BLANK_ID_PART, ParseMode::Strict)
+        .expect_err("a blank reference must fail a strict decode as a blank primitive value");
+    let strict = expect_strict_failure(err, CODE_INVALID_VALUE, "a blank reference in strict mode");
+    assert_ne!(
+        strict.code, CODE_UNKNOWN_REFERENCE,
+        "a blank reference is never looked up, so it is not an invalid reference"
+    );
+    assert_eq!(
+        strict.message,
+        r#"[element="reference"] Invalid attribute value "": Attribute value must not be empty ("")"#,
+        "HAPI's invalid-value text after `HAPI-1821: `, exactly"
+    );
+    assert_eq!(strict.path, "Patient.managingOrganization.reference");
 }
 
 // ---------------------------------------------------------------------------

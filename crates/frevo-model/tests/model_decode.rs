@@ -140,6 +140,9 @@ pub struct Report {
     pub expected_type: Option<String>,
     /// The JSON type actually found, where the condition has one.
     pub found_type: Option<String>,
+    /// HAPI's message code, where HAPI has a callback for the condition
+    /// (`StrictErrorHandler`): 1821 for an invalid value (`model.json.023`).
+    pub code: Option<u32>,
 }
 
 /// A decimal read back from the model: its lexical form as it appeared, and the
@@ -318,6 +321,7 @@ impl FrevoCodec {
             message: diagnostic.message.clone(),
             expected_type: diagnostic.expected_type.clone(),
             found_type: diagnostic.found_type.clone(),
+            code: diagnostic.code,
         }
     }
 
@@ -1598,6 +1602,30 @@ fn an_invalid_primitive_value_is_fatal_in_both_modes_but_a_blank_one_is_not() {
     assert_eq!(
         d.resource_type, "Patient",
         "and the resource survives the blank value"
+    );
+    assert_eq!(
+        d.value("Patient.birthDate"),
+        None,
+        "and the element has no value"
+    );
+
+    // In strict mode a blank value IS fatal: `ParserState.java:1454-1457`
+    // reports it through `invalidValue` with `Attribute value must not be
+    // empty ("")`, and `StrictErrorHandler.invalidValue` throws it
+    // unconditionally with code 1821 (`StrictErrorHandler.java:56-59`), as
+    // `codegen.cardinality.005` states.
+    let r = must_reject(
+        BLANK_PRIMITIVE_VALUE.as_bytes(),
+        ParseMode::Strict,
+        "birthDate given as a blank string",
+    );
+    assert_eq!(r.kind, ReportKind::InvalidValue);
+    assert_eq!(r.code, Some(1821), "HAPI's invalidValue code");
+    assert_eq!(r.path, "Patient.birthDate");
+    assert_eq!(
+        r.message,
+        r#"[element="birthDate"] Invalid attribute value "": Attribute value must not be empty ("")"#,
+        "HAPI's invalid-value text after `HAPI-1821: `, exactly"
     );
 }
 

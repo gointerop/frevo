@@ -1,56 +1,60 @@
-//! Quantities and UCUM: `path.quantity.001` through `path.quantity.018`.
+//! Quantities and UCUM: `path.quantity.001` through `path.quantity.019`.
 //!
 //! ```text
 //! cargo test -p frevo-path --test path_quantity
 //! ```
 //!
-//! # Scenarios against the pinned source -- read before fixing a red test here
+//! # Where HAPI fails the suite, these tests require HAPI's answer
 //!
-//! Several of the suite cases these scenarios name cannot pass against the
-//! pinned R4 engine. The vendored `fhir-test-cases` file is newer than the
-//! engine (`oracles/PINS.md` against `reference/PINS.md`), and the quantity
-//! comparison code in `FHIRPathEngine` at
-//! `73c432b5f43ddbce979978a760ec4aa81e929094` has two defects the newer cases
-//! were written to catch:
+//! The vendored `fhir-test-cases` file is newer than the pinned R4 engine
+//! (`oracles/PINS.md` against `reference/PINS.md`), and the quantity comparison
+//! code in `FHIRPathEngine` at `73c432b5f43ddbce979978a760ec4aa81e929094` has
+//! two defects the newer cases were written to catch. The approved spec
+//! restates `path.quantity.009`, `.011`, `.012` and `.013` as HAPI behaves
+//! (`tasks/blockers.md`, 2026-11-20, "four `path.quantity` scenarios still
+//! state the suite's answer"): the spec-prose difference is `DEV-0017`, the
+//! wrong answers are `DEBT-0019`.
 //!
 //! 1. **`qtyEqual` and `qtyEquivalent` guard their unit comparison with
-//!    `else if (!left.hasUnit() || right.hasUnit())`** -- FHIRPathEngine.java
-//!    :2282 and :2355. Read it with both sides unitless: `!false || false` is
-//!    true, so it enters and the inner `!(left.hasUnit() && right.hasUnit())`
-//!    is also true, and the method returns null. Two unitless quantities are
-//!    therefore *undecidable* rather than equal. Read it with a unit on the
-//!    left and none on the right: `!true || false` is false, so the guard is
-//!    skipped entirely and the values compare -- a quantity with a unit equals
-//!    one without. Both readings are the opposite of what the suite expects.
-//!    The condition looks like a typo for `if (left.hasUnit() || right.hasUnit())`.
+//!    `else if (!left.hasUnit() || right.hasUnit())`** (FHIRPathEngine.java
+//!    :2282, :2355). It returns `null` when the **left** has no unit or the
+//!    units differ, and otherwise falls through to compare the values, so a
+//!    left quantity with a unit and a right one without compares by value
+//!    alone. `opEquals` turns the `null` into an empty result (:2114-2127);
+//!    `doEquivalent` unboxes it into a `boolean` (:2204-2206), a
+//!    `NullPointerException`.
 //!
-//! 2. **The four ordered comparisons disagree about which child identifies the
-//!    unit.** `opLessThan` compares the `code` children (:2438-2439),
-//!    `opGreater` and `opGreaterOrEqual` compare the `unit` children (:2481-2482,
-//!    :2573-2574), and `opLessOrEqual` compares the `unit` children as strings
-//!    (:2514-2517). When the comparison says the units differ, each falls into
-//!    `qtyToCanonicalDecimal`, which returns **null** for any quantity whose
-//!    `system` is not exactly `http://unitsofmeasure.org` (:2301-2303). The
-//!    null is then added to a list and dereferenced by the recursive call's
-//!    `left.get(0).isPrimitive()` (:2413), which is a NullPointerException.
+//! 2. **`opLessThan` identifies the unit by the `code` children** (:2438-2440)
+//!    where `<=`, `>` and `>=` use `unit`. With the codes differing it compares
+//!    canonical decimals, and `qtyToCanonicalDecimal` returns `null` for a
+//!    quantity with no UCUM system (:2301-2303); the recursive call's
+//!    `isPrimitive()` on it (:2414) is a `NullPointerException`.
 //!
-//! The affected cases, each of which the scenarios here require to pass:
+//! HAPI's own run (`oracles/fhirpath/hapi-8.12.0-results.json`) grades:
 //!
-//! | Case | Expects | Pinned R4 engine |
-//! |---|---|---|
-//! | `testQuantityUnitComparison/testQuantityNoUnitEqual` | `true` | empty, by defect 1 |
-//! | `testQuantityUnitComparison/testQuantityNoUnitEquivalent` | `true` | empty, by defect 1 |
-//! | `testQuantityUnitComparison/testQuantityUnitVsNoUnitEqual` | empty | `true`, by defect 1 |
-//! | `testQuantityUnitComparison/testQuantityUnitVsNoUnitEquivalent` | `false` | `true`, by defect 1 |
-//! | `testQuantityUnitComparison/testQuantityNoUnitVsUnitEquivalent` | `false` | raises, by defect 1 unboxing a null Boolean in `doEquivalent` (:2205-2207) |
-//! | `testLessThan/testLessThan33` | `true` | raises, by defect 2 |
+//! | Case | Suite expects | HAPI 8.12.0 | Line |
+//! |---|---|---|---:|
+//! | `testQuantityUnitComparison/testQuantityNoUnitEqual` | `true` | failed: empty | 632 |
+//! | `testQuantityUnitComparison/testQuantityNoUnitEquivalent` | `true` | failed: raises | 633 |
+//! | `testQuantityUnitComparison/testQuantityUnitVsNoUnitEqual` | empty | failed: `true` | 636 |
+//! | `testQuantityUnitComparison/testQuantityNoUnitVsUnitEqual` | empty | passed | 637 |
+//! | `testQuantityUnitComparison/testQuantityUnitVsNoUnitEquivalent` | `false` | failed: `true` | 638 |
+//! | `testQuantityUnitComparison/testQuantityNoUnitVsUnitEquivalent` | `false` | failed: raises | 639 |
+//! | `testLessThan/testLessThan33` | `true` | failed: raises | 631 |
+//! | `testLessOrEqual/testLessOrEqual30` | `true` | passed | 669 |
+//! | `testGreaterThan/testGreaterThan30` | `true` | passed | 728 |
 //!
-//! The tests below are written to the scenarios as stated, because a test that
-//! quietly encoded the defect would hide the decision rather than force it.
-//! Whoever resolves this needs either a `DEV-nnnn` entry in
-//! `docs/deviations.md` for each defect Frevo chooses to reproduce, or a
-//! `docs/known-gaps.md` entry with the owner's approval, or a correction to the
-//! spec delta. It is not a decision a test can make.
+//! A case HAPI fails must be graded `failed` here, with HAPI's value (parity
+//! under `path.oracle.012`); a Frevo pass would be `ahead-of-hapi`, not a pass
+//! of the scenario. Where HAPI raises a `NullPointerException`, Frevo returns an
+//! execution error -- never a panic (`path.errors.003`) -- with no offset
+//! (`path.errors.002`) and the JVM's message as HAPI's run records it, exactly.
+//!
+//! `path.quantity.019` is the Frevo side of `DEV-0029`: HAPI's server-facing
+//! worker raises `HAPI-0274: ` wherever the engine consults UCUM, and Frevo
+//! answers as the suite's worker does in every configuration. Its UCUM-dependent
+//! assertions stay red until the unit algebra exists (task 43;
+//! `tasks/blockers.md`, 2026-11-20, "the UCUM unit algebra cannot be ported").
 
 // `dead_code` is allowed for the shared harness module and nothing else; see
 // `tests/oracle/mod.rs:18-23`.
@@ -184,6 +188,87 @@ fn expect_evaluation_error(expr: &str) -> String {
         Ok(items) => panic!("{expr:?} must fail at evaluation, but it returned {items:?}"),
         Err(EngineError::Diagnostic { message, .. }) => message,
         Err(e) => panic!("{expr:?} must fail with a diagnostic, not: {e}"),
+    }
+}
+
+/// The JVM's message for `doEquivalent` unboxing the `null` `qtyEquivalent`
+/// returned, as HAPI's run records it (`hapi-8.12.0-results.json:633`, `:639`).
+const NPE_QTY_EQUIVALENT: &str = "Cannot invoke \"java.lang.Boolean.booleanValue()\" because \
+     the return value of \"org.hl7.fhir.r4.fhirpath.FHIRPathEngine.qtyEquivalent(\
+     org.hl7.fhir.r4.model.Quantity, org.hl7.fhir.r4.model.Quantity)\" is null";
+
+/// The JVM's message for the recursive `opLessThan` calling `isPrimitive()` on
+/// the `null` canonical decimal, as HAPI's run records it
+/// (`hapi-8.12.0-results.json:631`).
+const NPE_LIST_GET_IS_PRIMITIVE: &str = "Cannot invoke \
+     \"org.hl7.fhir.r4.model.Base.isPrimitive()\" because the return value of \
+     \"java.util.List.get(int)\" is null";
+
+/// A case HAPI 8.12.0 fails, which Frevo must grade `failed` too.
+fn expect_hapi_failed(group: &str, name: &str) -> &'static CaseReport {
+    let (suite, report) = pinned();
+    let case = suite
+        .case(group, name)
+        .unwrap_or_else(|| panic!("{group}/{name} must resolve to exactly one case"));
+    let r = report
+        .get(&case.address.to_string())
+        .unwrap_or_else(|| panic!("{} must appear in the run report", case.address));
+    assert_eq!(
+        r.status,
+        CaseStatus::Failed,
+        "{}: {:?} must be graded failed, as HAPI 8.12.0 grades it, but is {} -- {}",
+        r.address,
+        r.expression,
+        r.status.as_str(),
+        r.reason
+    );
+    r
+}
+
+/// A case HAPI 8.12.0 fails by raising a `NullPointerException`: graded
+/// `failed`, at the evaluate stage, and for HAPI's reason.
+fn expect_hapi_raised(group: &str, name: &str, jvm_message: &str) {
+    let r = expect_hapi_failed(group, name);
+    assert!(
+        r.reason.contains(jvm_message),
+        "{}: {:?} must fail as HAPI 8.12.0 fails it, raising {jvm_message:?}; it failed with: {}",
+        r.address,
+        r.expression,
+        r.reason
+    );
+}
+
+/// `expr` over `inp` must parse and check, then fail at evaluation with an
+/// execution error carrying no offset (`path.errors.002`, `path.errors.003`).
+/// Returns the message.
+fn expect_execution_error_over(expr: &str, inp: Option<&SuiteInput>) -> String {
+    let mut engine = fresh_engine();
+    let resource_type = inp.and_then(|i| i.resource_type());
+    let context = CaseContext {
+        root_resource_type: resource_type,
+        resource_type,
+        ..CaseContext::default()
+    };
+    let parsed = engine
+        .parse(expr)
+        .unwrap_or_else(|e| panic!("{expr:?} must parse before it can fail at evaluation: {e}"));
+    engine
+        .check(parsed, &context, StrictnessFlags::CHECK)
+        .unwrap_or_else(|e| panic!("{expr:?} must pass the static check: {e}"));
+    match engine.evaluate(parsed, inp, &context, StrictnessFlags::EVALUATE) {
+        Ok(items) => panic!(
+            "{expr:?} must fail at evaluation, as HAPI raises a NullPointerException, but it \
+             returned {items:?}"
+        ),
+        Err(EngineError::Diagnostic { message, offset }) => {
+            assert_eq!(
+                offset, None,
+                "{expr:?}: a NullPointerException carries no position, so the error has no \
+                 offset (path.errors.002); message {message:?}"
+            );
+            message
+        }
+        Err(e) => panic!("{expr:?} must fail with an execution error, not: {e}"),
     }
 }
 
@@ -374,15 +459,27 @@ fn dividing_a_unit_by_itself_yields_the_dimensionless_unit() {
 
 // covers: path.quantity.009
 #[test]
-fn two_unitless_quantities_compare_equal_and_equivalent() {
-    // See the module note, defect 1: the pinned engine answers empty for both
-    // of these, because `qtyEqual`'s unit guard is entered for two unitless
-    // quantities and returns null (FHIRPathEngine.java:2282-2286).
+fn two_unitless_quantities_give_empty_equality_and_failing_equivalence() {
+    // HAPI fails both suite cases (hapi-8.12.0-results.json:632, :633): with
+    // no unit on the left, the unit guard returns null (module note, defect 1).
     for name in ["testQuantityNoUnitEqual", "testQuantityNoUnitEquivalent"] {
         let (ty, body) = sole_output("testQuantityUnitComparison", name);
-        assert_eq!((ty.as_str(), body.as_str()), ("boolean", "true"));
-        expect_case("testQuantityUnitComparison", name);
+        assert_eq!(
+            (ty.as_str(), body.as_str()),
+            ("boolean", "true"),
+            "the suite expects true for {name}"
+        );
     }
+    let equal = expect_hapi_failed("testQuantityUnitComparison", "testQuantityNoUnitEqual");
+    assert!(
+        !equal.reason.is_empty(),
+        "a failed case carries its reason: {equal:?}"
+    );
+    expect_hapi_raised(
+        "testQuantityUnitComparison",
+        "testQuantityNoUnitEquivalent",
+        NPE_QTY_EQUIVALENT,
+    );
 
     // The input really does carry two unitless quantities, so the scenario is
     // about the absence of a unit and not about the values.
@@ -406,20 +503,21 @@ fn two_unitless_quantities_compare_equal_and_equivalent() {
         );
     }
 
+    // HAPI's values: equality is empty (`opEquals` turns the null into an
+    // empty result), equivalence raises.
     assert_eq!(
         eval_over(
             "Parameters.parameter[0].value = Parameters.parameter[1].value",
             Some(&quantities)
         ),
-        boolean(true)
+        empty(),
+        "HAPI finds no item (hapi-8.12.0-results.json:632)"
     );
-    assert_eq!(
-        eval_over(
-            "Parameters.parameter[0].value ~ Parameters.parameter[1].value",
-            Some(&quantities)
-        ),
-        boolean(true)
+    let message = expect_execution_error_over(
+        "Parameters.parameter[0].value ~ Parameters.parameter[1].value",
+        Some(&quantities),
     );
+    assert_eq!(message, NPE_QTY_EQUIVALENT, "HAPI's JVM message, exactly");
 }
 
 // ---------------------------------------------------------------------------
@@ -472,18 +570,26 @@ fn two_quantities_with_the_same_unit_text_and_no_code_compare_equal() {
 
 // covers: path.quantity.011
 #[test]
-fn a_quantity_with_a_unit_compared_to_one_without_yields_empty_for_equality() {
-    // See the module note, defect 1: the pinned engine answers `true` for the
-    // first of these two, because with a unit on the left and none on the right
-    // `!left.hasUnit() || right.hasUnit()` is false and the guard is skipped
-    // altogether (FHIRPathEngine.java:2282).
+fn equality_of_a_quantity_with_a_unit_and_one_without_depends_on_which_side_has_it() {
+    // With the unit on the left the guard is skipped and `1 = 1` compares, so
+    // HAPI fails testQuantityUnitVsNoUnitEqual with one item
+    // (hapi-8.12.0-results.json:636); with it on the right the guard returns
+    // null and the result is empty, which the suite expects, so HAPI passes
+    // testQuantityNoUnitVsUnitEqual (:637).
     for name in [
         "testQuantityUnitVsNoUnitEqual",
         "testQuantityNoUnitVsUnitEqual",
     ] {
         expects_no_output("testQuantityUnitComparison", name);
-        expect_case("testQuantityUnitComparison", name);
     }
+    expect_hapi_failed(
+        "testQuantityUnitComparison",
+        "testQuantityUnitVsNoUnitEqual",
+    );
+    expect_case(
+        "testQuantityUnitComparison",
+        "testQuantityNoUnitVsUnitEqual",
+    );
 
     let quantities = load_input("parameters-example-quantities.xml");
     assert_eq!(
@@ -491,8 +597,9 @@ fn a_quantity_with_a_unit_compared_to_one_without_yields_empty_for_equality() {
             "Parameters.parameter[2].value = Parameters.parameter[0].value",
             Some(&quantities)
         ),
-        empty(),
-        "a `tablets` quantity against a unitless one is undecidable, not equal"
+        boolean(true),
+        "a `tablets` quantity on the left against a unitless one compares by value \
+         (HAPI's one item, hapi-8.12.0-results.json:636)"
     );
     assert_eq!(
         eval_over(
@@ -500,7 +607,7 @@ fn a_quantity_with_a_unit_compared_to_one_without_yields_empty_for_equality() {
             Some(&quantities)
         ),
         empty(),
-        "and the comparison is symmetric"
+        "and the reverse is empty: the comparison is not symmetric"
     );
 }
 
@@ -510,19 +617,31 @@ fn a_quantity_with_a_unit_compared_to_one_without_yields_empty_for_equality() {
 
 // covers: path.quantity.012
 #[test]
-fn a_quantity_with_a_unit_compared_to_one_without_yields_false_for_equivalence() {
-    // See the module note, defect 1: the pinned engine answers `true` for the
-    // first of these and raises on the second, where `doEquivalent` unboxes the
-    // null `Boolean` that `qtyEquivalent` returned
-    // (FHIRPathEngine.java:2205-2207).
+fn equivalence_of_a_quantity_with_a_unit_and_one_without_is_true_one_way_and_fails_the_other() {
+    // The same guard as path.quantity.011, with `doEquivalent` unboxing the
+    // null: HAPI answers `true` for the first case
+    // (hapi-8.12.0-results.json:638) and raises on the second (:639). Both
+    // are failed, since the suite expects `false` for both.
     for name in [
         "testQuantityUnitVsNoUnitEquivalent",
         "testQuantityNoUnitVsUnitEquivalent",
     ] {
         let (ty, body) = sole_output("testQuantityUnitComparison", name);
-        assert_eq!((ty.as_str(), body.as_str()), ("boolean", "false"));
-        expect_case("testQuantityUnitComparison", name);
+        assert_eq!(
+            (ty.as_str(), body.as_str()),
+            ("boolean", "false"),
+            "the suite expects false for {name}"
+        );
     }
+    expect_hapi_failed(
+        "testQuantityUnitComparison",
+        "testQuantityUnitVsNoUnitEquivalent",
+    );
+    expect_hapi_raised(
+        "testQuantityUnitComparison",
+        "testQuantityNoUnitVsUnitEquivalent",
+        NPE_QTY_EQUIVALENT,
+    );
 
     let quantities = load_input("parameters-example-quantities.xml");
     assert_eq!(
@@ -530,16 +649,14 @@ fn a_quantity_with_a_unit_compared_to_one_without_yields_false_for_equivalence()
             "Parameters.parameter[2].value ~ Parameters.parameter[0].value",
             Some(&quantities)
         ),
-        boolean(false),
-        "equivalence answers a boolean where equality answers empty"
+        boolean(true),
+        "HAPI answers true (hapi-8.12.0-results.json:638)"
     );
-    assert_eq!(
-        eval_over(
-            "Parameters.parameter[0].value ~ Parameters.parameter[2].value",
-            Some(&quantities)
-        ),
-        boolean(false)
+    let message = expect_execution_error_over(
+        "Parameters.parameter[0].value ~ Parameters.parameter[2].value",
+        Some(&quantities),
     );
+    assert_eq!(message, NPE_QTY_EQUIVALENT, "HAPI's JVM message, exactly");
 }
 
 // ---------------------------------------------------------------------------
@@ -548,7 +665,7 @@ fn a_quantity_with_a_unit_compared_to_one_without_yields_false_for_equivalence()
 
 // covers: path.quantity.013
 #[test]
-fn the_three_cases_using_the_unit_text_input_hold() {
+fn unit_text_without_a_code_passes_two_of_the_three_cases_and_raises_on_less_than() {
     // The input is a deliberate pair: parameter[0] has the unit `mg/dL` as text
     // only, parameter[1] has the same text plus the UCUM system and code. The
     // three cases that use it therefore compare a quantity that canonicalises
@@ -579,12 +696,11 @@ fn the_three_cases_using_the_unit_text_input_hold() {
         })]
     );
 
-    // See the module note, defect 2: the first of these three raises in the
-    // pinned engine. `opLessThan` identifies the unit by the `code` child, and
-    // parameter[0] has none, so the units are judged to differ and the
-    // canonicalisation of parameter[0] returns null. The other two identify the
-    // unit by the `unit` child, which the two operands share, so they never
-    // reach the canonicalisation at all.
+    // All three cases expect `true`. `<=` and `>` compare the `unit` children,
+    // which are equal, and then the values, so HAPI passes them
+    // (hapi-8.12.0-results.json:669, :728). `<` compares the `code` children,
+    // which differ, and canonicalising parameter[0] yields null (module note,
+    // defect 2), so HAPI raises (:631).
     for (group, name) in [
         ("testLessThan", "testLessThan33"),
         ("testLessOrEqual", "testLessOrEqual30"),
@@ -596,16 +712,11 @@ fn the_three_cases_using_the_unit_text_input_hold() {
             ("boolean", "true"),
             "{group}/{name}"
         );
-        expect_case(group, name);
     }
+    expect_case("testLessOrEqual", "testLessOrEqual30");
+    expect_case("testGreaterThan", "testGreaterThan30");
+    expect_hapi_raised("testLessThan", "testLessThan33", NPE_LIST_GET_IS_PRIMITIVE);
 
-    assert_eq!(
-        eval_over(
-            "Parameters.parameter[0].value < Parameters.parameter[1].value",
-            Some(&unit_text)
-        ),
-        boolean(true)
-    );
     assert_eq!(
         eval_over(
             "Parameters.parameter[0].value <= Parameters.parameter[1].value",
@@ -619,6 +730,14 @@ fn the_three_cases_using_the_unit_text_input_hold() {
             Some(&unit_text)
         ),
         boolean(true)
+    );
+    let message = expect_execution_error_over(
+        "Parameters.parameter[0].value < Parameters.parameter[1].value",
+        Some(&unit_text),
+    );
+    assert_eq!(
+        message, NPE_LIST_GET_IS_PRIMITIVE,
+        "HAPI's JVM message, exactly"
     );
 }
 
@@ -928,4 +1047,93 @@ fn a_quantity_whose_system_is_not_ucum_is_not_canonicalised() {
     // And a quantity that does carry the UCUM system canonicalises, which is
     // what makes the above about the system and not about calendar words.
     assert_eq!(eval("1 'wk' = 7 'd'"), boolean(true));
+}
+
+// ---------------------------------------------------------------------------
+// path.quantity.019 -- the server-facing worker raises; Frevo answers (DEV-0029)
+// ---------------------------------------------------------------------------
+
+// covers: path.quantity.019
+#[test]
+fn frevo_answers_as_the_suite_worker_where_hapis_server_worker_raises_hapi_0274() {
+    // HAPI's server-facing engine (`FhirPathR4`, `SearchParamExtractorR4`) runs
+    // on `HapiWorkerContext`, whose `getUcumService()` throws
+    // `UnsupportedOperationException("HAPI-0274: ")`
+    // (HapiWorkerContext.java:372-374), so every quantity operation that
+    // consults UCUM raises there. That half is differential-only, against a
+    // live HAPI 8.12.0. This test is Frevo's half: in every configuration it
+    // answers as the suite's worker does (`DEV-0029`, pending the owner), and
+    // the operations that never consult UCUM answer the same under both
+    // workers.
+    let quantities = load_input("parameters-example-quantities.xml");
+    let unit_text = load_input("parameters-quantity-unit-text.xml");
+
+    // --- never consults the worker: the same answer under both workers ----
+
+    // `comparable()` with equal codes is true without asking UCUM
+    // (`funcComparable`, FHIRPathEngine.java:4628-4630).
+    assert_eq!(eval("1 'cm'.comparable(2 'cm')"), boolean(true));
+    // A quantity with no system, or no code, is not comparable (:4622-4627).
+    assert_eq!(
+        eval_over(
+            "Parameters.parameter[2].value.comparable(Parameters.parameter[3].value)",
+            Some(&quantities)
+        ),
+        boolean(false),
+        "two `tablets` quantities with no system are not comparable"
+    );
+    assert_eq!(
+        eval("1 year.comparable(1 'cm')"),
+        boolean(false),
+        "`1 year` has no system and no code"
+    );
+
+    // Ordered comparisons whose `unit` lists are equal answer by value
+    // (path.quantity.013).
+    expect_case("testLessOrEqual", "testLessOrEqual30");
+    expect_case("testGreaterThan", "testGreaterThan30");
+    assert_eq!(
+        eval_over(
+            "Parameters.parameter[0].value <= Parameters.parameter[1].value",
+            Some(&unit_text)
+        ),
+        boolean(true)
+    );
+    assert_eq!(
+        eval_over(
+            "Parameters.parameter[1].value > Parameters.parameter[0].value",
+            Some(&unit_text)
+        ),
+        boolean(true)
+    );
+
+    // `<=` with no `unit` on the left and one on the right fails *before* the
+    // worker is consulted, under both workers: `lunit.equals(runit)` on a null
+    // `lunit` (FHIRPathEngine.java:2533-2538) is a NullPointerException, not
+    // `HAPI-0274: `. Frevo returns an execution error with no offset.
+    let message = expect_execution_error_over(
+        "Parameters.parameter[0].value <= Parameters.parameter[2].value",
+        Some(&quantities),
+    );
+    assert!(
+        !message.contains("HAPI-0274"),
+        "the `<=` failure is the NullPointerException, not the worker's: {message:?}"
+    );
+    // --- consults UCUM: HAPI's server worker raises `HAPI-0274: `, Frevo ----
+    // --- answers as the suite's worker. These need the unit algebra (task 43).
+
+    // `qtyEqual` / `qtyEquivalent` for two valued quantities (:2265, :2338).
+    assert_eq!(eval("1 'mg' = 1 'mg'"), boolean(true));
+    assert_eq!(eval("4.0000 'g' = 4000.0 'mg'"), boolean(true));
+    assert_eq!(eval("4 'g' ~ 4040 'mg'"), boolean(true));
+    // Ordered comparisons whose code or unit lists differ (:2443, :2490).
+    assert_eq!(eval("6 days < 1 week"), boolean(true));
+    assert_eq!(eval("8 days > 1 week"), boolean(true));
+    assert_eq!(eval("1 'cm' < 1 's'"), boolean(true));
+    // `*` and `/` of two quantities (:2793, :3013).
+    assert_eq!(eval("2.0 'cm' * 2.0 'm' = 0.040 'm2'"), boolean(true));
+    assert_eq!(eval("4.0 'g' / 2.0 'm' = 2 'g/m'"), boolean(true));
+    // `comparable()` with two UCUM codes that differ (:4631).
+    assert_eq!(eval("1 'cm'.comparable(1 '[in_i]')"), boolean(true));
+    assert_eq!(eval("1 'cm'.comparable(1 's')"), boolean(false));
 }
