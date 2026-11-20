@@ -9,8 +9,8 @@ capability, because that is the layout `openspec validate` parses and
 |---|---|---:|
 | `codegen` | [`specs/codegen/spec.md`](specs/codegen/spec.md) | 49 |
 | `model` | [`specs/model/spec.md`](specs/model/spec.md) | 83 |
-| `path` | [`specs/path/spec.md`](specs/path/spec.md) | 380 |
-| **Total** | | **512** |
+| `path` | [`specs/path/spec.md`](specs/path/spec.md) | 381 |
+| **Total** | | **513** |
 
 This file carries no normative text of its own. It carries the ID registry,
 which is the thing a later change must not collide with.
@@ -168,6 +168,12 @@ the pinned model sources; and the message is HAPI's, `HAPI-0256: ` and Java
 class names included. `DEV-0027` was withdrawn (its number is not reused). No
 ID was added.
 
+After the forty-second review, `path.api.005` gained the `Narrative.div`
+exception (a `StringType` by name, an `XhtmlType` through `*`) and **1 ID was
+added**: `path.navigation.025`, the string value and type of `text.div` and the
+`xhtml` item `children()` yields. None was removed, renumbered, reused or
+repurposed.
+
 | Area | IDs allocated | Range |
 |---|---:|---|
 | `codegen.inputs.*` | 6 | `001`-`006` |
@@ -191,7 +197,7 @@ ID was added.
 | `path.lexer.*` | 16 | `001`-`016` |
 | `path.literal.*` | 15 | `001`-`015` |
 | `path.parse.*` | 8 | `001`-`008` |
-| `path.navigation.*` | 24 | `001`-`024` |
+| `path.navigation.*` | 25 | `001`-`025` |
 | `path.collection.*` | 15 | `001`-`015` |
 | `path.filter.*` | 9 | `001`-`009` |
 | `path.subset.*` | 13 | `001`-`013` |
@@ -237,10 +243,10 @@ contain `<test ...>` text — and are leftover Java, not well-formed test
 elements. `documentFunctions` is 115 cases, not 114. The `invalid` counts are
 unaffected: 7 syntax, 29 semantic, 27 execution.
 
-**Thirty scenarios have no live case in the pinned suite to grade them and
+**Thirty-one scenarios have no live case in the pinned suite to grade them and
 say so in their own text**: `path.subset.003`, `path.subset.013`,
 `path.compare.007`, `path.compare.011`, `path.compare.015`, `path.errors.006`,
-`path.errors.007`, `path.convert.012`,
+`path.errors.007`, `path.navigation.025`, `path.convert.012`,
 `path.datetime.003`, `path.quantity.015`, `path.quantity.018`,
 `path.boundary.012` through `path.boundary.019`, `path.env.015`,
 `path.env.016`, `path.env.017`, `path.utility.017`, `path.utility.022`,
@@ -542,6 +548,7 @@ Every allocated ID, grouped as it is grouped in the delta files.
 - `path.navigation.022` — `children()` produces an unordered collection
 - `path.navigation.023` — navigation preserves document order across repeating elements
 - `path.navigation.024` — the miscellaneous accessor cases all hold
+- `path.navigation.025` — `Narrative.div` navigates to a string holding the composed XHTML, and `children()` to an `xhtml`
 
 **Requirement: Collection predicates**
 

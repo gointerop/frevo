@@ -2611,13 +2611,40 @@ model sources (`reference/org.hl7.fhir.core/org.hl7.fhir.r4/src/main/java/org/hl
 at `73c432b5`: `extends`/`implements` clauses and each `@Child` field's
 declared type) and emitted `@generated`.
 
+**Licence.** The `org.hl7.fhir.core` model sources carry HL7's BSD-style
+licence header ("Copyright (c) 2011+, HL7, Inc. ... Redistribution and use in
+source and binary forms ... must retain the above copyright notice",
+`org.hl7.fhir.r4/src/main/java/org/hl7/fhir/r4/model/Narrative.java:3-29`),
+not Apache-2.0. Any table derived from them must carry that notice with it, in
+the generated file and in `NOTICE`, and be recorded in `docs/provenance.md`
+(CLAUDE.md section 10).
+
+**A runtime quirk the declarations do not show.** `Narrative.div` is declared
+`XhtmlType` (`Narrative.java:232`) but navigates by name to a `StringType`
+(`:364-366`) and through `*` to an `XhtmlType` (`:343`) (`path.navigation.025`,
+`path.api.005`). Any source that reads declarations only must carry such cases
+as explicit exceptions.
+
 **Decision needed.** Constitution section 4 says FHIR models are regenerated
 from StructureDefinitions, "never translated from upstream Java". This table
-is metadata about HAPI's Java model, not a model, but it is read from upstream
-Java. Either (a) the owner accepts reading the pinned Java model sources as a
-codegen input for this one table, recorded in an ADR with a provenance entry,
-or (b) names another source. Until then the implementer of `path.api.005`
-cannot produce the table and must not hand-write it.
+is metadata about HAPI's Java model, not a model. Options:
+- (a) `frevo-codegen` reads the pinned Java model sources (class `extends` and
+  `implements` clauses, `@Child` field types) for this one table, with an ADR,
+  the BSD notice and a provenance entry; the `div` exception is added to a
+  reviewed list.
+- (b) CI generates the table by reflection over the pinned HAPI 8.12.0 jars
+  (`hapi-fhir-structures-r4` and `org.hl7.fhir.r4` at the pinned versions):
+  for every FHIR type and element, the runtime class of a navigated value and
+  its ancestry. The output is committed as a recorded artifact, like
+  `oracles/fhirpath/hapi-8.12.0-results.json`, and the generator reads that
+  file. It reads no Java source, and it captures runtime quirks such as `div`.
+- (c) the table is derived from the R4 StructureDefinitions (FHIR type to class
+  by the regular `<type>Type` naming and the R4 base chain), plus a small
+  reviewed list of HAPI exceptions (`IdType` under `UriType`, the
+  `Enumeration`-declared `code` elements, `Narrative.div`), each entry citing
+  the pinned source line that justifies it.
+Until the owner decides, the implementer of `path.api.005` cannot produce the
+table and must not hand-write it.
 
 **Forward reference, no decision needed.** `FhirPathR4`'s `HAPI-2409: ` and
 `HAPI-0255: ` wrapping (`FhirPathR4.java:49`, `:69`) and

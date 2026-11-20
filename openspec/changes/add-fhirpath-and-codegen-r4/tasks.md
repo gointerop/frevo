@@ -778,7 +778,10 @@ checkpoint because it changes what a gate measures.
   and non-integer cases; contained resources; the logical-id rule for
   `Resource.id`; primitive extensions; `$this` and `$index`; `children()` and
   `descendants()` with the unordered-collection rule; document order preserved.
-  Satisfies `path.navigation.001` through `path.navigation.024`.
+  Also `Narrative.div`: a `string` holding the XML-mode composition by name, an
+  `xhtml` holding the HTML-mode composition through `children()` and
+  `descendants()` (`path.navigation.025`).
+  Satisfies `path.navigation.001` through `path.navigation.025`.
   **Implemented, not ticked.** `path_navigation` is 0 of 24: every test calls
   the check pass (task 50) before evaluating, and most also use functions and
   operators of tasks 32-37, 40, 46 and 48. The evaluator core is
