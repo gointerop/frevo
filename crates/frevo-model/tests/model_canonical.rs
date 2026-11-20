@@ -583,20 +583,45 @@ const FIXTURES: &[(&str, &str)] = &[
 /// git-ignored, so it is additional evidence rather than the only evidence --
 /// every scenario here is graded by the embedded fixtures whether or not
 /// `oracles/fetch.sh` has run.
-fn interim_example_corpus() -> Option<(PathBuf, Vec<PathBuf>)> {
+///
+/// The selector's "103 examples" is its **file** count: 72 `.json`, 10 `.xml`
+/// and 21 `.json.out` (`tasks/blockers.md`, 2026-11-12, "task 23 is green
+/// except where its oracle contradicts itself or the spec", finding 1, which
+/// leaves the choice to the oracle-builder). This scenario is about JSON
+/// canonicalisation, so every `.json` file is graded; the XML inputs are task
+/// 56's `not-applicable-xml` and are not graded here.
+struct InterimCorpus {
+    dir: PathBuf,
+    /// Every file the selector holds, whatever its format: the completeness
+    /// check.
+    selector_files: usize,
+    /// The `.json` files, which are the ones graded.
+    json: Vec<PathBuf>,
+}
+
+fn interim_example_corpus() -> Option<InterimCorpus> {
     let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../oracles/fhir-test-cases/fetched/r4/examples");
     let entries = std::fs::read_dir(&dir).ok()?;
-    let mut files: Vec<PathBuf> = entries
+    let all: Vec<PathBuf> = entries
         .filter_map(|e| e.ok())
         .map(|e| e.path())
-        .filter(|p| p.extension().is_some_and(|x| x == "json"))
+        .filter(|p| p.is_file())
         .collect();
-    files.sort();
-    if files.is_empty() {
+    let mut json: Vec<PathBuf> = all
+        .iter()
+        .filter(|p| p.extension().is_some_and(|x| x == "json"))
+        .cloned()
+        .collect();
+    json.sort();
+    if json.is_empty() {
         return None;
     }
-    Some((dir, files))
+    Some(InterimCorpus {
+        dir,
+        selector_files: all.len(),
+        json,
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -783,18 +808,32 @@ fn canonicalising_an_example_equals_canonicalising_its_round_trip() {
              examples under oracles/fhir-test-cases/fetched/r4/examples/; the \
              embedded fixtures above grade it either way."
         ),
-        Some((dir, files)) => {
+        Some(InterimCorpus {
+            dir,
+            selector_files,
+            json: files,
+        }) => {
             eprintln!(
                 "note: grading model.canonical.005 over the INTERIM selector -- \
-                 {} example files in {}. Task 59 replaces this with the full \
-                 hl7.fhir.r4.examples#4.0.1 package.",
+                 the {} JSON files of its {} example files in {}. Task 59 \
+                 replaces this with the full hl7.fhir.r4.examples#4.0.1 package.",
                 files.len(),
+                selector_files,
                 dir.display()
             );
+            // The completeness check is on the selector (103 files), and the
+            // JSON share of the fetched selector (72) must all be there too.
             assert!(
-                files.len() >= 100,
-                "the interim selector is the 103 examples in {}; only {} were \
-                 found, so the corpus is incomplete rather than absent",
+                selector_files >= 100,
+                "the interim selector is the 103 example files in {}; only {} \
+                 were found, so the corpus is incomplete rather than absent",
+                dir.display(),
+                selector_files
+            );
+            assert!(
+                files.len() >= 72,
+                "the interim selector holds 72 JSON examples in {}; only {} \
+                 were found, so the corpus is incomplete rather than absent",
                 dir.display(),
                 files.len()
             );

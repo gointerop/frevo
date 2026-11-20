@@ -2771,3 +2771,35 @@ numbers; they are kept as text.
 3. Still owed from `design.md` section 5: the `NOTICE` entry for
    Regenstrief's UCUM copyright (a `chore/oracles-*` change). The fetched file
    carries no licence text itself; it is git-ignored and was not committed.
+
+## 2026-11-20 — `add-fhirpath-and-codegen-r4` — four `path.quantity` scenarios still state the suite's answer, not HAPI's
+
+**Raised by** the oracle-builder, classifying the remaining red tests. Under the
+owner's standing ruling the tests follow the approved spec, so they were not
+edited; the spec needs the proposer. Evidence is HAPI's own run,
+`oracles/fhirpath/hapi-8.12.0-results.json`, and the defects documented in the
+module note of `crates/frevo-path/tests/path_quantity.rs` (`qtyEqual` /
+`qtyEquivalent`'s guard `!left.hasUnit() || right.hasUnit()`,
+`FHIRPathEngine.java:2282`, `:2355`; `opLessThan` comparing `code` children and
+`qtyToCanonicalDecimal` returning null, `:2438-2451`, `:2301-2303`, at
+`73c432b5`).
+
+- `path.quantity.009` says both yield `true`; HAPI fails
+  `testQuantityNoUnitEqual` (empty, `:632`) and `testQuantityNoUnitEquivalent`
+  (NullPointerException, `:633`).
+- `path.quantity.011` says both yield empty; HAPI fails
+  `testQuantityUnitVsNoUnitEqual` (one item, `:636`); `testQuantityNoUnitVsUnitEqual`
+  passes (`:637`).
+- `path.quantity.012` says both yield `false`; HAPI fails
+  `testQuantityUnitVsNoUnitEquivalent` (`true`, `:638`) and
+  `testQuantityNoUnitVsUnitEquivalent` (NullPointerException, `:639`).
+- `path.quantity.013` says every case using `parameters-quantity-unit-text.xml`
+  yields its stated output; HAPI fails `testLessThan/testLessThan33`
+  (NullPointerException, `:631`).
+
+Frevo already gives HAPI's answers for the three `testQuantityUnitComparison`
+cases it evaluates today (the run reports them `failed` with HAPI's
+outcomes). **Decision needed:** the proposer restates the four scenarios as
+HAPI behaves (and records the deviation from the suite's intent, if any), after
+which the oracle-builder amends `path_quantity.rs`. The rest of
+`path_quantity.rs` is red on tasks 43 and 44 (UCUM), not on this.
