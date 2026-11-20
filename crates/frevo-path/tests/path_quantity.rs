@@ -688,18 +688,37 @@ pub trait UcumOracle {
 }
 
 fn ucum_oracle_under_test() -> Box<dyn UcumOracle> {
-    Box::new(UnboundUcum)
+    Box::new(BoundUcum)
 }
 
-struct UnboundUcum;
+/// Bound over `frevo_path::UcumEssence` for loading and reporting the data
+/// (task 43's loader). Evaluation with a chosen UCUM state stays
+/// `NotImplemented` until the unit algebra (task 43) and quantity semantics
+/// (task 44) exist: the crate has no surface that evaluates with or without a
+/// UCUM service (`tasks/blockers.md`, 2026-11-20, "task 43: the UCUM unit
+/// algebra cannot be ported").
+struct BoundUcum;
 
-impl UcumOracle for UnboundUcum {
+/// A load failure is a graded diagnostic carrying the crate's own text, which
+/// names the file.
+fn ucum_load(path: &Path) -> Result<String, EngineError> {
+    frevo_path::UcumEssence::load(path)
+        .map(|e| e.version().to_owned())
+        .map_err(|e| EngineError::Diagnostic {
+            message: e.to_string(),
+            offset: None,
+        })
+}
+
+impl UcumOracle for BoundUcum {
     fn ucum_version(&mut self) -> Result<String, EngineError> {
-        Err(EngineError::NotImplemented)
+        // The data in force is the pinned file, which is what the server and
+        // the suite run with.
+        ucum_load(&ucum_essence_path())
     }
 
-    fn load_ucum(&mut self, _path: &Path) -> Result<String, EngineError> {
-        Err(EngineError::NotImplemented)
+    fn load_ucum(&mut self, path: &Path) -> Result<String, EngineError> {
+        ucum_load(path)
     }
 
     fn evaluate_with_ucum(
