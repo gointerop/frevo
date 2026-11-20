@@ -2651,3 +2651,64 @@ table and must not hand-write it.
 `FhirPathFilterInterceptor`'s `HAPI-0327: ` (`FhirPathFilterInterceptor.java:84`)
 are specified by `add-server-skeleton`; the out-of-scope row is in
 `openspec/changes/add-fhirpath-and-codegen-r4/proposal.md`.
+
+---
+
+## 2026-11-20 — `add-fhirpath-and-codegen-r4` — `path.navigation.025` asserts two results the pinned engine does not give
+
+**Raised by** `implementer`, task 31 (with task 53's `path.errors.006`, which
+now passes).
+
+**What was done.** `Narrative.div` by name is now a `string` element holding
+the XML-mode composition of the stored narrative
+(`crates/frevo-path/src/eval/{xhtml,xhtml_entities,navigate}.rs`, a port of
+`XhtmlNode.setValueAsString`, the default `XhtmlParser`, the XML-mode
+`XhtmlComposer` and `XhtmlDt`'s preprocessing), and `*` navigation yields an
+`xhtml` item whose string is the same composition. Every other assertion of
+`narrative_div_navigates_to_a_string_by_name_and_to_an_xhtml_through_children`
+passes (checked on a scratch copy of the test with only the two lines below
+changed; the committed test is untouched and still red).
+
+**The two assertions that contradict the pinned source.**
+
+1. `Patient.text.div is FHIR.string` is asserted `true`. The `is` **operator**
+   reads its right operand as the text `FHIR.string` (`executeTypeName`,
+   `FHIRPathEngine.java:1531-1537`) and `opIs` (`:1940-1965`) compares that
+   text with `fhirType()` (`string`) and then with `sd.getType()` along the
+   base chain (`string`, `Element`, ...). None equals `FHIR.string`, so HAPI
+   answers `false`. (The `StringType` `getProperty` builds is not
+   `disallowExtensions`, so the capitalised-System branch does not apply
+   either.) Only the **function** form `is(FHIR.string)` reads a namespace.
+   Frevo answers `false`, as for any `string` element.
+2. `Patient.text.div.contains('>hi<')` is asserted to pass the static check
+   because `xhtml` "is in the string-like set". The 12-type
+   `FHIR_TYPES_STRING` set (`:2407`) is an evaluation-time list. The check
+   arm is `checkContextString(focus, "contains", exp, true)` (`:3498-3502`),
+   which accepts only `string`, `code`, `uri`, `url`, `canonical` and `id`
+   through `TypeDetails.hasType(worker, ...)` (`:3865-3869`;
+   `TypeDetails.java:243-300`). That walks from each *named* type up its base
+   chain looking for a focus type, and `xhtml` is in none of those chains. So
+   HAPI's check raises `FHIRPATH_STRING_SING_ONLY`, and Frevo raises the same
+   message: `... The function contains can only be used on string, uri, url,
+   code, id but found [http://hl7.org/fhir/StructureDefinition/xhtml]`.
+   Unchecked, as `FhirPathR4` runs it, the expression gives `true` in both.
+
+**Decision needed.** Whether the spec delta's `path.navigation.025` bullet and
+the test are corrected to HAPI's answers (`false`, and a check failure or an
+unchecked evaluation). The implementer may not change the test. Task 31 stays
+unticked until then.
+
+**Found while porting, not covered by the spec (proposal defects).**
+- `Narrative.listChildren` always adds `new XhtmlType(this)`
+  (`Narrative.java:343`), so HAPI's `children()` of a narrative with **no**
+  `div` still has an `xhtml` item (whose string throws, since `getDiv()` is
+  null). A model that lists no child for an absent `div` gives one item fewer.
+- The oracle harness's XML input builds `xhtml` from the element's
+  `text_content()` (`crates/frevo-path/tests/oracle/engine.rs:1589-1594`), not
+  from its markup, so over an XML fixture `text.div` composes the narrative's
+  plain text wrapped in a `div`, where HAPI composes the markup. No suite case
+  reads `text.div`, so nothing is graded on it today.
+- A narrative the composer cannot produce: by name it fails the navigation as
+  a `NodeError` (HAPI could never hold one; its parser rejects the resource);
+  through `*` the item reports its stored text, because a `Primitive` cannot
+  carry an error. Neither is in the spec.

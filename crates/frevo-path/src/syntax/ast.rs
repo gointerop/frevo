@@ -173,6 +173,10 @@ pub struct ExpressionNode {
     op_end: usize,
     /// `getStart()`: `None` for a node HAPI builds without one.
     start_location: Option<SourceLocation>,
+    /// The byte offset of `start_location`, where it is not `start`: a unary
+    /// wrapper's start is read after the sign's `take()`, just past the token
+    /// that follows the sign (`path.errors.006`).
+    start_location_offset: Option<usize>,
     /// `getOpStart()`: `None` until an operator is parsed onto the node, and
     /// for a precedence group that took an operator over.
     op_location: Option<SourceLocation>,
@@ -196,6 +200,7 @@ impl ExpressionNode {
             op_start: start,
             op_end: start,
             start_location: None,
+            start_location_offset: None,
             op_location: None,
         }
     }
@@ -252,7 +257,7 @@ impl ExpressionNode {
     /// a node built without a start (`path.errors.002`).
     pub fn position(&self) -> Option<Position> {
         self.start_location.map(|location| Position {
-            offset: self.start,
+            offset: self.start_location_offset.unwrap_or(self.start),
             location,
         })
     }
@@ -341,6 +346,14 @@ impl ExpressionNode {
         self.start_location = Some(location);
     }
 
+    /// `setStart(...)` with a location that is not at this node's first byte:
+    /// `offset` is that location's own zero-based byte offset
+    /// (`path.errors.006`).
+    pub(crate) fn set_start_location_at(&mut self, location: SourceLocation, offset: usize) {
+        self.start_location = Some(location);
+        self.start_location_offset = Some(offset);
+    }
+
     pub(crate) fn set_op_location(&mut self, location: SourceLocation) {
         self.op_location = Some(location);
     }
@@ -353,6 +366,7 @@ impl ExpressionNode {
         self.end = map(self.end);
         self.op_start = map(self.op_start);
         self.op_end = map(self.op_end);
+        self.start_location_offset = self.start_location_offset.map(&map);
     }
 }
 

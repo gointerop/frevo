@@ -54,6 +54,8 @@ mod temporal;
 mod terminology;
 mod types;
 mod utility;
+mod xhtml;
+mod xhtml_entities;
 
 mod api;
 
@@ -63,6 +65,8 @@ mod env_tests;
 mod tests;
 #[cfg(test)]
 mod utility_tests;
+#[cfg(test)]
+mod xhtml_tests;
 
 use std::sync::{Arc, Mutex};
 

@@ -796,6 +796,11 @@ checkpoint because it changes what a gate measures.
   HAPI on 2026-11-17 and the scenario now says the index raises. `.011`
   still contradicts it (`DEV-0013`, pending the owner); `.013`'s seam is inside `path_navigation.rs` and was not rebound. See
   `tasks/blockers.md`, 2026-11-12, "task 31".
+  `Narrative.div` (`.025`) is implemented in `src/eval/{xhtml,xhtml_entities,navigate}.rs`;
+  `path_navigation` is 24 of 25, the red one asserting two answers the pinned
+  engine does not give (`is FHIR.string` by operator, and `contains` on an
+  `xhtml` passing the check). See `tasks/blockers.md`, 2026-11-20,
+  "`path.navigation.025` asserts two results the pinned engine does not give".
 
 - [x] **32. Implement collection predicates.** `empty`, `exists` with and without
   criteria, `not`, `all`, the four boolean folds and their non-boolean execution

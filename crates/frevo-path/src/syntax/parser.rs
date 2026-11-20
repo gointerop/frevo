@@ -177,12 +177,14 @@ impl<'a> Parser<'a> {
             let op = Operation::from_code(self.lexer.take()?);
             // `wrapper.setStart(lexer.getCurrentLocation().copy())` after the
             // `take()`: upstream records the column just past the token that
-            // follows the sign, and so does this.
+            // follows the sign, and so does this, with that position's byte
+            // offset (`path.errors.006`).
             let location = self.lexer.current_location();
+            let location_offset = self.lexer.current_end();
             let node = self.node_mut(w);
             node.set_operation(op);
             node.set_proximal(proximal);
-            node.set_start_location(location);
+            node.set_start_location_at(location, location_offset);
             wrapper = Some(w);
         }
 
@@ -204,10 +206,11 @@ impl<'a> Parser<'a> {
                 // `wrapper.setStart(lexer.getCurrentLocation().copy())`: the
                 // column just past the signed token (`FHIRPathEngine.java:1100`).
                 let location = self.lexer.current_location();
+                let location_offset = self.lexer.current_end();
                 let node = self.node_mut(w);
                 node.set_operation(op);
                 node.set_proximal(proximal);
-                node.set_start_location(location);
+                node.set_start_location_at(location, location_offset);
                 wrapper = Some(w);
                 self.lexer.drop_first_char_of_current();
             }

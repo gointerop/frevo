@@ -36,7 +36,7 @@ against the specification and the oracles, not from upstream source), `empty`
 |---|---|---|---|---|
 | `frevo-codegen` | empty | — | — | — |
 | `frevo-model` | empty | — | (will be `generated` from R4 StructureDefinitions) | — |
-| `frevo-path` | derived | `org.hl7.fhir.core` | `org.hl7.fhir.r4/.../r4/fhirpath/{FHIRLexer,ExpressionNode,FHIRPathEngine,FHIRPathConstant,TypeDetails}.java`, `org.hl7.fhir.r4/.../r4/model/{IdType,Base,BaseDateTimeType,TimeType}.java`, `org.hl7.fhir.r4/.../r4/terminologies/ValueSetCheckerSimple.java`, `org.hl7.fhir.utilities/.../{Utilities,SourceLocation}.java`, `org.hl7.fhir.utilities/.../exceptions/PathEngineException.java` | `73c432b5f43ddbce979978a760ec4aa81e929094` |
+| `frevo-path` | derived | `org.hl7.fhir.core` | `org.hl7.fhir.r4/.../r4/fhirpath/{FHIRLexer,ExpressionNode,FHIRPathEngine,FHIRPathConstant,TypeDetails}.java`, `org.hl7.fhir.r4/.../r4/model/{IdType,Base,BaseDateTimeType,TimeType}.java`, `org.hl7.fhir.r4/.../r4/terminologies/ValueSetCheckerSimple.java`, `org.hl7.fhir.utilities/.../{Utilities,SourceLocation}.java`, `org.hl7.fhir.utilities/.../exceptions/PathEngineException.java`, `org.hl7.fhir.r4/.../r4/model/{Narrative,XhtmlType}.java`, `org.hl7.fhir.utilities/.../xhtml/{XhtmlParser,XhtmlComposer,XhtmlNode}.java`; `hapi-fhir` `hapi-fhir-base/.../model/primitive/XhtmlDt.java` at `7ab4c7c7c49281496faa1b3c2498a652457669ae` | `73c432b5f43ddbce979978a760ec4aa81e929094` |
 | `frevo-convert` | empty | — | — | — |
 | `frevo-package` | empty | — | — | — |
 | `frevo-validator` | empty | — | — | — |
@@ -145,7 +145,18 @@ each step returns, and for a `@` literal keyed by an occurrence number standing
 for the new object `resolveConstant`/`processDateConstant` build per node
 evaluation) — and the
 server-facing host service, `src/seam/server.rs`, from `hapi-fhir`'s
-`FhirPathR4.setEvaluationContext` at `7ab4c7c7c49281496faa1b3c2498a652457669ae`.
+`FhirPathR4.setEvaluationContext` at `7ab4c7c7c49281496faa1b3c2498a652457669ae`,
+and the narrative's recomposition for `Narrative.div` —
+`src/eval/{xhtml,xhtml_entities}.rs` and the `div` arms of
+`src/eval/navigate.rs` (`XhtmlNode.setValueAsString`, the default
+`XhtmlParser` path it reaches, with `DEFINED_ENTITIES` and the
+`parseLiteral` fallback names transcribed into one sorted table, the XML-mode
+non-pretty `XhtmlComposer`, `Narrative.getProperty` and `listChildren`,
+`XhtmlType`, and `hapi-fhir`'s `XhtmlDt.setValueAsString` and
+`preprocessXhtmlNamespaceDeclaration` at the same `hapi-fhir` SHA). The
+`org.hl7.fhir.utilities` `xhtml` sources and the R4 model sources carry
+HL7's BSD-style licence rather than Apache-2.0; `xhtml.rs` and
+`xhtml_entities.rs` reproduce that notice in full.
 Each file
 carries the required header naming the upstream path, the pinned SHA and what
 was modified. Every

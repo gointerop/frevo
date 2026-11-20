@@ -5,15 +5,21 @@
 //! `getChildrenByName` at `:255`, `filterIdType` at `:280`) and
 //! org.hl7.fhir.core/org.hl7.fhir.r4/src/main/java/org/hl7/fhir/r4/model/IdType.java
 //! (`setValue` at `:411`, `toUnqualifiedVersionless` at `:671`,
-//! `withResourceType` at `:687`), at 73c432b5f43ddbce979978a760ec4aa81e929094.
+//! `withResourceType` at `:687`),
+//! org.hl7.fhir.core/org.hl7.fhir.r4/src/main/java/org/hl7/fhir/r4/model/Narrative.java
+//! (`listChildren` at `:338-344`, `getProperty` at `:364-366`) and
+//! org.hl7.fhir.core/org.hl7.fhir.r4/src/main/java/org/hl7/fhir/r4/model/XhtmlType.java
+//! (`fhirType` and `listChildren` at `:55-61`), at 73c432b5f43ddbce979978a760ec4aa81e929094.
 //! Original work Copyright HL7, Inc. and contributors, licensed under the
-//! Apache License, Version 2.0.
+//! Apache License, Version 2.0; `Narrative.java` and `XhtmlType.java` carry
+//! HL7's BSD-style licence, whose full text is reproduced in `xhtml.rs`.
 //! Modified by the Frevo authors: navigation goes through the `Node` and
 //! `Model` traits instead of `Base.listChildrenByName` and
 //! `IWorkerContext.fetchTypeDefinition`, and the `IdType` value is rebuilt from
-//! its lexical form instead of from a parsed `IdType` object.
+//! its lexical form instead of from a parsed `IdType` object; and `div`'s
+//! string is composed from the stored narrative without editing it.
 
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use crate::seam::model::Model;
 use crate::seam::node::{Node, NodeError};
@@ -106,12 +112,14 @@ pub(crate) fn children_by_name(
     if name == ALL_CHILDREN {
         for (child_name, child) in node.all_children()? {
             let is_resource_id = parent_is_resource && child_name == "id";
-            out.push(filter_id_type(super::rewrite::apply(child), is_resource_id));
+            let child = filter_id_type(super::rewrite::apply(child), is_resource_id);
+            out.push(xhtml_item(child));
         }
     } else {
         let is_resource_id = parent_is_resource && name == "id";
         for child in node.children(name)? {
-            out.push(filter_id_type(super::rewrite::apply(child), is_resource_id));
+            let child = filter_id_type(super::rewrite::apply(child), is_resource_id);
+            out.extend(xhtml_by_name(child)?);
         }
     }
     if out.len() == before && matches!(name, "id" | "extension" | ALL_CHILDREN) {
@@ -205,6 +213,138 @@ fn filter_id_type(child: Value, is_resource_id: bool) -> Value {
     }
     let logical = node.primitive().and_then(|p| logical_id(&p.lexical));
     Value::Node(Arc::new(IdNode { value: logical }))
+}
+
+/// Whether `value` is an element of FHIR type `xhtml`. In R4 that is only
+/// ever `Narrative.div`, the one element the object model holds as an
+/// `XhtmlNode`.
+fn is_xhtml(value: &Value) -> Option<&Arc<dyn Node>> {
+    match value {
+        Value::Node(node) if node.type_name() == XHTML => Some(node),
+        _ => None,
+    }
+}
+
+const XHTML: &str = "xhtml";
+
+/// `div` by name (`path.navigation.025`): `Narrative.getProperty` answers it
+/// with `new StringType(new XhtmlComposer(true).composeEx(div))`
+/// (`Narrative.java:364-366`), a **`string`** element holding the parsed node
+/// recomposed in XML mode. The stored narrative is read, never edited.
+///
+/// A narrative the composer cannot produce -- one HAPI's parser would have
+/// rejected when the resource was read, or one with no node type -- fails the
+/// navigation, as a decode error does, rather than yielding something HAPI
+/// never holds.
+///
+/// An `xhtml` node with no value is a `div` the object model does not hold,
+/// which `getProperty` answers with nothing.
+fn xhtml_by_name(child: Value) -> Result<Option<Value>, NodeError> {
+    let Some(node) = is_xhtml(&child) else {
+        return Ok(Some(child));
+    };
+    let Some(stored) = node.primitive().map(|p| p.lexical) else {
+        return Ok(None);
+    };
+    super::xhtml::compose_narrative(&stored)
+        .map(|value| Some(Value::Node(Arc::new(DivString { value }))))
+        .map_err(|e| NodeError::new("Narrative.div", e.message()))
+}
+
+/// The `StringType` `getProperty` builds for `div`. It is an element of the
+/// object model, not a value the engine made, so it is not
+/// `disallowExtensions`: `is string` follows the type hierarchy for it as for
+/// any `string` element.
+#[derive(Debug)]
+struct DivString {
+    value: String,
+}
+
+impl Node for DivString {
+    fn type_name(&self) -> &str {
+        "string"
+    }
+
+    fn is_resource(&self) -> bool {
+        false
+    }
+
+    fn children(&self, _name: &str) -> Result<Vec<Value>, NodeError> {
+        Ok(Vec::new())
+    }
+
+    fn all_children(&self) -> Result<Vec<(String, Value)>, NodeError> {
+        Ok(Vec::new())
+    }
+
+    fn primitive(&self) -> Option<Primitive> {
+        Some(Primitive {
+            type_name: "string".to_string(),
+            lexical: self.value.clone(),
+            id: None,
+            extensions: Vec::new(),
+        })
+    }
+}
+
+/// `div` through `*` (`children()`, `descendants()`): `listChildren` holds
+/// `new XhtmlType(this)` (`Narrative.java:343`), an item of type `xhtml`
+/// with no children of its own (`XhtmlType.java:60-61`). Its string is
+/// composed when it is read, and is the same XML-mode composition the name
+/// step gives: HAPI's is the HTML-mode one, which edits the narrative first
+/// (`DEV-0028`, owed as `DEBT-0018`).
+fn xhtml_item(child: Value) -> Value {
+    match is_xhtml(&child) {
+        Some(node) => Value::Node(Arc::new(XhtmlItem {
+            stored: node.primitive().map(|p| p.lexical),
+            composed: OnceLock::new(),
+        })),
+        None => child,
+    }
+}
+
+/// The `XhtmlType` `*` navigation yields for a narrative.
+#[derive(Debug)]
+struct XhtmlItem {
+    stored: Option<String>,
+    composed: OnceLock<Option<String>>,
+}
+
+impl Node for XhtmlItem {
+    fn type_name(&self) -> &str {
+        XHTML
+    }
+
+    fn is_resource(&self) -> bool {
+        false
+    }
+
+    fn children(&self, _name: &str) -> Result<Vec<Value>, NodeError> {
+        Ok(Vec::new())
+    }
+
+    fn all_children(&self) -> Result<Vec<(String, Value)>, NodeError> {
+        Ok(Vec::new())
+    }
+
+    /// The composition, read lazily so that navigating past the item costs
+    /// nothing. A narrative the composer cannot produce reports its stored
+    /// text: a string cannot carry the error, and HAPI never holds such a
+    /// narrative to compare against.
+    fn primitive(&self) -> Option<Primitive> {
+        let stored = self.stored.as_ref()?;
+        let lexical = self
+            .composed
+            .get_or_init(|| super::xhtml::compose_narrative(stored).ok())
+            .clone()
+            .unwrap_or_else(|| stored.clone());
+        Some(Primitive {
+            type_name: XHTML.to_string(),
+            lexical,
+            id: None,
+            extensions: Vec::new(),
+        })
+    }
 }
 
 const URN_PREFIX: &str = "urn:";
