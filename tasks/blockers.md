@@ -2491,3 +2491,90 @@ values. Two red results are in test files the implementer may not edit.
 
 **Decision needed.** None from the owner: the oracle-builder fixes both lines
 (no assertion is weakened by either) on this branch.
+
+## 2026-11-20 -- add-fhirpath-and-codegen-r4: tasks 52 and 54 need their test seams rebound; one test defect in path.strictness.005
+
+**What was done.** The implementer landed the strictness settings and the
+public evaluation surface in `frevo-path`:
+
+- `EngineSettings` (`src/eval/settings.rs`): the seven switches in positive
+  polarity; `EngineSettings::for_version(&str) -> Result<_, InvalidVersion>`
+  (`initFlags()` over `VersionUtilities.isR5Plus`), `PRE_R5`, `DECLARED` (the
+  Java field initialisers, what `Evaluator::new` keeps), `server_facing()`
+  (`FhirPathR4`'s constructor, equal to `PRE_R5`) and `check_options()`.
+- `Evaluator::{for_version(model, version), settings(), with_settings(s),
+  with_polymorphic_names(bool), with_legacy_mode(bool)}`. Polymorphic names
+  are honoured in evaluation (`getChildrenByName`, `FHIRPathEngine.java:255-279`);
+  legacy mode makes `!=` with an empty operand `true` (`:2133`); liquid mode on
+  makes `Evaluator::parse` answer `EvalError::Unsupported`.
+- `src/eval/api.rs`: `Evaluator::{parse, evaluate_text, evaluate_text_as,
+  evaluate_first_text, evaluate_first, evaluate_first_as, evaluate_as}` and
+  `PathError { Parse(ParseError), Evaluate(EvalError) }`. `evaluate_as` fails
+  with `EvalError::Execution { message: "FhirPath expression returned
+  unexpected type <returned> - Expected <expected>", offset: None }`; an empty
+  result satisfies any type and `Base` accepts everything.
+- A type name with an upper-case initial that names no type is retried with
+  the initial lower-cased (`DefaultProfileValidationSupportBundleStrategy.java:276-297`,
+  R4/R4B/R5), so `Patient.gender.as(Code)` resolves (`path.strictness.005`).
+
+No test that passed before regresses; `path_strictness` stays 2/8 and
+`path_api` 5/3 only because the seams in those two files answer
+`NotImplemented` themselves.
+
+1. **Seam rebind (oracle-builder).** `tests/path_strictness.rs`
+   `BoundConfigured::settings` (`:172-175`) should answer
+   `EngineSettings::for_version(version)` for `engine_for_version` and
+   `EngineSettings::server_facing()` for `server_facing_engine`;
+   `evaluate_with` (`:186-197`) should drop the `legacy_mode ||
+   allow_polymorphic_names` refusal and build the evaluator with
+   `.with_settings(..)` (or add `.with_legacy_mode(..)` and
+   `.with_polymorphic_names(..)`); `parse` (`:150-155`) may use
+   `Evaluator::parse`, which refuses liquid mode itself.
+   `tests/path_api.rs` `BoundFhirPath::run` (`:223-226`) should call
+   `Evaluator::evaluate_as(expr, Some(input), want)` instead of refusing a
+   `want` other than `Base`, and `evaluate_first` (`:266-274`) should parse and
+   call `evaluate_first_as`. That unblocks `path.strictness.001`, `.006`-`.010`
+   and `path.api.003`-`.005`, and `path.strictness.008` for task 50a.
+2. **Test defect, `tests/path_strictness.rs:552-563` (`path.strictness.005`).**
+   The test requires `Observation.value.as(quantity).unit` to be `lbs` with
+   case not enforced and `as(quantity)` to be empty with it enforced. In HAPI
+   both raise `The type FHIR.quantity is not valid`: `funcAs` calls
+   `isKnownType("FHIR.quantity")` first (`FHIRPathEngine.java:5163-5165`),
+   `HapiWorkerContext.fetchTypeDefinition` looks up
+   `.../StructureDefinition/quantity`, and the only leniency in the lookup is
+   for an **upper-case** initial lower-cased
+   (`DefaultProfileValidationSupportBundleStrategy.java:286-295`). The
+   upstream test the comment cites, `FhirPathEngineR4Test.testAs`
+   (`hapi-fhir-validation/src/test/java/org/hl7/fhir/r4/utils/FhirPathEngineR4Test.java:93-115`),
+   uses only `string`, `FHIR.string`, `String` and `FHIR.String`. The
+   scenario text itself names only `Code`, and the rest of the test (`Code`,
+   `Quantity`) now passes. The three `quantity` assertions should become the
+   HAPI error, or be removed by an amended scenario.
+3. **`path.strictness.002`** asserts zero `did-not-run` cases over the whole
+   suite (35 today: `toQuantity`, task 53 and others), so it closes with the
+   suite, not with task 52.
+
+**Proposal defects found (proposer, then spec-reviewer).**
+
+- With polymorphic names **on**, HAPI's `name.startsWith(n)` also matches the
+  choice element's own name with an empty rest, so `Observation.value`
+  navigates nothing (`FHIRPathEngine.java:257-266`, `:273`). Frevo ports
+  this; `path.strictness.006` does not say it.
+- `path.api.005`'s message: HAPI names Java classes (`getSimpleName()`, and
+  `theReturnType.getName()` for the expected one, e.g.
+  `org.hl7.fhir.r4.model.StringType`) and prefixes `HAPI-0256: `; Frevo names
+  FHIR types and has no prefix. Java's `isAssignableFrom` also follows the
+  Java class hierarchy, which differs from the FHIR one where an element is an
+  `Enumeration` (`Patient.gender` is not a `CodeType` in Java) and for
+  `IdType extends UriType`. Neither is in `docs/deviations.md`; the proposer
+  should decide whether these are deviations and record them.
+- The upper-case-initial retry is a property of HAPI's server-facing worker,
+  not of the core engine the vendored suite's Java harness runs on
+  (`BaseWorkerContext.fetchTypeDefinition` is an exact lookup). Frevo applies
+  it in the engine; no suite case uses a mis-cased type name with `as` or
+  `ofType` (the suite pass counts are unchanged), but the scenario should say
+  which worker it describes.
+
+**Decision needed.** None from the owner for item 1 and 3 (oracle-builder
+rebinds; no assertion weakens). Item 2 and the proposal defects go to the
+proposer and spec-reviewer.

@@ -128,7 +128,7 @@ impl Run<'_> {
     /// `as` calls with a name that may or may not carry a namespace.
     fn is_known_type_name(&self, tn: &str) -> bool {
         if !tn.contains('.') {
-            return SYSTEM_TYPES.contains(&tn) || self.model.is_type(tn);
+            return SYSTEM_TYPES.contains(&tn) || self.has_type_definition(tn);
         }
         self.is_known_type(tn)
     }

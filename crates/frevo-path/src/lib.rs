@@ -38,7 +38,7 @@ pub use check::{
     CheckError, CheckFocus, CheckOptions, CheckOutcome, CheckRequest, CheckWarning, Checker,
     CollectionStatus, WarningId,
 };
-pub use eval::{EvalError, Evaluator};
+pub use eval::{EngineSettings, EvalError, Evaluator, InvalidVersion, PathError};
 
 pub use seam::host::{ConstantMode, FunctionDetails, HostError, HostServices};
 pub use seam::model::{ElementInfo, Model, TypeSet};

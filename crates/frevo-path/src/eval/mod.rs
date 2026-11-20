@@ -46,6 +46,7 @@ mod mathfn;
 mod navigate;
 mod operand;
 mod rewrite;
+mod settings;
 mod strext;
 mod strfn;
 mod strregex;
@@ -53,6 +54,8 @@ mod temporal;
 mod terminology;
 mod types;
 mod utility;
+
+mod api;
 
 #[cfg(test)]
 mod env_tests;
@@ -63,7 +66,9 @@ mod utility_tests;
 
 use std::sync::{Arc, Mutex};
 
+pub use api::PathError;
 pub use error::EvalError;
+pub use settings::{EngineSettings, InvalidVersion};
 
 use self::error::At;
 
@@ -163,6 +168,16 @@ pub struct Evaluator<'m> {
     /// `doNotEnforceAsCaseSensitive`, inverted: `as` compares type names
     /// exactly. Enforced unless a caller says otherwise.
     enforce_as_case_sensitive: bool,
+    /// `allowPolymorphicNames`: a typed choice name navigates the choice
+    /// element (`path.strictness.006`).
+    allow_polymorphic_names: bool,
+    /// `legacyMode`: `!=` with an empty operand is `true` (`path.strictness.007`).
+    legacy_mode: bool,
+    /// `liquidMode`. Read only by [`Evaluator::parse`], which refuses it.
+    liquid_mode: bool,
+    /// `emitSQLonFHIRWarning`. A check-pass setting, carried so that
+    /// [`Evaluator::settings`] reports the whole configuration.
+    emit_sql_on_fhir_warning: bool,
     /// The host service, if one is installed. Not having one is a state of its
     /// own, distinct from a host service that answers nothing.
     host: Option<&'m dyn HostServices>,
@@ -175,7 +190,10 @@ pub struct Evaluator<'m> {
 }
 
 impl<'m> Evaluator<'m> {
-    /// An evaluator that answers type questions from `model`, in UTC.
+    /// An evaluator that answers type questions from `model`, in UTC, with the
+    /// engine's fields as declared ([`EngineSettings::DECLARED`]): both `as`
+    /// rules enforced and every other switch off. This is not the R4 default;
+    /// [`Evaluator::for_version`] is.
     pub fn new(model: &'m dyn Model) -> Self {
         Self {
             model,
@@ -183,10 +201,65 @@ impl<'m> Evaluator<'m> {
             implicit_string_conversion: false,
             enforce_as_singleton: true,
             enforce_as_case_sensitive: true,
+            allow_polymorphic_names: false,
+            legacy_mode: false,
+            liquid_mode: false,
+            emit_sql_on_fhir_warning: false,
             host: None,
             app_context: false,
             log: Arc::new(Mutex::new(String::new())),
         }
+    }
+
+    /// An evaluator created the way `new FHIRPathEngine(worker)` creates one
+    /// over a worker reporting `version`: `initFlags()` leaves both `as` rules
+    /// not enforced below R5 (`path.strictness.001`).
+    pub fn for_version(model: &'m dyn Model, version: &str) -> Result<Self, InvalidVersion> {
+        Ok(Evaluator::new(model).with_settings(EngineSettings::for_version(version)?))
+    }
+
+    /// The engine-wide switches this evaluator runs with.
+    pub fn settings(&self) -> EngineSettings {
+        EngineSettings {
+            enforce_as_singleton_rule: self.enforce_as_singleton,
+            enforce_as_case_sensitive: self.enforce_as_case_sensitive,
+            allow_polymorphic_names: self.allow_polymorphic_names,
+            implicit_string_conversion: self.implicit_string_conversion,
+            liquid_mode: self.liquid_mode,
+            legacy_mode: self.legacy_mode,
+            emit_sql_on_fhir_warning: self.emit_sql_on_fhir_warning,
+        }
+    }
+
+    /// Replace all seven switches at once.
+    #[must_use]
+    pub fn with_settings(mut self, settings: EngineSettings) -> Self {
+        self.enforce_as_singleton = settings.enforce_as_singleton_rule;
+        self.enforce_as_case_sensitive = settings.enforce_as_case_sensitive;
+        self.allow_polymorphic_names = settings.allow_polymorphic_names;
+        self.implicit_string_conversion = settings.implicit_string_conversion;
+        self.liquid_mode = settings.liquid_mode;
+        self.legacy_mode = settings.legacy_mode;
+        self.emit_sql_on_fhir_warning = settings.emit_sql_on_fhir_warning;
+        self
+    }
+
+    /// `setAllowPolymorphicNames` (`FHIRPathEngine.java:6977`): when on, a
+    /// name that starts with a choice element's name (`valueQuantity`)
+    /// navigates that element and keeps the children whose type, ignoring
+    /// case, is the rest of the name (`getChildrenByName`, `:255-279`).
+    #[must_use]
+    pub fn with_polymorphic_names(mut self, on: bool) -> Self {
+        self.allow_polymorphic_names = on;
+        self
+    }
+
+    /// `setLegacyMode` (`FHIRPathEngine.java:291`): when on, `!=` with an
+    /// empty operand is `true` rather than empty (`:2133`).
+    #[must_use]
+    pub fn with_legacy_mode(mut self, on: bool) -> Self {
+        self.legacy_mode = on;
+        self
     }
 
     /// `hasLog()` (`FHIRPathEngine.java:6687`): whether a `trace()` has
@@ -306,6 +379,8 @@ impl<'m> Evaluator<'m> {
             implicit_string_conversion: self.implicit_string_conversion,
             enforce_as_singleton: self.enforce_as_singleton,
             enforce_as_case_sensitive: self.enforce_as_case_sensitive,
+            allow_polymorphic_names: self.allow_polymorphic_names,
+            legacy_mode: self.legacy_mode,
             host: self.host,
             app_context: self.app_context,
             base: focus,
@@ -323,6 +398,8 @@ struct Run<'r> {
     implicit_string_conversion: bool,
     enforce_as_singleton: bool,
     enforce_as_case_sensitive: bool,
+    allow_polymorphic_names: bool,
+    legacy_mode: bool,
     host: Option<&'r dyn HostServices>,
     app_context: bool,
     log: &'r Mutex<String>,
@@ -370,7 +447,7 @@ impl Run<'_> {
                 } else {
                     let mut out = Vec::new();
                     for item in focus {
-                        self.execute_name(item, name, at_entry, &mut out)?;
+                        self.execute_name(item, name, at_entry, node.start(), &mut out)?;
                     }
                     out
                 }
@@ -652,6 +729,13 @@ impl Run<'_> {
         let model = self.model;
         match op {
             Operation::Equals => equality::op_equals(model, left, right, false, offset),
+            // `opNotEquals` (`FHIRPathEngine.java:2133`): only without legacy
+            // mode is an empty operand an empty answer. With it, the size test
+            // and the loop that follow answer `true` for any empty operand --
+            // sizes differ, or both are empty and no pair is equal.
+            Operation::NotEquals if self.legacy_mode && (left.is_empty() || right.is_empty()) => {
+                Ok(vec![Value::Boolean(true)])
+            }
             Operation::NotEquals => equality::op_equals(model, left, right, true, offset),
             Operation::Equivalent => equality::op_equivalent(model, left, right, false, offset),
             Operation::NotEquivalent => equality::op_equivalent(model, left, right, true, offset),

@@ -134,6 +134,30 @@ impl Run<'_> {
         }
     }
 
+    /// `worker.fetchTypeDefinition(name) != null` as the server-facing R4
+    /// worker answers it. `HapiWorkerContext` asks `DefaultProfileValidationSupport`,
+    /// whose lookup retries a name that starts with an upper-case letter with
+    /// that letter lower-cased, for R4, R4B and R5 only
+    /// (`DefaultProfileValidationSupportBundleStrategy.java:276-297`: "A few
+    /// built-in R4 SearchParameters have the wrong casing for primitive
+    /// search parameters eg "value.as(String)""). So `Code` is a known type
+    /// and `quantity` is not (`path.strictness.005`). Which definition is
+    /// found does not matter here: `funcAs` walks the item's own definition,
+    /// not this one.
+    pub(super) fn has_type_definition(&self, name: &str) -> bool {
+        if self.model.is_type(name) {
+            return true;
+        }
+        let mut chars = name.chars();
+        match chars.next() {
+            Some(first) if first.is_uppercase() => {
+                let lowered: String = first.to_lowercase().chain(chars).collect();
+                self.model.is_type(&lowered)
+            }
+            _ => false,
+        }
+    }
+
     /// `isKnownType(tn)` (`FHIRPathEngine.java:1904`) for a name that always
     /// contains a `.` -- `funcOfType` builds it as `namespace.name`.
     pub(super) fn is_known_type(&self, tn: &str) -> bool {
@@ -143,7 +167,7 @@ impl Run<'_> {
         };
         match *namespace {
             "System" => SYSTEM_TYPES.contains(name),
-            "FHIR" => self.model.is_type(name),
+            "FHIR" => self.has_type_definition(name),
             "CDA" => self.model.is_type(&cda_url(name)),
             _ => false,
         }

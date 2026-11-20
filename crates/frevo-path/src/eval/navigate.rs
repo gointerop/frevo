@@ -87,11 +87,12 @@ pub(crate) const ALL_CHILDREN: &str = "*";
 ///   it (`design.md` section 4.1, `path.navigation.014`);
 /// - every child is passed through [`filter_id_type`].
 ///
-/// Polymorphic typed names (`valueQuantity`) are not rewritten:
+/// Polymorphic typed names (`valueQuantity`) are not rewritten here:
 /// `isAllowPolymorphicNames()` is `false` unless a caller sets it, and the
 /// suite's harness never does, so `Observation.valueQuantity` navigates
 /// nothing at runtime and the check pass is what rejects it
-/// (`path.navigation.007`).
+/// (`path.navigation.007`). With it set, the name step goes through
+/// [`polymorphic_children_by_name`] instead.
 pub(crate) fn children_by_name(
     item: &Value,
     name: &str,
@@ -117,6 +118,50 @@ pub(crate) fn children_by_name(
         primitive_sibling(node.as_ref(), name, out);
     }
     Ok(())
+}
+
+/// `getChildrenByName` with `isAllowPolymorphicNames()` on
+/// (`FHIRPathEngine.java:255-279`): the first choice element of the item's
+/// type, in definition order, whose name `name` **starts with** is navigated
+/// instead, keeping the children whose type name equals the rest of `name`
+/// ignoring case. A name no choice element prefixes navigates as usual.
+///
+/// Upstream's test is `name.startsWith(n)`, so the choice element's own name
+/// matches too, with an empty rest that no type equals: with the setting on,
+/// `Observation.value` navigates nothing. That is upstream's behaviour, kept.
+///
+/// `Ok(None)` is "this model cannot list the type's elements", which the
+/// caller must report as not implemented rather than navigate around: a
+/// polymorphic name is only recognisable from the definition.
+pub(crate) fn polymorphic_children_by_name(
+    model: &dyn Model,
+    item: &Value,
+    name: &str,
+    out: &mut Vec<Value>,
+) -> Result<Option<()>, NodeError> {
+    let Value::Node(node) = item else {
+        return Ok(Some(()));
+    };
+    let Some(elements) = model.elements(node.type_name()) else {
+        return Ok(None);
+    };
+    let choice = elements
+        .iter()
+        .find(|e| e.choice && name.starts_with(e.name.as_str()));
+    match choice {
+        None => children_by_name(item, name, out)?,
+        Some(e) => {
+            let tn = &name[e.name.len()..];
+            let mut found = Vec::new();
+            children_by_name(item, &e.name, &mut found)?;
+            out.extend(
+                found
+                    .into_iter()
+                    .filter(|v| fhir_type(v).eq_ignore_ascii_case(tn)),
+            );
+        }
+    }
+    Ok(Some(()))
 }
 
 /// The `_field` sibling's `id` and `extension`, for a primitive node whose

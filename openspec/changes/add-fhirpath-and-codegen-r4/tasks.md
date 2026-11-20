@@ -1030,7 +1030,7 @@ checkpoint because it changes what a gate measures.
   `custom_function_type`, with `Model::value_set`/`code_system` as the worker
   context; the oracle seam installs the suite's host service (`877538a`).
 
-- [ ] **50. Implement the static type-check pass.** Separate from evaluation;
+- [x] **50. Implement the static type-check pass.** Separate from evaluation;
   27 of the 29 `invalid="semantic"` cases failing it with the offending path
   named, and the two `documentFunctions` cases among them failing at parse,
   graded `failed`, as for HAPI;
@@ -1052,6 +1052,9 @@ checkpoint because it changes what a gate measures.
   `014` needs evaluation. The `Model` trait gained five check-pass methods,
   which `R4Model` does not implement yet (`DEBT-0012`). See
   `tasks/blockers.md`, 2026-11-12, "task 50".
+  Done (verified 2026-11-20 at `6051795`): `path_check` is 14 of 14, which
+  includes `001`-`004`, `013` and `014`; `path.check.002`'s test asserts 27 of
+  the 29 semantic-invalid cases graded `passed` at the check stage.
 
 - [ ] **50a. Implement the check pass's warning channel.** The surface that
   returns a warning list beside the inferred type; a warning never failing the
@@ -1064,8 +1067,13 @@ checkpoint because it changes what a gate measures.
   `path-check-warnings` oracle of task 4a grades by — neither the vendored suite
   nor the HTTP differential can see this channel at all.
   Satisfies `path.check.015` through `path.check.019`, `path.strictness.008`.
+  **Not ticked.** `path_check_warnings` is 5 of 5 (`015`-`019`), but
+  `path.strictness.008` still fails: its seam's `settings()` answers
+  `NotImplemented`. The crate now has the surface (`Evaluator::settings`,
+  `EngineSettings::for_version`), so it needs only the rebind recorded in
+  `tasks/blockers.md`, 2026-11-20, "tasks 52 and 54".
 
-- [ ] **51. Confirm the check pass's non-narrowing behaviour on type guards.**
+- [x] **51. Confirm the check pass's non-narrowing behaviour on type guards.**
   **No narrowing is implemented** — the owner ruled on 2026-11-12 to match HAPI
   (`tasks/blockers.md`, 2026-11-12, "task 50", finding 3), because the pinned R4
   engine has none (`FHIRPathEngine.java:1621-1637` types every operand of an
@@ -1091,6 +1099,10 @@ checkpoint because it changes what a gate measures.
   assert narrowing; and the `type_check_engine_under_test()` seam is bound
   (task 50's finding 2). The multi-type `contextType` half already works
   (`checkOnTypes`).
+  Done (verified 2026-11-20 at `6051795`): the eight tests are retargeted and
+  the seam is bound; `path_check` `005`-`012` pass, including the 14
+  `isSemanticChecks` guard cases ending at the check stage graded `failed`.
+  No narrowing rule was added.
 
 - [ ] **52. Implement the strictness configuration and the four remaining engine
   settings.** The non-strict default, which comes from the engine's own
@@ -1103,6 +1115,16 @@ checkpoint because it changes what a gate measures.
   off; and liquid mode off and out of scope.
   Satisfies `path.strictness.001` through `path.strictness.010`,
   `path.lexer.015`, `path.lexer.016`, `path.string.024`.
+  **Implemented, not ticked.** `EngineSettings` (`src/eval/settings.rs`) with
+  `for_version`, `PRE_R5`, `DECLARED` and `server_facing`;
+  `Evaluator::{for_version, settings, with_settings, with_polymorphic_names,
+  with_legacy_mode}`; polymorphic names in evaluation
+  (`navigate::polymorphic_children_by_name`); legacy `!=`; liquid mode
+  refused as `Unsupported`; and the server-facing worker's upper-case
+  type-name retry (`Run::has_type_definition`). `path_strictness` is still 2
+  of 10: `.001`, `.006`-`.010` need the test seam rebound to that surface,
+  `.005` has a test defect (`as(quantity)`), and `.002` needs the whole suite
+  to run. See `tasks/blockers.md`, 2026-11-20, "tasks 52 and 54".
 
 - [ ] **53. Implement error reporting and the bounds.** 21 of the 27
   `invalid="execution"` cases failing at evaluation after a clean parse and
@@ -1124,6 +1146,11 @@ checkpoint because it changes what a gate measures.
   case, the unexpected-return-type error, and synchronous evaluation callable
   from inside a transaction.
   Satisfies `path.api.001` through `path.api.006`.
+  **Implemented, not ticked.** `src/eval/api.rs`: `Evaluator::{parse,
+  evaluate_text, evaluate_text_as, evaluate_first_text, evaluate_first,
+  evaluate_first_as, evaluate_as}` and `PathError`. `path_api` is still 5 of
+  8: `.003`-`.005` need the test seam rebound (`tasks/blockers.md`,
+  2026-11-20, "tasks 52 and 54").
 
 - [ ] **55. Land the path benchmarks and record the baseline.** The four
   `bench/micro/` path workloads plus the suite wall-clock, with their budgets

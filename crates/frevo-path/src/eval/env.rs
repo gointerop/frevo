@@ -50,6 +50,7 @@ impl Run<'_> {
         item: &Value,
         name: &str,
         at_entry: bool,
+        offset: usize,
         out: &mut Vec<Value>,
     ) -> Result<(), EvalError> {
         let gated = at_entry && self.app_context;
@@ -68,6 +69,16 @@ impl Run<'_> {
         if at_entry && name.chars().next().is_some_and(char::is_uppercase) {
             if navigate::type_name_matches(self.model, item, name) {
                 out.push(item.clone());
+            }
+        } else if self.allow_polymorphic_names {
+            if navigate::polymorphic_children_by_name(self.model, item, name, out)?.is_none() {
+                return Err(EvalError::unsupported(
+                    format!(
+                        "polymorphic name {name} over {}, whose elements the model cannot list",
+                        navigate::fhir_type(item)
+                    ),
+                    offset,
+                ));
             }
         } else {
             navigate::children_by_name(item, name, out)?;
