@@ -1586,12 +1586,12 @@ impl TreeBuilder<'_> {
     ) -> Option<Value> {
         match self.shape(sd, e, chosen) {
             Shape::Resource => el.child_elements().first().map(|r| self.xml_resource(r)),
-            Shape::Primitive(t) if t == "xhtml" => Some(primitive_node(
-                &t,
-                Some(el.text_content()),
-                None,
-                Vec::new(),
-            )),
+            // The stored narrative is the `div` element's markup, descendants
+            // included, as a JSON document's `div` string is: not its text
+            // content (`path.navigation.025`).
+            Shape::Primitive(t) if t == "xhtml" => {
+                Some(primitive_node(&t, Some(el.markup()), None, Vec::new()))
+            }
             Shape::Primitive(t) => {
                 let lexical = el.has_attr("value").then(|| el.attr("value").to_string());
                 let id = el.has_attr("id").then(|| el.attr("id").to_string());

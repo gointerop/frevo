@@ -83,6 +83,63 @@ impl Element {
         out
     }
 
+    /// The element re-serialised as markup: its tag, its attributes in
+    /// document order, and its descendants, with `&`, `<` and `>` escaped in
+    /// text and `&`, `<` and `"` in attribute values. An element with no
+    /// children is written self-closed. Comments, processing instructions and
+    /// the CDATA wrapper are not kept, as the reader drops them.
+    ///
+    /// This is how the harness hands an XML document's `Narrative.div` to the
+    /// engine: the stored narrative is the `div` element's markup, not its text
+    /// content (`path.navigation.025`).
+    pub fn markup(&self) -> String {
+        let mut out = String::new();
+        self.append_markup(&mut out);
+        out
+    }
+
+    fn append_markup(&self, out: &mut String) {
+        out.push('<');
+        out.push_str(&self.name);
+        for (k, v) in &self.attrs {
+            out.push(' ');
+            out.push_str(k);
+            out.push_str("=\"");
+            for c in v.chars() {
+                match c {
+                    '&' => out.push_str("&amp;"),
+                    '<' => out.push_str("&lt;"),
+                    '"' => out.push_str("&quot;"),
+                    c => out.push(c),
+                }
+            }
+            out.push('"');
+        }
+        if self.children.is_empty() {
+            out.push_str("/>");
+            return;
+        }
+        out.push('>');
+        for n in &self.children {
+            match n {
+                Node::Text(t) => {
+                    for c in t.chars() {
+                        match c {
+                            '&' => out.push_str("&amp;"),
+                            '<' => out.push_str("&lt;"),
+                            '>' => out.push_str("&gt;"),
+                            c => out.push(c),
+                        }
+                    }
+                }
+                Node::Element(e) => e.append_markup(out),
+            }
+        }
+        out.push_str("</");
+        out.push_str(&self.name);
+        out.push('>');
+    }
+
     fn append_text(&self, out: &mut String) {
         for n in &self.children {
             match n {

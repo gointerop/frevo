@@ -1246,12 +1246,17 @@ fn patient_with_div(name: &str, div: &str) -> SuiteInput {
     let body = format!(
         r#"{{"resourceType":"Patient","text":{{"status":"generated","div":"{escaped}"}}}}"#
     );
+    patient_from_json(&format!("div-{name}"), body)
+}
+
+/// A hand-built `Patient` from its JSON text.
+fn patient_from_json(name: &str, body: String) -> SuiteInput {
     let document = Document::Json(
         oracle::json::parse(&body)
             .unwrap_or_else(|e| panic!("the hand-built Patient is JSON: {e}")),
     );
     SuiteInput {
-        file: format!("hand-built-patient-div-{name}.json"),
+        file: format!("hand-built-patient-{name}.json"),
         bytes: body.into_bytes(),
         document,
     }
@@ -1275,10 +1280,20 @@ fn narrative_div_navigates_to_a_string_by_name_and_to_an_xhtml_through_children(
         eval_unchecked("Patient.text.div", inp),
         vec![primitive("string", HI_DIV)]
     );
+    // The `is` operator reads its right operand as plain text
+    // (`executeTypeName`, FHIRPathEngine.java:1531-1539) and `opIs` compares
+    // it with `fhirType()` and then with `sd.getType()` along the base chain
+    // (:1940-1965). The text `FHIR.string` equals none of those, and the item
+    // `getProperty` built is not `disallowExtensions`, so the System branch
+    // does not apply: `is FHIR.string` is false. The function form reads a
+    // namespace (`funcIs`, :5095-5145), so `.is(FHIR.string)` is true.
     for (expr, want) in [
         ("Patient.text.div is string", true),
-        ("Patient.text.div is FHIR.string", true),
+        ("Patient.text.div is FHIR.string", false),
         ("Patient.text.div is xhtml", false),
+        ("Patient.text.div.is(string)", true),
+        ("Patient.text.div.is(FHIR.string)", true),
+        ("Patient.text.div.is(xhtml)", false),
         (
             r#"Patient.text.div = '<div xmlns="http://www.w3.org/1999/xhtml">hi</div>'"#,
             true,
@@ -1298,12 +1313,40 @@ fn narrative_div_navigates_to_a_string_by_name_and_to_an_xhtml_through_children(
         eval_unchecked("Patient.text.div.toString()", inp),
         vec![primitive("string", HI_DIV)]
     );
-    // The check types `div` as `xhtml` from the element definition, which is
-    // in the string-like set, so a string function passes the check.
+    // At evaluation `contains` accepts the item's `string` type, so with the
+    // check skipped, as `FhirPathR4` runs it, the string function works.
     assert_eq!(
-        eval_over("Patient.text.div.contains('>hi<')", inp),
+        eval_unchecked("Patient.text.div.contains('>hi<')", inp),
         vec![primitive("boolean", "true")]
     );
+    // The static check types `div` as `xhtml` from the element definition, and
+    // `checkContextString` (:3496-3502, :3865-3869) accepts only a focus type
+    // `TypeDetails.hasType` reaches from `string`, `code`, `uri`, `url`,
+    // `canonical` or `id`, which `xhtml` is not; the 12-type string-like set
+    // (:2407) is used only at evaluation. `FHIRPATH_STRING_SING_ONLY`
+    // (Messages.properties:363), the holder being the `contains` node: column
+    // 18, byte offset 17; the type rendered by `TypeDetails.describe`
+    // (TypeDetails.java:450-452).
+    {
+        let expr = "Patient.text.div.contains('>hi<')";
+        let mut engine = fresh_engine();
+        let context = context_for(inp);
+        let parsed = engine
+            .parse(expr)
+            .unwrap_or_else(|e| panic!("{expr:?} must parse: {e}"));
+        match engine.check(parsed, &context, StrictnessFlags::CHECK) {
+            Ok(()) => panic!("{expr:?} must fail the static check, but the check passed"),
+            Err(EngineError::Diagnostic { message, offset }) => {
+                assert_eq!(
+                    message,
+                    "Error evaluating FHIRPath expression: The function contains can only be used on string, uri, url, code, id but found [http://hl7.org/fhir/StructureDefinition/xhtml] (@char 18)",
+                    "{expr:?}: HAPI's message, exactly"
+                );
+                assert_eq!(offset, Some(17), "the `contains` node starts at byte 17");
+            }
+            Err(e) => panic!("{expr:?} must fail the check with a diagnostic, not: {e}"),
+        }
+    }
 
     // The value is the composition, not the stored text: in XML mode an
     // element with no children and no content is written self-closed and a
@@ -1364,5 +1407,67 @@ fn narrative_div_navigates_to_a_string_by_name_and_to_an_xhtml_through_children(
             .count(),
         1,
         "exactly one child is an xhtml: {children:?}"
+    );
+
+    // A narrative with a `status` and no `div`: `getProperty` returns no
+    // value for a null `div` (Narrative.java:364-366), so `text.div` is
+    // empty; but `listChildren` adds `new XhtmlType(this)` unconditionally
+    // (:343), so `children()` is still the `status` code and one `xhtml`.
+    // HAPI's string read of that item creates an empty `div` and composes it
+    // in HTML mode; Frevo's string is `<div/>`, the XML-mode composition of an
+    // empty `div`, and nothing is created, so `text.div` stays empty even in
+    // the same evaluation after the item's string was read (`DEV-0028`,
+    // `DEBT-0018`).
+    let divless = patient_from_json(
+        "no-div",
+        r#"{"resourceType":"Patient","text":{"status":"generated"}}"#.to_string(),
+    );
+    let no_div = Some(&divless);
+    assert_eq!(eval_unchecked("Patient.text.div", no_div), empty());
+    for (expr, want) in [
+        ("Patient.text.children().count()", "2"),
+        ("Patient.text.children().ofType(xhtml).count()", "1"),
+    ] {
+        assert_eq!(
+            eval_unchecked(expr, no_div),
+            vec![primitive("integer", want)],
+            "div-less narrative: {expr}"
+        );
+    }
+    let divless_children = eval_unchecked("Patient.text.children()", no_div);
+    assert_eq!(
+        divless_children,
+        vec![primitive("code", "generated"), primitive("xhtml", "<div/>")],
+        "div-less narrative: the status code, then one xhtml whose string is <div/>"
+    );
+    assert_eq!(
+        eval_unchecked(
+            "(Patient.text.children().ofType(xhtml).toString() = '<div/>') and Patient.text.div.empty()",
+            no_div
+        ),
+        vec![primitive("boolean", "true")],
+        "reading the xhtml item's string creates no div"
+    );
+
+    // A stored narrative the XHTML parser rejects (a mismatched end tag).
+    // HAPI has no counterpart -- its parser rejects such a resource when it is
+    // read -- so this is differential-only. By name, `text.div` fails with the
+    // model's error, surfaced as `path.errors.005` requires and never
+    // swallowed into empty; through `children()` the `xhtml` item reports the
+    // stored text unchanged.
+    let broken = r#"<div xmlns="http://www.w3.org/1999/xhtml"><p>x</b></div>"#;
+    let unparseable = patient_with_div("unparseable", broken);
+    let bad = Some(&unparseable);
+    for expr in ["Patient.text.div", "Patient.text.div.empty()"] {
+        let message = expect_unchecked_evaluation_failure(expr, bad);
+        assert!(
+            message.contains("Narrative.div"),
+            "{expr:?}: the model's error names the element it was reading: {message:?}"
+        );
+    }
+    assert_eq!(
+        eval_unchecked("Patient.text.children()", bad),
+        vec![primitive("code", "generated"), primitive("xhtml", broken)],
+        "unparseable narrative: the xhtml child carries the stored text"
     );
 }
