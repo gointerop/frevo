@@ -110,10 +110,17 @@ pub(crate) fn children_by_name(
     let parent_is_resource = node.is_resource();
     let before = out.len();
     if name == ALL_CHILDREN {
+        let mut has_div = false;
         for (child_name, child) in node.all_children()? {
             let is_resource_id = parent_is_resource && child_name == "id";
             let child = filter_id_type(super::rewrite::apply(child), is_resource_id);
+            has_div |= is_xhtml(&child).is_some();
             out.push(xhtml_item(child));
+        }
+        // `Narrative.listChildren` adds `new XhtmlType(this)` whether or not
+        // the narrative holds a `div` (`Narrative.java:343`), last.
+        if !has_div && node.type_name() == NARRATIVE {
+            out.push(absent_xhtml_item());
         }
     } else {
         let is_resource_id = parent_is_resource && name == "id";
@@ -226,6 +233,13 @@ fn is_xhtml(value: &Value) -> Option<&Arc<dyn Node>> {
 }
 
 const XHTML: &str = "xhtml";
+const NARRATIVE: &str = "Narrative";
+
+/// The string of the `xhtml` item for a narrative with no `div`: HAPI's read
+/// creates an empty `div` (`getDiv`, `Narrative.java:316-323`); Frevo creates
+/// nothing and gives the XML-mode composition of an empty `div` (`DEV-0028`,
+/// `DEBT-0018`).
+const EMPTY_DIV: &str = "<div/>";
 
 /// `div` by name (`path.navigation.025`): `Narrative.getProperty` answers it
 /// with `new StringType(new XhtmlComposer(true).composeEx(div))`
@@ -293,6 +307,8 @@ impl Node for DivString {
 /// composed when it is read, and is the same XML-mode composition the name
 /// step gives: HAPI's is the HTML-mode one, which edits the narrative first
 /// (`DEV-0028`, owed as `DEBT-0018`).
+/// A `div` the object model does not hold, by an absent element or an
+/// `xhtml` node with no value, yields an item whose string is [`EMPTY_DIV`].
 fn xhtml_item(child: Value) -> Value {
     match is_xhtml(&child) {
         Some(node) => Value::Node(Arc::new(XhtmlItem {
@@ -301,6 +317,14 @@ fn xhtml_item(child: Value) -> Value {
         })),
         None => child,
     }
+}
+
+/// The `xhtml` item for a narrative that holds no `div`.
+fn absent_xhtml_item() -> Value {
+    Value::Node(Arc::new(XhtmlItem {
+        stored: None,
+        composed: OnceLock::new(),
+    }))
 }
 
 /// The `XhtmlType` `*` navigation yields for a narrative.
@@ -331,13 +355,18 @@ impl Node for XhtmlItem {
     /// nothing. A narrative the composer cannot produce reports its stored
     /// text: a string cannot carry the error, and HAPI never holds such a
     /// narrative to compare against.
+    ///
+    /// With no stored `div` the string is [`EMPTY_DIV`] and nothing is
+    /// created, so `text.div` stays empty.
     fn primitive(&self) -> Option<Primitive> {
-        let stored = self.stored.as_ref()?;
-        let lexical = self
-            .composed
-            .get_or_init(|| super::xhtml::compose_narrative(stored).ok())
-            .clone()
-            .unwrap_or_else(|| stored.clone());
+        let lexical = match self.stored.as_ref() {
+            None => EMPTY_DIV.to_string(),
+            Some(stored) => self
+                .composed
+                .get_or_init(|| super::xhtml::compose_narrative(stored).ok())
+                .clone()
+                .unwrap_or_else(|| stored.clone()),
+        };
         Some(Primitive {
             type_name: XHTML.to_string(),
             lexical,

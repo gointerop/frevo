@@ -772,7 +772,7 @@ checkpoint because it changes what a gate measures.
   in `path_parse_errors` all pass; the three red tests in that binary cover
   `path.errors.002`, `.003` and `.005`, which are task 53's.
 
-- [ ] **31. Implement navigation.** Leading type name matched, omitted or
+- [x] **31. Implement navigation.** Leading type name matched, omitted or
   mismatched; flattening across repeating elements; absent elements as empty;
   polymorphic base-name navigation; the indexer with its out-of-range, negative
   and non-integer cases; contained resources; the logical-id rule for
@@ -801,6 +801,12 @@ checkpoint because it changes what a gate measures.
   engine does not give (`is FHIR.string` by operator, and `contains` on an
   `xhtml` passing the check). See `tasks/blockers.md`, 2026-11-20,
   "`path.navigation.025` asserts two results the pinned engine does not give".
+  **Ticked 2026-11-20:** `path_navigation` is 25 of 25 and the in-crate
+  `eval::xhtml_tests` (`path.navigation.025`) pass in the lib's 130 of 130.
+  The last red case was the div-less narrative: `*` navigation over a
+  `Narrative` with no `div` now yields the `status` code and one `xhtml` item
+  whose string is `<div/>`, creating nothing (`Narrative.java:343`;
+  `DEV-0028`/`DEBT-0018`).
 
 - [x] **32. Implement collection predicates.** `empty`, `exists` with and without
   criteria, `not`, `all`, the four boolean folds and their non-boolean execution
