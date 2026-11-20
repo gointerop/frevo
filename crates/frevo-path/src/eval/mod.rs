@@ -45,6 +45,7 @@ mod logic;
 mod mathfn;
 mod navigate;
 mod operand;
+mod rewrite;
 mod strext;
 mod strfn;
 mod strregex;
@@ -293,6 +294,7 @@ impl<'m> Evaluator<'m> {
             vars: None,
         };
         let _zone = temporal::ZoneGuard::set(self.zone_minutes);
+        let _rewrites = rewrite::RewriteGuard::begin();
         // Every `evaluate` overload starts `log = new StringBuilder()`.
         self.lock_log().clear();
         Run {

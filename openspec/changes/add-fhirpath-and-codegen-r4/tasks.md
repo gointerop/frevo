@@ -716,10 +716,15 @@ checkpoint because it changes what a gate measures.
 
 ## Phase D — `frevo-path`
 
-- [ ] **28. Implement the lexer.** Both comment forms and their interaction with
+- [x] **28. Implement the lexer.** Both comment forms and their interaction with
   operators, backtick-delimited identifiers, the string escape set, and the
   rejection paths.
   Satisfies `path.lexer.001` through `path.lexer.014`.
+  **Ticked 2026-11-20:** `path_lexer` is 15 of 16 and the in-crate
+  `syntax::tests` pass; every test covering `.001`-`.014` passes. The one red
+  test is `path.lexer.016`, whose local `double_quote_oracle_under_test`
+  binding is still unbound (task 52; the product's
+  `ParseOptions::allow_double_quotes` exists). Earlier note:
   **Implemented, not ticked.** `path_lexer` is 6 of 16; the other ten
   assert that a pinned suite case is graded `passed`, which needs the
   evaluator, and `path.lexer.016` needs the local
@@ -733,19 +738,20 @@ checkpoint because it changes what a gate measures.
   `isToken` tests `charAt(1)` inside a loop over `i` at `:125-129`; and
   `processFixedName` reads a `\\u` escape in base **32** at `:511`.
 
-- [ ] **29. Implement literals.** Booleans, strings, integers including the
+- [x] **29. Implement literals.** Booleans, strings, integers including the
   negative-literal and max cases, precision-preserving decimals, dates,
   dateTimes and times at every precision and offset, quantity literals with
   UCUM codes and with calendar-duration keywords, and the empty collection.
   Satisfies `path.literal.001` through `path.literal.015`.
-  **Implemented, not ticked.** `path_literals` is 0 of 15: every test in
+  **Ticked 2026-11-20:** `path_literals` is 15 of 15 and the in-crate
+  `syntax::tests` pass. Earlier note: **Implemented, not ticked.** `path_literals` is 0 of 15: every test in
   the file goes through a helper that calls `check` then `evaluate`, so
   none can pass before task 31. The literal forms themselves are covered
   by the 36 in-crate unit tests, which can see what a literal *is*.
   `DEBT-0011` records the one gap: a decimal literal above 38 significant
   digits is refused, because the mantissa is 128-bit.
 
-- [ ] **30. Implement the parser and precedence.** The reusable parsed form, the
+- [x] **30. Implement the parser and precedence.** The reusable parsed form, the
   precedence table, parentheses, and the parse-time rejections — unbalanced
   parentheses, unknown function, wrong arity — each with an offset, and all seven
   `invalid="syntax"` oracle cases failing.
@@ -759,6 +765,9 @@ checkpoint because it changes what a gate measures.
   syntax-invalid), so the parser rejects what HAPI rejects and
   accepts everything else.
   Satisfies `path.parse.001` through `path.parse.008`.
+  **Ticked 2026-11-20:** the eight tests covering `path.parse.001`-`.008`
+  in `path_parse_errors` all pass; the three red tests in that binary cover
+  `path.errors.002`, `.003` and `.005`, which are task 53's.
 
 - [ ] **31. Implement navigation.** Leading type name matched, omitted or
   mismatched; flattening across repeating elements; absent elements as empty;
@@ -812,10 +821,14 @@ checkpoint because it changes what a gate measures.
   Satisfies `path.equality.001` through `path.equality.012`, `path.compare.001`
   through `path.compare.014`.
 
-- [ ] **36. Implement boolean logic.** The four operators' three-valued truth
+- [x] **36. Implement boolean logic.** The four operators' three-valued truth
   tables, the singleton-evaluation rule for a non-boolean operand, both
   short-circuits, and `iif` with its empty-condition and missing-else cases.
   Satisfies `path.logic.001` through `path.logic.010`.
+  **Ticked 2026-11-20:** `path_logic` is 10 of 10, the only binary carrying
+  `path.logic.*` tags. The last red test was `path.logic.008`'s input-less
+  `iif` check, which now reports a `NULL_POINTER` diagnostic where HAPI's
+  `checkSingleton` dereferences a null focus.
 
 - [ ] **37. Implement arithmetic.** The operators over integers, decimals,
   strings and quantities using decimal arithmetic; concatenation's empty-as-empty

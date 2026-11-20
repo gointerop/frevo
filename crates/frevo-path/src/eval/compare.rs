@@ -21,6 +21,10 @@
 //! - `<` compares quantities' `code`, `<=`, `>` and `>=` their `unit`, so a
 //!   quantity literal such as `1 'cm'`, which has a code and no unit, compares
 //!   as if it had no unit at all;
+//! - comparing a `dateTime` element finer than a day rewrites its stored
+//!   string to the Zulu form for the rest of the evaluation
+//!   (`compareDateTimeElements`, `:635-648`; [`super::rewrite`],
+//!   `path.compare.013`);
 //! - two quantities whose units differ go through UCUM canonical form without a
 //!   dimension check (`DEV-0005`), which needs task 43 and is
 //!   [`EvalError::Unsupported`] until then.
@@ -145,6 +149,10 @@ fn primitives(
         else {
             return Ok(Vec::new());
         };
+        // `compareDateTimeElements` rewrites an operand that is already a
+        // `DateTimeType` to Zulu in place (`path.compare.013`).
+        super::rewrite::rewrite_to_zulu(l);
+        super::rewrite::rewrite_to_zulu(r);
         return Ok(match temporal::compare_ordered(&a, &b) {
             None => Vec::new(),
             Some(o) => boolean(kind.holds(o)),

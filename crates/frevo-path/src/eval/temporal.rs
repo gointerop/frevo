@@ -637,7 +637,47 @@ pub(super) fn equals_using_fhir_rules(l: &Dt, r: &Dt) -> Option<bool> {
             Some(false)
         };
     }
-    compare_times(&l.zulu(), &r.zulu()).map(|o| o == Ordering::Equal)
+    // Only a value that has a time zone is moved to Zulu
+    // (`BaseDateTimeType.java:926-931`); two values without one compare by
+    // the fields as written.
+    let to_zulu = |d: &Dt| {
+        if d.offset.is_some() {
+            d.zulu()
+        } else {
+            d.clone()
+        }
+    };
+    compare_times(&to_zulu(l), &to_zulu(r)).map(|o| o == Ordering::Equal)
+}
+
+/// The string `setTimeZoneZulu(true)` leaves on a `DateTimeType` finer than a
+/// day (`BaseDateTimeType.java:690-694`, `encode` at `:190`): the instant in
+/// UTC, at the same precision, the fractional seconds as written padded to
+/// three digits, and `Z`. A value with no offset is read in the evaluation
+/// zone, as upstream reads it in the JVM default zone. `None` for a value at
+/// day precision or coarser, which is not rewritten, and for one that does
+/// not parse.
+pub(super) fn zulu_lexical(text: &str) -> Option<String> {
+    let d = Dt::parse(text, true)?;
+    if d.precision <= TemporalPrecision::Day {
+        return None;
+    }
+    let mut z = d.zulu();
+    z.offset = Some(0);
+    z.zone_text = Some("Z".to_string());
+    let mut rendered = z.render();
+    if z.precision == TemporalPrecision::Millisecond {
+        // `myFractionalSeconds` is kept as written, not re-derived.
+        let fraction = text
+            .split_once('.')
+            .map(|(_, f)| f.split(['Z', '+', '-']).next().unwrap_or(""))
+            .unwrap_or("");
+        let fraction = format!("{fraction:0<3}");
+        if let Some((head, _)) = rendered.split_once('.') {
+            rendered = format!("{head}.{fraction}Z");
+        }
+    }
+    Some(rendered)
 }
 
 /// A `time`'s hour, minute and second as `TimeType` reads them, and its

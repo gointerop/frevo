@@ -105,12 +105,12 @@ pub(crate) fn children_by_name(
     if name == ALL_CHILDREN {
         for (child_name, child) in node.all_children()? {
             let is_resource_id = parent_is_resource && child_name == "id";
-            out.push(filter_id_type(child, is_resource_id));
+            out.push(filter_id_type(super::rewrite::apply(child), is_resource_id));
         }
     } else {
         let is_resource_id = parent_is_resource && name == "id";
         for child in node.children(name)? {
-            out.push(filter_id_type(child, is_resource_id));
+            out.push(filter_id_type(super::rewrite::apply(child), is_resource_id));
         }
     }
     if out.len() == before && matches!(name, "id" | "extension" | ALL_CHILDREN) {

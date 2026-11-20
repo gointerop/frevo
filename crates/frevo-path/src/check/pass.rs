@@ -925,6 +925,21 @@ impl<'a> Pass<'a> {
                 node.start(),
             ));
         };
+        if focus.is_none() && function == Function::Iif {
+            // `checkSingleton(focus, "iif", exp)` dereferences the null focus
+            // (`FHIRPathEngine.java:3443`, `:3840`). `path.logic.008` states
+            // that Frevo's check reports an error for an input-less `iif`
+            // where HAPI's raises a `NullPointerException`, so this one is a
+            // verdict and not a not-implemented answer.
+            return Err(CheckError::failed(
+                "NULL_POINTER",
+                concat!(
+                    "Cannot invoke \"org.hl7.fhir.r4.fhirpath.TypeDetails.getCollectionStatus()\" ",
+                    "because \"focus\" is null"
+                ),
+                self.start(id),
+            ));
+        }
         if focus.is_none() && sig.reads_focus() {
             return Err(self.null_focus(&format!("{}()", function.to_code()), id));
         }

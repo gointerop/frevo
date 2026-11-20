@@ -136,7 +136,11 @@ functions — `src/eval/hostfn.rs` (`funcConformsTo`, `funcMemberOf`,
 `evaluateFunctionType` in `src/check/pass.rs`), the in-memory code
 validation behind `memberOf` — `src/eval/terminology.rs` (the
 include/exclude loop, `findCodeInConcept` and `checkExpansion` of
-`org.hl7.fhir.r4/.../r4/terminologies/ValueSetCheckerSimple.java`) — and the
+`org.hl7.fhir.r4/.../r4/terminologies/ValueSetCheckerSimple.java`), the
+ordered comparison's in-place Zulu rewrite of a `dateTime` operand —
+`src/eval/rewrite.rs` (`compareDateTimeElements`' `setTimeZoneZulu(true)`, and
+`BaseDateTimeType.java`'s `setTimeZoneZulu` and `encode`, kept as a
+per-evaluation overlay rather than a write to the input) — and the
 server-facing host service, `src/seam/server.rs`, from `hapi-fhir`'s
 `FhirPathR4.setEvaluationContext` at `7ab4c7c7c49281496faa1b3c2498a652457669ae`.
 Each file

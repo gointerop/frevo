@@ -2310,3 +2310,51 @@ case are still unsupported.
 - A `#id` reference with no root resource, and a custom function evaluated or
   checked with no host service, dereference null upstream; Frevo raises a typed
   execution / check error.
+
+## 2026-11-20 — `add-fhirpath-and-codegen-r4` — the suite's `UTC+1100` is GMT in Java, so DEV-0018 and `path.datetime.004` rest on a wrong premise
+
+**Raised by** the implementer (leftover red tests, tasks 35-46). `FHIRPathTests`
+calls `TimeZone.setDefault(TimeZone.getTimeZone("UTC+1100"))`
+(`org.hl7.fhir.r4/src/test/java/org/hl7/fhir/r4/test/FHIRPathTests.java:174`).
+`"UTC+1100"` is not a zone id Java understands (custom ids need the `GMT`
+prefix), so `getTimeZone` returns GMT: on Temurin 25,
+`TimeZone.getTimeZone("UTC+1100")` reports id `GMT`, raw offset `0`. HAPI's
+recorded run therefore ran in **UTC**, not UTC+11:00. Evidence in the record:
+`testEquality23` and `testNEquality17` (`@2012-04-15T15:00:00Z = / != @2012-04-15T10:00:00`)
+are `passed` (empty) in `oracles/fhirpath/hapi-8.12.0-results.json:496`, `:530`,
+which `couldBeTheSameTime` gives at offset 0 and not at +11:00 (where it is
+`false`). Frevo, configured at 660 minutes by the harness, answers `false`, so
+both cases fail and `path_compare_equality` keeps two red tests for this alone.
+`testLiterals/testDateTimeGreaterThanDate2` (`now() > today()`) is affected the
+same way and is time-of-day dependent at +11:00 (red whenever the UTC and +11
+dates differ). Not changed: the spec, DEV-0018 and the harness constant
+(`SUITE_TIME_ZONE_OFFSET_MINUTES`) all say UTC+1100. Decision needed: re-state
+`path.datetime.004`/DEV-0018 with the suite zone as UTC (offset 0), and have the
+oracle-builder set the harness constant to 0.
+
+Also found, not decided (proposal defects, not implemented):
+
+1. `path.errors.002` (`path_parse_errors.rs:568`) requires the execution
+   error's **message** to contain the failing sub-expression (`1 < 'a'`).
+   HAPI's message does not: `PathEngineException(message, id, location,
+   expression)` appends only ` (@char N)` via `rep(location, expression)`
+   (`org.hl7.fhir.utilities/src/main/java/org/hl7/fhir/exceptions/PathEngineException.java:81-93`), and the
+   expression is dropped. Frevo's offset is already right (0, 10, 20 for the
+   test's three expressions). Putting the text in the message would diverge
+   from every HAPI message the other tests pin. Needs a spec/test decision.
+2. `compareDateTimeElements` also rewrites a `dateTime` **literal** to Zulu: a
+   literal is a constant object of the parsed expression upstream, so the
+   rewrite persists across evaluations of the same parsed expression.
+   `path.compare.013` covers elements only; Frevo rewrites elements only
+   (`crates/frevo-path/src/eval/rewrite.rs`). Needs the spec to say which.
+3. `path_navigation.rs:1203` (`path.navigation.024`) requires all eight
+   `testBasics` cases to pass, while `path.navigation.001` (same file, `:491`)
+   requires `testEscapedIdentifierUnicode` to fail as HAPI does
+   (`hapi-8.12.0-results.json:20`). And `path_navigation.rs:604`
+   (`path.navigation.005`) requires `testJoin/testJoinEmpty` to pass, which
+   HAPI fails (`hapi-8.12.0-results.json:457`; `funcJoin`,
+   `FHIRPathEngine.java:4547-4567`, always adds one `StringType`). Both need
+   the oracle-builder; Frevo matches HAPI.
+4. `fhirpath_oracle.rs:998` addresses `testLiterals/testStringIntegerLiteralToQuantity`,
+   which is in group `testTypes` (`hapi-8.12.0-results.json:186`). Needs the
+   oracle-builder.
