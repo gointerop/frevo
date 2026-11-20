@@ -1,4 +1,10 @@
-CHANGES_REQUESTED
+APPROVED
+
+Thirty-seventh review (commit `444560a`, 2026-11-20) resolves both findings
+of the thirty-sixth review. The detail is in the dated section at the end. The
+earlier findings follow, kept for the record.
+
+## Thirty-sixth-review findings as raised (commit `ecf0496`)
 
 Thirty-sixth review (commit `ecf0496`, 2026-11-20, diff against `d0b5a1d`).
 `ENGINE` is `org.hl7.fhir.r4/src/main/java/org/hl7/fhir/r4/fhirpath/FHIRPathEngine.java`
@@ -2633,3 +2639,73 @@ Finding 2 is a separate point: it concerns the evaluation's own output.
   "differential-only".
 - `spec.md` says 6 scenarios were rewritten. The commit subject says "five";
   the record is `spec.md`, and the six it lists are correct.
+
+## Thirty-seventh review - commit `444560a` (2026-11-20)
+
+Scope: the diff `8efea6d..444560a`. It covers `path.errors.002` and its
+requirement sentence, `path.compare.013` and `.015`, the revision note and
+registry lines in `spec.md`, tasks 35 and 53, `DEBT-0017` and the blockers
+note. I traced the parse trees and functions again from the pinned source
+(`ENGINE` at `73c432b5`).
+
+**Finding 1 (`path.errors.002`): resolved.**
+- `1 + 1 < 'a'`: the `+` pass of `organisePrecedence` (`ENGINE:1224-1237`)
+  takes the entry branch of `gatherPrecedence`. It wraps `1 + 1` in `G`, a
+  `newGroup` node (`:1315-1321`) with no start. It then moves `<` and
+  `opNext 'a'` onto `G`, which becomes the root. The `<` pass finds no work.
+  `execute` reaches `operate(..., last = G)` (`:1510-1522`). `makeException`
+  (`:589-590`) passes `G.getStart() == null`, and `rep(null, non-empty)` is
+  `""`. The message is bare.
+- `(1=1) and 1 + 1 < 'a'`: the `+` pass takes the `else` branch. It builds
+  `G1 = newGroup(1)` as `opNext` of `(1=1)`, moves `<` and `'a'` onto `G1`,
+  and clears the inner `1`'s operation. The `<` pass then wraps `G1` in a
+  second group `G2`, but `<` stays on `G1`, and `G1` has no start. So `G1` is
+  the holder and the message is bare. The scenario's statement that "the `<`
+  node is again the group the `+` level built" is exact.
+- `(1 + 1) < 'a'`: the `(` branch of `parseExpression` (`:1135-1143`) turns
+  `result` into the group, and that node's start is set at `:1076`, column 1.
+  `<` sits on it, and no precedence pass has work to do. So the message ends
+  ` (@char 1)`, and the offset is 0.
+- `a | b = c` and `x * 2 > 'y'` gather the same way: union and
+  multiplicative operators bind tighter than `=` and `>`.
+- A `null` holder goes through `:591-592` with no location, so the message is
+  bare.
+- "No Frevo offset" matches HAPI. No `PathEngineException` constructor
+  assigns `location`. Within the R4 `fhirpath` package, the only
+  `setLocation` is the engine's own `setLocation(String)` (`:236`), which
+  feeds `FHIRPATH_LOCATION`, not the exception.
+- The narrowed final AND and the requirement sentence are now consistent with
+  `rep`.
+
+**Finding 2 (`path.compare.013`, `.015`): resolved.**
+- `funcWhere` (`ENGINE:6249-6260`) adds the very `item` it compared.
+- `$this` resolves to `context.getThisItem()`, the object `changeThis` set
+  (`:4726-4734`), so `compareDateTimeElements` (`:635-648`) rewrites that
+  object.
+- `select($this)` (`:6263-6273`) returns the same object again.
+- `.013`: the birthTime `valueDateTime` is the resource's own `DateTimeType`.
+  `1974-12-25T14:35:45-05:00` in Zulu is `1974-12-25T19:35:45Z`.
+- `.015`: `2012-04-15T10:00:00+02:00` becomes `2012-04-15T08:00:00Z`. An
+  uncompared `(@...).select($this)` comes from a fresh `processDateConstant`
+  value and keeps its text.
+- Both scenarios now say that dropping the rewrite before the result is
+  produced does not meet them.
+
+**Registers, tasks and blocker.**
+- `DEBT-0017`'s owed text names the returned value.
+- Tasks 35 and 53 match the scenarios.
+- The blockers note lists the tests the oracle-builder owes
+  (`path_parse_errors.rs`, `path_compare_equality.rs`).
+- The open decision "element rewrite after the evaluation" remains correctly
+  an owner question. It concerns persistence past the result, which no
+  scenario grades.
+- `harness/scripts/check-registries.sh` reports "registers agree" (23
+  deviations, 17 debt entries).
+- `openspec validate add-fhirpath-and-codegen-r4 --strict` reports the change
+  is valid.
+
+**Counts and IDs.**
+- The headings number codegen 49, model 83 and path 378, 510 in total,
+  unchanged and as stated.
+- No ID is duplicated, added, removed or renumbered, and the registry lines
+  for `.015` and `errors.002` match the headings.
