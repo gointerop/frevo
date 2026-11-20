@@ -1,3 +1,69 @@
+CHANGES_REQUESTED
+
+Forty-sixth review (commit `b356a10`, 2026-11-20, diff against `beb1101`).
+Every value in the four amended scenarios matches the pinned engine run under
+the suite's worker and HAPI's recorded results, and so do both JVM messages.
+Two findings remain. `ENGINE` is the R4 `FHIRPathEngine.java` at `73c432b5`,
+and `HWC` is
+`hapi-fhir-structures-r4/src/main/java/org/hl7/fhir/r4/hapi/ctx/HapiWorkerContext.java`
+at `v8.12.0`. The detail is in the dated section at the end.
+
+1. **HAPI's server-facing engine never reaches these answers. Its worker
+   throws on `getUcumService()`, and no scenario or register entry says so.**
+   - `HWC:372-374` is
+     `public UcumService getUcumService() { throw new UnsupportedOperationException(Msg.code(274)); }`.
+   - `FhirPathR4` builds its engine on `HapiWorkerContext`
+     (`FhirPathR4.java:34-36`), and `FhirR4.java:56` makes that the
+     `newFhirPath()` of every R4 context.
+   - `qtyEqual` and `qtyEquivalent` call `worker.getUcumService()` for every
+     pair of valued quantities (`ENGINE:2265`, `:2338`). The ordered operators
+     call it whenever the `code` or `unit` lists differ (`:2443`, `:2490`,
+     `:2540`, `:2588`). `opTimes`, `opDivideBy` and `comparable()` call it too
+     (`:2793`, `:3013`, `:4631`).
+   
+   So under `FhirPathR4`:
+   - Both `path.quantity.009` expressions, both `.011` expressions and both
+     `.012` expressions raise `java.lang.UnsupportedOperationException` with
+     the message `HAPI-0274: `. They do not give empty, `true` or an NPE.
+   - `.013`'s `testLessThan33` raises the same, not the NPE. Its `<=` and `>`
+     cases compare equal `unit` lists and never call the worker, so they are
+     `true` there too.
+   - `.010`, `1 'mg' = 1 'mg'` and every quantity `=`/`~` raise as well.
+   - `path.quantity.015`'s "no UCUM data available, the result is `false`"
+     describes a `null` service. HAPI's server worker never returns one.
+   
+   `FhirPathR4` catches only `FHIRException` (`:66-70`). The
+   `UnsupportedOperationException` therefore escapes the `HAPI-0255` wrap and
+   also `FhirPathFilterInterceptor`'s `FhirPathExecutionException` catch
+   (`:80-84`), so it is observable over HTTP through `_fhirpath`.
+   `DEV-0026` already establishes that the server-facing worker is what a
+   deployment observes.
+   
+   Fix:
+   - State which worker the quantity scenarios grade: the suite's
+     `TestingUtilities` context, which has UCUM.
+   - Add the server-facing outcome for the cases above.
+   - Record Frevo's choice (UCUM-backed answers everywhere, as `DEV-0026` does
+     for the type retry) as a deviation pending the owner.
+   - Correct `.015`'s "no UCUM" clause to the configuration it actually
+     describes.
+
+2. **`DEV-0017` still says HAPI fails "38 cases" on these mechanisms. With the
+   five quantity cases added, its own list names 43.** The list counts as
+   follows:
+   - 4 for `testEquality31`-`33` and `35`;
+   - 10 for the minute-precision cases;
+   - 8 for the `qtyEquivalent` NPEs;
+   - 5 for the new unit-guard cases;
+   - 9 for `testLessThan29`/`30`/`33` and the six `<=`/`>`/`>=` cases;
+   - 1 for `testHasCodingValue2`;
+   - 5 for division and modulo;
+   - 1 for `testLessThan28`.
+   
+   The count is a stated fact in the register, so it must match.
+
+## Forty-fifth review header as issued (commit `23a7568`)
+
 APPROVED
 
 Forty-fifth review (commit `23a7568`, 2026-11-20). The corrected
@@ -3624,6 +3690,73 @@ is the R4 `FHIRPathEngine.java` at `73c432b5`.
   is non-blocking.
 - `harness/scripts/check-registries.sh` reports "registers agree" (25
   deviations, 18 debt entries).
+- `openspec validate add-fhirpath-and-codegen-r4 --strict` reports the change
+  is valid.
+- The headings number codegen 49, model 83 and path 381, 513 in total. No ID
+  is duplicated, added, removed or renumbered.
+
+## Forty-sixth review - commit `b356a10` (2026-11-20)
+
+Scope: the diff `beb1101..b356a10`. It covers `path.quantity.009`, `.011`,
+`.012` and `.013`, `DEV-0017`, the new `DEBT-0019`, task 44 and the blockers
+note.
+
+**The unit guard (`ENGINE:2282`, `:2355`): correct as stated.**
+The test `else if (!left.hasUnit() || right.hasUnit())` is entered when the
+left side has no unit or the right side has one. Inside it, the result is
+`null` unless both have units and they are equal. With the fixtures in
+`parameters-example-quantities.xml` (values `1`, no unit; `1 'tablets'`, unit
+text only):
+- Unitless = unitless: `null`. `opEquals` (`:2103-2128`) maps it to empty.
+  `doEquivalent` (`:2204-2206`) unboxes it, which is an NPE.
+- `1 'tablets'` against unitless: the guard is skipped, so the values compare
+  and the result is `true` for both `=` and `~`.
+- Unitless against `1 'tablets'`: `null`. That gives empty for `=` and an NPE
+  for `~`.
+- Neither side has a `system`, so `qtyToCanonicalPair` returns `null`
+  (`:2292-2296`) and the UCUM path is skipped.
+
+**Recorded results.**
+- `:632` (`NoUnitEqual`): failed, with "found 0".
+- `:633` (`NoUnitEquivalent`): failed, with the NPE.
+- `:636` (`UnitVsNoUnitEqual`): failed, with "found 1".
+- `:637` (`NoUnitVsUnitEqual`): passed.
+- `:638` (`UnitVsNoUnitEquivalent`): failed, with "was true".
+- `:639` (`NoUnitVsUnitEquivalent`): failed, with the NPE.
+- `:631` (`testLessThan33`): failed, with the `isPrimitive()` NPE.
+- `:669` (`testLessOrEqual30`) and `:728` (`testGreaterThan30`): passed.
+
+Each scenario's passed and failed assignment matches these.
+
+**`path.quantity.013`.**
+- `<` compares the `code` lists (`:2438-2440`): `[]` against `[mg/dL]`.
+  With the suite's UCUM service it builds
+  `[qtyToCanonicalDecimal(left)] = [null]` (`:2301-2303`), and `opLessThan`'s
+  `left.get(0).isPrimitive()` (`:2413`) raises the NPE.
+- `>` (`:2485-2488`) compares `unit` lists. `<=` (`:2533-2538`) compares the
+  `unit` strings. Both are `mg/dL` on each side, so both reach the values and
+  the answer is `true`.
+
+**NPE texts.** Both match the recorded reasons verbatim. They are the JVM's
+helpful-NPE messages, with the method descriptor in the form
+`org.hl7.fhir.r4.fhirpath.FHIRPathEngine.qtyEquivalent(org.hl7.fhir.r4.model.Quantity, org.hl7.fhir.r4.model.Quantity)`.
+
+**`DEV-0017` and `DEBT-0019`: coherent, apart from finding 2.**
+- `DEBT-0019` is a wrong-answer hazard where Frevo matches HAPI, so the
+  2026-11-08 no-speculative-flag rule is the right basis for deferring it.
+- Its five cases are the five new `failed` entries.
+- It names the upstream report.
+
+**Not covered by the spec (finding 1).** I checked how `FhirPathR4` runs
+these. `HapiWorkerContext.getUcumService()` throws `HAPI-0274` unconditionally
+(`HWC:372-374`). Every quantity `=`/`~`, ordered comparison across differing
+units, `*`, `/` and `comparable()` reaches that call. The spec's quantity
+scenarios, `DEV-0005`, and `.015`'s "no UCUM" clause all assume a worker that
+returns a service or `null`.
+
+**Registers, counts and validators.**
+- `harness/scripts/check-registries.sh` reports "registers agree" (25
+  deviations, 19 debt entries).
 - `openspec validate add-fhirpath-and-codegen-r4 --strict` reports the change
   is valid.
 - The headings number codegen 49, model 83 and path 381, 513 in total. No ID
