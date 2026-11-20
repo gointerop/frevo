@@ -133,6 +133,15 @@ messages with the position suffix HAPI appends (` (@char 4)`, ` (@char 15)`,
 that a `dateTime` value the evaluation builds (`now()`, `dateTime`
 arithmetic, a `dateTime` boundary) is rewritten when compared.
 
+After the thirty-eighth review, four scenarios were corrected in place, with
+no ID added: `path.compare.015` decides a boundary's rewrite by the built
+value's precision (a `date` boundary at 17 is rewritten, a `dateTime` boundary
+at 8 is not); `path.boundary.013` gives the byte offset 12 for
+`(1.5 | 2.5).precision()`; `path.errors.002` names the `*` for `opTimes`
+(`:2801`), adds `opMod`'s location-less `:3102`, and narrows "never the
+sub-expression's text" to `makeException`/`rep` errors; `path.strictness.003`
+gives the two exact `as`-singleton messages, which render the holder node.
+
 | Area | IDs allocated | Range |
 |---|---:|---|
 | `codegen.inputs.*` | 6 | `001`-`006` |
@@ -846,7 +855,7 @@ Every allocated ID, grouped as it is grouped in the delta files.
 **Requirement: Execution errors**
 
 - `path.errors.001` — 21 of the 27 execution-invalid oracle cases fail at evaluation; the other 6 fail at parse, as for HAPI
-- `path.errors.002` — an error carries HAPI's message, a position only where HAPI's failing node has a start, and never the sub-expression's text
+- `path.errors.002` — an error carries HAPI's message, a position only where HAPI's failing node has a start, and the sub-expression's text only where HAPI's template includes it
 - `path.errors.003` — evaluation never panics
 - `path.errors.004` — evaluation is bounded for an adversarial expression
 - `path.errors.005` — an error from `frevo-model` is surfaced, not swallowed into empty

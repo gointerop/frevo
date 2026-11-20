@@ -544,8 +544,11 @@ file, so its prose is not redistributable here (see `oracles/PINS.md`).
   (`testLessThan28`), and a compared `dateTime` literal's value does too,
   within that evaluation only: a `@` literal is rebuilt from its text on every
   evaluation (`ENGINE:1336`, `1653-1672`). The same applies to any
-  `DateTimeType` the evaluation builds and then compares (`now()`, date
-  arithmetic on a `dateTime`, `lowBoundary`/`highBoundary` of a `dateTime`),
+  `DateTimeType` the evaluation builds and then compares and that is finer
+  than a day (`now()`, date arithmetic on a `dateTime`, and a
+  `lowBoundary`/`highBoundary` at precision 14 or 17, of a `date` focus as
+  well as a `dateTime` one; a boundary at precision 10 or less is day
+  precision or coarser and is not rewritten),
   and the rewritten object is what `where` and `select` return
   (`path.compare.015`).
 - **Specification requirement:** FHIRPath 2.0.0 and the pinned suite: decimal

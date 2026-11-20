@@ -825,7 +825,7 @@ checkpoint because it changes what a gate measures.
   the evaluation, never carried into a later evaluation of the same parse
   (`path.compare.015`), and in both cases visible in the evaluation's returned
   items (`where`, `select($this)`); the same for a `dateTime` value the
-  evaluation builds (`now()`, `dateTime` arithmetic, a `dateTime` boundary)
+  evaluation builds (`now()`, `dateTime` arithmetic, a `date` or `dateTime` boundary at precision 14 or 17)
   and then compares (`path.compare.015`).
   Satisfies `path.equality.001` through `path.equality.012`, `path.compare.001`
   through `path.compare.015`.
@@ -1107,11 +1107,14 @@ checkpoint because it changes what a gate measures.
 - [ ] **53. Implement error reporting and the bounds.** 21 of the 27
   `invalid="execution"` cases failing at evaluation after a clean parse and
   check, with the 6 `documentFunctions` ones failing at parse, graded `failed`,
-  as for HAPI; errors carrying HAPI's message, which never contains the
-  sub-expression's text and ends ` (@char N)` only when the failing node has a
-  start (none for a precedence group, an indexer node or a null holder), `N`
-  being HAPI's lexer column (each whitespace character counts 2), with an
-  optional byte offset present exactly when the suffix is; no panic anywhere in the
+  as for HAPI; errors carrying HAPI's message, which for an error built through
+  `makeException` or `rep` never contains the sub-expression's text (the
+  `as`-singleton message, `path.strictness.003`, is the one template that
+  renders the holder node) and ends ` (@char N)` only when the failing node has
+  a start (none for a precedence group, an indexer node, a null holder or a
+  location-less construction such as `opMod`'s `:3102`), `N` being HAPI's lexer
+  column (each whitespace character counts 2), with an optional byte offset
+  present exactly when the suffix is; no panic anywhere in the
   suite; depth and step limits; and a model decode error surfacing as an error
   rather than as an empty collection.
   Satisfies `path.errors.001` through `path.errors.005`.

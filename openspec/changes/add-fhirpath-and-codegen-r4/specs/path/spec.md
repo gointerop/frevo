@@ -1107,10 +1107,25 @@ The engine SHALL implement the four ordered comparison operators as `FHIRPathEng
   returns `2012-04-16T08:00:00Z` (`dateAdd` returns a `DateTimeType` copy,
   `:2706-2708`, `:2715-2716`); and
   `@2012-04-15T10:00:00+02:00.lowBoundary().where($this < @2013-01-01T00:00:00Z)`
-  returns `2012-04-15T08:00:00.000Z` (`lowBoundary` of a dateTime builds a
-  millisecond-precision `DateTimeType`, `:4318-4319`). A date boundary, a
-  `date + quantity` result and `today()` are day-precision or `DateType`
-  values and are never rewritten. `toDateTime()` builds no value: the R4 engine
+  returns `2012-04-15T08:00:00.000Z`
+- **AND** for a boundary, what decides is the precision of the **built** value,
+  not the type of the focus. `lowBoundary` and `highBoundary` build a
+  `DateTimeType` for a `date` focus as well as a `dateTime` one (`:4317-4320`,
+  `:4361-4364`), and `DateTimeUtil.lowBoundaryForDate` /
+  `highBoundaryForDate` (`DateTimeUtil.java:65-90`, `applyDatePrecision`
+  `:130-144`) keep 4, 7 or 10 characters with no offset at precision 4, 6/7 and
+  8/10, which is year, month or day precision and is never rewritten, and at
+  precision 14 or 17 a time component with an offset (`+14:00` for the low
+  boundary and `-12:00` for the high one when the focus has none), which is
+  finer than a day and is rewritten. So
+  `@2014-01-01.lowBoundary(17).where($this < @2015-01-01T00:00:00Z)` returns
+  `2013-12-31T10:00:00.000Z` (from `2014-01-01T00:00:00.000+14:00`), while
+  `@2014-01-01T08.lowBoundary(8).where($this < @2015-01-01T00:00:00Z)` returns
+  `2014-01-01`, unchanged. A boundary at precision 14 is malformed
+  (`path.boundary.009`) and is rewritten only where it parses; no scenario
+  grades that string
+- **AND** a `date + quantity` result and `today()` are `DateType` values and
+  are never rewritten. `toDateTime()` builds no value: the R4 engine
   does not implement it (`DEV-0021`)
 - **AND** an offset-less literal is placed in the evaluation zone first
   (`path.datetime.004`): at the suite's zone, offset 0,
@@ -2473,7 +2488,7 @@ makeExceptionPlural(..., "highBoundary", ...)` (`FHIRPathEngine.java:4379-4381`)
   appends its column under `path.errors.002`'s rule (`:572-582`): `{}` is one
   token and `.` another, so `precision` starts at column 4 (byte offset 3); in
   `(1.5 | 2.5).precision()` the two spaces count 2 each, so it starts at
-  column 15 (byte offset 13)
+  column 15 (byte offset 12)
 - **AND** `{}.lowBoundary()` and `{}.highBoundary()` are empty, not errors
   (`:4291-4293`, `:4335-4337`)
 - **AND** `(1.5 | 2.5).lowBoundary()` and `(1.5 | 2.5).highBoundary()` are
@@ -3644,6 +3659,25 @@ deviation from HAPI, so neither needs a `DEV-nnnn` entry: both are HAPI.
 - **WHEN** `as` is applied to a collection of more than one item with the rule
   enforced
 - **THEN** evaluation fails
+- **AND** `Patient.name.as(HumanName)` over `patient-example.xml`, which has
+  three `name`s, fails with the message exactly
+  `Attempt to use 'as()' on more than one item ('3', 'as(HumanName)')`, and
+  `Patient.name as HumanName` with exactly
+  `Attempt to use 'as()' on more than one item ('3', 'Patient.name as HumanName')`:
+  `FHIRPATH_AS_COLLECTION` (`Messages.properties:301`) has no
+  `Error evaluating FHIRPath expression:` prefix, `{0}` is the item count and
+  `{1}` the holder's rendering through `ExpressionNode.toString`
+  (`ExpressionNode.java:396-464`). The function form's holder is the `as`
+  function node (`funcAs`, `FHIRPathEngine.java:5166-5167`), rendered as its
+  name and parameters; the operator form's holder is `last`, the `Patient`
+  node that carries the operation (`:1510-1519`, `opAs`, `:1884-1885`),
+  rendered with its inner `name` and its operation and operand
+- **AND** neither message has a position suffix and Frevo's error carries no
+  offset, because both are constructed without a location (`path.errors.002`)
+- **AND** the type name is resolved first and must be known: `funcAs` tests
+  `FHIR.HumanName` and `opAs` tests `HumanName`, each through
+  `isKnownType` and `fetchTypeDefinition` (`:1880-1882`, `:1904-1935`,
+  `:5163-5164`); an unknown name fails with `FHIRPATH_INVALID_TYPE` instead
 
 #### Scenario: [path.strictness.004] the as-singleton rule allows a multi-item focus when not enforced
 
@@ -3724,7 +3758,7 @@ The engine SHALL report an evaluation failure as an error carrying HAPI's messag
   `path.oracle.005`'s stage rule, as `path.oracle.014` states. HAPI fails them
   the same way (`FHIRPathTests.java:199-202`)
 
-#### Scenario: [path.errors.002] an error carries HAPI's message, a position only where HAPI's failing node has a start, and never the sub-expression's text
+#### Scenario: [path.errors.002] an error carries HAPI's message, a position only where HAPI's failing node has a start, and the sub-expression's text only where HAPI's template includes it
 
 - **WHEN** `1 < 'a'` is evaluated, and then `(1=1) and 1 < 'a'` and
   `(1=1) and (1=1) and 1 < 'a'`
@@ -3798,11 +3832,19 @@ The engine SHALL report an evaluation failure as an error carrying HAPI's messag
 - **THEN** the message ends ` (@char 1)` and the offset is 0: a parenthesised
   group is built by `parseExpression` itself, which sets its start
   (`:1076`, `:1135-1143`), and the `<` level finds no work to gather
-- **AND** the message does **not** contain the failing sub-expression's text
-  (`1 < 'a'`): the `expression` argument is used only when the location is
-  `null` and the expression text is empty, where `rep` appends ` (@~` and the
+- **AND** for an error built through `makeException`, `makeExceptionPlural` or
+  `rep`, the message does **not** contain the failing sub-expression's text
+  (`1 < 'a'`): `rep`'s `expression` argument is used only when the location is
+  `null` and the expression text is empty, where it appends ` (@~` and the
   empty text and `)`; with a non-null location on a later line it appends
   ` (@line L char C)` instead of ` (@char C)`
+- **AND** the one message template that does carry a node's text is
+  `FHIRPATH_AS_COLLECTION` (`Messages.properties:301`,
+  `Attempt to use ''as()'' on more than one item (''{0}'', ''{1}'')`), which
+  `opAs` and `funcAs` format with the holder's `toString()`
+  (`FHIRPathEngine.java:1884-1885`, `:5166-5167`; `ExpressionNode.toString`,
+  `ExpressionNode.java:396-464`) and construct without a location; the exact
+  messages are in `path.strictness.003`
 - **AND** an engine with no `location` configured, which is every engine the
   suite and the harness run, adds no ` (at ...)` fragment
   (`FHIRPATH_LOCATION`, `:586-588`)
@@ -3815,17 +3857,25 @@ The engine SHALL report an evaluation failure as an error carrying HAPI's messag
   no offset. This covers check-stage errors raised the same way, such as
   `path.check.005`'s and `path.utility.003`'s.
 - **AND** errors the engine constructs directly rather than through
-  `makeException` follow their own location argument: the arithmetic and
-  calendar-unit errors pass the **operator token's** start, `getOpStart()`
-  (`FHIRPATH_ARITHMETIC_PLUS`, `_MINUS`, `_QTY`, `_UNIT` and the wrapped
-  arithmetic exception, `FHIRPathEngine.java:2063`, `:2080`, `:2725`, `:2731`,
-  `:2763`, `:2801`), so the suffix and Frevo's offset name the `+` or `-`, with
-  the same column rule, and are absent when the operator was moved onto a
-  `newGroup` node (which has no operator start either); the variable, `as` and
-  type-name errors pass no location (`:1007`, `:1014`, `:1057`, `:1064`,
-  `:1882`, `:1885`, `:5164`, `:5167`, `:5207`) and carry no suffix and no
-  offset The 21 evaluation-stage
-  cases of `path.errors.001` are graded on their stage, not on their message
+  `makeException` follow their own location argument:
+  - the date-arithmetic and calendar-unit errors pass the **operator token's**
+    start, `getOpStart()` (`FHIRPATH_ARITHMETIC_PLUS`, `_MINUS`, `_QTY`,
+    `_UNIT`, `FHIRPathEngine.java:2063`, `:2080`, `:2725`, `:2731`, `:2763`),
+    so the suffix and Frevo's offset name the `+` or `-` token;
+  - the wrapped `UcumException` of a quantity multiplication in `opTimes`
+    (`:2801`) passes `getOpStart()` too, so its suffix and offset name the `*`
+    token;
+  - in each case the column rule above applies, and the suffix and offset are
+    absent when the operator was moved onto a `newGroup` node, which has no
+    operator start either;
+  - the variable, `as` and type-name errors pass no location (`:1007`, `:1014`,
+    `:1057`, `:1064`, `:1882`, `:1885`, `:5164`, `:5167`, `:5207`), and the
+    decimal arm of `opMod` wraps its `UcumException` as
+    `new PathEngineException(e)` (`:3102`, raised by `5.5 mod 0` and
+    `5 mod 0.0`, `path.math.007`, `.008`), whose message is the cause's
+    `toString()`: these carry no suffix, and Frevo's error carries no offset
+- **AND** the 21 evaluation-stage cases of `path.errors.001` are graded on
+  their stage, not on their message
 
 #### Scenario: [path.errors.003] evaluation never panics
 
