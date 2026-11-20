@@ -110,8 +110,10 @@ pub struct EngineConfig {
     /// The evaluation time zone, as minutes east of UTC.
     ///
     /// `FHIRPathTests.test` sets `TimeZone.setDefault(TimeZone.getTimeZone("UTC+1100"))`
-    /// before every case, so `today()` and `now()` are read in UTC+11:00 and
-    /// not in the machine's zone (`path.datetime.004`).
+    /// before every case, so `today()` and `now()` are not read in the
+    /// machine's zone. `UTC+1100` is not a zone id Java recognises, so the
+    /// zone set is `GMT`, offset 0, and that is what the harness fixes
+    /// (`path.datetime.004`).
     pub time_zone_offset_minutes: i32,
     /// `FHIRPathTests` installs `FHIRPathTestEvaluationServices`, whose
     /// `conformsToProfile` answers `true` for the `Patient` profile, `false`
@@ -132,8 +134,12 @@ pub struct EngineConfig {
     pub emit_sql_on_fhir_warning: bool,
 }
 
-/// UTC+1100, in minutes.
-pub const SUITE_TIME_ZONE_OFFSET_MINUTES: i32 = 11 * 60;
+/// UTC, in minutes: offset 0. `FHIRPathTests.test` calls
+/// `TimeZone.setDefault(TimeZone.getTimeZone("UTC+1100"))`, but `UTC+1100` is
+/// not a zone id `java.util.TimeZone` recognises, so it returns `GMT`, raw
+/// offset 0, which is the zone HAPI's recorded run used (`path.datetime.004`,
+/// DEV-0018).
+pub const SUITE_TIME_ZONE_OFFSET_MINUTES: i32 = 0;
 
 impl Default for EngineConfig {
     fn default() -> Self {
@@ -504,9 +510,10 @@ pub fn evaluate_over(
 }
 
 /// [`evaluate_over`] in an explicit evaluation time zone, as minutes east of
-/// UTC. The suite runs at `UTC+1100`, which is `SUITE_TIME_ZONE_OFFSET_MINUTES`
-/// (660); `today()`, `now()` and the placement of an offset-less `dateTime`
-/// read it (`path.datetime.004`, DEV-0018).
+/// UTC. The suite runs at UTC, offset 0, which is
+/// `SUITE_TIME_ZONE_OFFSET_MINUTES` (`UTC+1100` is `GMT` in Java); `today()`,
+/// `now()` and the placement of an offset-less `dateTime` read it
+/// (`path.datetime.004`, DEV-0018).
 pub fn evaluate_over_in_zone(
     expr: &frevo_path::Expression,
     root: Option<&Value>,
@@ -537,6 +544,70 @@ pub fn evaluate_over_in_zone(
 pub fn host_base_evaluator() -> Option<Evaluator<'static>> {
     let model = sd_model()?;
     Some(Evaluator::new(model).with_time_zone_offset_minutes(SUITE_TIME_ZONE_OFFSET_MINUTES))
+}
+
+/// Evaluate `expr` over `root` on a caller-configured `evaluator` and grade
+/// the values as the suite run does. A test that varies an engine-wide setting
+/// the harness's [`EngineConfig`] does not carry -- implicit string conversion
+/// (`path.string.024`), say -- builds the evaluator from
+/// [`host_base_evaluator`] and grades through the same result mapping.
+#[allow(dead_code)]
+pub fn evaluate_items(
+    evaluator: &Evaluator<'_>,
+    expr: &frevo_path::Expression,
+    root: Option<&Value>,
+) -> Result<Vec<ResultItem>, EngineError> {
+    let model = sd_model().ok_or(EngineError::NotImplemented)?;
+    let values = evaluator.evaluate(expr, root).map_err(engine_error)?;
+    Ok(values.iter().map(|v| result_item(model, v)).collect())
+}
+
+/// A node that answers as `inner` does except for one child name, where it
+/// reports `fault` -- the shape a decode error from `frevo-model` takes at the
+/// navigation seam (`path.errors.005`).
+#[derive(Debug)]
+struct FaultingNode {
+    inner: Arc<dyn Node>,
+    child: String,
+    fault: NodeError,
+}
+
+impl Node for FaultingNode {
+    fn type_name(&self) -> &str {
+        self.inner.type_name()
+    }
+
+    fn is_resource(&self) -> bool {
+        self.inner.is_resource()
+    }
+
+    fn children(&self, name: &str) -> Result<Vec<Value>, NodeError> {
+        if name == self.child {
+            Err(self.fault.clone())
+        } else {
+            self.inner.children(name)
+        }
+    }
+
+    fn all_children(&self) -> Result<Vec<(String, Value)>, NodeError> {
+        Err(self.fault.clone())
+    }
+
+    fn primitive(&self) -> Option<Primitive> {
+        self.inner.primitive()
+    }
+}
+
+/// `root`, with its `child` element replaced by a decode error. `None` when
+/// `root` is not a node.
+#[allow(dead_code)]
+pub fn faulting_root(root: &Value, child: &str, fault: NodeError) -> Option<Value> {
+    let inner = root.as_node()?.clone();
+    Some(Value::Node(Arc::new(FaultingNode {
+        inner,
+        child: child.to_string(),
+        fault,
+    })))
 }
 
 /// The typed node tree for a suite input file.

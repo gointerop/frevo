@@ -598,10 +598,12 @@ fn an_absent_element_yields_empty_rather_than_an_error() {
     assert_eq!(eval_patient("Patient.name.prefix"), empty());
     assert_eq!(eval_patient("Patient.name.suffix"), empty());
 
-    // `testJoin/testJoinEmpty` grades the same absence through `join`, and its
-    // expectation is no output at all.
-    assert!(output_bodies("testJoin", "testJoinEmpty").is_empty());
-    expect_case("testJoin", "testJoinEmpty");
+    // The suite grades the same absence with `testBasics/testSimpleNone`
+    // (`name.suffix`, expecting no output), which HAPI passes
+    // (hapi-8.12.0-results.json:18). `testJoin/testJoinEmpty` is not a grading
+    // case here: navigation yields empty, but `join` then adds one empty string
+    // (`funcJoin`, FHIRPathEngine.java:4547-4567), so HAPI records it `failed`;
+    // that status is graded under path.string.015.
     expect_case("testBasics", "testSimpleNone");
 
     // Absent shows up as an empty collection and never as a failure.
@@ -1200,7 +1202,10 @@ fn navigation_preserves_document_order_across_repeating_elements() {
 #[test]
 fn the_miscellaneous_accessor_cases_all_hold() {
     expect_group("testMiscellaneousAccessorTests", 3);
-    expect_group("testBasics", 8);
+    // HAPI fails `testEscapedIdentifierUnicode` at the check stage
+    // (hapi-8.12.0-results.json:20); Frevo must fail it the same way
+    // (path.navigation.001), so 7 of the 8 pass.
+    expect_group_except("testBasics", 8, &["testEscapedIdentifierUnicode"]);
     expect_group("testObservations", 10);
 
     // Two properties of the first group are worth stating, because its two

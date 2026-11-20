@@ -1,4 +1,4 @@
-//! Ordered comparison and equality: `path.compare.001`-`012` and
+//! Ordered comparison and equality: `path.compare.001`-`015` and
 //! `path.equality.001`-`012`.
 //!
 //! ```text
@@ -192,6 +192,13 @@ fn boolean(value: bool) -> Vec<ResultItem> {
     vec![ResultItem::Primitive {
         fhir_type: "boolean".to_string(),
         value: if value { "true" } else { "false" }.to_string(),
+    }]
+}
+
+fn date_time(value: &str) -> Vec<ResultItem> {
+    vec![ResultItem::Primitive {
+        fhir_type: "dateTime".to_string(),
+        value: value.to_string(),
     }]
 }
 
@@ -488,6 +495,29 @@ fn an_ordered_comparison_of_a_datetime_rewrites_the_operands_stored_string_to_zu
         );
     }
 
+    // The evaluation's result carries the rewrite when the compared element is
+    // what it returns: `funcWhere` adds the same `item` object it compared
+    // (FHIRPathEngine.java:6249-6260), which `compareDateTimeElements` has
+    // already set to Zulu, and `select($this)` returns that rewritten object
+    // the same way (`funcSelect`, :6263-6273). A rewrite dropped before the
+    // result is produced does not meet path.compare.013.
+    for expr in [
+        format!("{value}.where($this < @1975-01-01T00:00:00Z)"),
+        format!("{value}.where($this < @1975-01-01T00:00:00Z).select($this)"),
+    ] {
+        assert_eq!(
+            eval_over(&expr, Some(&patient)),
+            date_time("1974-12-25T19:35:45Z"),
+            "{expr}: the returned element is the Zulu-rewritten one"
+        );
+    }
+    // Uncompared, the element is returned as written.
+    assert_eq!(
+        eval_over(&format!("{value}.select($this)"), Some(&patient)),
+        date_time("1974-12-25T14:35:45-05:00"),
+        "an uncompared element keeps its own string"
+    );
+
     // And the suite case itself is `failed`, not `passed`.
     let (suite, report) = pinned();
     let case = suite
@@ -497,6 +527,104 @@ fn an_ordered_comparison_of_a_datetime_rewrites_the_operands_stored_string_to_zu
         .get(&case.address.to_string())
         .expect("the case must appear in the run report");
     assert_eq!(r.status, CaseStatus::Failed, "{}: {}", r.address, r.reason);
+}
+
+// ---------------------------------------------------------------------------
+// path.compare.015 -- the rewrite of a `dateTime` literal, within one evaluation
+// ---------------------------------------------------------------------------
+
+// covers: path.compare.015
+#[test]
+fn an_ordered_comparison_rewrites_a_datetime_literal_for_that_evaluation_only() {
+    // A `@` literal is held in the parsed expression as its text
+    // (`processConstant` returns a `FHIRConstant`, FHIRPathEngine.java:1335-1336)
+    // and every evaluation of the node builds a new value from it
+    // (`resolveConstant`, `processDateConstant`, :1653-1672, :1674-1736). Within
+    // that evaluation, `compareDateTimeElements` sets the value to Zulu
+    // (:635-648; `setTimeZoneZulu`, BaseDateTimeType.java:690-694), and `$this`
+    // inside `select` is that same value (`funcSelect`, `changeThis`,
+    // :6263-6273, :4726-4734). `and` evaluates its right operand after its left
+    // (:1508-1525; `preOperate`, :1542, short-circuits only a `false` left).
+    // No live case grades it; differential-only.
+    assert_eq!(
+        eval(
+            "(@2012-04-15T10:00:00+02:00).select($this < @2013-01-01T00:00:00Z              and $this.toString() = '2012-04-15T08:00:00Z')"
+        ),
+        boolean(true),
+        "after the comparison, $this reads its Zulu form"
+    );
+    assert_eq!(
+        eval(
+            "(@2012-04-15T10:00:00+02:00).select(($this < @2013-01-01T00:00:00Z)              and $this.toString() = '2012-04-15T10:00:00+02:00')"
+        ),
+        boolean(false),
+        "after the comparison, $this no longer reads as written"
+    );
+
+    // The result carries the rewrite when the compared literal's value is what
+    // the evaluation returns (`funcWhere`, :6249-6260).
+    assert_eq!(
+        eval("(@2012-04-15T10:00:00+02:00).where($this < @2013-01-01T00:00:00Z)"),
+        date_time("2012-04-15T08:00:00Z"),
+        "where returns the object it compared"
+    );
+    assert_eq!(
+        eval("(@2012-04-15T10:00:00+02:00).where($this < @2013-01-01T00:00:00Z).select($this)"),
+        date_time("2012-04-15T08:00:00Z"),
+        "select($this) after the comparison returns the rewritten value"
+    );
+    // An uncompared literal is returned as written.
+    assert_eq!(
+        eval("(@2012-04-15T10:00:00+02:00).select($this)"),
+        date_time("2012-04-15T10:00:00+02:00"),
+        "an uncompared literal keeps its own string"
+    );
+
+    // An offset-less literal is placed in the evaluation zone first
+    // (path.datetime.004): at the suite's zone, offset 0.
+    assert_eq!(
+        eval(
+            "(@2012-04-15T10:00:00).select($this < @2013-01-01T00:00:00Z              and $this.toString() = '2012-04-15T10:00:00Z')"
+        ),
+        boolean(true),
+        "an offset-less literal is rewritten as 10:00:00Z at offset 0"
+    );
+
+    // A second occurrence of the same literal text is a separate value and is
+    // not rewritten (the lexer ends the literal before `.toString`; a `.` is
+    // part of a date token only at the millisecond position,
+    // FHIRLexer.java:335-338).
+    assert_eq!(
+        eval(
+            "(@2012-04-15T10:00:00+02:00 < @2013-01-01T00:00:00Z) and              @2012-04-15T10:00:00+02:00.toString() = '2012-04-15T10:00:00+02:00'"
+        ),
+        boolean(true),
+        "a second occurrence of the literal is not rewritten"
+    );
+
+    // The rewrite does not persist across evaluations of one parsed expression:
+    // the string is read before the comparison, and the second evaluation
+    // starts from the literal's text again. A carried-over rewrite would make
+    // the second evaluation false.
+    let expr = "(@2012-04-15T10:00:00+02:00).select($this.toString() = '2012-04-15T10:00:00+02:00'                 and $this < @2013-01-01T00:00:00Z)";
+    let mut engine = fresh_engine();
+    let context = CaseContext::default();
+    let parsed = engine
+        .parse(expr)
+        .unwrap_or_else(|e| panic!("{expr:?} must parse: {e}"));
+    engine
+        .check(parsed, &context, StrictnessFlags::CHECK)
+        .unwrap_or_else(|e| panic!("{expr:?} must pass the static check: {e}"));
+    for evaluation in ["first", "second"] {
+        let items = engine
+            .evaluate(parsed, None, &context, StrictnessFlags::EVALUATE)
+            .unwrap_or_else(|e| panic!("{expr:?} must evaluate ({evaluation}): {e}"));
+        assert_eq!(
+            items,
+            boolean(true),
+            "{evaluation} evaluation of one parsed expression: the literal starts from its text"
+        );
+    }
 }
 
 // ---------------------------------------------------------------------------

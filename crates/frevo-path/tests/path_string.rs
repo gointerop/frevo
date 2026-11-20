@@ -92,23 +92,36 @@ trait ConfigurableEngine {
     ) -> Result<Vec<ResultItem>, EngineError>;
 }
 
+/// The binding: `Evaluator::with_implicit_string_conversion`, the public
+/// counterpart of `setDoImplicitStringConversion`, on the same evaluator and
+/// result mapping the suite run grades through.
 fn configurable_engine_under_test() -> Box<dyn ConfigurableEngine> {
-    Box::new(UnboundConfigurable)
+    Box::new(FrevoConfigurable)
 }
 
-struct UnboundConfigurable;
+struct FrevoConfigurable;
 
-impl ConfigurableEngine for UnboundConfigurable {
+impl ConfigurableEngine for FrevoConfigurable {
     fn evaluate_with(
         &mut self,
-        _expr: &str,
-        _inp: Option<&SuiteInput>,
-        _settings: StringSettings,
+        expr: &str,
+        inp: Option<&SuiteInput>,
+        settings: StringSettings,
     ) -> Result<Vec<ResultItem>, EngineError> {
-        Err(EngineError::NotImplemented)
+        let parsed = frevo_path::Expression::parse(expr).map_err(|e| EngineError::Diagnostic {
+            message: e.message().to_string(),
+            offset: Some(e.offset()),
+        })?;
+        let root = match inp {
+            None => None,
+            Some(i) => Some(oracle::engine::typed_input(i).ok_or(EngineError::NotImplemented)?),
+        };
+        let evaluator = oracle::engine::host_base_evaluator()
+            .ok_or(EngineError::NotImplemented)?
+            .with_implicit_string_conversion(settings.implicit_string_conversion);
+        oracle::engine::evaluate_items(&evaluator, &parsed, root.as_ref())
     }
 }
-
 // ---------------------------------------------------------------------------
 // Harness plumbing
 // ---------------------------------------------------------------------------

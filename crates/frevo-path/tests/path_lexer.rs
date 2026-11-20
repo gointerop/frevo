@@ -551,32 +551,58 @@ pub trait DoubleQuoteOracle {
     ) -> Result<Vec<ResultItem>, EngineError>;
 }
 
-/// The binding graded until `frevo-path` exposes the setting.
+/// The binding: `frevo_path::ParseOptions::allow_double_quotes`, the public
+/// counterpart of `setAllowDoubleQuotes`, threaded into the lexer by
+/// `Expression::parse_with`.
 fn double_quote_oracle_under_test() -> Box<dyn DoubleQuoteOracle> {
-    Box::new(UnboundDoubleQuotes)
+    Box::new(FrevoDoubleQuotes {
+        defaults: frevo_path::ParseOptions::default(),
+    })
 }
 
-struct UnboundDoubleQuotes;
+struct FrevoDoubleQuotes {
+    /// The options a fresh engine parses with.
+    defaults: frevo_path::ParseOptions,
+}
 
-impl DoubleQuoteOracle for UnboundDoubleQuotes {
+impl FrevoDoubleQuotes {
+    fn parse(
+        &self,
+        expression: &str,
+        settings: DoubleQuoteSettings,
+    ) -> Result<frevo_path::Expression, EngineError> {
+        let mut options = self.defaults;
+        options.allow_double_quotes = settings.allow_double_quotes;
+        frevo_path::Expression::parse_with(expression, options, None).map_err(|e| {
+            EngineError::Diagnostic {
+                message: e.message().to_string(),
+                offset: Some(e.offset()),
+            }
+        })
+    }
+}
+
+impl DoubleQuoteOracle for FrevoDoubleQuotes {
     fn allow_double_quotes(&self) -> bool {
-        false
+        self.defaults.allow_double_quotes
     }
 
     fn parse_with(
         &mut self,
-        _expression: &str,
-        _settings: DoubleQuoteSettings,
+        expression: &str,
+        settings: DoubleQuoteSettings,
     ) -> Result<(), EngineError> {
-        Err(EngineError::NotImplemented)
+        self.parse(expression, settings).map(|_| ())
     }
 
     fn evaluate_with(
         &mut self,
-        _expression: &str,
-        _settings: DoubleQuoteSettings,
+        expression: &str,
+        settings: DoubleQuoteSettings,
     ) -> Result<Vec<ResultItem>, EngineError> {
-        Err(EngineError::NotImplemented)
+        let parsed = self.parse(expression, settings)?;
+        let evaluator = oracle::engine::host_base_evaluator().ok_or(EngineError::NotImplemented)?;
+        oracle::engine::evaluate_items(&evaluator, &parsed, None)
     }
 }
 

@@ -995,7 +995,7 @@ fn quantity_comparison_is_chosen_by_the_result_items_type() {
     for (group, name) in [
         ("LowBoundary", "LowBoundaryQuantity"),
         ("HighBoundary", "HighBoundaryQuantity"),
-        ("testLiterals", "testStringIntegerLiteralToQuantity"),
+        ("testTypes", "testStringIntegerLiteralToQuantity"),
     ] {
         expect_passed(
             &report,
@@ -1158,17 +1158,20 @@ fn a_harness_run_leaves_the_suite_byte_identical() {
 
 // covers: path.datetime.004
 #[test]
-fn the_harness_fixes_the_evaluation_time_zone_at_utc_plus_1100() {
+fn the_harness_fixes_the_evaluation_time_zone_at_utc() {
     // FHIRPathTests.test calls
-    // TimeZone.setDefault(TimeZone.getTimeZone("UTC+1100")) before every case,
-    // so today() and now() are read in UTC+11:00 and never in the machine's
-    // zone. The harness fixes the same offset explicitly instead of mutating
+    // TimeZone.setDefault(TimeZone.getTimeZone("UTC+1100")) before every case
+    // (org.hl7.fhir.r4/src/test/java/org/hl7/fhir/r4/test/FHIRPathTests.java:174),
+    // but "UTC+1100" is not a zone id java.util.TimeZone recognises (a custom
+    // id needs the GMT prefix), so getTimeZone returns GMT, raw offset 0. HAPI's
+    // recorded run therefore read today() and now() in UTC, never in the
+    // machine's zone. The harness fixes offset 0 explicitly instead of mutating
     // process-wide state.
-    assert_eq!(SUITE_TIME_ZONE_OFFSET_MINUTES, 660);
-    assert_eq!(EngineConfig::default().time_zone_offset_minutes, 660);
+    assert_eq!(SUITE_TIME_ZONE_OFFSET_MINUTES, 0);
+    assert_eq!(EngineConfig::default().time_zone_offset_minutes, 0);
 
     let (s, report) = run::run_pinned_suite();
-    assert_eq!(report.config.time_zone_offset_minutes, 660);
+    assert_eq!(report.config.time_zone_offset_minutes, 0);
 
     // The configuration is handed to the engine rather than merely recorded.
     let src = concat!(
@@ -1183,11 +1186,12 @@ fn the_harness_fixes_the_evaluation_time_zone_at_utc_plus_1100() {
     );
     assert_eq!(
         stub.configured_offset,
-        Some(660),
+        Some(0),
         "the harness must hand the engine its configured time zone"
     );
 
-    // And the four cases that read the clock must pass with it.
+    // And the four cases that read the clock must pass with it, at any time of
+    // day.
     for (group, name) in [
         ("testToday", "testToday1"),
         ("testToday", "testToday2"),
@@ -1201,21 +1205,56 @@ fn the_harness_fixes_the_evaluation_time_zone_at_utc_plus_1100() {
         );
     }
 
+    // The record confirms offset 0 (hapi-8.12.0-results.json:104, :496, :530):
+    // `@2012-04-15T15:00:00Z = / != @2012-04-15T10:00:00` is undecided at
+    // offset 0 (10:00Z is inside the +-14 hour window of couldBeTheSameTime)
+    // and `now() > today()` is undecided because today() and the Zulu form of
+    // now() fall on the same day.
+    for (group, name, why) in [
+        (
+            "testEquality",
+            "testEquality23",
+            "at offset 0 an offset-less 10:00:00 is within 14 hours of 15:00Z",
+        ),
+        (
+            "testNEquality",
+            "testNEquality17",
+            "at offset 0 an offset-less 10:00:00 is within 14 hours of 15:00Z",
+        ),
+        (
+            "testLiterals",
+            "testDateTimeGreaterThanDate2",
+            "at offset 0 today() and the Zulu form of now() fall on the same day",
+        ),
+    ] {
+        expect_passed(&report, &address_of(&s, group, name), why);
+    }
+
     // Ordered comparison is zone-dependent too (DEV-0018):
     // `compareDateTimeElements` converts both operands to Zulu when finer than a
     // day (FHIRPathEngine.java:643-648), so an offset-less dateTime is placed in
-    // the configured zone, UTC+11:00. 10:00:00 at +11:00 is 23:00Z on the
-    // previous day, before 05:30Z.
-    for (op, want) in [
-        ("<", "true"),
-        (">", "false"),
-        ("<=", "true"),
-        (">=", "false"),
+    // the configured zone. At the suite's offset 0, 10:00:00 is 10:00Z, after
+    // 05:30Z; on an engine configured at +11:00 it is 23:00Z on the previous
+    // day, before 05:30Z.
+    let at_plus_eleven = EngineConfig {
+        time_zone_offset_minutes: 11 * 60,
+        ..EngineConfig::default()
+    };
+    for (config, op, want) in [
+        (EngineConfig::default(), "<", "false"),
+        (EngineConfig::default(), ">", "true"),
+        (EngineConfig::default(), "<=", "false"),
+        (EngineConfig::default(), ">=", "true"),
+        (at_plus_eleven, "<", "true"),
+        (at_plus_eleven, ">", "false"),
+        (at_plus_eleven, "<=", "true"),
+        (at_plus_eleven, ">=", "false"),
     ] {
         let expr = format!("@2015-02-04T10:00:00 {op} @2015-02-04T05:30:00Z");
+        let zone = config.time_zone_offset_minutes;
         let mut engine = oracle::engine::engine_under_test();
         engine
-            .configure(&EngineConfig::default())
+            .configure(&config)
             .unwrap_or_else(|e| panic!("the engine must configure: {e}"));
         let context = CaseContext::default();
         let parsed = engine
@@ -1233,7 +1272,7 @@ fn the_harness_fixes_the_evaluation_time_zone_at_utc_plus_1100() {
                 fhir_type: "boolean".to_string(),
                 value: want.to_string(),
             }],
-            "{expr}"
+            "{expr} at offset {zone} minutes"
         );
     }
 }

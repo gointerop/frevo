@@ -548,55 +548,60 @@ fn every_execution_invalid_case_parses_and_checks_and_then_fails_to_evaluate() {
 }
 
 // ---------------------------------------------------------------------------
-// path.errors.002 -- an error names the expression and the position
+// path.errors.002 -- HAPI's message, a position only where HAPI has one
 // ---------------------------------------------------------------------------
+
+/// The message `makeException` formats for `FHIRPATH_CANT_COMPARE` with both
+/// operands' `fhirType()` (FHIRPathEngine.java:2435, :584-594).
+const CANT_COMPARE: &str =
+    "Error evaluating FHIRPath expression: Unable to compare values of type integer and string";
 
 // covers: path.errors.002
 #[test]
-fn an_execution_error_names_the_sub_expression_and_its_offset() {
+fn an_execution_error_carries_hapis_message_and_a_position_only_where_hapi_has_one() {
     // Upstream's `makeException` builds
     // `new PathEngineException(fmt, constName, holder.getStart(), holder.toString())`
-    // (FHIRPathEngine.java:584-593), so the exception carries both the location
-    // and a rendering of the failing sub-expression. The harness's
-    // `EngineError::Diagnostic` has one text channel, so both must be in the
-    // message.
-    let (message, offset) = expect_evaluation_error("1 < 'a'");
-    assert!(
-        message.contains("integer") && message.contains("string"),
-        "FHIRPATH_CANT_COMPARE names both operand types: {message:?}"
-    );
-    assert!(
-        message.contains("1 < 'a'"),
-        "the diagnostic must name the failing sub-expression: {message:?}"
-    );
-    let offset = offset.expect("an execution error must carry an offset");
-    assert!(offset <= "1 < 'a'".len());
-
-    // The offset is the position of the failing sub-expression inside the whole
-    // expression, so padding the front of the expression moves it.
-    const PREFIX: &str = "(1=1) and ";
-    let mut offsets = Vec::new();
-    for k in 0..3 {
-        let expr = format!("{}1 < 'a'", PREFIX.repeat(k));
-        let (message, offset) = expect_evaluation_error(&expr);
-        assert!(
-            message.contains("integer") && message.contains("string"),
-            "{expr:?}: {message:?}"
-        );
-        let offset = offset.unwrap_or_else(|| panic!("{expr:?} must report an offset"));
-        assert!(
-            expr.is_char_boundary(offset) && expr[offset..].starts_with("1 < 'a'"),
-            "{expr:?}: the offset {offset} must point at the failing sub-expression, \
-             but it points at {:?}",
-            &expr[offset.min(expr.len())..]
-        );
-        offsets.push(offset);
-    }
-    for k in 1..offsets.len() {
+    // (FHIRPathEngine.java:584-593), and that constructor appends only
+    // `rep(location, expression)` (org.hl7.fhir.utilities/.../PathEngineException.java:81-93):
+    // ` (@char N)`, one-based, and never the sub-expression's text.
+    for (expr, suffix, want_offset) in [
+        ("1 < 'a'", " (@char 1)", 0),
+        ("(1=1) and 1 < 'a'", " (@char 11)", 10),
+        ("(1=1) and (1=1) and 1 < 'a'", " (@char 21)", 20),
+        // A parenthesised group is built by `parseExpression`, which sets its
+        // start (:1076, :1135-1143).
+        ("(1 + 1) < 'a'", " (@char 1)", 0),
+    ] {
+        let (message, offset) = expect_evaluation_error(expr);
         assert_eq!(
-            offsets[k] - offsets[k - 1],
-            PREFIX.len(),
-            "the offset must track the sub-expression's position: {offsets:?}"
+            message,
+            format!("{CANT_COMPARE}{suffix}"),
+            "{expr:?}: HAPI's message, exactly"
+        );
+        assert!(
+            !message.contains("1 < 'a'"),
+            "{expr:?}: the message never contains the sub-expression's text: {message:?}"
+        );
+        assert_eq!(
+            offset,
+            Some(want_offset),
+            "{expr:?}: the offset is the failing node's start, zero-based"
+        );
+    }
+
+    // The node carrying the failing `<` is a precedence group built by
+    // `newGroup` (FHIRPathEngine.java:1224-1321), which has no start, so
+    // `makeException` passes a null location and `rep(null, <text>)` is "":
+    // the bare message, and no offset, because HAPI's exception exposes none.
+    for expr in ["1 + 1 < 'a'", "(1=1) and 1 + 1 < 'a'"] {
+        let (message, offset) = expect_evaluation_error(expr);
+        assert_eq!(
+            message, CANT_COMPARE,
+            "{expr:?}: the bare message, with no position suffix"
+        );
+        assert_eq!(
+            offset, None,
+            "{expr:?}: a newGroup holder has no start, so there is no offset"
         );
     }
 }
@@ -731,20 +736,44 @@ pub trait ModelFaultOracle {
     ) -> Result<Vec<ResultItem>, EngineError>;
 }
 
+/// The binding: the `Node` seam's `Result` return. A node over
+/// `patient-example.xml` whose `fault_at` child reports the decode error as a
+/// `NodeError`, which is how `frevo-model` reports one.
 fn model_fault_oracle_under_test() -> Box<dyn ModelFaultOracle> {
-    Box::new(UnboundModelFault)
+    Box::new(FrevoModelFault)
 }
 
-struct UnboundModelFault;
+struct FrevoModelFault;
 
-impl ModelFaultOracle for UnboundModelFault {
+impl ModelFaultOracle for FrevoModelFault {
     fn evaluate_over_faulty_model(
         &mut self,
-        _expression: &str,
-        _fault_at: &str,
-        _fault: &ModelDecodeError,
+        expression: &str,
+        fault_at: &str,
+        fault: &ModelDecodeError,
     ) -> Result<Vec<ResultItem>, EngineError> {
-        Err(EngineError::NotImplemented)
+        // Only a child of the resource itself is injected; a deeper path would
+        // need a fault further down the tree, which no case here asks for.
+        let child = fault_at
+            .strip_prefix("Patient.")
+            .filter(|c| !c.contains('.'))
+            .ok_or(EngineError::NotImplemented)?;
+        let patient =
+            oracle::input::load("patient-example.xml").map_err(|_| EngineError::NotImplemented)?;
+        let tree = oracle::engine::typed_input(&patient).ok_or(EngineError::NotImplemented)?;
+        let root = oracle::engine::faulting_root(
+            &tree,
+            child,
+            frevo_path::NodeError::new(fault.path.clone(), fault.message.clone()),
+        )
+        .ok_or(EngineError::NotImplemented)?;
+        let parsed =
+            frevo_path::Expression::parse(expression).map_err(|e| EngineError::Diagnostic {
+                message: e.message().to_string(),
+                offset: Some(e.offset()),
+            })?;
+        let evaluator = oracle::engine::host_base_evaluator().ok_or(EngineError::NotImplemented)?;
+        oracle::engine::evaluate_items(&evaluator, &parsed, Some(&root))
     }
 }
 
