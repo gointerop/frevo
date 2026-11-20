@@ -53,7 +53,7 @@
 mod oracle;
 
 use std::hint::black_box;
-use std::sync::OnceLock;
+use std::sync::{Mutex, MutexGuard, OnceLock, PoisonError};
 use std::time::{Duration, Instant};
 
 use oracle::engine::{
@@ -201,6 +201,86 @@ fn context_for<'a>(inp: Option<&'a SuiteInput>) -> CaseContext<'a> {
     }
 }
 
+/// Serialises every test in this binary.
+///
+/// The in-process ratios compare one stretch of a test's own timings with a
+/// later stretch, so anything else running in the process during one stretch
+/// and not the other -- `path.perf.005`'s 1,191-case suite run, the 64 KiB
+/// fixture being built, allocator contention between test threads -- reads as
+/// a slowdown the engine did not cause. Plain `cargo test` runs the six tests
+/// on parallel threads, and that is what made `path.perf.001` and `.002` fail
+/// about half the time. Holding this for the whole of every test body makes
+/// the binary serial without depending on `--test-threads=1` being passed; it
+/// changes nothing about what is measured. (`cargo nextest` already runs each
+/// test in its own process, where this lock is uncontended.)
+fn serial() -> MutexGuard<'static, ()> {
+    static LOCK: Mutex<()> = Mutex::new(());
+    // A test that fails panics while holding the lock; the next test must
+    // still run, and the `()` it guards cannot be left inconsistent.
+    LOCK.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+/// How long a "does not grow with repetition" check keeps taking further late
+/// windows before it concludes that the growth is real, and the fewest it takes
+/// before concluding so.
+///
+/// A slowdown caused by the engine -- a per-call leak, a symbol table that
+/// grows quadratically, a parsed form rebuilt on every use -- is monotone in
+/// the number of repetitions: every later window is at least as slow as the
+/// one before it, so every confirmation window fails the same bound and the
+/// check still fails. A slowdown caused by the host (pre-emption, a frequency
+/// change, another process) is transient and does not survive into all of
+/// them. The bound itself is unchanged; only a window the host disturbed is
+/// given a chance to be re-measured, and always *later* in the sequence, never
+/// by restarting it.
+///
+/// The span is wall-clock rather than a window count because host episodes are
+/// measured in time: a debug-profile window of 50 compiles takes about 2 ms,
+/// and the slow stretches observed under load on the Windows host lasted
+/// longer than five such windows together (late windows of 39.6 to 41.0 us
+/// for 300 consecutive compiles against an early median of 30.8 us, flat --
+/// the shape of a host state, not of growth, which would rise from window to
+/// window).
+const CONFIRMATION_SPAN: Duration = Duration::from_secs(2);
+const CONFIRMATION_MIN_WINDOWS: usize = 5;
+
+/// Measure successive late windows with `window` until one satisfies
+/// `late <= early * 1.25 + 1.0`, or until at least
+/// [`CONFIRMATION_MIN_WINDOWS`] more have been taken *and*
+/// [`CONFIRMATION_SPAN`] has passed. Returns every late median measured, the
+/// last being the verdict.
+fn late_medians(early: f64, mut window: impl FnMut() -> f64) -> Vec<f64> {
+    let started = Instant::now();
+    let mut lates = vec![window()];
+    while lates.last().is_some_and(|&late| late > early * 1.25 + 1.0)
+        && (lates.len() <= CONFIRMATION_MIN_WINDOWS || started.elapsed() < CONFIRMATION_SPAN)
+    {
+        lates.push(window());
+    }
+    lates
+}
+
+/// The late medians for a failure message: all of them when there are few, the
+/// first and last three otherwise, so growth reads as a trend.
+fn describe_lates(lates: &[f64]) -> String {
+    let show = |ls: &[f64]| {
+        ls.iter()
+            .map(|l| format!("{l:.2} us"))
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    if lates.len() <= 6 {
+        show(lates)
+    } else {
+        format!(
+            "{}, ... {} more ..., {}",
+            show(&lates[..3]),
+            lates.len() - 6,
+            show(&lates[lates.len() - 3..])
+        )
+    }
+}
+
 fn micros(d: Duration) -> f64 {
     d.as_secs_f64() * 1_000_000.0
 }
@@ -327,18 +407,29 @@ fn compiling_an_expression_stays_within_budget() {
     // is profile-independent: compilation must not get slower as it is
     // repeated, which is what a per-compile leak or a quadratic symbol table
     // would do.
+    //
+    // Should the host disturb the last 50, further windows of 50 are compiled
+    // after them for up to `CONFIRMATION_SPAN` -- later still, so growth the
+    // engine causes is only larger there -- and the check fails unless one of
+    // them meets the same bound.
+    let _serial = serial();
     let patient = patient_4kib();
     let context = context_for(Some(&patient));
     let mut engine = Counting::new();
 
-    let mut first = Vec::new();
-    let mut last = Vec::new();
-    for i in 0..200 {
+    let compile_once = |engine: &mut Counting| -> f64 {
         let start = Instant::now();
         let parsed = engine.parse(TYPICAL_SEARCH_PARAMETER);
         engine.check(parsed, &context);
         let elapsed = micros(start.elapsed());
         black_box(parsed);
+        elapsed
+    };
+
+    let mut first = Vec::new();
+    let mut last = Vec::new();
+    for i in 0..200 {
+        let elapsed = compile_once(&mut engine);
         if i < 50 {
             first.push(elapsed);
         } else if i >= 150 {
@@ -349,11 +440,22 @@ fn compiling_an_expression_stays_within_budget() {
     assert_eq!(engine.checks, 200);
 
     let early = median(first);
-    let late = median(last);
+    let mut last = Some(last);
+    let lates = late_medians(early, || match last.take() {
+        Some(samples) => median(samples),
+        None => median((0..50).map(|_| compile_once(&mut engine)).collect()),
+    });
+    let compiles = 200 + 50 * (lates.len() - 1);
+    assert_eq!(engine.parses, compiles, "every window must have compiled");
+    let late = *lates.last().expect("at least one late window");
     assert!(
         late <= early * 1.25 + 1.0,
         "compiling must not get slower as it is repeated: the first 50 compiles \
-         median {early:.2} us, the last 50 median {late:.2} us"
+         median {early:.2} us; every later window of 50 was slower than \
+         {:.2} us -- {} -- so the growth survived {compiles} compiles and is not \
+         the host's",
+        early * 1.25 + 1.0,
+        describe_lates(&lates)
     );
 
     // A compound expression costs more than a trivial one but stays within an
@@ -396,6 +498,7 @@ fn compiling_an_expression_stays_within_budget() {
 #[test]
 fn evaluating_a_compiled_expression_does_not_reparse_it() {
     // The in-process half: parse once, evaluate 1,000 times, and count.
+    let _serial = serial();
     let patient = patient_4kib();
     let context = context_for(Some(&patient));
     let mut engine = Counting::new();
@@ -420,12 +523,42 @@ fn evaluating_a_compiled_expression_does_not_reparse_it() {
 
     // And the per-evaluation cost is stable, so the parsed form is reused
     // rather than rebuilt: the last hundred must not be slower than the first.
+    // Should the host disturb the last hundred, further hundreds are evaluated
+    // after them for up to `CONFIRMATION_SPAN`, over the same parsed form, and
+    // the check fails unless one of them meets the same bound: a parsed form
+    // that is rebuilt or grows on every use is no faster later on.
     let early = median(samples[..100].to_vec());
-    let late = median(samples[900..].to_vec());
+    let mut last = Some(samples[900..].to_vec());
+    let lates = late_medians(early, || match last.take() {
+        Some(samples) => median(samples),
+        None => median(
+            (0..100)
+                .map(|_| {
+                    let start = Instant::now();
+                    let values = engine.evaluate(parsed, Some(&patient), &context);
+                    let t = micros(start.elapsed());
+                    black_box(&values);
+                    assert_eq!(values.len(), 3, "the expression must keep answering");
+                    t
+                })
+                .collect(),
+        ),
+    });
+    let evaluations = 1000 + 100 * (lates.len() - 1);
+    assert_eq!(engine.evaluations, evaluations);
+    assert_eq!(
+        engine.parses, 1,
+        "{evaluations} evaluations of a parsed expression must perform no \
+         further parse"
+    );
+    let late = *lates.last().expect("at least one late window");
     assert!(
         late <= early * 1.25 + 1.0,
-        "the per-evaluation cost must not grow: first hundred {early:.2} us, \
-         last hundred {late:.2} us"
+        "the per-evaluation cost must not grow: first hundred {early:.2} us; \
+         every later hundred was slower than {:.2} us -- {} -- so the growth \
+         survived {evaluations} evaluations and is not the host's",
+        early * 1.25 + 1.0,
+        describe_lates(&lates)
     );
 
     // The recorded half: 5 us per evaluation, and the workload records how many
@@ -466,6 +599,7 @@ fn extracting_a_resources_whole_search_parameter_set_stays_within_budget() {
     // second extraction over a second resource performs no further parse, which
     // is what makes 300 us a per-resource figure rather than a
     // per-resource-plus-compilation one.
+    let _serial = serial();
     let first_patient = patient_4kib();
     let second_patient = patient_64kib();
     let mut engine = Counting::new();
@@ -549,6 +683,7 @@ fn evaluation_over_the_lazy_model_does_not_force_full_materialisation() {
     // belong to `frevo-model` and are graded by `model.lazy.*`: what is
     // observable at *this* seam is that the cost of reaching one element does
     // not scale with the size of the document around it.
+    let _serial = serial();
     let small = patient_4kib();
     let large = patient_64kib();
     assert!(
@@ -644,6 +779,7 @@ fn the_whole_suite_runs_fast_enough_to_be_a_per_pull_request_gate() {
     // cases. A run that answered `did-not-run` for every case finishes
     // instantly and would satisfy any wall-clock budget, so the budget is only
     // meaningful beside this.
+    let _serial = serial();
     let start = Instant::now();
     let (suite, report) = pinned();
     let elapsed = start.elapsed();
@@ -702,6 +838,7 @@ fn no_regression_against_the_recorded_baseline() {
     // workloads, and say which profile they measured.
     //
     // It fails today because `bench/micro/` does not exist at all.
+    let _serial = serial();
     for file in [MICRO_RESULTS, MICRO_BASELINE] {
         let text = std::fs::read_to_string(input::repo_path(file)).unwrap_or_else(|e| {
             panic!(
