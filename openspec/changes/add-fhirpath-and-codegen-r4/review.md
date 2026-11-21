@@ -1,4 +1,19 @@
-CHANGES_REQUESTED
+APPROVED
+
+Sixty-first review (commit `4ad9d6c`, 2026-11-21, diff against `4ad9d6c^`).
+It resolves the sixtieth review's only finding. All four check-time
+positions now follow HAPI's column rule:
+- `path.quantity.025`: `(1 'cm').code` is `(@char 11)` and
+  `(2 'cm' * 1 'm').code` is `(@char 22)`.
+- `path.quantity.026`: `(1 '').code` and `(1 '').system` are both
+  `(@char 9)`.
+- Task 4b repeats all four.
+
+No `(@char 10)` or `(@char 17)` remains. `openspec validate --strict`
+passes, and the registers agree. There are no findings. The detail is in
+the dated section at the end. The earlier record follows.
+
+## Sixtieth-review findings as raised (commit `fd9cbb0`)
 
 Sixtieth review (commit `fd9cbb0`, 2026-11-21, diff against `fd9cbb0^`).
 It checks the answer to the fifty-ninth review's finding 1 and its three
@@ -5509,3 +5524,37 @@ Scope: `git diff fd9cbb0^..fd9cbb0`, covering `specs/path/spec.md` and
 **Checks.** `openspec validate add-fhirpath-and-codegen-r4 --strict`
 passes. `harness/scripts/check-registries.sh` reports that the registers
 agree. No scenario ID was added, removed or renumbered.
+
+## Sixty-first review - commit `4ad9d6c` (2026-11-21)
+
+Scope: `git diff 4ad9d6c^..4ad9d6c`, covering `specs/path/spec.md` and
+`tasks.md`.
+
+**Position rule re-checked.** In `FHIRLexer.java:321-324`, a whitespace
+character runs `currentLocation.checkChar` and then `incColumn()`. For a
+character other than CR or LF, `checkChar` already does
+`setColumn(getColumn() + 1)`, so each such character adds 2. A token adds
+its length once (`:285`). A Name node's start is `currentStartLocation`
+(`:147`, `FHIRPathEngine.java:1076`), and `makeException` passes it to
+`PathEngineException.rep`, which emits ` (@char C)` on line 1. HAPI's
+record matches this rule: `isEffectOnLogic1` reports `toString` at byte
+offset 32, after four spaces, as `(@char 37)`, and the no-space
+`isEffectOnLogic1Base` reports `(@char 7)`
+(`oracles/fhirpath/hapi-8.12.0-results.json:1046`, `:1043`, as
+`path.errors.002` cites).
+
+**Recounted.** Each column is byte offset + 1 + the number of spaces
+before the token.
+- `(1 'cm').code`: `code` is at offset 9 after 1 space, so 11.
+- `(2 'cm' * 1 'm').code`: `code` is at offset 17 after 4 spaces, so 22.
+- `(1 '').code` and `(1 '').system`: the member is at offset 7 after 1
+  space, so 9.
+
+All four match `spec.md:3369`, `:3373`, `:3419-3421` and
+`tasks.md:202-204`. The values remain marked as derived, and the owed
+`contextType` probes in task 4b grade them. Task 4b keeps its rule that a
+contradicted value goes back to the proposer.
+
+**Checks.** `openspec validate add-fhirpath-and-codegen-r4 --strict`
+passes, and `harness/scripts/check-registries.sh` reports that the
+registers agree. No scenario ID was added, removed or renumbered.
