@@ -7,6 +7,7 @@
 use std::sync::Arc;
 
 use super::node::Node;
+use super::unscaled::Unscaled;
 
 /// An arbitrary-precision decimal that keeps the lexical form it was written
 /// with.
@@ -17,17 +18,21 @@ use super::node::Node;
 /// arbitrary-precision crate from `deny.toml`'s allow-list, and names the
 /// fallback this type takes: lexical form plus an integer mantissa and scale.
 /// No crate on the allow-list provides this, so the fallback is what is built,
-/// and the decision is recorded in `tasks.md` under task 16.
+/// and the decision is recorded in `tasks.md` under task 16. The mantissa is an
+/// [`Unscaled`] of any number of digits (task 44b, `path.literal.017`), so a
+/// decimal is never refused for the number of significant digits it carries.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Decimal {
     lexical: String,
-    mantissa: i128,
+    mantissa: Unscaled,
     scale: u32,
 }
 
 impl Decimal {
     /// Parse a FHIRPath/FHIR decimal from its lexical form, keeping that form
-    /// verbatim. Returns `None` when `text` is not a decimal.
+    /// verbatim. Returns `None` when `text` is not a decimal, or when its
+    /// exponent would shift the value by more than [`MAX_SHIFT`](super::unscaled::MAX_SHIFT) places
+    /// (`DEBT-0014`).
     pub fn parse(text: &str) -> Option<Self> {
         let bytes = text.as_bytes();
         let mut at = 0usize;
@@ -49,7 +54,8 @@ impl Decimal {
         if at == int_start {
             return None;
         }
-        let mut digits = String::from(&text[int_start..at]);
+        let int_end = at;
+        let mut frac = int_end..int_end;
         let mut scale = 0u32;
         if bytes.get(at) == Some(&b'.') {
             at += 1;
@@ -61,7 +67,7 @@ impl Decimal {
                 return None;
             }
             scale = u32::try_from(at - frac_start).ok()?;
-            digits.push_str(&text[frac_start..at]);
+            frac = frac_start..at;
         }
         // `BigDecimal(String)` also reads an exponent: `1.23E+4`.
         let mut exponent: i64 = 0;
@@ -80,16 +86,20 @@ impl Decimal {
         if at != bytes.len() {
             return None;
         }
-        let mut mantissa: i128 = digits.parse().ok()?;
-        if negative {
-            mantissa = -mantissa;
-        }
+        let mut mantissa = if frac.is_empty() {
+            Unscaled::from_digits(negative, &bytes[int_start..int_end])?
+        } else {
+            let mut digits = Vec::with_capacity(int_end - int_start + frac.len());
+            digits.extend_from_slice(&bytes[int_start..int_end]);
+            digits.extend_from_slice(&bytes[frac]);
+            Unscaled::from_digits(negative, &digits)?
+        };
         // The value `mantissa * 10^-(scale - exponent)`, held at a
         // non-negative scale.
         let net = i64::from(scale) - exponent;
         if net < 0 {
-            let lift = u32::try_from(-net).ok()?;
-            mantissa = mantissa.checked_mul(10i128.checked_pow(lift)?)?;
+            let lift = usize::try_from(net.unsigned_abs()).ok()?;
+            mantissa = mantissa.shifted_left(lift)?;
             scale = 0;
         } else {
             scale = u32::try_from(net).ok()?;
@@ -106,18 +116,19 @@ impl Decimal {
     /// `DecimalType.java:101-102`): plain digits when `scale >= 0` and the
     /// adjusted exponent is at least -6, otherwise scientific with a signed
     /// exponent. A negative `scale` is carried in the lexical form only; the
-    /// numeric fields hold the value at scale 0. `None` when the value does not
-    /// fit.
-    pub fn from_unscaled(unscaled: i128, scale: i64) -> Option<Self> {
-        let digits = unscaled.unsigned_abs().to_string();
+    /// numeric fields hold the value at scale 0 (`DEBT-0014`). `None` when the
+    /// scale does not fit, or a negative one shifts the value by more than
+    /// [`MAX_SHIFT`](super::unscaled::MAX_SHIFT) places.
+    pub fn from_unscaled(unscaled: Unscaled, scale: i64) -> Option<Self> {
+        let digits = unscaled.magnitude_digits();
         let len = i64::try_from(digits.len()).ok()?;
         let adjusted = len - 1 - scale;
         let mut text = String::new();
-        if unscaled < 0 {
+        if unscaled.is_negative() {
             text.push('-');
         }
         if scale == 0 {
-            text.push_str(&digits);
+            text.push_str(digits);
         } else if scale > 0 && adjusted >= -6 {
             let scale = usize::try_from(scale).ok()?;
             let padded = format!("{digits:0>width$}", width = scale + 1);
@@ -140,8 +151,8 @@ impl Decimal {
             }
         }
         let (mantissa, scale) = if scale < 0 {
-            let lift = u32::try_from(-scale).ok()?;
-            (unscaled.checked_mul(10i128.checked_pow(lift)?)?, 0)
+            let lift = usize::try_from(scale.unsigned_abs()).ok()?;
+            (unscaled.shifted_left(lift)?, 0)
         } else {
             (unscaled, u32::try_from(scale).ok()?)
         };
@@ -158,8 +169,8 @@ impl Decimal {
     }
 
     /// The integer mantissa: `1.58700` has a mantissa of `158700`.
-    pub fn mantissa(&self) -> i128 {
-        self.mantissa
+    pub fn mantissa(&self) -> &Unscaled {
+        &self.mantissa
     }
 
     /// The number of fractional digits: `1.58700` has a scale of 5.

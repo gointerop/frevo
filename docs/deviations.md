@@ -505,9 +505,13 @@ file, so its prose is not redistributable here (see `oracles/PINS.md`).
 - **Configuration flag:** none
 - **Debt:** `DEBT-0011`. None of the six leaves anything owed — each is a
   malformed input refused at parse time. The residual reported with this
-  entry does: Frevo's decimal carries a 128-bit mantissa (`design.md`
-  section 6's named fallback), so a literal above 38 significant digits is
+  entry did: Frevo's decimal carried a 128-bit mantissa (`design.md`
+  section 6's named fallback), so a literal above 38 significant digits was
   refused as `Invalid Constant` where HAPI carries it as a `BigDecimal`.
+  Task 44b of `add-fhirpath-and-codegen-r4` replaced that mantissa with one of
+  any number of digits (`crates/frevo-path/src/seam/unscaled.rs`), so Frevo
+  now carries such a literal, and the arithmetic and comparisons over it, as
+  HAPI does (`path.literal.017`); that pays `DEBT-0011`.
 - **Rationale:** `path.errors.003` forbids a panic anywhere in the suite, and a
   Java unchecked exception is exactly the failure mode it forbids, so items 1,
   2, 4, 5 and 6 are not a choice. Item 3 is: HAPI accepts an escape the

@@ -522,9 +522,18 @@ fn int_value(text: &str) -> i32 {
         Some(d) => (true, d),
         None => (false, integer_part.trim_start_matches('+')),
     };
-    let magnitude: i128 = digits.parse().unwrap_or(0);
-    let signed = if negative { -magnitude } else { magnitude };
-    signed as i32
+    // The low 32 bits of the integer part at any number of digits: the
+    // magnitude modulo 2^32, then the sign (`path.literal.017`). Text that is
+    // not digits reads as 0, as it did when this went through `i128`.
+    let low = if !digits.is_empty() && digits.bytes().all(|c| c.is_ascii_digit()) {
+        digits.bytes().fold(0u32, |acc, c| {
+            acc.wrapping_mul(10).wrapping_add(u32::from(c - b'0'))
+        })
+    } else {
+        0
+    };
+    let low = if negative { low.wrapping_neg() } else { low };
+    low as i32
 }
 
 /// `dateAdd(d, q, negate, holder)` (`FHIRPathEngine.java:2715`).

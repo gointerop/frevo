@@ -6,9 +6,11 @@
 //! `opDivideBy` at `:2982`, `opDiv` at `:3028`, `opMod` at `:3068`.
 //! Original work Copyright HL7, Inc. and contributors, licensed under the
 //! Apache License, Version 2.0.
-//! Modified by the Frevo authors: decimals are an `i128` mantissa and a scale
-//! with checked arithmetic instead of `BigDecimal`, so a result wider than 38
-//! digits is [`EvalError::Unsupported`] rather than arbitrary-precision.
+//! Modified by the Frevo authors: decimals are an arbitrary-precision base-ten
+//! mantissa and a non-negative scale ([`Unscaled`], task 44b) instead of
+//! `BigDecimal`, so every digit of a sum, difference or product is kept, as
+//! `BigDecimal` keeps it; only a scale alignment shifting a value by more than
+//! [`MAX_SHIFT`] places is [`EvalError::Unsupported`] (`DEBT-0014`).
 //!
 //! What the pinned engine does here and the specification does not say, and
 //! what is kept:
@@ -34,6 +36,7 @@
 //!   operator and makes `/` empty.
 
 use crate::seam::model::Model;
+use crate::seam::unscaled::{MAX_SHIFT, Unscaled};
 use crate::seam::value::{Decimal, Value};
 
 use super::EvalError;
@@ -78,20 +81,30 @@ fn error(message: String, at: At) -> EvalError {
     )
 }
 
+/// A decimal this port cannot hold: one whose scale would shift its digits by
+/// more than [`MAX_SHIFT`] places, or overflow a 32-bit scale. Never a limit
+/// on significant digits (`path.literal.017`).
 pub(super) fn too_wide(at: usize) -> EvalError {
-    EvalError::unsupported("decimal arithmetic beyond 38 significant digits", at)
+    EvalError::unsupported(
+        format!("a decimal whose scale shifts its digits by more than {MAX_SHIFT} places"),
+        at,
+    )
 }
 
 /// A decimal written out in plain notation (`BigDecimal.toPlainString`).
-pub(super) fn make_decimal(mantissa: i128, scale: u32, at: usize) -> Result<Decimal, EvalError> {
-    let digits = mantissa.unsigned_abs().to_string();
-    let mut text = String::new();
-    if mantissa < 0 {
+pub(super) fn make_decimal(
+    mantissa: &Unscaled,
+    scale: u32,
+    at: usize,
+) -> Result<Decimal, EvalError> {
+    let digits = mantissa.magnitude_digits();
+    let mut text = String::with_capacity(digits.len() + scale as usize + 3);
+    if mantissa.is_negative() {
         text.push('-');
     }
     let scale = scale as usize;
     if scale == 0 {
-        text.push_str(&digits);
+        text.push_str(digits);
     } else {
         let padded = format!("{digits:0>width$}", width = scale + 1);
         let split = padded.len() - scale;
@@ -103,12 +116,12 @@ pub(super) fn make_decimal(mantissa: i128, scale: u32, at: usize) -> Result<Deci
 }
 
 /// Both mantissas at the larger of the two scales.
-fn align(a: &Decimal, b: &Decimal, at: usize) -> Result<(i128, i128, u32), EvalError> {
+fn align(a: &Decimal, b: &Decimal, at: usize) -> Result<(Unscaled, Unscaled, u32), EvalError> {
     let scale = a.scale().max(b.scale());
     let lift = |d: &Decimal| {
-        10i128
-            .checked_pow(scale - d.scale())
-            .and_then(|f| d.mantissa().checked_mul(f))
+        usize::try_from(scale - d.scale())
+            .ok()
+            .and_then(|k| d.mantissa().shifted_left(k))
             .ok_or_else(|| too_wide(at))
     };
     Ok((lift(a)?, lift(b)?, scale))
@@ -282,8 +295,7 @@ pub(super) fn op_arith(
                     operand::decimal_of(model, r)?,
                 );
                 let (x, y, scale) = align(&a, &b, at.offset)?;
-                let sum = x.checked_add(y).ok_or_else(|| too_wide(at.offset))?;
-                return Ok(dec_value(make_decimal(sum, scale, at.offset)?));
+                return Ok(dec_value(make_decimal(&x.add(&y), scale, at.offset)?));
             }
             if has_type(r, &["Quantity"]) && is_date_time_type(l) {
                 let q = operand::qty_of(r)?;
@@ -302,8 +314,7 @@ pub(super) fn op_arith(
                     operand::decimal_of(model, r)?,
                 );
                 let (x, y, scale) = align(&a, &b, at.offset)?;
-                let diff = x.checked_sub(y).ok_or_else(|| too_wide(at.offset))?;
-                return Ok(dec_value(make_decimal(diff, scale, at.offset)?));
+                return Ok(dec_value(make_decimal(&x.sub(&y), scale, at.offset)?));
             }
             if has_type(l, &["decimal", "integer", "Quantity"]) && has_type(r, &["Quantity"]) {
                 // Only `0 - q` produces anything: `qty.copy().setValue(abs)`.
@@ -332,15 +343,12 @@ pub(super) fn op_arith(
                     operand::decimal_of(model, l)?,
                     operand::decimal_of(model, r)?,
                 );
-                let mantissa = a
-                    .mantissa()
-                    .checked_mul(b.mantissa())
+                let scale = a
+                    .scale()
+                    .checked_add(b.scale())
                     .ok_or_else(|| too_wide(at.offset))?;
-                return Ok(dec_value(make_decimal(
-                    mantissa,
-                    a.scale() + b.scale(),
-                    at.offset,
-                )?));
+                let product = a.mantissa().mul(b.mantissa());
+                return Ok(dec_value(make_decimal(&product, scale, at.offset)?));
             }
             if is_quantity(model, l) && is_quantity(model, r) {
                 // `qtyToPair` of each side, then `UcumService.multiply`, which

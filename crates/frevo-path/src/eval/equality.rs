@@ -23,6 +23,7 @@
 //! compared"; that is the `None` here.
 
 use crate::seam::model::Model;
+use crate::seam::unscaled::Unscaled;
 use crate::seam::value::{Decimal, Value};
 
 use super::navigate::fhir_type;
@@ -360,16 +361,9 @@ fn equivalent_number(l: &str, r: &str) -> bool {
 
 /// A decimal's mantissa at a smaller or equal scale, rounded half up (away
 /// from zero on a tie, as `RoundingMode.HALF_UP`).
-fn round_half_up(d: &Decimal, scale: u32) -> Option<i128> {
-    let drop = d.scale() - scale;
-    if drop == 0 {
-        return Some(d.mantissa());
-    }
-    let divisor = 10i128.checked_pow(drop)?;
-    let q = d.mantissa() / divisor;
-    let rem = d.mantissa() % divisor;
-    let up = rem.abs().checked_mul(2)? >= divisor;
-    Some(if up { q + d.mantissa().signum() } else { q })
+fn round_half_up(d: &Decimal, scale: u32) -> Option<Unscaled> {
+    let drop = usize::try_from(d.scale() - scale).ok()?;
+    Some(d.mantissa().shifted_right_half_up(drop))
 }
 
 /// `doEquivalent(left, right)` (`FHIRPathEngine.java:2204`).

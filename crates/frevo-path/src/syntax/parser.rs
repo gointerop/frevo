@@ -410,14 +410,12 @@ impl<'a> Parser<'a> {
         if literal::is_decimal(current, false, false) {
             let at = self.lexer.current_start();
             let text = self.lexer.take()?;
+            // `new DecimalType(String)` holds a literal of any width
+            // (`path.literal.017`): `Decimal` carries every digit, and a
+            // FHIRPath literal has no exponent to shift it, so this never
+            // fails for text `is_decimal` accepted.
             let value = Decimal::parse(text).ok_or_else(|| {
-                ParseError::new(
-                    format!(
-                        "Invalid Constant {text}: it has more significant digits than \
-                         this engine's decimal representation carries"
-                    ),
-                    at,
-                )
+                ParseError::new(format!("Invalid Constant {text}: it is not a decimal"), at)
             })?;
             return Ok(Constant::Value(Value::Decimal(value)));
         }

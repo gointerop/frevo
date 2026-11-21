@@ -29,6 +29,7 @@
 //!   (saturating); `truncate` cuts the text at the point and parses it as an
 //!   integer; `round` is exact `BigDecimal.setScale(i, HALF_UP)`.
 
+use crate::seam::unscaled::Unscaled;
 use crate::seam::value::{Decimal, Value};
 use crate::syntax::ast::{Function, NodeId};
 
@@ -113,15 +114,10 @@ fn decimal_of_double(d: f64, at: usize) -> Result<Option<Value>, EvalError> {
         let n = i64::try_from(digits.len()).unwrap_or(i64::MAX);
         (digits, n - 1 - exponent)
     };
-    let signed: i128 = unscaled.parse().map_err(|_| too_wide(at))?;
-    let signed = if d < 0.0 { -signed } else { signed };
+    let signed = Unscaled::from_digits(d < 0.0, unscaled.as_bytes()).ok_or_else(|| too_wide(at))?;
     Decimal::from_unscaled(signed, scale)
         .map(|v| Some(Value::Decimal(v)))
         .ok_or_else(|| too_wide(at))
-}
-
-fn pow10(exponent: u32) -> Option<i128> {
-    10i128.checked_pow(exponent)
 }
 
 /// `BigDecimal.setScale(scale, RoundingMode.HALF_UP)`.
@@ -130,27 +126,16 @@ fn set_scale_half_up(d: &Decimal, scale: i32, at: usize) -> Result<Decimal, Eval
     let target = i64::from(scale);
     let mantissa = d.mantissa();
     if target >= current {
-        let shift = u32::try_from(target - current).map_err(|_| too_wide(at))?;
-        let scaled = pow10(shift)
-            .and_then(|f| mantissa.checked_mul(f))
+        let scaled = usize::try_from(target - current)
+            .ok()
+            .and_then(|shift| mantissa.shifted_left(shift))
             .ok_or_else(|| too_wide(at))?;
         return Decimal::from_unscaled(scaled, target).ok_or_else(|| too_wide(at));
     }
-    let shift = u32::try_from(current - target).map_err(|_| too_wide(at))?;
-    let magnitude = mantissa.unsigned_abs();
-    let quotient: u128 = match pow10(shift).and_then(|f| u128::try_from(f).ok()) {
-        Some(divisor) => {
-            let (q, r) = (magnitude / divisor, magnitude % divisor);
-            // Half up: a tie rounds away from zero.
-            if r >= divisor - r { q + 1 } else { q }
-        }
-        // The divisor is wider than any mantissa this type holds.
-        None => 0,
-    };
-    let quotient = i128::try_from(quotient).map_err(|_| too_wide(at))?;
-    let signed = if mantissa < 0 { -quotient } else { quotient };
+    let shift = usize::try_from(current - target).map_err(|_| too_wide(at))?;
+    let rounded = mantissa.shifted_right_half_up(shift);
     // A negative scale renders in scientific form, as `BigDecimal` does.
-    Decimal::from_unscaled(signed, target).ok_or_else(|| too_wide(at))
+    Decimal::from_unscaled(rounded, target).ok_or_else(|| too_wide(at))
 }
 
 impl Run<'_> {

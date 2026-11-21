@@ -35,6 +35,7 @@
 //! - `Utilities.isDecimal` admits a bare `+` or `-`, which `new BigDecimal`
 //!   then refuses: `'-'.toDecimal()` is an execution error.
 
+use crate::seam::unscaled::Unscaled;
 use crate::seam::value::{Decimal, Quantity, Value};
 use crate::syntax::ast::{Function, NodeId};
 
@@ -142,8 +143,8 @@ fn allow_exponent_leading_zero_ok(value: &str) -> bool {
 }
 
 /// `new BigDecimal(text)` for text `is_decimal` accepted, rendered as
-/// `BigDecimal.toString` does. `None` when it is not a number (a bare sign) or
-/// does not fit.
+/// `BigDecimal.toString` does. `None` when it is not a number (a bare sign), or
+/// its exponent shifts it further than this port holds (`DEBT-0014`).
 fn big_decimal(text: &str) -> Option<Decimal> {
     let (negative, rest) = match text.as_bytes().first()? {
         b'-' => (true, &text[1..]),
@@ -159,21 +160,19 @@ fn big_decimal(text: &str) -> Option<Decimal> {
         return None;
     }
     let digits = format!("{int}{frac}");
-    let unscaled: i128 = digits.parse().ok()?;
-    let scale = i64::try_from(frac.len()).ok()? - exponent;
-    Decimal::from_unscaled(if negative { -unscaled } else { unscaled }, scale)
+    let unscaled = Unscaled::from_digits(negative, digits.as_bytes())?;
+    let scale = i64::try_from(frac.len()).ok()?.checked_sub(exponent)?;
+    Decimal::from_unscaled(unscaled, scale)
 }
 
 /// `compareTo(BigDecimal.ZERO) == 0`.
 fn decimal_is_zero(d: &Decimal) -> bool {
-    d.mantissa() == 0
+    d.mantissa().is_zero()
 }
 
 /// `compareTo(BigDecimal.ONE) == 0`.
 fn decimal_is_one(d: &Decimal) -> bool {
-    10i128
-        .checked_pow(d.scale())
-        .is_some_and(|one| d.mantissa() == one)
+    usize::try_from(d.scale()).is_ok_and(|scale| d.mantissa().is_power_of_ten(scale))
 }
 
 /// `RegexConstants.DATE_TIME_REGEX`, matched against the whole string.
