@@ -37,6 +37,16 @@ Resolution method, so this table can be rebuilt from scratch:
 
 ## Version note
 
+**Ucum-java.** The pin is 1.0.10, the version `org.hl7.fhir.core` 6.9.12 declares. Live
+HAPI 8.12.0 resolves `org.fhir:ucum` to **1.0.9** (`hapi-fhir/pom.xml:1148`, managed
+at `:1985-1989`). The two jars are identical for every class the FHIRPath engine
+uses except `XmlDefinitionsParser`: the short `yyyy-MM-dd` `revision-date`
+form loads only on 1.0.10, and the spec states that branch
+(`path.quantity.016`). The owner chose on 2026-11-21 to keep 1.0.10 so that the
+citations stay valid; the differential run against live HAPI settles anything
+else.
+
+
 `hapi-fhir` `v8.12.1` exists upstream. The target set by the project owner is
 **8.12.0**, and the starter's newest 8.12.x image release is built on 8.12.0, so
 8.12.0 is what the differential oracle runs. Moving the pin is a deliberate,
