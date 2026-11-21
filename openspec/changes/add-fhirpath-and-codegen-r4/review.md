@@ -1,4 +1,57 @@
-APPROVED
+CHANGES_REQUESTED
+
+Sixty-second review (commit `413ce26`, 2026-11-21, diff against `413ce26^`).
+It checks the new `path.math.018` and `path.quantity.027`, tasks 4c and 44d,
+and the `tasks/blockers.md` entry. Every evaluation value agrees with the
+pinned source. No derived value is presented as observed through HAPI. The
+decimal-arm NPE text is labelled "bare JDK, not yet through HAPI", and I
+reproduced it on Temurin 25.0.1. Two stated behaviours cannot yet be graded.
+The detail is in the dated section at the end.
+
+1. **`path.quantity.027`'s two check-time rejections give no exact message
+   or position.** The scenario says only that `(1 'cm').children().first()`
+   "fails it as `path.navigation.022` states" and that
+   `(1 'cm').children().code` "fails with `FHIRPATH_UNKNOWN_NAME` over no
+   types". `path.navigation.022` states no text. Task 4c adds both as
+   `contextType` probes, so the harness will grade an exact message that no
+   scenario states. `path.quantity.025` is the precedent: the fifty-ninth
+   review required its message and position. Both are derivable here:
+   - `first()`: the Function arm reaches `case First`, which calls
+     `checkOrdered(focus, "first", exp)` (`FHIRPathEngine.java:3407-3408`).
+     `childTypes` returns `CollectionStatus.UNORDERED` (`:3902-3903`), so
+     `:3845-3847` throws `FHIRPATH_ORDERED_ONLY`
+     (`Messages.properties:351`), held by the `first` node. The text is
+     `Error evaluating FHIRPath expression: The function first can only be used on ordered collections (@char 22)`.
+   - `.code`: the inner `code` Name over the untyped `UNORDERED` focus
+     throws at `:1591-1593`. The text is
+     `Error evaluating FHIRPath expression: The name 'code' is not valid for any of the possible types: [] (@char 22)`.
+   - The column is the same for both. The `first` and `code` tokens start
+     at byte offset 20 with one space before them, so 20 + 1 + 1 = 22 under
+     the rule of `path.errors.002` (`FHIRLexer.java:321-324`).
+
+   State both texts and positions in `path.quantity.027` and in task 4c,
+   marked as derived and owed.
+
+2. **`path.math.018`'s check-time claim has no oracle.** The scenario says
+   that "the failure is at evaluation, with the check run or skipped". Task
+   4c's probes for `path.math.018` carry no `contextType`, so the harness
+   never runs HAPI's check on them (`harness/fhirpath-compare/README.md`).
+   Nothing grades the "check run" half. The claim follows from the source:
+   - `Parameters.parameter.value` types as every `value[x]` choice.
+   - `operateTypes` `case Plus`, `case Minus` and `case Times`
+     (`:2028-2036`, `:2050-2081`) take the integer or decimal branch first,
+     because `TypeDetails.hasType` is any-of. So they neither reach the
+     date branch that throws `FHIRPATH_ARITHMETIC_PLUS` / `_MINUS`, nor
+     raise anything else.
+   - `checkCardinalityForSingle` only adds warnings (`:1978-1985`).
+
+   Add to task 4c at least `Parameters.parameter.where(name = 'i').value + 1`
+   and `Parameters.parameter.where(name = 'd').value + 1`, each with
+   `contextType` `Parameters`, expecting the same evaluation errors. That
+   lets the differential grade the claim. Otherwise, narrow the scenario to
+   "with the check skipped".
+
+## Sixty-first review header as issued (commit `4ad9d6c`)
 
 Sixty-first review (commit `4ad9d6c`, 2026-11-21, diff against `4ad9d6c^`).
 It resolves the sixtieth review's only finding. All four check-time
@@ -5558,3 +5611,83 @@ contradicted value goes back to the proposer.
 **Checks.** `openspec validate add-fhirpath-and-codegen-r4 --strict`
 passes, and `harness/scripts/check-registries.sh` reports that the
 registers agree. No scenario ID was added, removed or renumbered.
+
+## Sixty-second review - commit `413ce26` (2026-11-21)
+
+Scope: `git diff 413ce26^..413ce26`, covering `specs/path/spec.md`,
+`tasks.md` and `tasks/blockers.md`. I read the source at `org.hl7.fhir.core`
+`73c432b5`.
+
+**`path.math.018`, verified.**
+- **Integer arms.** `+` `:2699-2700`, `*` `:2789-2790` and `-`
+  `:2961-2962` call `Integer.parseInt(l.primitiveValue())` and then
+  `Integer.parseInt(r.primitiveValue())`.
+- **Decimal arms.** `:2701-2702`, `:2791-2792` and `:2963-2964` build
+  `new BigDecimal(l...)` first.
+- **The no-value operand reaches those arms.**
+  - The guards before them do not stop it. `PrimitiveType.isPrimitive()`
+    is unconditionally `true` (`r4/model/PrimitiveType.java:134-136`).
+    `primitiveValue()` is `asStringValue()`, which is `null` for an element
+    with only an extension (`:54-56`, `:147-149`).
+  - `parameters-novalue-numbers.xml` holds exactly such `valueDecimal`
+    `d` and `valueInteger` `i`.
+  - `i + 1.5` falls to the decimal arm, because `r` is not `integer`.
+  - `1.5 * d` fails on the right-hand `new BigDecimal`.
+- **The JDK texts.** On Temurin 25.0.1, `Integer.parseInt((String) null)`
+  gives `Cannot parse null string`. `new BigDecimal((String) null)` gives
+  `NullPointerException: Cannot invoke "String.toCharArray()" because "val" is null`.
+  I ran both. `openjdk/jdk21u` `BigDecimal.java:902-903` has the same body
+  (`this(val.toCharArray(), 0, val.length())`), so the live JDK 21 image
+  should agree. That is a note for the scenario, not a finding.
+- **Labelling.** The scenario labels the decimal text as seen on the bare
+  JDK only. Task 4c routes a contradicting HAPI observation back to the
+  proposer. That is correct.
+- **Gap.** The "check run" half has no probe (finding 2).
+
+**`path.quantity.027`, verified.**
+- **Call path.** `funcChildren` (`:4830-4836`) and `funcDescendants`
+  (`:4810-4826`) call `getChildrenByName(item, "*", ...)` (`:255-278`). That
+  calls `Base.listChildrenByName("*")` (`r4/model/Base.java:226-233`),
+  which collects every `Property`'s values in `listChildren` order.
+- **Order.** `Element.listChildren` gives `id` and `extension`
+  (`Element.java:235-240`). `Quantity.listChildren` then gives `value`,
+  `comparator`, `unit`, `system` and `code` (`Quantity.java:631-643`).
+- **Unset properties.** `Property`'s single-value constructor adds a value
+  only when it is non-null (`Property.java:105-106`). The `setUnit`,
+  `setSystem` and `setCode` setters null the field for an empty string
+  (`Quantity.java:506-515`, `:563-572`, `:620-629`).
+- **Item lists.** These give the stated lists:
+  - `1 'cm'`: decimal, uri, code;
+  - `1 year`: decimal, string;
+  - `1 week`: decimal, string, uri, `code:wk`;
+  - `1 ''`: decimal, uri;
+  - `2 'cm' * 1 'm'`: `0.02`, uri, `m2`, with no unit. This is consistent
+    with `path.quantity.021`'s `2 'cm' * 2 'm'` = `0.04 'm2'` and
+    `.025`'s `code:m2`.
+- **`descendants()`.** No r4 primitive overrides `listChildren`, so a
+  primitive child contributes only its unset `id` and `extension`, and the
+  loop ends after one round.
+- **Check typing.** `case Children` and `case Descendants` return
+  `childTypes(focus, "*"/"**")` (`:3512-3515`). `childTypes` makes an
+  `UNORDERED` result and calls `getChildTypesByName` per focus type
+  (`:3902-3908`). That returns at once for a `System.` type (`:6335-6336`),
+  and loops zero times for the untyped `*` result. So nothing is raised.
+- **Following functions.** `count()` types as `integer` (`:3327-3328`).
+  `first()` and a named step are rejected, but their texts are not stated
+  (finding 1).
+- **Labelling.** "seen by the implementer of task 44a" is not a claim of a
+  HAPI observation, and the scenario marks every value as an owed probe.
+
+**Tasks and blockers.**
+- Task 4c lists the probes, apart from findings 1 and 2.
+- Task 44d's summary order ("value, unit, system, code") omits `id`,
+  `extension` and `comparator`. None of those is ever set on an
+  engine-built quantity, so it agrees with the scenario.
+- The `tasks/blockers.md` entry records a specification of HAPI's
+  behaviour under the standing ruling, with no new deviation. That is
+  consistent with `DEV-0030` covering `div`/`mod`.
+
+**Checks.** `openspec validate add-fhirpath-and-codegen-r4 --strict`
+passes, and `harness/scripts/check-registries.sh` reports that the
+registers agree. The two new IDs do not collide with existing ones, and
+nothing was renumbered.
