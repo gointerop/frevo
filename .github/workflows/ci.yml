@@ -52,6 +52,7 @@ jobs:
         with:
           path: |
             oracles/fhir-test-cases/fetched
+            oracles/r4-example-roundtrip/fetched
             crates/frevo-codegen/packages/fetched
             reference/hapi-fhir
           key: oracles-${{ runner.os }}-${{ hashFiles('reference/PINS.md', 'reference/clone.sh', 'oracles/fetch.sh', 'oracles/PINS.md', 'crates/frevo-codegen/packages/fetch.sh', 'crates/frevo-codegen/packages/PINS.md') }}
@@ -62,6 +63,8 @@ jobs:
         # scripts are no-ops for content already restored from the cache.
         run: |
           bash oracles/fetch.sh --only fhir-test-cases
+          # The full R4 example package (round-trip oracle), digest-verified.
+          bash oracles/fetch.sh --only r4-example-roundtrip
           if [ -f crates/frevo-codegen/packages/fetch.sh ]; then
             bash crates/frevo-codegen/packages/fetch.sh
             # The codegen cross-check reads HAPI's copy of the R4 definitions
@@ -79,6 +82,7 @@ jobs:
         with:
           path: |
             oracles/fhir-test-cases/fetched
+            oracles/r4-example-roundtrip/fetched
             crates/frevo-codegen/packages/fetched
             reference/hapi-fhir
           key: ${{ steps.oracle-cache.outputs.cache-primary-key }}
