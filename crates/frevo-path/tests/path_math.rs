@@ -290,6 +290,49 @@ fn parameters_with_decimals(name: &str, values: &[&str]) -> SuiteInput {
     }
 }
 
+/// A hand-built `Parameters` in XML whose `parameter[i]` carries the i-th
+/// `value[x]` element exactly as given, so an element with only an extension
+/// (no `value` attribute) can be built (`path.math.017`).
+fn parameters_with_values(name: &str, elements: &[&str]) -> SuiteInput {
+    let mut body = String::from("<Parameters xmlns=\"http://hl7.org/fhir\">");
+    for (i, e) in elements.iter().enumerate() {
+        body.push_str(&format!("<parameter><name value=\"p{i}\"/>{e}</parameter>"));
+    }
+    body.push_str("</Parameters>");
+    let document = Document::Xml(
+        oracle::xml::parse(&body)
+            .unwrap_or_else(|e| panic!("the hand-built Parameters is XML: {e}")),
+    );
+    SuiteInput {
+        file: format!("hand-built-parameters-{name}.xml"),
+        bytes: body.into_bytes(),
+        document,
+    }
+}
+
+/// `expr` over `inp` must parse and check, then fail at evaluation with a
+/// diagnostic; returns the message and the offset.
+fn expect_evaluation_error_over(expr: &str, inp: &SuiteInput) -> (String, Option<usize>) {
+    let mut engine = fresh_engine();
+    let resource_type = inp.resource_type();
+    let context = CaseContext {
+        root_resource_type: resource_type,
+        resource_type,
+        ..CaseContext::default()
+    };
+    let parsed = engine
+        .parse(expr)
+        .unwrap_or_else(|e| panic!("{expr:?} must parse before it can fail at evaluation: {e}"));
+    engine
+        .check(parsed, &context, StrictnessFlags::CHECK)
+        .unwrap_or_else(|e| panic!("{expr:?} must pass the static check: {e}"));
+    match engine.evaluate(parsed, Some(inp), &context, StrictnessFlags::EVALUATE) {
+        Ok(items) => panic!("{expr:?} must fail at evaluation, but it returned {items:?}"),
+        Err(EngineError::Diagnostic { message, offset }) => (message, offset),
+        Err(e) => panic!("{expr:?} must fail with a diagnostic, not: {e}"),
+    }
+}
+
 fn decimal(value: &str) -> Vec<ResultItem> {
     primitive("decimal", value)
 }
@@ -1147,9 +1190,260 @@ fn div_and_mod_with_a_decimal_operand_truncate_the_rounded_quotient() {
         "org.fhir.ucum.UcumException: Attempt to divide 5.5 by zero"
     );
 
+    // The quotient is rounded before it is truncated, so one rounded UP to the
+    // next integer is truncated there: `0.5 / 0.03` is `17` (P is 2), so
+    // `0.5 div 0.03` is `17` and the remainders go negative.
+    assert_eq!(eval("0.5 div 0.03"), integer("17"));
+    assert_eq!(eval("0.5 mod 0.03"), decimal("-0.01"));
+    assert_eq!(eval("0.15 mod 0.04"), decimal("-0.01"));
+
+    // `mod` can fail with `java.lang.Error("Unhandled")` from
+    // `Decimal.doSubtract` (Decimal.java:462-468). Nothing in the engine
+    // catches an `Error`, so evaluation fails; Frevo's message is exactly
+    // `Unhandled`, with no offset (path.errors.002).
+    //
+    // First condition: the larger point position of the dividend and of
+    // `trunc(this / other) * other` is negative, i.e. both are below 0.1 in
+    // magnitude (:463-464).
+    for expr in [
+        "0.05 mod 0.03",
+        "0.08 mod 0.03",
+        "0.05 mod 0.05",
+        "0.099 mod 0.04",
+        "(0 - 0.05) mod 0.03",
+        "0.05 mod (0 - 0.03)",
+    ] {
+        let (message, offset) = expect_evaluation_error_at(expr);
+        assert_eq!(message, "Unhandled", "{expr}: the Error's message, exactly");
+        assert_eq!(offset, None, "{expr}: no offset");
+    }
+    // The counter-examples: `0.1` puts the point at 0; for `0.05 mod 0.3` the
+    // product is `Decimal.zero()`, whose point is at 1.
+    assert_eq!(eval("0.1 mod 0.03"), decimal("0.01"));
+    assert_eq!(eval("0.05 mod 0.3"), decimal("0.05"));
+    // `/` and `div` never reach `subtract`, so the same operands answer one
+    // item there (their digits are path.math.015's and not restated here).
+    for expr in ["0.05 / 0.03", "0.05 div 0.03", "0.099 / 0.04"] {
+        assert_eq!(eval(expr).len(), 1, "{expr} does not fail");
+    }
+
+    // Second condition: the position lies past the difference's digits
+    // (:465-468), for a dividend read from data in exponent form whose point
+    // lies beyond its digits.
+    let sci = parameters_with_decimals(
+        "unhandled-exponent",
+        &["1e3", "2e3", "-1e3", "3.5e38", "1e2", "3.5e1"],
+    );
+    let p = |i: usize| format!("Parameters.parameter[{i}].value");
+    for (i, divisor) in [(0, 7), (0, 3), (0, 1), (1, 7), (2, 7), (3, 1)] {
+        let expr = format!("{} mod {divisor}", p(i));
+        let (message, offset) = expect_evaluation_error_over(&expr, &sci);
+        assert_eq!(message, "Unhandled", "{expr}: the Error's message, exactly");
+        assert_eq!(offset, None, "{expr}: no offset");
+    }
+    assert_eq!(eval_over(&format!("{} mod 30", p(4)), &sci), decimal("10"));
+    assert_eq!(
+        eval_over(&format!("{} mod 400", p(0)), &sci),
+        decimal("200")
+    );
+    assert_eq!(eval_over(&format!("{} mod 1", p(5)), &sci), decimal("0"));
+
     // Only testDiv4 and testMod4 grade this in the suite, both passed by HAPI.
     expect_case("testDiv", "testDiv4");
     expect_case("testMod", "testMod4");
+}
+
+// ---------------------------------------------------------------------------
+// path.math.017 -- an operand `Decimal` cannot read
+// ---------------------------------------------------------------------------
+
+/// `/` and `div` over `p(i)` are empty and `mod` fails with
+/// `org.fhir.ucum.UcumException: <refusal>` and no offset: the refusal is a
+/// UcumException, which `/` and `div` swallow (FHIRPathEngine.java
+/// :3009-3011, :3060-3063) and `opMod` wraps as `new PathEngineException(e)`
+/// (path.math.007).
+fn expect_refused(inp: &SuiteInput, i: usize, refusal: &str) {
+    let operand = format!("Parameters.parameter[{i}].value");
+    for op in ["/", "div"] {
+        assert_eq!(
+            eval_over(&format!("{operand} {op} 2"), inp),
+            empty(),
+            "parameter[{i}] {op} 2 is empty: {refusal}"
+        );
+    }
+    let (message, offset) = expect_evaluation_error_over(&format!("{operand} mod 2"), inp);
+    assert_eq!(
+        message,
+        format!("org.fhir.ucum.UcumException: {refusal}"),
+        "parameter[{i}] mod 2: the cause's toString(), exactly"
+    );
+    assert_eq!(offset, None, "parameter[{i}] mod 2: no offset");
+}
+
+// covers: path.math.017
+#[test]
+fn an_operand_decimal_cannot_read_is_empty_or_fails_as_the_operators_catch_decides() {
+    // Such values reach the engine only from data: a FHIRPath number literal
+    // has no exponent (FHIRLexer.java:160-170). `new Decimal(String)`
+    // lower-cases the value and splits it at `e` (Decimal.java:76-83,
+    // `setValueScientific` :182-208).
+
+    // The mantissa fails `Utilities.isDecimal` (Utilities.java:45-54): parsed
+    // with `Float.parseFloat` to `f`, refused when `f + 1 == f` in `float`.
+    // Either sign; not a magnitude threshold.
+    let numeric = [
+        "16777216e0",
+        "16777217e0",
+        "16777215.5e0",
+        "-16777220e0",
+        "-33554432e0",
+        "-1234567890.5e0",
+        "1234567890.5e0",
+        // An empty or `-` mantissa gets the same message.
+        "e3",
+        "-e3",
+    ];
+    let refused = parameters_with_decimals("refused-numeric", &numeric);
+    for (i, v) in numeric.iter().enumerate() {
+        expect_refused(
+            &refused,
+            i,
+            &format!("'{v}' is not a valid decimal (numeric)"),
+        );
+    }
+
+    // Accepted: between 2^24 and 2^25 the `float` spacing is 2, so `f + 1` is
+    // a tie that rounds to the even neighbour, which is not `f` for these.
+    // Each is read, so `/` and `div` answer one item, not empty.
+    let accepted_values = [
+        "16777215e0",
+        "16777215.4e0",
+        "16777218e0",
+        "-16777216e0",
+        "-16777217e0",
+        "-16777218e0",
+        "1.6777216e7",
+    ];
+    let accepted = parameters_with_decimals("accepted-numeric", &accepted_values);
+    for (i, v) in accepted_values.iter().enumerate() {
+        let operand = format!("Parameters.parameter[{i}].value");
+        assert_eq!(
+            eval_over(&format!("{operand} / 2"), &accepted).len(),
+            1,
+            "{v} / 2 is read, not refused"
+        );
+        let quotient = eval_over(&format!("{operand} div 2"), &accepted);
+        assert!(
+            matches!(quotient.as_slice(), [ResultItem::Primitive { fhir_type, .. }] if fhir_type == "integer"),
+            "{v} div 2 is one integer, got {quotient:?}"
+        );
+    }
+    assert_eq!(
+        eval_over("Parameters.parameter[6].value / 3", &accepted),
+        decimal("5592405.3"),
+        "1.6777216e7 / 3"
+    );
+
+    // The exponent is empty, `-` or not a Java `int` (`Utilities.isInteger`,
+    // Utilities.java:56-63).
+    let exponent = ["1e", "1e-", "1e99999999999"];
+    let bad_exponent = parameters_with_decimals("refused-exponent", &exponent);
+    for (i, v) in exponent.iter().enumerate() {
+        expect_refused(
+            &bad_exponent,
+            i,
+            &format!("'{v}' is not a valid decimal (exponent)"),
+        );
+    }
+
+    // An exponent starting with `+`: the digit loop admits only a leading `-`
+    // (:197-205) and the message has NO opening quote (:203); `1E+3` gives the
+    // same text, lower-cased.
+    let plus = parameters_with_decimals("plus-exponent", &["1e+3", "1E+3"]);
+    for i in [0, 1] {
+        expect_refused(&plus, i, "1e+3' is not a valid decimal");
+    }
+
+    // The spec's own operator examples, restated.
+    let examples = parameters_with_decimals("examples", &["16777216e0", "1e+3", "-33554432e0"]);
+    for expr in [
+        "Parameters.parameter[0].value / 2",
+        "Parameters.parameter[0].value div 2",
+        "Parameters.parameter[1].value / 2",
+        "Parameters.parameter[1].value div 2",
+        "Parameters.parameter[2].value / 2",
+    ] {
+        assert_eq!(eval_over(expr, &examples), empty(), "{expr}");
+    }
+    for (i, want) in [
+        (
+            0,
+            "org.fhir.ucum.UcumException: '16777216e0' is not a valid decimal (numeric)",
+        ),
+        (
+            1,
+            "org.fhir.ucum.UcumException: 1e+3' is not a valid decimal",
+        ),
+        (
+            2,
+            "org.fhir.ucum.UcumException: '-33554432e0' is not a valid decimal (numeric)",
+        ),
+    ] {
+        let expr = format!("Parameters.parameter[{i}].value mod 2");
+        assert_eq!(
+            expect_evaluation_error_over(&expr, &examples).0,
+            want,
+            "{expr}"
+        );
+    }
+
+    // An `integer` or `decimal` element with no value (only an extension):
+    // `primitiveValue()` is null, and `/` and the decimal arms of `div` and
+    // `mod` fail on `value.toLowerCase()` in the constructor
+    // (Decimal.java:76-78) with the JVM's NullPointerException, which no arm
+    // catches. Frevo: that message, exactly, and no offset.
+    const NPE_TO_LOWER_CASE: &str =
+        "Cannot invoke \"String.toLowerCase()\" because \"value\" is null";
+    let ext = "<extension url=\"http://example.org/x\"><valueString value=\"x\"/></extension>";
+    let valueless = parameters_with_values(
+        "no-value",
+        &[
+            &format!("<valueDecimal>{ext}</valueDecimal>"),
+            &format!("<valueInteger>{ext}</valueInteger>"),
+        ],
+    );
+    let dec = "Parameters.parameter[0].value";
+    let int = "Parameters.parameter[1].value";
+    for expr in [
+        format!("{dec} / 2"),
+        format!("2 / {dec}"),
+        format!("{int} / 2"),
+        format!("2 / {int}"),
+        // The decimal arms: at least one operand is a `decimal`.
+        format!("{dec} div 2"),
+        format!("2.5 div {dec}"),
+        format!("{int} div 2.5"),
+        format!("{dec} mod 2"),
+        format!("2.5 mod {dec}"),
+        format!("{int} mod 2.5"),
+    ] {
+        let (message, offset) = expect_evaluation_error_over(&expr, &valueless);
+        assert_eq!(
+            message, NPE_TO_LOWER_CASE,
+            "{expr}: the JVM's message, exactly"
+        );
+        assert_eq!(offset, None, "{expr}: no offset");
+    }
+    // The `integer` arms call `Integer.parseInt(null)` on the divisor first
+    // (FHIRPathEngine.java:3051, :3091): its text is the JDK's and is not
+    // graded, only that evaluation fails.
+    for expr in [format!("5 div {int}"), format!("5 mod {int}")] {
+        expect_evaluation_error_over(&expr, &valueless);
+    }
+
+    // A non-ASCII digit is not graded: no valid resource can carry one
+    // (both types' lexical forms are ASCII), and DEV-0030 records Frevo's
+    // ASCII-only reading.
 }
 
 // ---------------------------------------------------------------------------
