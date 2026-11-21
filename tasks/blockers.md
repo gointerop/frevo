@@ -3492,3 +3492,25 @@ can be implemented lazily. The numbers above show the first half holds by raw
 suite pass count and the second does not; case-by-case parity with HAPI is
 Frevo 0 behind, `helios` 27 behind. Task 2 is ticked after the owner records
 the verdict.
+
+## 2026-11-21 — `add-fhirpath-and-codegen-r4` — task 54: one stale lib test keeps `path.api.005` red
+
+**Raised by** the implementer of tasks 14b and 54. `Evaluator::evaluate_as`
+now answers `path.api.005` from the generated class table
+(`crates/frevo-path/src/eval/{classes.rs,r4_classes.tsv}`). All 15 tests in
+`tests/path_api.rs` pass, including the eight `path.api.005` ones. One
+in-crate test still encodes the pre-table message:
+`crates/frevo-path/src/eval/api.rs`,
+`an_unexpected_type_names_both_types_and_empty_satisfies_any` (`:287-307`).
+It expects `FhirPath expression returned unexpected type integer - Expected string`,
+where the approved `path.api.005` states
+`HAPI-0256: FhirPath expression returned unexpected type IntegerType - Expected org.hl7.fhir.r4.model.StringType`.
+The implementer may not edit it, so lib is 135 of 136 and task 54 stays
+unticked. **Decision needed (oracle-builder):** re-align that assertion to
+the spec's message.
+
+**For the proposer (no decision needed now).** The class table is written into
+`frevo-path` (`src/eval/r4_classes.tsv`), not `frevo-model`. `frevo-path`
+evaluates against it, and `path.api.008` forbids it depending on
+`frevo-model`. If the spec wants the table in `frevo-model` as well,
+`frevo-model` would need a copy or a seam.

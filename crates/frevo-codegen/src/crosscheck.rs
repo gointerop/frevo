@@ -289,6 +289,7 @@ fn absorb(definition: &mut XmlDefinition, relative: &[String], event: &xml::Even
             value_regex: None,
             content_reference: None,
             binding: None,
+            explicit_type_name: None,
         }),
         (3, "snapshot", "element", field) => {
             let Some(element) = definition.snapshot.last_mut() else {

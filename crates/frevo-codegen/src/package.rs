@@ -60,12 +60,19 @@ pub struct SnapshotElement {
     pub content_reference: Option<String>,
     /// `ElementDefinition.binding.strength` and `.valueSet`.
     pub binding: Option<ElementBinding>,
+    /// The `structuredefinition-explicit-type-name` extension on a backbone
+    /// element: the name its nested type is given (`Contact` for
+    /// `Patient.contact`).
+    pub explicit_type_name: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ElementBinding {
     pub strength: String,
     pub value_set: String,
+    /// The `elementdefinition-bindingName` extension on the binding
+    /// (`AdministrativeGender`, `ResourceType`).
+    pub binding_name: Option<String>,
 }
 
 /// One `StructureDefinition`, reduced to what the generator and the
@@ -413,6 +420,12 @@ fn definition(value: &Value, path: &Path) -> Result<Definition> {
 /// system type.
 pub const FHIR_TYPE_EXTENSION: &str =
     "http://hl7.org/fhir/StructureDefinition/structuredefinition-fhir-type";
+/// `ElementDefinition.extension` naming a backbone element's nested type.
+pub const EXPLICIT_TYPE_NAME_EXTENSION: &str =
+    "http://hl7.org/fhir/StructureDefinition/structuredefinition-explicit-type-name";
+/// `ElementDefinition.binding.extension` naming the binding.
+pub const BINDING_NAME_EXTENSION: &str =
+    "http://hl7.org/fhir/StructureDefinition/elementdefinition-bindingName";
 /// `ElementDefinition.type.extension` giving a primitive's lexical form.
 pub const REGEX_EXTENSION: &str = "http://hl7.org/fhir/StructureDefinition/regex";
 /// The prefix every FHIRPath system type code carries.
@@ -481,7 +494,9 @@ fn snapshot_element(value: &Value) -> SnapshotElement {
         binding: value.get("binding").map(|b| ElementBinding {
             strength: string_at(b, "strength").unwrap_or_default().to_string(),
             value_set: string_at(b, "valueSet").unwrap_or_default().to_string(),
+            binding_name: type_extension(b, BINDING_NAME_EXTENSION, "valueString"),
         }),
+        explicit_type_name: type_extension(value, EXPLICIT_TYPE_NAME_EXTENSION, "valueString"),
     }
 }
 

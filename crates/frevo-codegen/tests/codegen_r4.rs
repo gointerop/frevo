@@ -5460,18 +5460,13 @@ pub trait ClassTableGenerator {
     fn class_table(&self, request: &ClassTableRequest) -> Result<ClassTable, CodegenError>;
 }
 
-/// The class-table generator this oracle grades. Unbound until task 14b.
+/// The class-table generator this oracle grades, bound to
+/// `frevo_codegen::classtable` by task 14b.
 fn class_table_under_test() -> Box<dyn ClassTableGenerator> {
-    Box::new(UnboundClassTable)
+    Box::new(BoundClassTable)
 }
 
-struct UnboundClassTable;
-
-impl ClassTableGenerator for UnboundClassTable {
-    fn class_table(&self, _request: &ClassTableRequest) -> Result<ClassTable, CodegenError> {
-        Err(CodegenError::NotImplemented)
-    }
-}
+frevo_codegen::bind_class_table!(BoundClassTable);
 
 /// One pinned class-table run, which must succeed.
 fn pinned_class_table(label: &str) -> ClassTable {

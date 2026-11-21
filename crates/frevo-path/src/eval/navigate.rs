@@ -115,7 +115,9 @@ pub(crate) fn children_by_name(
             let is_resource_id = parent_is_resource && child_name == "id";
             let child = filter_id_type(super::rewrite::apply(child), is_resource_id);
             has_div |= is_xhtml(&child).is_some();
-            out.push(xhtml_item(child));
+            let child = xhtml_item(child);
+            super::classes::note(&child, node.type_name(), &child_name, true);
+            out.push(child);
         }
         // `Narrative.listChildren` adds `new XhtmlType(this)` whether or not
         // the narrative holds a `div` (`Narrative.java:343`), last.
@@ -126,7 +128,10 @@ pub(crate) fn children_by_name(
         let is_resource_id = parent_is_resource && name == "id";
         for child in node.children(name)? {
             let child = filter_id_type(super::rewrite::apply(child), is_resource_id);
-            out.extend(xhtml_by_name(child)?);
+            if let Some(child) = xhtml_by_name(child)? {
+                super::classes::note(&child, node.type_name(), name, false);
+                out.push(child);
+            }
         }
     }
     if out.len() == before && matches!(name, "id" | "extension" | ALL_CHILDREN) {

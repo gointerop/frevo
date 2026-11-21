@@ -20,6 +20,7 @@
 use std::error::Error;
 use std::fmt;
 
+use super::classes;
 use super::navigate::fhir_type;
 use super::{EvalError, Evaluator};
 use crate::seam::value::Value;
@@ -174,27 +175,47 @@ impl Evaluator<'_> {
         focus: Option<&Value>,
         expected_type: &str,
     ) -> Result<Vec<Value>, EvalError> {
+        // Where each navigated node came from decides its class
+        // (`Patient.gender` is an `Enumeration`), so it is recorded for the
+        // length of this evaluation.
+        let _recording = classes::Recording::begin();
         let result = self.evaluate(expr, focus)?;
-        if let Some(wrong) = result
-            .iter()
-            .find(|item| !self.is_assignable(item, expected_type))
-        {
-            return Err(EvalError::plain(format!(
-                "FhirPath expression returned unexpected type {} - Expected {expected_type}",
-                fhir_type(wrong)
-            )));
+        if expected_type == ANY_TYPE {
+            return Ok(result);
+        }
+        for item in &result {
+            if let Some(message) = self.mismatch(item, expected_type) {
+                return Err(EvalError::plain(format!("HAPI-0256: {message}")));
+            }
         }
         Ok(result)
     }
 
-    /// `theReturnType.isAssignableFrom(next.getClass())`, over the model's
-    /// type hierarchy: the item's own type, or one of its base types.
-    fn is_assignable(&self, item: &Value, expected_type: &str) -> bool {
-        if expected_type == ANY_TYPE {
-            return true;
+    /// `theReturnType.isAssignableFrom(next.getClass())` over the generated R4
+    /// model class table (`path.api.005`, `codegen.ancestry.005`): the message
+    /// for an item that is not accepted, naming the item's class's simple name
+    /// and the requested type's Java name.
+    ///
+    /// An item the table has no class for -- a node of a type the R4 package
+    /// does not define -- falls back to the model's type hierarchy and FHIR
+    /// type names.
+    fn mismatch(&self, item: &Value, expected_type: &str) -> Option<String> {
+        let message = |item_class: &str, expected: &str| {
+            format!(
+                "FhirPath expression returned unexpected type {item_class} - Expected {expected}"
+            )
+        };
+        match classes::class_of(item) {
+            Some(row) => {
+                let (ok, expected) = classes::accepts(row, expected_type);
+                (!ok).then(|| message(&row.simple, &expected))
+            }
+            None => {
+                let own = fhir_type(item);
+                let ok = own == expected_type || self.model.derives_from(own, expected_type);
+                (!ok).then(|| message(own, expected_type))
+            }
         }
-        let own = fhir_type(item);
-        own == expected_type || self.model.derives_from(own, expected_type)
     }
 }
 

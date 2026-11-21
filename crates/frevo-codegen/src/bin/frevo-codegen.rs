@@ -4,6 +4,7 @@
 //! frevo-codegen generate   --version r4 [--package <dir>] [--out <dir>] [--sha256 <hex>]
 //! frevo-codegen cross-check --version r4 [--package <dir>] --hapi-profiles <dir>
 //! frevo-codegen drift-check --version r4 [--package <dir>] --checked-in <dir>
+//! frevo-codegen class-table --version r4 [--out <dir>]
 //! frevo-codegen verify    [--package <dir>]
 //! frevo-codegen pin
 //! ```
@@ -28,13 +29,15 @@ Usage:
   frevo-codegen generate     --version r4 [--package <dir>] [--out <dir>] [--sha256 <hex>]
   frevo-codegen cross-check  --version r4 [--package <dir>] --hapi-profiles <dir>
   frevo-codegen drift-check  --version r4 [--package <dir>] --checked-in <dir>
+  frevo-codegen class-table  --version r4 [--out <dir>]
   frevo-codegen verify       [--package <dir>]
   frevo-codegen pin
 
 Options:
   --version <sel>        the FHIR version to generate; r4 is the only one
   --package <dir>        the definition package; defaults to the recorded pin's directory
-  --out <dir>            where to write; defaults to crates/frevo-model/src/r4
+  --out <dir>            where to write; defaults to crates/frevo-model/src/r4, and for
+                         class-table to crates/frevo-path/src/eval
   --sha256 <hex>         the digest to verify against; defaults to the recorded one
   --hapi-profiles <dir>  HAPI's profile/ directory, for the cross-check
   --checked-in <dir>     the committed output tree, for the drift check
@@ -107,6 +110,24 @@ fn dispatch(arguments: &[String]) -> Result<String, CodegenError> {
                     report.remediation
                 )))
             }
+        }
+        "class-table" => {
+            let out_dir = flags
+                .out
+                .clone()
+                .unwrap_or_else(|| pin::repo_path("crates/frevo-path/src/eval"));
+            let table = frevo_codegen::classtable::generate(&frevo_codegen::classtable::Request {
+                exceptions: pin::repo_path(frevo_codegen::classtable::EXCEPTIONS_FILE),
+                out_dir: out_dir.clone(),
+                reference_dir: None,
+            })?;
+            Ok(format!(
+                "Wrote {} ({} rows, {} elements) to {}.",
+                table.file.path,
+                table.rows.len(),
+                table.elements.len(),
+                out_dir.display()
+            ))
         }
         "verify" => {
             let dir = flags

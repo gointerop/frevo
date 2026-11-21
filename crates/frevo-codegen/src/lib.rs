@@ -40,6 +40,7 @@
 
 pub mod bind;
 pub mod bindings;
+pub mod classtable;
 pub mod crosscheck;
 pub mod emit;
 pub mod emit_codes;

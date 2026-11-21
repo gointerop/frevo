@@ -32,6 +32,7 @@
 
 mod arith;
 mod boundary;
+mod classes;
 mod collection;
 mod combine;
 mod compare;

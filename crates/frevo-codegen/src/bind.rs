@@ -430,3 +430,113 @@ macro_rules! bind_oracle {
         }
     };
 }
+
+/// Bind the oracle's `ClassTableGenerator` trait to [`crate::classtable`]
+/// (task 14b, `codegen.ancestry.001` to `.005`).
+///
+/// Expands to `struct <name>;` and its `impl ClassTableGenerator`, mapping the
+/// crate's table onto the oracle's data model in scope at the call site.
+///
+/// ```ignore
+/// fn class_table_under_test() -> Box<dyn ClassTableGenerator> {
+///     Box::new(BoundClassTable)
+/// }
+///
+/// frevo_codegen::bind_class_table!(BoundClassTable);
+/// ```
+#[macro_export]
+macro_rules! bind_class_table {
+    ($name:ident) => {
+        /// The class-table generator under test, bound to `frevo-codegen` by
+        /// `frevo_codegen::bind_class_table!`.
+        struct $name;
+
+        impl ClassTableGenerator for $name {
+            fn class_table(&self, request: &ClassTableRequest) -> Result<ClassTable, CodegenError> {
+                let run = $crate::classtable::generate(&$crate::classtable::Request {
+                    exceptions: request.exceptions.clone(),
+                    out_dir: request.out_dir.clone(),
+                    reference_dir: request.reference_dir.clone(),
+                })
+                .map_err(|error| match error {
+                    $crate::error::CodegenError::Failed {
+                        exit_code,
+                        kind,
+                        message,
+                    } => CodegenError::Failed {
+                        exit_code,
+                        kind: match kind {
+                            $crate::error::FailureKind::DigestMismatch => {
+                                FailureKind::DigestMismatch
+                            }
+                            $crate::error::FailureKind::PackageMissing => {
+                                FailureKind::PackageMissing
+                            }
+                            $crate::error::FailureKind::InventoryMismatch => {
+                                FailureKind::InventoryMismatch
+                            }
+                            $crate::error::FailureKind::NameCollision => FailureKind::NameCollision,
+                            $crate::error::FailureKind::Codec => FailureKind::Codec,
+                            $crate::error::FailureKind::Other => FailureKind::Other,
+                        },
+                        message,
+                    },
+                    $crate::error::CodegenError::NotImplemented => CodegenError::NotImplemented,
+                })?;
+                Ok(ClassTable {
+                    file: GeneratedFile {
+                        path: run.file.path.clone(),
+                        bytes: run.file.bytes.clone(),
+                        sha256: run.file.sha256.clone(),
+                    },
+                    inputs_read: run.inputs_read.clone(),
+                    rows: run
+                        .rows
+                        .iter()
+                        .map(|row| ClassRow {
+                            of: match &row.of {
+                                $crate::classtable::RowOf::Type(n) => ClassRowOf::Type(n.clone()),
+                                $crate::classtable::RowOf::Component(p) => {
+                                    ClassRowOf::Component(p.clone())
+                                }
+                                $crate::classtable::RowOf::Enumeration => ClassRowOf::Enumeration,
+                            },
+                            simple_name: row.simple_name.clone(),
+                            qualified_name: row.qualified_name.clone(),
+                            assignable_to: row.assignable_to.clone(),
+                            interfaces: row
+                                .interfaces
+                                .iter()
+                                .map(|i| match i {
+                                    $crate::classtable::Interface::IBase => InterfaceKind::IBase,
+                                    $crate::classtable::Interface::IPrimitiveType => {
+                                        InterfaceKind::IPrimitiveType
+                                    }
+                                    $crate::classtable::Interface::ICompositeType => {
+                                        InterfaceKind::ICompositeType
+                                    }
+                                    $crate::classtable::Interface::IBaseReference => {
+                                        InterfaceKind::IBaseReference
+                                    }
+                                })
+                                .collect(),
+                        })
+                        .collect(),
+                    elements: run
+                        .elements
+                        .iter()
+                        .map(|(path, class)| {
+                            (
+                                path.clone(),
+                                ElementClass {
+                                    by_name: class.by_name.clone(),
+                                    through_star: class.through_star.clone(),
+                                },
+                            )
+                        })
+                        .collect(),
+                })
+            }
+        }
+    };
+}

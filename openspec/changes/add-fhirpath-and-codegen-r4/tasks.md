@@ -439,7 +439,7 @@ checkpoint because it changes what a gate measures.
   `Patient.contact` is its 10 — and it then fails at `decode`, which is tasks
   19 to 23.
 
-- [ ] **14b. Generate the R4 model class table.** Owner decision 2026-11-21,
+- [x] **14b. Generate the R4 model class table.** Owner decision 2026-11-21,
   option (c) (`tasks/blockers.md`, "the R4 Java class ancestry table"). In
   `frevo-codegen`: derive, from the pinned R4 StructureDefinitions only, one
   `@generated` table of every R4 model class row (primitive, complex and
@@ -455,6 +455,18 @@ checkpoint because it changes what a gate measures.
   table carries the R4 package's notice as the other generated tables do; no
   Java-derived text is emitted, so no HL7 Java licence notice is owed.
   Satisfies `codegen.ancestry.001` through `codegen.ancestry.005`.
+  **Ticked 2026-11-21.** The generator is `src/classtable.rs`, run as
+  `frevo-codegen class-table --version r4`; the exception file is
+  `data/r4-class-table-exceptions.toml` with its 25 entries; the seam is
+  bound through `frevo_codegen::bind_class_table!`. All five
+  `codegen.ancestry.*` tests pass (`codegen_r4` 55 of 55), including the 323
+  `Enumeration` elements and the three refusals. The table is written to
+  `crates/frevo-path/src/eval/r4_classes.tsv` (683 rows, 8,247 element paths)
+  rather than into `frevo-model`, because `frevo-path` is the crate that
+  evaluates against it and `path.api.008` forbids it depending on
+  `frevo-model`. `xhtml.id` declares `System.String` with no fhir-type
+  extension; it is read as `string`, so `StringType`, as `Element.id` is (a
+  spec gap the proposer is closing).
 
 - [x] **15. Check the compile-time budget and decide.** Measure a cold
   `cargo build -p frevo-model --release` on the reference environment against
