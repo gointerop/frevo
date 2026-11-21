@@ -307,8 +307,30 @@ pub fn generate(request: &Request) -> Result<ClassTable> {
     let dir = pin::default_package_dir();
     let loaded = package::load(&dir)?;
     package::verify_digest(&loaded, pin::PACKAGE_CONTENT_SHA256)?;
-    let model = model::from_package(&loaded)?;
-    let inputs = Inputs::of(&loaded);
+    generate_from(request, &loaded)
+}
+
+/// A class-table run over a definition package a caller wrote rather than
+/// the pinned one, which is how a condition the pinned R4 package does not
+/// contain is exercised: a `System.*` element without its
+/// `structuredefinition-fhir-type` extension other than `xhtml.id`
+/// (`codegen.ancestry.002`), for one.
+///
+/// `package_dir` is read as [`package::load`] reads any package directory,
+/// and its digest is **not** checked against the recorded pin, because a
+/// synthetic package cannot match it. The rules and the exception file are
+/// applied exactly as [`generate`] applies them. Neither the CLI's
+/// `class-table` command nor the drift check calls this; only a test does,
+/// the counterpart of [`crate::run::generate_synthetic`] for the model.
+pub fn generate_synthetic(request: &Request, package_dir: &Path) -> Result<ClassTable> {
+    let loaded = package::load(package_dir)?;
+    generate_from(request, &loaded)
+}
+
+/// One run over a loaded package.
+fn generate_from(request: &Request, loaded: &Package) -> Result<ClassTable> {
+    let model = model::from_package(loaded)?;
+    let inputs = Inputs::of(loaded);
 
     let exceptions_text = std::fs::read_to_string(&request.exceptions).map_err(|e| {
         CodegenError::failed(
