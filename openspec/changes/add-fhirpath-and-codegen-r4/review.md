@@ -1,4 +1,103 @@
-APPROVED
+CHANGES_REQUESTED
+
+Fifty-fourth review (commits `7bd6842` and `cf5cda3`, 2026-11-21).
+`MODEL` is `reference/org.hl7.fhir.core/org.hl7.fhir.r4/src/main/java/org/hl7/fhir/r4/model/`
+at `73c432b5`, and `PKG` is `hl7.fhir.r4.core#4.0.1` from the local FHIR
+package cache (`~/.fhir/packages`).
+
+Three checks were derived independently of the proposer, by path, not by
+element name:
+- the `Enumeration` rule against every `Enumeration` field in `MODEL`;
+- the component class-name rule against every nested class in `MODEL`, with
+  each resource's `@Child` fields walked from the top-level class;
+- every datatype's and resource's Java superclass chain against its
+  `baseDefinition` chain.
+
+What I confirmed:
+- The superclass differences are exactly the nine entries listed: `id` under
+  `UriType`, plus the eight `BackboneType` datatypes.
+- The `Enumeration` rule of `codegen.ancestry.003` has one exception only:
+  `ImplementationGuide.definition.parameter.code`.
+- Every cited `MODEL` line is right.
+- For every single-typed element with a FHIR type, the declared value class
+  matches `MODEL` except where finding 1 says otherwise.
+- `cf5cda3` is right in every number. The 4 KiB and 64 KiB `meta` medians
+  are 1.621/1.650 and 5.559/5.531 µs, and `model-full-parse` is
+  12.791/12.831 µs, in `bench/micro/results.json` and `baseline.json` and in
+  the 2026-11-12 follow-up table. The noise figures are 10.1%, 13.5%, 20.3%
+  and a worst pair of 3.1%. `FrevoCodec::owned` does copy twice
+  (`model_bytes_lazy_perf.rs:208-212`).
+- Counts are codegen 54, model 83, path 390, total 527, with no duplicates.
+- `openspec validate --strict` passes, and the registers agree.
+- `scenario-coverage.sh` lists `codegen.ancestry.001`-`.005` as uncovered,
+  which is expected before the oracle-builder runs.
+
+Three findings remain. The detail is in the dated section at the end. The
+earlier record follows.
+
+1. **Two component class names break `codegen.ancestry.002`. Neither is among
+   the eleven exceptions.**
+   - `Consent.provision.actor` and `Consent.provision.data` carry the
+     explicit type names `provisionActor` and `provisionData`.
+   - HAPI does **not** upper-case them: the classes are
+     `Consent.provisionActorComponent` (`Consent.java:2287`) and
+     `Consent.provisionDataComponent` (`Consent.java:2572`).
+   - The rule upper-cases the first letter, so it gives
+     `ProvisionActorComponent` and `ProvisionDataComponent`.
+   - `Consent.provision`, explicit type name `provision`, **is** upper-cased
+     to `ProvisionComponent` (`Consent.java:1224`). So no rule change fits
+     all three, and the fix is two `class-name` entries.
+
+   These are the only lower-case explicit type names in `PKG`. The names are
+   observable in the `HAPI-0256: ` text (`... unexpected type provisionActorComponent ...`)
+   and in the qualified name `org.hl7.fhir.r4.model.Consent$provisionActorComponent`.
+
+   Fix: add both entries to `codegen.ancestry.004`, making thirteen, and
+   correct "except the eleven names" in `.002` and in `DEBT-0021`.
+
+2. **The rules cannot produce `IdType` for `Resource.id`, though
+   `path.api.005` and `codegen.ancestry.005` require it.**
+   - In `PKG`, `Resource.id`, and so `Patient.id` and every resource's `id`,
+     has type code `http://hl7.org/fhirpath/System.String` with
+     `structuredefinition-fhir-type` `string`.
+   - `Element.id` has the same type, 682 `id` elements in all.
+   - HAPI holds `Resource.id` as `IdType` (`Resource.java:53`) and
+     `Element.id` as `StringType` (`Element.java:56`).
+   - `codegen.ancestry.002` says only "an element's value class is the class
+     of its declared type". It does not say how a `System.*` type maps,
+     though `Extension.url`, `uri`, is `UriType` (`Extension.java:55`).
+     `codegen.ancestry.004` has no `Resource.id` entry.
+   - So the generated table cannot give the answers `path.api.005` states:
+     `Patient.id` as `uri` is accepted, and as `string` fails with
+     `... unexpected type IdType ...`.
+
+   Fix:
+   - state that a `System.*` type maps through its
+     `structuredefinition-fhir-type` extension;
+   - add an `element-class` entry `Resource.id` → `IdType`
+     (`Resource.java:53`), inherited by every resource;
+   - add `Patient.id` → `IdType` to `codegen.ancestry.005`'s element list.
+
+3. **The `Enumeration` count is not what the stated rule gives.**
+   - `codegen.ancestry.003` says the rule "predicts 320 `Enumeration`
+     elements", and `DEBT-0021` says "320 of 320".
+   - Applied to `PKG`'s specialised types, the rule predicts **324**. Those
+     are the 320 plus `Age.comparator`, `Count.comparator`,
+     `Distance.comparator` and `Duration.comparator`. Each of these is
+     declared through `Quantity.comparator` (`Age.java:44`,
+     `Count.java:46`: `extends Quantity`), just as the canonical resources'
+     `status` is through `MetadataResource`.
+   - `MODEL` holds 323 of those 324 as `Enumeration`. The exception is
+     `ImplementationGuide.definition.parameter.code`.
+   - My count is 291 `Enumeration` field declarations, plus 29 inherited
+     `MetadataResource.status`, plus 4 inherited `Quantity.comparator`.
+     "320" omits the last four.
+
+   A test written from the stated number would fail against a correct
+   generator. Fix: state 324 predicted and 323 `Enumeration`, or define the
+   counting convention.
+
+## Fifty-third review header as issued (commit `c505b89`)
 
 Fifty-third review (commit `c505b89`, 2026-11-21, diff against `214526c`).
 I re-derived every new `path.quantity.016` and `.024` fact from three builds:
@@ -4711,3 +4810,103 @@ jars, on JDK 25. I repeated the date set under nine default locales.
    zone-name data, not by the `GMT` code path. It held in all nine locales
    on JDK 25, and the pinned file does not use it, so grading it carries
    little risk.
+
+## Fifty-fourth review - commits `7bd6842`, `cf5cda3` (2026-11-21)
+
+Scope:
+- `codegen.ancestry.001`-`.005`, task 14b, and the `path.api.005` and
+  `codegen.binding.002` amendments;
+- `DEBT-0021`;
+- `model.perf.004` and `.006`, and task 27;
+- the blocker resolutions.
+
+**Method.** I used the package in the local FHIR cache (`~/.fhir/packages`).
+It was not checked against the digest that `codegen.inputs.001` records.
+Three scratch scripts compared it with `MODEL`.
+
+`anc.py` does the following:
+- From every specialised `primitive-type`, `complex-type` and `resource`
+  StructureDefinition, it predicts:
+  - each single-typed `code` element's class, by the `codegen.ancestry.003`
+    rule (required binding; a closed value set, so listed concepts, or a
+    complete package code system with no filter, recursively; and not
+    `ResourceType`/`FHIRAllTypes`/`FHIRDefinedType`);
+  - each component's class name, by the `.002` rule.
+- It walks `MODEL` from each type's top-level class through its `@Child`
+  fields into nested classes, which gives a path-to-class map (209 types,
+  534 component paths).
+- It adds `MetadataResource` and `Quantity` inherited fields.
+- It then compares each element's predicted class with `MODEL`'s, by path.
+
+`sup.py` compares each type's Java `extends` chain with its `baseDefinition`
+chain.
+
+**Confirmed.**
+- **Superclass chains** differ for exactly `id` (Java `uri`, FHIR `string`)
+  and for `Dosage`, `ElementDefinition`, `MarketingStatus`, `Population`,
+  `ProdCharacteristic`, `ProductShelfLife`, `SubstanceAmount` and `Timing`.
+  Java drops `BackboneElement` for these. That is the list in
+  `codegen.ancestry.004`, and no other type differs.
+- **Enumeration rule:**
+  - Every predicted `Enumeration` is one in `MODEL`, except
+    `ImplementationGuide.definition.parameter.code` (`StringType`,
+    `ImplementationGuide.java:14580-14582`).
+  - Every `Enumeration` in `MODEL` is predicted. The only apparent misses
+    were `contentReference` re-uses of the same class, for example
+    `TestScript.test.action.operation.method`, which resolve to the
+    referenced element.
+  - `Attachment.contentType` (`:58`) and `DataRequirement.type` (`:1538`)
+    are `CodeType`. `MetadataResource.status` (`:98`) is an `Enumeration`.
+  - The count is in finding 3.
+- **Component names:**
+  - Of 473 predicted component classes, 13 differ: the eleven exceptions
+    cited, and the two `Consent` ones in finding 1.
+  - All eleven citations are right: `CodeSystem.java:2590`,
+    `InsurancePlan.java:1159`, `:2978`, `MeasureReport.java:1867`,
+    `TestReport.java:1506`, `:1878`, `TestScript.java:4619`, `:6199`,
+    `:6484`, `ValueSet.java:1842`, `:2183`.
+  - The only lower-case `structuredefinition-explicit-type-name` values in
+    `PKG` are `Consent.provision` (`provision`), `.actor` (`provisionActor`)
+    and `.data` (`provisionData`).
+- **Element classes by path:** over every single-typed, non-choice element
+  with a FHIR type, the predicted class matches `MODEL` except for the
+  thirteen names and the IG code above. Elements of type `System.*` were not
+  in that comparison; finding 2 covers them. This path check also covers
+  what `DEBT-0021` says the proposer's name-based check might miss. Nothing
+  further was found.
+- **Other citations:**
+  - `IdType.java:120`, `BackboneType.java:49`, the eight datatype
+    declarations and `PrimitiveType.java:46` are right.
+  - So are `Enumeration.java:76`, `Patient.java:230`,
+    `BackboneElement.java:49` and `Reference.java:50`.
+  - So are `Narrative.java:232` (declared `XhtmlType`), `:343` (`*` yields
+    `XhtmlType`) and `:364-366` (by name, a `StringType`).
+  - `Narrative`, `Meta` and `Extension` implement `INarrative`,
+    `IBaseMetaType` and `IBaseExtension` (`Narrative.java:49`,
+    `Meta.java:51`, `Extension.java:48`). `XhtmlType` extends
+    `PrimitiveType` (`XhtmlType.java:41`).
+- **`System.*` types** (finding 2): in `PKG` they are on 683 `id` elements
+  (682 with fhir-type `string`), on `Extension.url` (fhir-type `uri`) and on
+  the primitives' `value` elements.
+- **`cf5cda3`:**
+  - Budgets: the 5 µs and 12 µs budgets leave about 3x and 2.2x headroom
+    over 1.62-1.65 and 5.53-5.56 µs. 12 µs is below the 12.8 µs
+    `model-full-parse` median.
+  - Recorded values:
+    - The `bench/micro/` files' `commit` fields read `584e668` (baseline) and
+      `c11ac47` (results). Their medians are identical to the table the
+      2026-11-12 follow-up records "at `8e50594`".
+    - The pre-`8e50594` full parse was 42.631 µs. The scenario calls it
+      "about 45 µs".
+  - Noise: 10.1%, 13.5% and 20.3%, with the median-of-3 worst pair 3.1%, as
+    recorded.
+  - The superseded rule, `bench/targets.md`'s 10% single-run rule, is at
+    `:131-136`, and is owed to a `chore/` change.
+
+**Non-blocking notes.**
+1. "about 45 µs" for the pre-`8e50594` `model-full-parse` median is 42.6 µs
+   in the record. Saying "about 43 µs", or citing 42.631, would match.
+2. The `bench/micro/` JSON `commit` fields (`584e668`, `c11ac47`) are not
+   `8e50594`, although the medians are those recorded at `8e50594`. The
+   scenario cites `8e50594` through the blocker table, which is consistent.
+   A later re-record should state which commit it measured.
