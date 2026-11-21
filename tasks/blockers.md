@@ -3285,3 +3285,20 @@ of 28 and `path_convert` 14 of 14. Task 44 is **not ticked** because:
 - Where the UCUM data comes from is ADR 0006 (proposed): installed, or
   `FREVO_UCUM_ESSENCE`, or the fetched copy in the source tree. A deployed
   server must set one of the first two.
+
+## 2026-11-21 — `add-fhirpath-and-codegen-r4` — the spec does not state the no-value Quantity case under the ordered operators, `*` and `/`
+
+**Raised by** the implementer of task 44, for the proposer. No scenario says
+what happens to a `Quantity` with no `value` when it reaches
+`qtyToCanonicalDecimal` (the ordered operators, when the code or unit lists
+differ) or `qtyToPair` (`*` and `/`). Both call
+`q.getValue().toPlainString()` (`FHIRPathEngine.java:2305-2307`,
+`:2323-2324`). Following the source, Frevo fails with an execution error
+that has no offset and carries the JVM's text:
+`Cannot invoke "java.math.BigDecimal.toPlainString()" because the return value of "org.hl7.fhir.r4.model.Quantity.getValue()" is null`.
+The proposer should state the case and its message in the spec (for example
+under `path.quantity.013` or `.021`), and the oracle-builder should grade it.
+The tick of task 44 does not depend on it.
+
+The two task-44 items above (`path.quantity.018`'s argument, and the four
+lib tests) are **resolved** by `0ffc970`.

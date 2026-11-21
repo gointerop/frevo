@@ -1010,7 +1010,7 @@ checkpoint because it changes what a gate measures.
   `2024-06-17x` and `2024-13-45`, and refuses `2024/06/17`, `+2024-06-17`
   and `""`. Lib is 136 of 136.
 
-- [ ] **44. Implement quantity semantics on top of it.** Note before starting:
+- [x] **44. Implement quantity semantics on top of it.** Note before starting:
   the ordered operators perform **no** dimension check, so incommensurable
   units compare by magnitude and return a boolean, while `=` with different
   canonical units is `false`, not empty (`path.quantity.022`); the engine's
@@ -1038,6 +1038,11 @@ checkpoint because it changes what a gate measures.
   Satisfies `path.quantity.001` through `path.quantity.015`,
   `path.quantity.017` through `path.quantity.019`, `path.quantity.021` and
   `path.quantity.022`.
+  **Ticked 2026-11-21 (verified at `0ffc970`):** `path_quantity` is 24 of
+  24, carrying every tag `path.quantity.001` to `.024`, engine halves of
+  `.023` and `.024` included. `path_compare_equality` is 27 of 27,
+  `path_math` 28 of 28 and `path_convert` 14 of 14, and lib is 136 of 136.
+  The UCUM data source is ADR 0006 (proposed).
 
 - [x] **45. Implement the boundary functions.** `lowBoundary`, `highBoundary` and
   `precision` as the pinned engine computes them: decimal boundaries edited as
