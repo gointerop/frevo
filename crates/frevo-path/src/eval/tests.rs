@@ -639,32 +639,50 @@ fn every_binary_operator_is_unsupported_and_never_empty() {
     let text = "Patient.gender memberOf 'http://x'";
     let feature = unsupported(text, Some(&p));
     assert!(feature.contains("value sets"), "{text}: {feature}");
-    // Quantity `/`, `*`, `<` and `~` are built (tasks 43, 44). What is still
-    // Unsupported is decimal arithmetic whose result needs more than the 38
-    // significant digits this port carries (`arith.rs`, DEBT-0011): never a
-    // truncated or empty answer.
-    for text in [
-        "1.0000000000000000000001 * 1.0000000000000000000001",
-        "99999999999999999999999999999999999999 + 1.5",
-    ] {
-        let feature = unsupported(text, Some(&p));
-        assert!(
-            feature.contains("38 significant digits"),
-            "{text}: {feature}"
-        );
-    }
+    // Quantity `/`, `*`, `<` and `~` are built (tasks 43, 44), and decimal
+    // arithmetic carries any number of significant digits (path.literal.017):
+    // operands that once needed more than 38 digits answer exactly, as
+    // BigDecimal does, never truncated or empty.
+    assert_eq!(
+        ok(
+            "1.0000000000000000000001 * 1.0000000000000000000001",
+            Some(&p)
+        ),
+        ["decimal:1.00000000000000000000020000000000000000000001"]
+    );
+    assert_eq!(
+        ok("99999999999999999999999999999999999999 + 1.5", Some(&p)),
+        ["decimal:100000000000000000000000000000000000000.5"]
+    );
+    // What is still Unsupported is a decimal whose scale would shift its
+    // digits by more than `MAX_SHIFT` places (DEBT-0014): never an empty
+    // answer, and the message names the limit.
+    let text = "1.5.round(20000)";
+    let feature = unsupported(text, Some(&p));
+    assert!(
+        feature.contains("more than 10000 places"),
+        "{text}: {feature}"
+    );
 }
 
 #[test]
 fn a_unary_sign_over_an_unbuilt_operation_is_unsupported() {
-    // A sign over an operation that is still Unsupported (a decimal result
-    // wider than 38 significant digits, DEBT-0011) surfaces it rather than
-    // negating an empty result.
-    unsupported(
-        "-(1.0000000000000000000001 * 1.0000000000000000000001)",
-        None,
+    // A sign over an operation that is still Unsupported (a scale shift past
+    // `MAX_SHIFT`, DEBT-0014) surfaces it rather than negating an empty
+    // result.
+    unsupported("-(1.5.round(20000))", None);
+    // A sign over the formerly refused wide decimals negates the exact result.
+    assert_eq!(
+        ok(
+            "-(1.0000000000000000000001 * 1.0000000000000000000001)",
+            None
+        ),
+        ["decimal:-1.00000000000000000000020000000000000000000001"]
     );
-    unsupported("-(99999999999999999999999999999999999999 + 1.5)", None);
+    assert_eq!(
+        ok("-(99999999999999999999999999999999999999 + 1.5)", None),
+        ["decimal:-100000000000000000000000000000000000000.5"]
+    );
 }
 
 #[test]
