@@ -294,7 +294,8 @@ every other coded element open.
   `codegen.cardinality.005` (lenient: no value and a diagnostic; strict: `1821`)
 - **AND** the check applies to exactly the `code` elements HAPI's R4 model holds
   as an `Enumeration`, which is the set `path.api.005` describes and the
-  generated class table of `codegen.ancestry.003` and `.004` lists; an element
+  generated class table of `codegen.ancestry.003` and `.004` lists (323
+  elements in the 4.0.1 package); an element
   HAPI holds as a `CodeType` accepts any code, even under a `required` binding
   (`Attachment.contentType`, `Attachment.java:58`). Frevo's generated
   enumerations must cover that set, and the decode checks a code against them
@@ -558,12 +559,17 @@ measures.
   (`Patient.java:230`, `BackboneElement.java:49`); `IBaseReference` for
   `Reference` (`Reference.java:50`)
 - **AND** an element's value class is the class of its declared type; a
-  `Quantity` element profiled `SimpleQuantity` or `MoneyQuantity` is still a
+  type `http://hl7.org/fhirpath/System.*` (the 4.0.1 package's typing of every
+  `id` element and of `Extension.url`) is read through its
+  `structuredefinition-fhir-type` extension, so `Element.id` is `StringType`
+  (`Element.java:56`) and `Extension.url` is `UriType` (`Extension.java:55`),
+  while `Resource.id`, typed the same way, is `codegen.ancestry.004`'s
+  exception; a `Quantity` element profiled `SimpleQuantity` or `MoneyQuantity` is still a
   `Quantity` (the pinned model declares no field of either profile class); a
   choice element's value class is that of the chosen type
 - **AND** the rules were checked against the pinned Java model by the
   proposer (2026-11-21): every nested component class name of the 4.0.1
-  package follows them except the eleven names in `codegen.ancestry.004`
+  package follows them except the thirteen names in `codegen.ancestry.004`
 
 #### Scenario: [codegen.ancestry.003] a `code` element is an `Enumeration` exactly when its required binding is closed and not a type list
 
@@ -579,18 +585,23 @@ measures.
     `FHIRAllTypes` or `FHIRDefinedType` (HAPI holds the resource-type and
     data-type lists as `CodeType`, for example `SearchParameter.base` and
     `DataRequirement.type`, `DataRequirement.java:1538`)
-- **AND** an element inherited in HAPI from `MetadataResource`
-  (`MetadataResource.java:98`, the canonical resources' `status`) follows the
-  same rule, because the R4 snapshot carries the same binding
+- **AND** an element HAPI holds in an inherited field follows the same rule,
+  because the R4 snapshot carries the same binding: the canonical resources'
+  `status`, declared on `MetadataResource` (`MetadataResource.java:98`), and
+  `Age`, `Count`, `Distance` and `Duration`'s `comparator`, declared on
+  `Quantity` (`Quantity.java:231`)
 - **AND** `Patient.gender`, `Observation.status` and `Address.use` are
   `Enumeration`s; `Attachment.contentType` (bound to a value set over
   `urn:ietf:bcp:13`, not in the package) and `Questionnaire.subjectType`
   (`ResourceType`) are `CodeType`s
-- **AND** the rule was checked against the pinned Java model by the proposer
-  (2026-11-21): it predicts 320 `Enumeration` elements and the model
-  declares those 320 and no other, except
+- **AND** the rule was checked against the pinned Java model (proposer and
+  fifty-fourth review, 2026-11-21): it predicts 324 `Enumeration` elements,
+  and the model holds 323 of them as `Enumeration` (291 declared fields, 29
+  canonical resources' inherited `MetadataResource.status` and 4 inherited
+  `Quantity.comparator`) and no other element. The one exception is
   `ImplementationGuide.definition.parameter.code`, which is
-  `codegen.ancestry.004`'s
+  `codegen.ancestry.004`'s. Elements HAPI reuses a class for through
+  `contentReference` take the referenced element's value class
 
 #### Scenario: [codegen.ancestry.004] the exception file lists every place HAPI's class tree differs, each with its citation
 
@@ -618,6 +629,11 @@ measures.
     each is assignable to its own type and `Element` and **not** to
     `BackboneElement`, although R4 bases them on `BackboneElement`; each
     still implements `ICompositeType`
+  - `element-class` `Resource.id` (and so every resource's `id`): typed
+    `System.String` with fhir-type `string` in the package, but declared
+    `IdType` (`Resource.java:53`), so a resource's `id` value is an `IdType`,
+    assignable to `id`, `uri` and `Element` by the `id` entry above, and not
+    to `string`; `Element.id` stays `StringType` (`Element.java:56`)
   - `element-class` `ImplementationGuide.definition.parameter.code`: declared
     `StringType` (`ImplementationGuide.java:14580-14582`), so it is assignable
     to `string` and not to `code`, and is not an `Enumeration` although its
@@ -626,9 +642,13 @@ measures.
     (`Narrative.java:232`), but navigating by name yields a `StringType`
     (`Narrative.java:364-366`) and navigating with `*` an `XhtmlType`
     (`Narrative.java:343`), as `path.api.005` and `path.navigation.025` state
-  - `class-name`, the eleven nested components whose HAPI class name does not
-    follow `codegen.ancestry.002`: `CodeSystem.concept.designation` is
+  - `class-name`, the thirteen nested components whose HAPI class name does
+    not follow `codegen.ancestry.002`: `CodeSystem.concept.designation` is
     `ConceptDefinitionDesignationComponent` (`CodeSystem.java:2590`);
+    `Consent.provision.actor` and `Consent.provision.data` keep their
+    explicit type names' lower-case initial, `provisionActorComponent` and
+    `provisionDataComponent` (`Consent.java:2287`, `:2572`), while
+    `Consent.provision` itself is `ProvisionComponent` (`:1224`);
     `InsurancePlan.coverage.benefit.limit` is `CoverageBenefitLimitComponent`
     (`InsurancePlan.java:1159`); `InsurancePlan.plan.specificCost.benefit.cost`
     is `PlanBenefitCostComponent` (`InsurancePlan.java:2978`);
@@ -668,7 +688,7 @@ measures.
   `Patient.active` to `BooleanType`, `Patient.birthDate` to `DateType`,
   `Patient.name` to `HumanName`, `Patient.contact` to `ContactComponent`,
   `Observation.code` to `CodeableConcept`, `Observation.subject` to
-  `Reference`, and `Narrative.div` to `StringType` by name and `XhtmlType`
-  through `*`
+  `Reference`, `Patient.id` to `IdType`, and `Narrative.div` to `StringType`
+  by name and `XhtmlType` through `*`
 - **AND** graded by the generator's in-process tests, and through
   `path.api.005`'s tests

@@ -2716,6 +2716,17 @@ not path) is `DEBT-0021`, due on the first typed-evaluation differential diff.
 Because nothing Java-derived is emitted, the HL7 Java licence notice above is
 not owed for this table.
 
+**Corrected 2026-11-21 (fifty-fourth review).** The figures above were short:
+the `Enumeration` rule predicts 324 elements, 323 held as `Enumeration` (291
+declared, 29 inherited `MetadataResource.status`, 4 inherited
+`Quantity.comparator`), the one exception unchanged; there are thirteen
+component class-name exceptions, not eleven (`Consent.provision.actor` and
+`.data` keep the lower-case `provisionActorComponent`,
+`provisionDataComponent`, `Consent.java:2287`, `:2572`); and `Resource.id`,
+typed `System.String` in the package, is `IdType` in HAPI
+(`Resource.java:53`), now an `element-class` entry. `codegen.ancestry.002` to
+`.005`, `codegen.binding.002` and `DEBT-0021` carry the corrected figures.
+
 **Forward reference, no decision needed.** `FhirPathR4`'s `HAPI-2409: ` and
 `HAPI-0255: ` wrapping (`FhirPathR4.java:49`, `:69`) and
 `FhirPathFilterInterceptor`'s `HAPI-0327: ` (`FhirPathFilterInterceptor.java:84`)

@@ -623,8 +623,9 @@ them is the whole reason that decision is safe to make.
   differs from the FHIR type hierarchy is an entry in
   `crates/frevo-codegen/data/r4-class-table-exceptions.toml`. The proposer's
   comparison (2026-11-21, against the pinned Java model, outside the
-  repository) covered the `Enumeration` set (320 of 320 elements, one
-  exception), every nested component class name (eleven exceptions), and the
+  repository, re-run by the fifty-fourth review) covered the `Enumeration`
+  set (324 predicted, 323 held as `Enumeration`, one exception), every nested
+  component class name (thirteen exceptions), `Resource.id`, and the
   superclass of every datatype; it matched other element classes by element
   name within a type, not by path, so a differing class inside a component
   that shares a name with another element may be missed (it found

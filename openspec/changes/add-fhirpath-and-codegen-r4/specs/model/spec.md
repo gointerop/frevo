@@ -682,7 +682,8 @@ Budgets, their derivation and the workloads that measure them are in
   and 5.53-5.56 µs at 64 KiB, the 64 KiB surcharge of about 3.9 µs being the
   copy into the output buffer, not a re-parse. They leave about 3x and 2.2x
   headroom, and 12 µs is still below one full decode of the 4 KiB fixture
-  (`model-full-parse`, 12.8 µs median at `8e50594`; about 45 µs before it) and
+  (`model-full-parse`, 12.8 µs median at `8e50594`; 42.6 µs before it, at
+  `40ffd16`) and
   far below a full decode of the 64 KiB document
 - **AND** the edit stays proportional to `meta`: it scans no element outside
   `meta` beyond what locating it costs, and does not re-parse the document
@@ -695,6 +696,10 @@ Budgets, their derivation and the workloads that measure them are in
 - **AND** the authoritative grade is the `bench/micro/` workload run on CI or
   on the reference environment of `bench/targets.md`; a local run is
   advisory
+- **AND** the medians cited here were recorded at `8e50594`; the `commit`
+  fields of the committed `bench/micro/baseline.json` and `results.json`
+  (`584e668`, `c11ac47`) name later recordings, so they are not the source of
+  these figures
 
 #### Scenario: [model.perf.005] canonical serialisation of a constructed resource stays within budget
 
