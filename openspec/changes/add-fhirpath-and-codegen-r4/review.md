@@ -1,4 +1,27 @@
-CHANGES_REQUESTED
+APPROVED
+
+Fiftieth review (commit `09f69fb`, 2026-11-21, diff against `936bee5`). All
+seven findings of the forty-ninth review are resolved. I re-ran the probes
+against the `Ucum-java` 1.0.10 source build and the published 1.0.9 jar, and
+both give the same output. Every changed value reproduces:
+- the `path.math.016` negative-zero table, including the `-0.00` cases and
+  `10 mod 2.5` = `0`, `12 mod 1.5` = `0`;
+- the `.021` code-less `/` NPE, on either side, including `0 / 0`;
+- the `.023` and `.024` parse texts;
+- the `NumberFormatException` escape, and `comparable()` answering `false`.
+
+The 1.0.9 statements, the corrected citations, `DEV-0030`, `DEBT-0020`, the
+`DEV-0017` update and the new blocker entry are accurate. Nothing else
+regressed:
+- path 389, codegen 49, model 83, total 521, no duplicates;
+- `openspec validate --strict` passes, and the registers agree (27/20);
+- no stale "exact", `:2414`, `:895-904` or "non-negative dividend" text
+  remains.
+
+Two non-blocking notes are in the dated section at the end. The earlier
+record follows.
+
+## Forty-ninth-review findings as raised (commit `bdfe0ed`)
 
 Forty-ninth review (commit `bdfe0ed`, 2026-11-21, diff against `36abd5f`).
 `UCUM` is `reference/Ucum-java/src/main/java/org/fhir/ucum/` at `db9d22ad`,
@@ -4315,3 +4338,79 @@ finding 7.
    text is not graded.
 2. `path.math.008` cites the integer `mod` guard as `3092-3095`. It is
    `:3091-3094`. This line predates the commit.
+
+## Fiftieth review - commit `09f69fb` (2026-11-21)
+
+Scope: the corrections in `09f69fb` to the seven forty-ninth-review findings.
+`UCUM` and `ENGINE` are as in the forty-ninth review. The probes ran on the
+`javac -g` build of `reference/Ucum-java` and on `ucum-1.0.9.jar`, and the two
+outputs are identical.
+
+**Finding 1, resolved.**
+- The Arithmetic requirement body now says `+`, `-` and `*` are exact, and
+  that `/` and decimal `div`/`mod` follow `Decimal`.
+- `path.compare.012` excludes `/`, `div` and `mod` from both the `double` and
+  the exact group.
+
+**Finding 2, resolved.** `divideBy` with a code-less pair throws the
+`String.contains` NPE in four cases: `(1, null) / (1, m)`, `(1, m) / (1, null)`,
+`(0, null) / (0, m)` and `(0, m) / (0, null)`. `(1, null) / (0, m)` throws
+`UcumException: Attempt to divide 1 by zero`, which the arm turns into empty.
+This matches the new text, including "a zero dividend over a zero divisor still
+reaches the code and fails", because `divide` returns `zero()` first
+(`Decimal.java:631-632`).
+
+**Finding 3, resolved.** `[m/s2/Hz^(1/2)]` is moved to a parse failure, with
+the exact text. `special/Registry.java:59-60` is right.
+
+**Finding 4, resolved.**
+- `m(s`, `.m` and `m.)` give the messages and positions stated.
+- `getCanonicalForm(1, "10000000000")`, `multiply` and `divideBy` with
+  `m10000000000` throw `java.lang.NumberFormatException: For input string: "10000000000"`.
+- `isComparable("10000000000", "m")` throws
+  `UcumException: Error processing 10000000000: ...`, which `funcComparable`
+  turns into `false`.
+- `qtyEqual` and `qtyEquivalent` try the canonical form before comparing codes
+  (`ENGINE:2265-2275`, `:2338-2348`). So equal NFE codes fail too, as stated.
+
+**Finding 5, resolved.** `modulo` gives:
+- `-0.0` for `4.0 mod 2`, `6.0 mod 2`, `0.0 mod 2`, `-4.0 mod 2`,
+  `4.0 mod -2`, `4 mod 2.0`, `6 mod 3.0`, `-6 mod 3.0`, `4.0 mod 2.0`,
+  `5 mod 2.5`, `7.5 mod 2.5`, `10.0 mod 2.5` and `3000000000.0 mod 1`;
+- `-0.00` for `4.00 mod 2`, `4 mod 2.00` and `1.25 mod 0.25`;
+- `0` for `10 mod 2.5` and `12 mod 1.5`.
+
+The stated rule predicts each of these: the zero's text has as many fractional
+`0`s as the wider fractional part of the dividend and of the trimmed product.
+I also checked it on extra cases, `2.50 mod 1.25` = `-0.00` and
+`9 mod 0.75` = `-0.0` (product `9.0`). The `doSubtract` citation `:439-486` is
+right.
+
+**Finding 6, resolved.**
+- The spec (`path.math.015` and `path.quantity.020` source notes, and `.016`'s
+  date branch), `DEV-0030`, `DEV-0017`, `DEBT-0020` and tasks 37/43 now name
+  1.0.9 as live HAPI's version and 1.0.10 as the suite run's, with the
+  equivalence evidence.
+- The `tasks/blockers.md` entry asks the owner about `PINS.md` and
+  `clone.sh`, and its facts match what I found.
+
+**Finding 7, resolved.**
+- `convertToString` `:887-906`/`:898-900` and `funcToString` `:4914-4919` are
+  cited.
+- `:2413` is corrected in `.013`, `.017`, `path.compare.001` and `DEV-0030`.
+- `.022` gives the four ordered-operator branches and comparison lines, and
+  each one is right.
+- `DEV-0030` lists `.020` and `.024`.
+- The `path.math.008` `mod` guard is now `:3091-3094`, and the
+  absent-resource NPE (`TestingUtilities.java:484`) is stated. Those were the
+  two notes from the forty-ninth review.
+
+**Non-blocking notes.**
+1. The Arithmetic requirement body says "comparisons use a `double`". That
+   holds for the ordered operators. `=` on decimals compares strings
+   (`decEqual`, `path.equality.001`). The pointer to `path.compare.012` makes
+   the intent clear.
+2. In `path.quantity.024` and `DEV-0030`, "only `comparable()` answers
+   `false`" for an out-of-range number holds when the two codes differ. With
+   equal codes, `funcComparable` answers `true` before any UCUM call
+   (`ENGINE:4628-4630`), under both workers.
