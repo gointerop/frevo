@@ -655,6 +655,10 @@ them is the whole reason that decision is safe to make.
 - **Why deferred:** the owner ruled out reading the Java sources in the
   generator; the remaining check is what the live differential does for free
   once `path.api.005`-style typed evaluation is exercised over every element.
+  As of 2026-11-21 the differential that grades this change is the
+  in-process HAPI 8.12.0 FHIRPath probe (owner ruling, `tasks/blockers.md`).
+  It has no typed-evaluation probe, so nothing grades the choice-typed
+  classes yet; a live-server differential belongs to a later change.
 - **Cost if unpaid:** a typed evaluation (`IFhirPath.evaluate` with a FHIR
   type name, or the `Enumeration` decode check of `codegen.binding.002`)
   accepts or rejects an element differently from HAPI where an exception is

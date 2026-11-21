@@ -3012,7 +3012,9 @@ The engine SHALL compare, add, subtract, multiply and divide quantities by conve
   (`org.hl7.fhir.r4/src/main/java/org/hl7/fhir/r4/test/utils/TestingUtilities.java:89`);
   that is what the pinned suite's expectations and HAPI's recorded run reflect
 - **AND** no live case grades it: the suite runs under its own worker. It is
-  differential-only, against a live HAPI 8.12.0
+  differential-only, graded by the in-process HAPI 8.12.0 probe
+  (`harness/hapi-fhirpath-differential/`) under `HapiWorkerContext`, the
+  server-facing worker, not by a live server
 
 #### Scenario: [path.quantity.017] a quantity with an unknown unit code does not crash
 

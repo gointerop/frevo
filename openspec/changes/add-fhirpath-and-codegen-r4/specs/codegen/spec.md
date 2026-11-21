@@ -539,8 +539,10 @@ measures.
   `reference/` absent and gets the same bytes
 - **AND** the oracle is the generator's own output (regeneration determinism),
   the spec-reviewer's check of every exception entry against the cited line,
-  and the `path.api.005` tests; the live differential grades the rest
-  (`DEBT-0021`)
+  and the `path.api.005` tests. Nothing in this change grades the rest, the
+  classes of the choice-typed elements. The in-process HAPI probe has no
+  typed-evaluation probe, and no live-server differential exists. That gap
+  is `DEBT-0021`, with its trigger
 
 #### Scenario: [codegen.ancestry.002] class names and the FHIR type hierarchy follow fixed rules
 

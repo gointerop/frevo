@@ -3796,3 +3796,24 @@ deviation). I checked both against the pinned `FHIRPathEngine.java`:
 
 Task 4c (oracle-builder) writes the tests and probes, and task 44d
 (implementer) makes Frevo match. Both IDs are uncovered until task 4c lands.
+
+## 2026-11-21 — `add-fhirpath-and-codegen-r4` — wording aligned to the in-process HAPI probe; one harness README count owed
+
+The gatekeeper is green at `7a72377`. The differential is graded by the
+owner-ruled in-process HAPI 8.12.0 probe, not a live server. The proposer
+aligned the change's wording to that:
+- `spec.md`'s oracle section: the probe grades 62 scenarios, which are 35 named,
+  6 partial and 21 differential-only.
+- `specs/path/spec.md`, `path.quantity.019`.
+- `specs/model/spec.md`, `model.json.025` and `model.canonical.007`: these are
+  graded by the `model-parser-errors` unit oracle, and no differential exists
+  for them.
+- `specs/codegen/spec.md`, `codegen.ancestry.001`: the choice-typed classes
+  are ungraded in this change (`DEBT-0021`, whose "Why deferred" gained a
+  dated note).
+
+**Owed, outside the proposer's paths.** `harness/fhirpath-compare/README.md:92`
+still says the differential-only scenarios are "56 in all".
+`differential-results.json` at `7a72377` has 62. Whoever owns `harness/**`
+(the oracle-builder) should change "56 in all" to "62 in all (35 named,
+6 partial, 21 differential-only)".

@@ -349,8 +349,15 @@ suite exercises none of `resolve()`, `memberOf`, `defineVariable`,
 `%rootResource`, `%context`, `modifierExtension` or `toDate`, installs no host
 service and passes no application context, and no case sets
 `allowPolymorphicNames`, `allowDoubleQuotes`, `doImplicitStringConversion` or
-`emitSQLonFHIRWarning`, so those scenarios are graded by the differential
-harness against live HAPI 8.12.0. A scenario that names no oracle at all would
+`emitSQLonFHIRWarning`, so those scenarios are graded differentially. The owner
+ruled that the grading is by an in-process HAPI 8.12.0 probe, not by a live
+server (`tasks/blockers.md`, 2026-11-21). `harness/hapi-fhirpath-differential/`
+evaluates each probe on HAPI 8.12.0's R4 `FHIRPathEngine` (`org.hl7.fhir.r4`
+6.9.12, under the suite's worker and under `HapiWorkerContext`), and
+`harness/fhirpath-compare` (`--bin differential`) runs the same probes on Frevo
+and writes `harness/fhirpath-compare/differential-results.json`. It grades 62
+scenarios: the 35 named here, the 6 partial ones below, and 21 more that
+`specs/path/spec.md` calls differential-only. A scenario that names no oracle at all would
 be ungradeable; "differential-only" is an oracle, and naming it is what stops a
 behaviour from quietly going unchecked.
 
@@ -363,12 +370,13 @@ by loading the pinned essence file and one malformed file per load failure; no
 HAPI surface shows the failure text.
 
 Five further scenarios — `path.check.015` through `path.check.019` — are graded
-by neither the suite nor the differential harness but by the in-process
+by neither the suite nor the in-process HAPI probe but by the in-process
 `path-check-warnings` oracle named above, and three — `model.json.024`,
 `model.json.025` and `model.canonical.007` — by the in-process
 `model-parser-errors` oracle. Those two oracles exist precisely because the
-behaviour they grade is invisible to both the vendored suite and an HTTP
-differential.
+behaviour they grade is invisible to the vendored suite, and neither has a
+differential: the in-process HAPI probe evaluates FHIRPath only, and no
+live-server differential exists in this change.
 
 Input files the FHIRPath suite references all live in
 `oracles/fhir-test-cases/fetched/r4/` — the directory

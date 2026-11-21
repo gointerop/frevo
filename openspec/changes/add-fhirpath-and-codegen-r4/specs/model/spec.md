@@ -335,8 +335,12 @@ scenario govern each of the ten is recorded in
   specifies what `resolve()` does with the same dangling reference at evaluation
   time; the two must agree that the reference text survives decoding
 - **AND** no example in the R4 example package carries a dangling `#`
-  reference, so the round-trip oracle cannot reach this and it is graded by the
-  decode unit oracle and the differential harness
+  reference, so the round-trip oracle cannot reach this. It is graded by the
+  in-process `model-parser-errors` unit oracle
+  (`crates/frevo-model/tests/model_parser_errors.rs`, task 5a): a hand-built
+  document asserted in both parse modes against HAPI's message code. No
+  differential grades it: the in-process HAPI probe evaluates FHIRPath only,
+  and no live-server differential exists in this change
 
 #### Scenario: [model.json.020] element `id` and `extension` decode on any element
 
@@ -472,8 +476,12 @@ oracle compares like with like.
   (`model.json.004`, `.013`, `.014`, `.015`, `.016`, `.018`, `.022`, `.023`,
   `.024`, `.025` and `codegen.cardinality.002`, `.004`, `.005`)
 - **AND** no example in the R4 example package carries a dangling `#`
-  reference, so the round-trip oracle cannot reach this; it is graded by the
-  encode unit oracle and the differential harness
+  reference, so the round-trip oracle cannot reach this. It is graded by the
+  in-process `model-parser-errors` unit oracle
+  (`crates/frevo-model/tests/model_parser_errors.rs`, task 5a): a hand-built
+  resource encoded and asserted against HAPI's message code. No differential
+  grades it: the in-process HAPI probe evaluates FHIRPath only, and no
+  live-server differential exists in this change
 
 ### Requirement: Copy-on-write mutation with byte splicing
 
