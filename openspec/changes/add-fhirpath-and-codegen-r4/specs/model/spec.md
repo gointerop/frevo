@@ -715,6 +715,13 @@ Budgets, their derivation and the workloads that measure them are in
   run's per-workload median, then the median of the five), on both sides, and
   no workload is more than **15%** slower (owner decision 2026-11-21,
   replacing a 10% limit on a single run)
+- **AND** the recorder writes, in both `bench/micro/baseline.json` and
+  `bench/micro/results.json`, for every entry of the `workloads` array (found
+  by its `name`), a `run_medians_us` array of exactly five numbers: each
+  run's median for that workload, in microseconds, in run order. The gate
+  computes the median of those five itself; a file or workload without the
+  array, or with another count or a non-number, fails the gate rather than
+  being skipped
 - **AND** the authoritative baseline is recorded on CI or on the reference
   environment of `bench/targets.md`; a local run is advisory, never updates
   the baseline and never fails the gate

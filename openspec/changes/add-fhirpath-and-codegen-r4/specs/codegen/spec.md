@@ -564,7 +564,14 @@ measures.
   `structuredefinition-fhir-type` extension, so `Element.id` is `StringType`
   (`Element.java:56`) and `Extension.url` is `UriType` (`Extension.java:55`),
   while `Resource.id`, typed the same way, is `codegen.ancestry.004`'s
-  exception; a `Quantity` element profiled `SimpleQuantity` or `MoneyQuantity` is still a
+  exception. A `System.*` element with **no** `structuredefinition-fhir-type`
+  extension takes the class of the field HAPI inherits for it: the only such
+  element in the 4.0.1 package is `xhtml.id` (typed `System.String` with no
+  extension), and `XhtmlType` extends `PrimitiveType`, `Type` and `Element`
+  (`XhtmlType.java:41`, `PrimitiveType.java:46`, `Type.java:40`), so its `id`
+  is `Element`'s `StringType` field (`Element.java:56`); the generator maps
+  it to `StringType` and refuses any other `System.*` element without the
+  extension, so a new one is a reviewed decision; a `Quantity` element profiled `SimpleQuantity` or `MoneyQuantity` is still a
   `Quantity` (the pinned model declares no field of either profile class); a
   choice element's value class is that of the chosen type
 - **AND** the rules were checked against the pinned Java model by the

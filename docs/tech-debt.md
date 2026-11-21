@@ -612,7 +612,7 @@ them is the whole reason that decision is safe to make.
 - **Status:** open
 - **Reviewed:** 2026-11-21, owner: accepted as written (with DEV-0030). Raised 2026-11-21.
 
-### DEBT-0021 — the R4 model class table's exception list is checked only where the proposer compared it
+### DEBT-0021 — the R4 model class table is unchecked by path only for choice-typed elements
 
 - **Area:** codegen
 - **Origin:** change `add-fhirpath-and-codegen-r4`, the owner's choice of
@@ -623,14 +623,15 @@ them is the whole reason that decision is safe to make.
   differs from the FHIR type hierarchy is an entry in
   `crates/frevo-codegen/data/r4-class-table-exceptions.toml`. The proposer's
   comparison (2026-11-21, against the pinned Java model, outside the
-  repository, re-run by the fifty-fourth review) covered the `Enumeration`
-  set (324 predicted, 323 held as `Enumeration`, one exception), every nested
-  component class name (thirteen exceptions), `Resource.id`, and the
-  superclass of every datatype; it matched other element classes by element
-  name within a type, not by path, so a differing class inside a component
-  that shares a name with another element may be missed (it found
-  `ImplementationGuide.definition.parameter.code` that way, and may not have
-  found every such case).
+  repository) and the path-based comparisons of the fifty-fourth and
+  fifty-fifth reviews covered the `Enumeration` set (324 predicted, 323 held
+  as `Enumeration`, one exception), every nested component class name
+  (thirteen exceptions), `Resource.id`, the superclass of every datatype, and
+  every single-typed element's class by path; the path-based passes found
+  nothing beyond the entries already in `codegen.ancestry.004`. What remains
+  unchecked by path is the **choice-typed** elements (`[x]`, held by HAPI in a
+  field of the abstract `Type`): the class of each chosen type's value is
+  stated by rule (`codegen.ancestry.002`) and not yet compared.
 - **Why deferred:** the owner ruled out reading the Java sources in the
   generator; the remaining check is what the live differential does for free
   once `path.api.005`-style typed evaluation is exercised over every element.

@@ -2727,6 +2727,13 @@ typed `System.String` in the package, is `IdType` in HAPI
 (`Resource.java:53`), now an `element-class` entry. `codegen.ancestry.002` to
 `.005`, `codegen.binding.002` and `DEBT-0021` carry the corrected figures.
 
+**Update 2026-11-21 (review 55's notes).** `codegen.ancestry.002` now states
+the rule for a `System.*` element without a fhir-type extension: the one in
+the package, `xhtml.id`, is `StringType` (`Element.java:56`), and any other is
+refused by the generator. `DEBT-0021` is narrowed to the choice-typed
+elements, the only ones not yet compared by path; its trigger is unchanged.
+`model.perf.006` now names the recorder's `run_medians_us` key.
+
 **Forward reference, no decision needed.** `FhirPathR4`'s `HAPI-2409: ` and
 `HAPI-0255: ` wrapping (`FhirPathR4.java:49`, `:69`) and
 `FhirPathFilterInterceptor`'s `HAPI-0327: ` (`FhirPathFilterInterceptor.java:84`)
