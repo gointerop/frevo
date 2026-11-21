@@ -1,5 +1,47 @@
 CHANGES_REQUESTED
 
+Sixtieth review (commit `fd9cbb0`, 2026-11-21, diff against `fd9cbb0^`).
+It checks the answer to the fifty-ninth review's finding 1 and its three
+non-blocking notes. The check-time rejection is now stated in
+`path.quantity.025` and `.026`. Its cited lines, messages, type lists and
+mechanism agree with the pinned source. Task 4b carries the `contextType`
+probes, and task 44a forbids typing these elements in the checker. The three
+notes are resolved accurately; I checked the JDK 21 claim against
+`openjdk/jdk21u`. One stated value is wrong, and the error was mine: the
+fifty-ninth review supplied both positions, and the amendment copied them.
+The detail is in the dated section at the end.
+
+1. **The two `(@char N)` positions in `path.quantity.025` (and task 4b)
+   contradict the spec's own column rule.** `specs/path/spec.md:3369` gives
+   `(1 'cm').code` as `(@char 10)`, and `:3373` gives
+   `(2 'cm' * 1 'm').code` as `(@char 17)`. `tasks.md:202-203` repeats both.
+   The holder is the `code` Name node (`makeException(exp, ...)`,
+   `FHIRPathEngine.java:1593`), and its start is `currentStartLocation`
+   (`:1076`, `FHIRLexer.java:147`). The column starts at 1 and advances by
+   each token's length (`FHIRLexer.java:285`). Each whitespace character
+   adds **2**: `checkChar` does `setColumn(column + 1)` and `incColumn()`
+   follows (`FHIRLexer.java:321-324`, `SourceLocation.java` `checkChar`,
+   `incColumn`). `specs/path/spec.md:4991-5017` states this rule, and HAPI's
+   recorded `isEffectOnLogic1` `(@char 37)` at byte offset 32 after four
+   spaces confirms it. A node's column is therefore its byte offset + 1 +
+   the number of spaces before it:
+   - `(1 'cm').code`: `code` is at byte offset 9 after one space, so
+     **`(@char 11)`**. The tokens run `(` 1, `1` 2, space to 5, `'cm'` 5,
+     `)` 9, `.` 10, `code` 11.
+   - `(2 'cm' * 1 'm').code`: `code` is at byte offset 17 after four
+     spaces, so **`(@char 22)`**.
+
+   The value 10 is byte offset + 1 with no whitespace doubling, and 17 is
+   the bare byte offset. Neither follows the rule. An oracle-builder
+   working from the scenario would encode a wrong expectation. Correct both
+   positions in `path.quantity.025` and task 4b. In `path.quantity.026`,
+   the same rule fixes `(1 '').code` and `(1 '').system` at
+   **`(@char 9)`** (byte offset 7, one space). Stating that position
+   instead of "the ` (@char N)` of the member name" would make those two
+   probes gradable as well.
+
+## Fifty-ninth-review findings as raised (commit `1d83e45`)
+
 Fifty-ninth review (commit `1d83e45`, 2026-11-21, diff against `1d83e45^`).
 It checks the amendment that specifies the in-process differential's 18
 undocumented diffs as HAPI's. Every new or changed value agrees with the
@@ -5403,3 +5445,67 @@ state them.
 - Naming the live image's JVM (JDK 21) beside "the differential's JVM"
   (JDK 25) in `path.compare.014` and `path.math.017` would record why the
   JDK 25 texts are safe to grade.
+
+## Sixtieth review - commit `fd9cbb0` (2026-11-21)
+
+Scope: `git diff fd9cbb0^..fd9cbb0`, covering `specs/path/spec.md` and
+`tasks.md`. I re-read each cited line at `org.hl7.fhir.core` `73c432b5`.
+
+**Finding 1 of the fifty-ninth review: mechanism verified.**
+- `resolveConstantType` types a `Quantity` constant `FP_Quantity`
+  (`FHIRPathEngine.java:3118-3119`), which is
+  `http://hl7.org/fhirpath/System.Quantity` (`TypeDetails.java:69`).
+- `executeType(String, ...)` (`:3231-3238`) calls `getChildTypesByName`.
+  That method returns at once for a type starting `Constants.NS_SYSTEM_TYPE`
+  (`:6335-6336`; `http://hl7.org/fhirpath/System.`,
+  `r4/model/Constants.java:41`).
+- The inner node is typed with `canBeNone` false (`:1617-1618`). With no
+  type, `:1591-1593` throws `FHIRPATH_UNKNOWN_NAME`, whose template is
+  `Messages.properties:369`, including the `Error evaluating FHIRPath
+  expression: ` prefix.
+- `focus.describe()` is `Utilities.sorted(getTypes()).toString()`
+  (`TypeDetails.java:450-452`). It gives
+  `[http://hl7.org/fhirpath/System.Quantity]` for a literal and `[]` for no
+  type, as stated.
+- For `*` and `/`, the Group arm (`:1613`) types the group's proximal
+  operation through `operateTypes`. `case Times` and `case DivideBy`
+  (`:2028-2045`) add a type only for integer/decimal operands, and
+  `checkCardinalityForSingle` passes for two singletons. So the inner
+  `code` sees an empty focus, and the `[]` message is right.
+- `makeException` (`:584-594`) appends ` (@char C)` through
+  `PathEngineException.rep` when the line is 1. `location` is null unless
+  set, so no `(at ...)` is added.
+- The positions are wrong (finding 1 above). They came from my fifty-ninth
+  review, which counted without the whitespace doubling that
+  `specs/path/spec.md:4991-5017` specifies.
+- The new bullet's statements are right. The evaluation values hold with
+  the check skipped; the cited probes have no `contextType`; and a FHIR
+  `Quantity` read from a resource passes the check. Task 44a's added
+  sentence carries the requirement: an evaluation-only change that must not
+  give these elements a checker type. Task 4b adds the four `contextType`
+  probes. Once finding 1 is fixed, it should state the corrected positions.
+
+**Non-blocking notes: resolved.**
+- `path.literal.016`: the `\` path ends in
+  `new FHIRLexerException("Unknown FHIRPath character escape \\"+..., currentLocation)`
+  (`FHIRLexer.java:467`). The two-argument constructor (`:28-31`) adds no
+  prefix. The string-literal arm throws `lexer.error(...)`
+  (`FHIRPathEngine.java:1831`), which prefixes `Error @l, c: `
+  (`FHIRLexer.java:139-141`). The statement is accurate.
+- `path.literal.017`: `Utilities.isInteger` returns false above ten digits
+  (`Utilities.java:97-98`). `checkDecimal` accepts a digit-only string with
+  no leading zero, so `processConstant`'s `isDecimal` arm
+  (`FHIRPathEngine.java:1328-1329`) makes a `DecimalType`. The cited
+  `:1326-1329` covers both arms. The 40-digit `toString()` value follows
+  from `convertToString`. Task 4b names the probe.
+- `path.compare.014` / `path.math.017`: `hapi-fhir-jpaserver-starter/Dockerfile:41`
+  is `FROM gcr.io/distroless/java21-debian13:nonroot AS default`. I fetched
+  `openjdk/jdk21u` `src/java.base/share/classes/java/lang/Integer.java`.
+  Line 624 is `throw new NumberFormatException("Cannot parse null string");`,
+  identical to JDK 25's observed text (and to `jdk17u:630`). The
+  helpful-NPE form claim for JDK 21 is consistent with JEP 358 (JDK 14
+  onward) and remains graded on the JDK 25 text.
+
+**Checks.** `openspec validate add-fhirpath-and-codegen-r4 --strict`
+passes. `harness/scripts/check-registries.sh` reports that the registers
+agree. No scenario ID was added, removed or renumbered.
