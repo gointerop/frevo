@@ -33,11 +33,19 @@
 //! as an error (strict) instead of a logged warning or a thrown
 //! `DataFormatException`; each report also carries the element path and byte
 //! offset; and `sanitize_url_part` iterates Unicode scalar values rather than
-//! UTF-16 code units, which keeps the same output. The R4
-//! `org.hl7.fhir.r4.formats.JsonParser` named below is the behavioural
-//! reference for the decoded shape only: it is per-type generated Java, and
-//! nothing here is transcribed from it, since the decoder is driven by the
-//! generated element tables.
+//! UTF-16 code units, which keeps the same output.
+//! Also derived from org.hl7.fhir.core/org.hl7.fhir.r4/src/main/java/org/hl7/fhir/r4/formats/JsonParser.java
+//! and its base org.hl7.fhir.core/org.hl7.fhir.r4/src/main/java/org/hl7/fhir/r4/formats/JsonParserBase.java,
+//! and org.hl7.fhir.core/org.hl7.fhir.r4/src/main/java/org/hl7/fhir/r4/formats/JsonCreatorCanonical.java
+//! at 73c432b5f43ddbce979978a760ec4aa81e929094: the decoded shape (`resourceType` dispatch, the choice property names,
+//! contained resources, the `_field` sibling form and the element order a
+//! resource is composed in) and the canonical form `JsonCreatorCanonical` writes
+//! (owner decision, 2026-11-21: the JSON codec is treated as derived from the
+//! R4 `JsonParser`). Original work Copyright (c) 2011+, HL7, Inc., licensed
+//! under HL7's BSD 3-Clause-style licence, which `NOTICE` reproduces.
+//! Modified by the Frevo authors: the per-type generated Java parse and compose methods become one
+//! decoder and one encoder driven by the generated element tables, over the
+//! input bytes rather than a parsed `JsonObject`.
 //!
 //! Tasks 19 and 20 of `add-fhirpath-and-codegen-r4`. This is the **other**
 //! half of the codec from [`super::stored`]: where that one answers "what is

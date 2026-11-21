@@ -34,9 +34,9 @@ against the specification and the oracles, not from upstream source), `empty`
 
 | Crate | Status | Upstream repo | Upstream module(s) | Pinned SHA |
 |---|---|---|---|---|
-| `frevo-codegen` | empty | — | — | — |
-| `frevo-model` | generated (`src/r4/`); derived (`src/codec/{decode,built}.rs`) | `hapi-fhir` | `hapi-fhir-base/.../parser/{ParserState,JsonParser,LenientErrorHandler,StrictErrorHandler,ParseLocation,IParserErrorHandler,BaseParser}.java`, `hapi-fhir-base/.../util/{FhirTerser,UrlUtil}.java`, `hapi-fhir-base/.../context/FhirContext.java` | `7ab4c7c7c49281496faa1b3c2498a652457669ae` |
-| `frevo-path` | derived | `org.hl7.fhir.core` | `org.hl7.fhir.r4/.../r4/fhirpath/{FHIRLexer,ExpressionNode,FHIRPathEngine,FHIRPathConstant,TypeDetails}.java`, `org.hl7.fhir.r4/.../r4/model/{IdType,Base,BaseDateTimeType,TimeType}.java`, `org.hl7.fhir.r4/.../r4/terminologies/ValueSetCheckerSimple.java`, `org.hl7.fhir.utilities/.../{Utilities,SourceLocation}.java`, `org.hl7.fhir.utilities/.../exceptions/PathEngineException.java`, `org.hl7.fhir.r4/.../r4/model/{Narrative,XhtmlType}.java`, `org.hl7.fhir.utilities/.../xhtml/{XhtmlParser,XhtmlComposer,XhtmlNode}.java`; `hapi-fhir` `hapi-fhir-base/.../model/primitive/XhtmlDt.java` at `7ab4c7c7c49281496faa1b3c2498a652457669ae`; `Ucum-java` `src/main/java/org/fhir/ucum/{Decimal,Utilities,Lexer,ExpressionParser,Converter,Canonical,ExpressionComposer,UcumEssenceService,UcumModel}.java`, `.../ucum/definitions/XmlDefinitionsParser.java`, `.../ucum/utils/XmlUtils.java`, `.../ucum/special/{Registry,HoldingHandler,CelsiusHandler,FahrenheitHandler}.java` at `db9d22ade3f0f4a667b45817b85a9ac4534e4224` (BSD-3-Clause) | `73c432b5f43ddbce979978a760ec4aa81e929094` |
+| `frevo-codegen` | independent | — | — | — |
+| `frevo-model` | generated (`src/r4/`, by `frevo-codegen` from the `hl7.fhir.r4.core#4.0.1` package, archive SHA-256 `ebd7731df7d36b5b7d39d5fb6c9d77b44bb7fe5742f1a2e87f164738c3289d44`, content SHA-256 `8af9fe30008c2a02c351728c198759141b05482f91dee63475777aa23f06354c`, `crates/frevo-codegen/packages/PINS.md`); derived (`src/codec/{decode,built,nav,pretty}.rs`) | `hapi-fhir`; `org.hl7.fhir.core` | `hapi-fhir-base/.../parser/{ParserState,JsonParser,LenientErrorHandler,StrictErrorHandler,ParseLocation,IParserErrorHandler,BaseParser}.java`, `hapi-fhir-base/.../util/{FhirTerser,UrlUtil}.java`, `hapi-fhir-base/.../context/FhirContext.java` at `7ab4c7c7c49281496faa1b3c2498a652457669ae`; `org.hl7.fhir.r4/.../r4/formats/{JsonParser,JsonParserBase,JsonCreatorCanonical,JsonCreatorDirect}.java` at `73c432b5f43ddbce979978a760ec4aa81e929094` (HL7 BSD-3-Clause-style) | `7ab4c7c7c49281496faa1b3c2498a652457669ae`, `73c432b5f43ddbce979978a760ec4aa81e929094` |
+| `frevo-path` | derived | `org.hl7.fhir.core` | `org.hl7.fhir.r4/.../r4/fhirpath/{FHIRLexer,ExpressionNode,FHIRPathEngine,FHIRPathConstant,TypeDetails}.java`, `org.hl7.fhir.r4/.../r4/model/{IdType,Base,BaseDateTimeType,TimeType}.java`, `org.hl7.fhir.r4/.../r4/terminologies/ValueSetCheckerSimple.java`, `org.hl7.fhir.utilities/.../{Utilities,SourceLocation}.java`, `org.hl7.fhir.utilities/.../exceptions/PathEngineException.java`, `org.hl7.fhir.r4/.../r4/model/{Narrative,XhtmlType}.java`, `org.hl7.fhir.utilities/.../xhtml/{XhtmlParser,XhtmlComposer,XhtmlNode}.java`; `hapi-fhir` `hapi-fhir-base/.../model/primitive/XhtmlDt.java` and `hapi-fhir-structures-r4/.../hapi/fluentpath/FhirPathR4.java` at `7ab4c7c7c49281496faa1b3c2498a652457669ae`; `Ucum-java` `src/main/java/org/fhir/ucum/{Decimal,Utilities,Lexer,ExpressionParser,Converter,Canonical,ExpressionComposer,UcumEssenceService,UcumModel}.java`, `.../ucum/definitions/XmlDefinitionsParser.java`, `.../ucum/utils/XmlUtils.java`, `.../ucum/special/{Registry,HoldingHandler,CelsiusHandler,FahrenheitHandler}.java` at `db9d22ade3f0f4a667b45817b85a9ac4534e4224` (BSD-3-Clause) | `73c432b5f43ddbce979978a760ec4aa81e929094` |
 | `frevo-convert` | empty | — | — | — |
 | `frevo-package` | empty | — | — | — |
 | `frevo-validator` | empty | — | — | — |
@@ -197,14 +197,18 @@ texts of `StrictErrorHandler`; `ParseLocation.toString`; the condition set of
 check in `BaseParser`'s `determineReferenceText` and
 `isValidInternalReference` and `FhirTerser`'s
 `ContainedResources.referenceMatchesAContainedResource`; and
-`UrlUtil.sanitizeUrlPart` and `isNeedsSanitization`, transcribed. Its header
-names `org.hl7.fhir.core`'s `org.hl7.fhir.r4.formats.JsonParser` as the
-behavioural reference for the decoded shape (`resourceType` dispatch, choice
-property names, `contained`, the `_field` sibling), but that class is
-per-type generated Java and the decoder is driven by the generated element
-tables, so nothing is transcribed from it and its BSD-style notice is not
-engaged. `src/codec/built.rs` derives only its encode-side `#` reference
-check, from the same `BaseParser`, `FhirTerser` (`containResources` included)
+`UrlUtil.sanitizeUrlPart` and `isNeedsSanitization`, transcribed. It also
+derives, by owner decision of 2026-11-21, from `org.hl7.fhir.core`'s
+`org.hl7.fhir.r4.formats.JsonParser` (with `JsonParserBase` and
+`JsonCreatorCanonical`) at `73c432b5f43ddbce979978a760ec4aa81e929094` too:
+the decoded shape (`resourceType` dispatch, choice property names,
+`contained`, the `_field` sibling, the composed element order) and the
+canonical form. Those sources carry HL7's BSD-3-Clause-style notice, which
+`NOTICE` reproduces; the same derivation is recorded in `src/codec/nav.rs`
+(reading an element from the JSON form) and `src/codec/pretty.rs` (the
+indented layout of `JsonCreatorDirect`), and in `src/codec/built.rs`'s
+element-order serialisation. From `hapi-fhir`, `src/codec/built.rs` derives
+only its encode-side `#` reference check, from the same `BaseParser`, `FhirTerser` (`containResources` included)
 and `JsonParser` sources. All of these `hapi-fhir-base` sources are Apache-2.0,
 Copyright (C) 2014 - 2026 Smile CDR, Inc., which the existing HAPI FHIR
 section of `NOTICE` already covers. The other

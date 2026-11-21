@@ -456,11 +456,17 @@ checkpoint because it changes what a gate measures.
   Java-derived text is emitted, so no HL7 Java licence notice is owed.
   Satisfies `codegen.ancestry.001` through `codegen.ancestry.005`.
 
-- [ ] **15. Check the compile-time budget and decide.** Measure a cold
+- [x] **15. Check the compile-time budget and decide.** Measure a cold
   `cargo build -p frevo-model --release` on the reference environment against
   the 120 s and 40 MB budgets in `design.md` section 8. If either is missed,
   write the ADR for moving the codec from generated code to runtime-interpreted
   tables, and stop for the owner rather than improvising.
+  **Ticked 2026-11-21, owner decision.** The owner accepted these
+  measurements: a cold `cargo build -p frevo-model --release` takes about 11 s
+  on the development Windows host (budget 120 s); the generated source is
+  about 2.3 MB (budget 40 MB); and CI's whole-workspace release build takes
+  42-69 s on a GitHub runner. Both budgets are met with wide margin, so the
+  ADR for runtime-interpreted tables is not needed.
 
 ---
 
@@ -1412,7 +1418,7 @@ checkpoint because it changes what a gate measures.
   record in `oracles/PINS.md` that the file is fetched inside the Apache-2.0
   `fhir-test-cases` tree but carries its own licence terms.
 
-- [ ] **61. Update `docs/inventory.md` and `docs/provenance.md`.** In
+- [x] **61. Update `docs/inventory.md` and `docs/provenance.md`.** In
   `docs/inventory.md`: move the `frevo-path` rows this change covers to `done`
   with their scenario IDs, and record that
   `hapi.fhir.fhirpath_interceptor_enabled`, the three patch rows and `$diff`
@@ -1426,6 +1432,22 @@ checkpoint because it changes what a gate measures.
   package with its digest; change `frevo-codegen` from `empty` to `independent`.
   Confirm every derived file carries the required provenance header and every
   generated file the `@generated` marker.
+  **Ticked 2026-11-21.** `docs/inventory.md` covers it in its new "Notes by
+  change" section. This change covers no inventory row, so the five
+  `frevo-path` rows stay `not started` against `add-server-skeleton`
+  (`hapi.fhir.fhirpath_interceptor_enabled`), `add-store-diff` (`$diff`) and
+  `add-store-patch` (the three patch rows). In `docs/provenance.md`:
+  - `frevo-path` is `derived` and names `FHIRPathEngine.java` at `73c432b5`
+    and `FhirPathR4.java` at `7ab4c7c7`.
+  - `frevo-model` is `generated` from `hl7.fhir.r4.core#4.0.1` with both
+    SHA-256 digests. It is also `derived` in `src/codec/{decode,built,nav,pretty}.rs`,
+    which carry headers for the R4 `JsonParser` family, BSD-3 (owner decision,
+    2026-11-21), as well as `hapi-fhir`.
+  - `frevo-codegen` is `independent`.
+
+  Every file in `crates/frevo-model/src/r4/` carries `@generated`. Every
+  derived file has its header; `src/eval/error.rs`, the one derived file
+  missing it (from `PathEngineException.java`), gained it.
 
 - [ ] **61a. Confirm the ten deviation entries against the implementation.**
   `DEV-0001` to `DEV-0010` in `docs/deviations.md` were written from the pinned

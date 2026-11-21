@@ -8,6 +8,18 @@
 //! else: every token, including every string and every number, is copied
 //! byte for byte, so a decimal keeps its presented form here too and the two
 //! forms can differ only in whitespace.
+//!
+//! Derived from org.hl7.fhir.core/org.hl7.fhir.r4/src/main/java/org/hl7/fhir/r4/formats/JsonParser.java
+//! and its base org.hl7.fhir.core/org.hl7.fhir.r4/src/main/java/org/hl7/fhir/r4/formats/JsonParserBase.java,
+//! and org.hl7.fhir.core/org.hl7.fhir.r4/src/main/java/org/hl7/fhir/r4/formats/JsonCreatorDirect.java
+//! at 73c432b5f43ddbce979978a760ec4aa81e929094: the indented layout the
+//! R4 parser's pretty output uses (two spaces per level, one member or item
+//! per line)
+//! (owner decision, 2026-11-21: the JSON codec is treated as derived from the
+//! R4 `JsonParser`). Original work Copyright (c) 2011+, HL7, Inc., licensed
+//! under HL7's BSD 3-Clause-style licence, which `NOTICE` reproduces.
+//! Modified by the Frevo authors: produced by re-spacing the codec's compact output token
+//! by token rather than by a writer driven while composing.
 
 /// Append `compact`, a compact JSON document, to `out` with indentation.
 ///

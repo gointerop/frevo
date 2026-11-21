@@ -13,6 +13,15 @@
 //! - [`EvalError::Execution`] and [`EvalError::Node`] — real failures, the
 //!   ones `FHIRPathEngine` raises as `PathEngineException` or that the model
 //!   raised while navigating (`path.errors.005`).
+//!
+//! [`EvalError::execution`] is derived from
+//! org.hl7.fhir.core/org.hl7.fhir.utilities/src/main/java/org/hl7/fhir/exceptions/PathEngineException.java
+//! (the location-carrying constructors, `:81-93`) at
+//! 73c432b5f43ddbce979978a760ec4aa81e929094.
+//! Original work Copyright HL7, Inc. and contributors, licensed under the
+//! Apache License, Version 2.0.
+//! Modified by the Frevo authors: the location suffix and the byte offset are
+//! attached to an error value rather than to a thrown exception.
 
 use std::error::Error;
 use std::fmt;

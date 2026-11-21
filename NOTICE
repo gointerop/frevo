@@ -23,9 +23,12 @@ Licensed under the Apache License, Version 2.0.
 
   Copyright (c) 2011+, HL7, Inc.
 
-Some of its source files -- among them the R4 model classes and the
+Some of its source files -- among them the R4 model classes, the
 org.hl7.fhir.utilities xhtml parser and composer, from which
-crates/frevo-path/src/eval/{navigate,xhtml,xhtml_entities}.rs derive -- carry
+crates/frevo-path/src/eval/{navigate,xhtml,xhtml_entities}.rs derive, and the
+org.hl7.fhir.r4.formats JSON parser (JsonParser, JsonParserBase,
+JsonCreatorCanonical, JsonCreatorDirect), from which
+crates/frevo-model/src/codec/{decode,built,nav,pretty}.rs derive -- carry
 this notice instead, reproduced as it requires:
 
   Copyright (c) 2011+, HL7, Inc.

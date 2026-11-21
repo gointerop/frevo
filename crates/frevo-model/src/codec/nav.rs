@@ -10,6 +10,18 @@
 //! two ranges, which is why [`frevo_path::Node`]'s returns can be **owned** and
 //! still cheap, and why a child outlives the node it came from
 //! (`model.nav.007`).
+//!
+//! Derived from org.hl7.fhir.core/org.hl7.fhir.r4/src/main/java/org/hl7/fhir/r4/formats/JsonParser.java
+//! and its base org.hl7.fhir.core/org.hl7.fhir.r4/src/main/java/org/hl7/fhir/r4/formats/JsonParserBase.java
+//! at 73c432b5f43ddbce979978a760ec4aa81e929094: how an element is read from
+//! the JSON form -- a choice element's typed property name, a primitive's
+//! value with its `_field` sibling, a contained resource by its
+//! `resourceType`
+//! (owner decision, 2026-11-21: the JSON codec is treated as derived from the
+//! R4 `JsonParser`). Original work Copyright (c) 2011+, HL7, Inc., licensed
+//! under HL7's BSD 3-Clause-style licence, which `NOTICE` reproduces.
+//! Modified by the Frevo authors: read lazily from byte spans of the stored document
+//! through the generated element tables, never into a parsed object tree.
 
 use std::sync::Arc;
 

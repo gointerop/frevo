@@ -24,7 +24,17 @@
 //! Modified by the Frevo authors: re-implemented in Rust as a walk over a
 //! [`BuiltNode`] tree that collects each dangling reference rather than
 //! calling an error handler while composing; the element-order serialisation
-//! in the rest of this module is not derived.
+//! in the rest of this module is not derived from those.
+//! Also derived from org.hl7.fhir.core/org.hl7.fhir.r4/src/main/java/org/hl7/fhir/r4/formats/JsonParser.java
+//! and its base org.hl7.fhir.core/org.hl7.fhir.r4/src/main/java/org/hl7/fhir/r4/formats/JsonParserBase.java
+//! at 73c432b5f43ddbce979978a760ec4aa81e929094: the element-order
+//! serialisation of a constructed resource, which is the order the R4
+//! `JsonParser` composes each type's elements in
+//! (owner decision, 2026-11-21: the JSON codec is treated as derived from the
+//! R4 `JsonParser`). Original work Copyright (c) 2011+, HL7, Inc., licensed
+//! under HL7's BSD 3-Clause-style licence, which `NOTICE` reproduces.
+//! Modified by the Frevo authors: one encoder driven by the generated element tables in place
+//! of a generated `compose` method per type.
 
 use super::decode::{CodedDiagnostic, Encoded, LocalReference, ParseMode, encoded};
 use super::path::{PathStep, join, parse_path};
