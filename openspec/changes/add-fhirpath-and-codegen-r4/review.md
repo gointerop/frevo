@@ -1,4 +1,20 @@
-CHANGES_REQUESTED
+APPROVED
+
+Sixty-third review (commit `661613d`, 2026-11-21, diff against `661613d^`).
+It resolves both findings of the sixty-second review.
+- `path.quantity.027` now states the exact check-time texts of
+  `(1 'cm').children().first()` (`FHIRPATH_ORDERED_ONLY`) and
+  `(1 'cm').children().code` (`FHIRPATH_UNKNOWN_NAME` over `[]`), both at
+  `(@char 22)`. They are marked as derived, and task 4c probes them.
+- `path.math.018` keeps its "check run" claim, now marked as derived. Task 4c
+  adds the two `contextType` `Parameters` probes. This was one of the two
+  remedies the finding offered.
+- The JDK 21 note is recorded.
+
+There are no findings. The detail is in the dated section at the end. The
+earlier record follows.
+
+## Sixty-second-review findings as raised (commit `413ce26`)
 
 Sixty-second review (commit `413ce26`, 2026-11-21, diff against `413ce26^`).
 It checks the new `path.math.018` and `path.quantity.027`, tasks 4c and 44d,
@@ -5691,3 +5707,42 @@ Scope: `git diff 413ce26^..413ce26`, covering `specs/path/spec.md`,
 passes, and `harness/scripts/check-registries.sh` reports that the
 registers agree. The two new IDs do not collide with existing ones, and
 nothing was renumbered.
+
+## Sixty-third review - commit `661613d` (2026-11-21)
+
+Scope: `git diff 661613d^..661613d`, covering `specs/path/spec.md` and
+`tasks.md`.
+
+**Finding 1: resolved.** The two texts are exactly the ones derived in the
+sixty-second review:
+- `FHIRPATH_ORDERED_ONLY` (`Messages.properties:351`) with `{0}` = `first`,
+  raised by `checkOrdered` (`FHIRPathEngine.java:3845-3847`) from
+  `case First` (`:3407-3408`) on the `UNORDERED` result of `childTypes`
+  (`:3902-3903`).
+- `FHIRPATH_UNKNOWN_NAME` (`:369`) with `[]` from `TypeDetails.describe`
+  of an empty type set, raised at `:1591-1593`.
+
+The position `(@char 22)` follows the column rule: byte offset 20, plus 1,
+plus 1 for the single space. Task 4c names both probes with that position,
+and the scenario marks them as derived and owed.
+
+**Finding 2: resolved by probing, not narrowing.** The claim is marked as
+derived, and task 4c adds these probes with `contextType` `Parameters`:
+- `Parameters.parameter.where(name = 'i').value + 1`;
+- `Parameters.parameter.where(name = 'd').value + 1`.
+
+My derivation holds for both. `value` types as the full `value[x]` choice.
+`operateTypes` `case Plus` (`:2050-2066`) takes its first branch, because
+`TypeDetails.hasType(worker, "integer")` is any-of, so the `date` branch's
+`FHIRPATH_ARITHMETIC_PLUS` is never reached. `checkCardinalityForSingle`
+only warns (`:1978-1985`). The check therefore passes, and evaluation fails
+as the scenario states. If the probe contradicts this, task 4c sends it
+back to the proposer.
+
+**Note.** The JDK 21 `BigDecimal(String)` sentence cites `openjdk/jdk21u`
+`java/math/BigDecimal.java:902-903`. I fetched that line, and the body is
+`this(val.toCharArray(), 0, val.length())`.
+
+**Checks.** `openspec validate add-fhirpath-and-codegen-r4 --strict`
+passes, and `harness/scripts/check-registries.sh` reports that the
+registers agree. No scenario ID was added, removed or renumbered.
