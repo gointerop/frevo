@@ -3817,3 +3817,35 @@ still says the differential-only scenarios are "56 in all".
 `differential-results.json` at `7a72377` has 62. Whoever owns `harness/**`
 (the oracle-builder) should change "56 in all" to "62 in all (35 named,
 6 partial, 21 differential-only)".
+
+## 2026-11-21 — `add-fhirpath-and-codegen-r4` — the full R4 example package fails the round trip on one file
+
+Task 59's remaining half switched task 56's selector
+(`crates/frevo-codegen/tests/codegen_r4.rs`, `FULL_EXAMPLE_DIR`) from the
+interim 103 examples to the full `hl7.fhir.r4.examples#4.0.1` package: every
+`*.json` in `oracles/r4-example-roundtrip/fetched/package/` except
+`package.json`, `.index.json` and `ig-r4.json`, which is **5,308** files, not
+the 5,306 the request named (5,311 JSON files as `oracles/PINS.md` records,
+less those 3). Of those 5,308, **5,307 pass and 1 fails**. The example was not
+filtered out and the comparison was not relaxed, so `codegen.roundtrip.001`
+(`every_r4_specification_example_round_trips_byte_identically`) is red.
+
+- **`ExampleScenario-example.json`.** It fails with the first difference at byte
+  789: every `"resourceType":"MedicationRequest"` (and
+  `"MedicationAdministration"`) member of `ExampleScenario.instance` is missing
+  from the re-encoded output. `ExampleScenario.instance.resourceType` is an
+  ordinary `code` element of the backbone (`crates/frevo-model/src/r4/codes.rs:2736`).
+  The decoder skips a `resourceType` key in **every** object
+  (`crates/frevo-model/src/codec/decode.rs:1287-1289`), and
+  `Tables::resolve_property_in` refuses to resolve the name at all
+  (`crates/frevo-model/src/codec/tables.rs:224-226`). HAPI skips it only at a
+  resource's top level: `JsonParser.java:1342-1345`,
+  `if ("resourceType".equals(nextName)) { if (theState.isToplevelResourceElement()) continue; }`.
+  This looks like a `frevo-model` codec bug against HAPI, for the
+  implementer, not a known gap. The test asserts HAPI's behaviour, which is
+  the round trip.
+
+**Decision needed.** Who fixes the codec (`crates/frevo-model/src/codec/`).
+Until it is fixed, the Tests gate is red on `codegen.roundtrip.001`. Every
+other round-trip scenario is green on the full package: `.002` gives 146 rows,
+140 covered and 6 at zero, and `.003` is green too.

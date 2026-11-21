@@ -12,7 +12,7 @@
 //! `frevo-codegen` is a generator: its observable surface is a command that
 //! verifies an input package, writes files, and reports what it found. Every
 //! test below drives real inputs — the pinned package, the HAPI cross-check
-//! tree, the interim example set, hand-written synthetic StructureDefinitions —
+//! tree, the full R4 example package, hand-written synthetic StructureDefinitions —
 //! through [`generator_under_test`], which is bound to the real surfaces: the
 //! generator through `frevo_codegen`'s `BoundGenerator`, and the codec and the
 //! FHIRPath parser through `frevo-model` and `frevo-path` (see
@@ -118,7 +118,24 @@ pub const HAPI_PIN_SHA: &str = "7ab4c7c7c49281496faa1b3c2498a652457669ae";
 /// these before the two URL sets can be identical.
 pub const HAPI_PROFILE_DEFINITIONS: usize = 256;
 
-/// The interim round-trip selector named by `tasks.md` task 5.
+/// The round-trip selector (`tasks.md` task 59): the full
+/// `hl7.fhir.r4.examples#4.0.1` package, fetched by
+/// `bash oracles/fetch.sh --only r4-example-roundtrip` (`oracles/PINS.md`).
+pub const FULL_EXAMPLE_DIR: &str = "oracles/r4-example-roundtrip/fetched/package";
+/// The package's own metadata files, which are not examples: the npm manifest,
+/// the package index, and the implementation guide that describes the package.
+pub const FULL_EXAMPLE_NON_EXAMPLES: [&str; 3] = ["package.json", ".index.json", "ig-r4.json"];
+/// `*.json` in [`FULL_EXAMPLE_DIR`] (5,311, as `oracles/PINS.md` records)
+/// less the three [`FULL_EXAMPLE_NON_EXAMPLES`]. Every one carries a
+/// `resourceType`; the package ships no XML.
+pub const EXPECTED_FULL_EXAMPLES: usize = 5308;
+/// Distinct `resourceType` values across those examples, counted from the
+/// pinned package. Every one is a concrete resource type.
+pub const EXPECTED_FULL_COVERED_RESOURCE_TYPES: usize = 140;
+
+/// The interim selector that task 56 ran against until task 59 landed. It is
+/// kept for `codegen.roundtrip.003` only, because it is the one pinned example
+/// set that contains XML files; the full package has none.
 pub const EXAMPLE_DIR: &str = "oracles/fhir-test-cases/fetched/r4/examples";
 /// `*.json` in that directory, every one of which carries a `resourceType`.
 pub const EXPECTED_JSON_EXAMPLES: usize = 72;
@@ -128,8 +145,6 @@ pub const EXPECTED_XML_EXAMPLES: usize = 10;
 /// `resourceType` and are not examples. `tasks.md`'s "103 examples" counts
 /// them; this oracle excludes them and says so (`codegen.roundtrip.001`).
 pub const EXPECTED_NON_EXAMPLE_FIXTURES: usize = 21;
-/// Distinct `resourceType` values across the 72 JSON examples.
-pub const EXPECTED_COVERED_RESOURCE_TYPES: usize = 69;
 
 /// Where the generated output is checked in (`design.md` section 9).
 pub const GENERATED_OUT_DIR: &str = "crates/frevo-model/src/r4";
@@ -1465,11 +1480,19 @@ impl Codegen for OracleGenerator {
 
     fn round_trip(&self, examples: &[PathBuf]) -> Result<RoundTripReport, CodegenError> {
         let interim = repo_path(EXAMPLE_DIR);
-        let all_interim = !examples.is_empty()
-            && examples
-                .iter()
-                .all(|p| p.parent().is_some_and(|dir| dir == interim));
-        let selector = if all_interim {
+        let full = repo_path(FULL_EXAMPLE_DIR);
+        let all_in = |root: &Path| {
+            !examples.is_empty()
+                && examples
+                    .iter()
+                    .all(|p| p.parent().is_some_and(|dir| dir == root))
+        };
+        let selector = if all_in(&full) {
+            format!(
+                "full selector: hl7.fhir.r4.examples#4.0.1, {FULL_EXAMPLE_DIR} ({} files)",
+                examples.len()
+            )
+        } else if all_in(&interim) {
             format!(
                 "interim selector: {EXAMPLE_DIR} ({} files), not the full \
                  hl7.fhir.r4.examples#4.0.1 package (task 59)",
@@ -1961,6 +1984,32 @@ pub fn example_set() -> ExampleSet {
         xml,
         excluded_out_files,
     }
+}
+
+/// The full round-trip example set: every `*.json` in [`FULL_EXAMPLE_DIR`]
+/// except [`FULL_EXAMPLE_NON_EXAMPLES`], sorted by file name.
+///
+/// The package is fetched, not vendored (`oracles/PINS.md`). A missing tree is
+/// a loud failure naming the fetch command, never a pass.
+pub fn full_example_set() -> Vec<PathBuf> {
+    let dir = repo_path(FULL_EXAMPLE_DIR);
+    let entries = std::fs::read_dir(&dir).unwrap_or_else(|e| {
+        panic!(
+            "the round-trip example package {} is not present ({e}). It is fetched, not \
+             vendored: run `bash oracles/fetch.sh --only r4-example-roundtrip`.",
+            dir.display()
+        )
+    });
+    let mut json = Vec::new();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let name = path.file_name().unwrap().to_string_lossy().to_string();
+        if name.ends_with(".json") && !FULL_EXAMPLE_NON_EXAMPLES.contains(&name.as_str()) {
+            json.push(path);
+        }
+    }
+    json.sort();
+    json
 }
 
 /// The Rust 2024 strict keywords, exactly as `codegen.naming.002` lists them
@@ -5218,32 +5267,38 @@ fn generated_code_contains_no_unsafe() {
 // codegen.roundtrip -- the generated output is enough for the codec
 // ===========================================================================
 
+/// The round trip over the full example package, run once and shared by
+/// `codegen.roundtrip.001` and `.002`: 5,308 files take long enough that the
+/// two tests should not decode them twice.
+fn full_round_trip() -> &'static (Vec<PathBuf>, RoundTripReport) {
+    static ONCE: std::sync::OnceLock<(Vec<PathBuf>, RoundTripReport)> = std::sync::OnceLock::new();
+    ONCE.get_or_init(|| {
+        let examples = full_example_set();
+        let report = generator_under_test()
+            .round_trip(&examples)
+            .unwrap_or_else(|e| panic!("the round-trip oracle must run: {e}"));
+        (examples, report)
+    })
+}
+
 // covers: codegen.roundtrip.001
 #[test]
 fn every_r4_specification_example_round_trips_byte_identically() {
-    let generator = generator_under_test();
-    let examples = example_set();
+    let (examples, report) = full_round_trip();
 
-    // The interim selector, stated so it cannot be mistaken for the full R4
-    // example package. The 21 `*.json.out` files in the same directory are
-    // sql-on-FHIR expected outputs carrying no `resourceType`, so they are not
-    // examples and are excluded.
-    assert_eq!(examples.json.len(), EXPECTED_JSON_EXAMPLES);
-    assert_eq!(examples.xml.len(), EXPECTED_XML_EXAMPLES);
-    assert_eq!(examples.excluded_out_files, EXPECTED_NON_EXAMPLE_FIXTURES);
-
-    let report = generator
-        .round_trip(&examples.all())
-        .unwrap_or_else(|e| panic!("the round-trip oracle must run: {e}"));
-
-    assert!(
-        report.selector.contains("interim"),
-        "the report must state that this is the interim example set; it said {:?}",
-        report.selector
+    // The full `hl7.fhir.r4.examples#4.0.1` package (task 59), less its three
+    // metadata files, stated so the selector cannot be mistaken for the
+    // interim one.
+    assert_eq!(
+        examples.len(),
+        EXPECTED_FULL_EXAMPLES,
+        "every *.json of {FULL_EXAMPLE_DIR} except {FULL_EXAMPLE_NON_EXAMPLES:?}"
     );
     assert!(
-        report.selector.contains("examples"),
-        "and name the directory it used; it said {:?}",
+        report.selector.contains("hl7.fhir.r4.examples#4.0.1")
+            && report.selector.contains(FULL_EXAMPLE_DIR)
+            && !report.selector.contains("interim"),
+        "the report must state that this is the full example package; it said {:?}",
         report.selector
     );
 
@@ -5251,17 +5306,18 @@ fn every_r4_specification_example_round_trips_byte_identically() {
     // case rather than a count.
     assert_eq!(
         report.cases.len(),
-        examples.all().len(),
+        examples.len(),
         "one case per example file"
     );
-    for name in examples.file_names() {
+    for path in examples {
+        let name = path.file_name().unwrap().to_string_lossy().to_string();
         let case = report
             .case(&name)
             .unwrap_or_else(|| panic!("{name} must appear in the report by file name"));
         assert_eq!(case.file, name);
     }
 
-    // Every JSON example round-trips byte-identically.
+    // Every example round-trips byte-identically.
     let failures: Vec<String> = report
         .with_status(RoundTripStatus::Failed)
         .iter()
@@ -5270,12 +5326,14 @@ fn every_r4_specification_example_round_trips_byte_identically() {
     assert_eq!(
         failures,
         Vec::<String>::new(),
-        "every example must round-trip byte-identically"
+        "every example must round-trip byte-identically ({} of {} failed)",
+        failures.len(),
+        examples.len()
     );
     assert_eq!(
         report.with_status(RoundTripStatus::Passed).len(),
-        EXPECTED_JSON_EXAMPLES,
-        "all 72 JSON examples must pass, and only they can"
+        EXPECTED_FULL_EXAMPLES,
+        "all 5,308 JSON examples must pass, and only they can"
     );
 }
 
@@ -5283,10 +5341,7 @@ fn every_r4_specification_example_round_trips_byte_identically() {
 #[test]
 fn the_round_trip_covers_every_resource_type_that_has_an_example() {
     let generator = generator_under_test();
-    let examples = example_set();
-    let report = generator
-        .round_trip(&examples.all())
-        .unwrap_or_else(|e| panic!("the round-trip oracle must run: {e}"));
+    let (_, report) = full_round_trip();
 
     // One coverage row per concrete resource type, all 146.
     assert_eq!(
@@ -5320,24 +5375,40 @@ fn the_round_trip_covers_every_resource_type_that_has_an_example() {
     }
 
     // A type with zero examples is reported as uncovered rather than omitted.
+    // Counted from the pinned package: 140 types have an example, and these
+    // six have none.
     let covered = report.coverage.iter().filter(|c| c.examples > 0).count();
     assert_eq!(
-        covered, EXPECTED_COVERED_RESOURCE_TYPES,
-        "the 72 JSON examples exercise 69 distinct resource types"
+        covered, EXPECTED_FULL_COVERED_RESOURCE_TYPES,
+        "the 5,308 examples exercise 140 distinct resource types"
     );
+    let uncovered: Vec<&str> = report
+        .coverage
+        .iter()
+        .filter(|c| c.examples == 0)
+        .map(|c| c.resource_type.as_str())
+        .collect();
     assert_eq!(
-        report.coverage.len() - covered,
-        EXPECTED_CONCRETE_RESOURCES - EXPECTED_COVERED_RESOURCE_TYPES,
-        "and the remaining 77 must be listed with no examples"
+        uncovered,
+        [
+            "Parameters",
+            "SubstanceNucleicAcid",
+            "SubstancePolymer",
+            "SubstanceProtein",
+            "SubstanceReferenceInformation",
+            "SubstanceSourceMaterial",
+        ],
+        "and the remaining six must be listed with no examples"
     );
-    for name in ["Claim", "Task", "Measure"] {
-        let entry = report
-            .coverage_of(name)
-            .unwrap_or_else(|| panic!("{name} has no example and must still be listed"));
-        assert_eq!(entry.examples, 0, "{name}");
-    }
     // And the ones that do have examples report how many.
-    for (name, count) in [("Patient", 1), ("Observation", 2), ("Questionnaire", 2)] {
+    for (name, count) in [
+        ("Patient", 22),
+        ("Observation", 64),
+        ("Questionnaire", 7),
+        ("Claim", 17),
+        ("Bundle", 44),
+        ("SearchParameter", 1400),
+    ] {
         let entry = report
             .coverage_of(name)
             .unwrap_or_else(|| panic!("{name} must be listed"));
@@ -5346,14 +5417,41 @@ fn the_round_trip_covers_every_resource_type_that_has_an_example() {
             "{name} is exercised by {count} JSON example(s)"
         );
     }
+    let total: usize = report.coverage.iter().map(|c| c.examples).sum();
+    assert_eq!(
+        total, EXPECTED_FULL_EXAMPLES,
+        "every example is counted once"
+    );
 }
 
 // covers: codegen.roundtrip.003
 #[test]
 fn round_tripping_an_xml_example_through_the_json_codec_is_not_claimed() {
+    // The full package (the selector of `.001` and `.002`) ships no XML, so
+    // none of it can be claimed ...
+    let (full, full_report) = full_round_trip();
+    assert!(
+        full.iter().all(|p| !p.to_string_lossy().ends_with(".xml")),
+        "the full package selector holds JSON only"
+    );
+    assert!(
+        full_report
+            .with_status(RoundTripStatus::NotApplicableXml)
+            .is_empty()
+            && full_report
+                .with_status(RoundTripStatus::Passed)
+                .iter()
+                .all(|c| !c.file.ends_with(".xml")),
+        "and no XML case is reported from it"
+    );
+
+    // ... and the status is graded over the one pinned example set that does
+    // contain XML files: the interim directory task 56 ran against.
     let generator = generator_under_test();
     let examples = example_set();
+    assert_eq!(examples.json.len(), EXPECTED_JSON_EXAMPLES);
     assert_eq!(examples.xml.len(), EXPECTED_XML_EXAMPLES);
+    assert_eq!(examples.excluded_out_files, EXPECTED_NON_EXAMPLE_FIXTURES);
 
     let report = generator
         .round_trip(&examples.all())
