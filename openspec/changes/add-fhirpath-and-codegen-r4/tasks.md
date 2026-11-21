@@ -977,7 +977,7 @@ checkpoint because it changes what a gate measures.
   HAPI rejects.
   Satisfies `path.convert.001` through `path.convert.014`.
 
-- [ ] **43. Implement the UCUM unit algebra.** A port of the parts of
+- [x] **43. Implement the UCUM unit algebra.** A port of the parts of
   `org.fhir.ucum` the engine calls (`reference/Ucum-java`, 1.0.10, `db9d22ad`;
   live HAPI 8.12.0 runs 1.0.9, identical in every ported class except
   `XmlDefinitionsParser`'s short `revision-date` branch, `path.quantity.016`):
@@ -999,6 +999,16 @@ checkpoint because it changes what a gate measures.
   and message, including the `NumberFormatException`, as the library raises
   them from `getCanonicalForm`, `getCanonicalUnits`, `multiply` and
   `divideBy`. Their engine-level halves are task 44's.
+  **Ticked 2026-11-21:** `src/eval/{ucum,ucum_algebra,ucum_decimal}.rs`.
+  The tests tagged `path.quantity.016` and `.020` pass. The library halves
+  of `.023` and `.024`, which open their two tests through the bound
+  `canonical_form` seam, pass up to the first engine-level assertion
+  (`1 '[pH]' = 1 'mol/L'` and `1 'm' * 1 'zzz'`), which is task 44's. The
+  graded `revision-date` forms of `.016` were checked in-process: the long
+  form takes `-0500`, `+0000`, `GMT` and `UTC` and refuses `Z` and
+  `GMT-05:00`; the short form takes `2024-6-7`, ` 2024-06-17`,
+  `2024-06-17x` and `2024-13-45`, and refuses `2024/06/17`, `+2024-06-17`
+  and `""`. Lib is 136 of 136.
 
 - [ ] **44. Implement quantity semantics on top of it.** Note before starting:
   the ordered operators perform **no** dimension check, so incommensurable

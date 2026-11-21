@@ -358,10 +358,11 @@ impl UcumEssence {
 /// field is one or more ASCII digits after optional spaces or tabs, with no
 /// range check, a pattern space matches any run of whitespace, and text after
 /// the last field is ignored. The zone `Z` is read in its RFC 822 form
-/// (`-0500`) or as text opening with `GMT`. That is the part of
-/// `SimpleDateFormat` reproduced: a zone written as another name (`EST`), or
-/// a signed or grouped number in a field, which the JDK may accept, is a load
-/// failure here; the pinned file uses neither.
+/// (`-0500`, `+0000`) or as the zone id `GMT` or `UTC`; `GMT-05:00` does not
+/// fit the 25-character window and fails, and so does `Z`
+/// (`path.quantity.016`). A zone abbreviation such as `EST`, which depends on
+/// the JDK's locale data and is not graded, is refused here, as is a signed
+/// field (`-2024-06-17`); the pinned file uses neither.
 fn parse_revision_date(dt: &str) -> Result<(), String> {
     let units: Vec<u16> = dt.encode_utf16().collect();
     if units.len() > 25 {
@@ -428,7 +429,10 @@ fn date_zone(b: &[u8], at: usize) -> Result<(), String> {
     let rfc822 = rest.len() >= 5
         && matches!(rest[0], b'+' | b'-')
         && rest[1..5].iter().all(u8::is_ascii_digit);
-    if rfc822 || rest.starts_with(b"GMT") {
+    // `GMT` takes an offset only when a sign follows it, and the window has
+    // no room for a whole one (`GMT-05:00` fails); `UTC` is a zone id.
+    let gmt = rest.starts_with(b"GMT") && !matches!(rest.get(3), Some(b'+' | b'-'));
+    if rfc822 || gmt || rest.starts_with(b"UTC") {
         return Ok(());
     }
     Err(format!("no time zone at {at}"))
