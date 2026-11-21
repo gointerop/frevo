@@ -110,6 +110,24 @@ Licensed under the Apache License, Version 2.0.
 
   Copyright 2019+ Smile Digital Health and contributors
 -------------------------------------------------------------------------------
+UCUM (Unified Code for Units of Measure), ucum-essence.xml
+https://ucum.org/license
+Not part of this repository. Frevo's oracle tooling fetches ucum/ucum-essence.xml
+at run time from the Apache-2.0 FHIR/fhir-test-cases tree (see oracles/PINS.md),
+and it is used unmodified. That file carries Regenstrief's own licence terms,
+not the Apache License. The notice below is reproduced verbatim
+from https://ucum.org/license (UCUM Copyright Notice and License, Version
+1.1, June 2024):
+
+  The Unified Code for Units of Measure (UCUM), also known as the “UCUM
+  Specification,” is copyright ©1999-2024, Regenstrief Institute, Inc. All
+  rights reserved.
+
+This notice refers to the UCUM Copyright Notice and License at
+https://ucum.org/license, which also contains its disclaimer of warranties
+(Section 7, "Disclaimer of Warranty"). Frevo is not endorsed by Regenstrief
+Institute, Inc. or the UCUM Organization.
+-------------------------------------------------------------------------------
 
 TRADEMARKS
 
