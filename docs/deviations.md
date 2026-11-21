@@ -46,7 +46,7 @@ decision.
 ## Entries
 
 All twenty-seven entries below come from `add-fhirpath-and-codegen-r4`;
-`DEV-0013`, `DEV-0015`, `DEV-0017`, `DEV-0018`, `DEV-0019`, `DEV-0021`, `DEV-0022`, `DEV-0023`, `DEV-0024`, `DEV-0025`, `DEV-0026`, `DEV-0028`, `DEV-0029` and `DEV-0030` are pending the owner's review (see their entries);
+`DEV-0013`, `DEV-0015`, `DEV-0017`, `DEV-0018`, `DEV-0019`, `DEV-0021`, `DEV-0022`, `DEV-0023`, `DEV-0024`, `DEV-0025`, `DEV-0026`, `DEV-0028`, `DEV-0029` and `DEV-0030` were accepted as written by the owner on 2026-11-21 (see their entries);
 `DEV-0012` and `DEV-0014` were ruled for HAPI (2026-11-17 and 2026-11-14).
 `DEV-0001` through `DEV-0010` are the same kind of case: the pinned R4
 `FHIRPathEngine` does something the FHIRPath specification does not describe. In
@@ -452,7 +452,7 @@ file, so its prose is not redistributable here (see `oracles/PINS.md`).
   evaluates on HAPI and fails on Frevo. No R4 search-parameter expression does
   so (checked against the generated table, 2026-11-12); the core invariants
   have not been checked.
-- **Reviewed:** pending owner review. Raised 2026-11-12 by the implementation
+- **Reviewed:** 2026-11-21, owner: accepted as written, with HAPI's behaviour kept (batch approval of DEV-0013, 0015, 0017-0026, 0028-0030). Raised 2026-11-12 by the implementation
   of task 31 of `add-fhirpath-and-codegen-r4`.
 
 ### DEV-0014 — `skip` with a negative or empty count, and `take` with an empty count, raise
@@ -507,7 +507,7 @@ file, so its prose is not redistributable here (see `oracles/PINS.md`).
 - **Normalizer impact:** an R4 search-parameter expression whose first term
   carries an indexer followed by an operator would behave differently from the
   specification on HAPI and on Frevo alike; none is known (not checked against the generated table).
-- **Reviewed:** pending owner re-confirmation. Ruled for HAPI on 2026-11-14 for
+- **Reviewed:** 2026-11-21, owner: accepted as written, with HAPI's behaviour kept (batch approval of DEV-0013, 0015, 0017-0026, 0028-0030). Earlier: ruled for HAPI on 2026-11-14 for
   the broader wording; narrowed after review the same day.
 
 ### DEV-0017 — equality, equivalence, comparison, date arithmetic and division follow pinned-engine defects
@@ -576,7 +576,7 @@ file, so its prose is not redistributable here (see `oracles/PINS.md`).
   run; not confirmed against a live HAPI. The value `0.0 / 0` yields depends on
   `org.fhir.ucum.Decimal`, which is not in `reference/` (see `tasks/blockers.md`).
 - **Normalizer impact:** none on stored bytes.
-- **Reviewed:** pending owner.
+- **Reviewed:** 2026-11-21, owner: accepted as written, with HAPI's behaviour kept (batch approval of DEV-0013, 0015, 0017-0026, 0028-0030).
 - **Update 2026-11-21:** `org.fhir.ucum.Decimal` is now pinned under
   `reference/Ucum-java` (`1.0.10`, `db9d22ad`; live HAPI runs 1.0.9, whose
   `Decimal` is identical, see `DEV-0030`). The zero-dividend items are
@@ -621,7 +621,7 @@ file, so its prose is not redistributable here (see `oracles/PINS.md`).
   offset-less literals. Differences arise only for a HAPI whose JVM default
   differs from the Frevo evaluation zone, for operands about 14 hours apart.
 - **Normalizer impact:** none on stored bytes.
-- **Reviewed:** pending owner.
+- **Reviewed:** 2026-11-21, owner: accepted as written, with HAPI's behaviour kept (batch approval of DEV-0013, 0015, 0017-0026, 0028-0030).
 
 ### DEV-0019 — math functions on an empty focus raise, and `substring` fails on eight suite cases
 
@@ -647,7 +647,7 @@ file, so its prose is not redistributable here (see `oracles/PINS.md`).
   the reference. Established from the pinned source; not confirmed against a
   live HAPI.
 - **Normalizer impact:** none on stored bytes.
-- **Reviewed:** pending owner.
+- **Reviewed:** 2026-11-21, owner: accepted as written, with HAPI's behaviour kept (batch approval of DEV-0013, 0015, 0017-0026, 0028-0030).
 
 ### DEV-0021 — `toDateTime` and `toTime` are not implemented, and `convertsToDate` accepts a time component
 
@@ -673,7 +673,7 @@ file, so its prose is not redistributable here (see `oracles/PINS.md`).
   live HAPI.
 - **Normalizer impact:** none on stored bytes; no search-parameter expression
   is known to call these functions (not checked against the generated table).
-- **Reviewed:** pending owner.
+- **Reviewed:** 2026-11-21, owner: accepted as written, with HAPI's behaviour kept (batch approval of DEV-0013, 0015, 0017-0026, 0028-0030).
 
 ### DEV-0022 — `join` on an empty focus, `unescape('json')` and `split` with an empty separator
 
@@ -704,7 +704,7 @@ file, so its prose is not redistributable here (see `oracles/PINS.md`).
   needs the owner's confirmation. Established from the pinned source; not
   confirmed against a live HAPI.
 - **Normalizer impact:** none on stored bytes.
-- **Reviewed:** pending owner.
+- **Reviewed:** 2026-11-21, owner: accepted as written, with HAPI's behaviour kept (batch approval of DEV-0013, 0015, 0017-0026, 0028-0030).
 
 ### DEV-0023 — `matchesFull` on an empty focus is `false`, and the regex layer rejects constructs Java accepts
 
@@ -752,7 +752,7 @@ file, so its prose is not redistributable here (see `oracles/PINS.md`).
 - **Normalizer impact:** none on stored bytes; search-parameter expressions that
   use `matches` are not known to use the rejected constructs (not checked
   against the generated table).
-- **Reviewed:** pending owner.
+- **Reviewed:** 2026-11-21, owner: accepted as written, with HAPI's behaviour kept (batch approval of DEV-0013, 0015, 0017-0026, 0028-0030).
 
 ### DEV-0024 — `is` with an unknown type name is `false`, not an error
 
@@ -773,7 +773,7 @@ file, so its prose is not redistributable here (see `oracles/PINS.md`).
   the reference. Established from the pinned source; not confirmed against a
   live HAPI.
 - **Normalizer impact:** none on stored bytes.
-- **Reviewed:** pending owner.
+- **Reviewed:** 2026-11-21, owner: accepted as written, with HAPI's behaviour kept (batch approval of DEV-0013, 0015, 0017-0026, 0028-0030).
 
 ### DEV-0025 — boundary functions edit decimals as text, return a dateTime for a date, and diverge on precision edge cases
 
@@ -826,7 +826,7 @@ file, so its prose is not redistributable here (see `oracles/PINS.md`).
 - **Normalizer impact:** none on stored bytes. The R4 search-parameter table
   is not known to call the boundary functions (not checked against the
   generated table).
-- **Reviewed:** pending owner.
+- **Reviewed:** 2026-11-21, owner: accepted as written, with HAPI's behaviour kept (batch approval of DEV-0013, 0015, 0017-0026, 0028-0030).
 
 ### DEV-0026 — a type name with an upper-case initial is retried lower-cased in every engine, as HAPI's server-facing lookup does
 
@@ -858,7 +858,7 @@ file, so its prose is not redistributable here (see `oracles/PINS.md`).
   harness's results are the same either way. Established from the pinned
   source; not confirmed against a live HAPI.
 - **Normalizer impact:** none on stored bytes.
-- **Reviewed:** pending owner.
+- **Reviewed:** 2026-11-21, owner: accepted as written, with HAPI's behaviour kept (batch approval of DEV-0013, 0015, 0017-0026, 0028-0030).
 
 ### DEV-0028 — `Narrative.div` navigates as a `string` of recomposed XHTML, and Frevo's `xhtml` item does not take HAPI's HTML-mode string
 
@@ -902,9 +902,9 @@ file, so its prose is not redistributable here (see `oracles/PINS.md`).
   stored-bytes design (constitution section 6) in the same way as the open
   question in `tasks/blockers.md` ("element rewrite after the evaluation").
   No suite case, search parameter or known invariant reads the string of a
-  `children()` or `descendants()` item of a narrative. Pending the owner.
+  `children()` or `descendants()` item of a narrative. Accepted by the owner 2026-11-21.
 - **Normalizer impact:** none on stored bytes.
-- **Reviewed:** pending owner.
+- **Reviewed:** 2026-11-21, owner: accepted as written, with HAPI's behaviour kept (batch approval of DEV-0013, 0015, 0017-0026, 0028-0030).
 
 ### DEV-0029 — quantity operations answer with UCUM in every configuration, where HAPI's server-facing worker raises `HAPI-0274: `
 
@@ -937,7 +937,7 @@ file, so its prose is not redistributable here (see `oracles/PINS.md`).
   "quantity operations under HAPI's server-facing worker"). Established from
   the pinned source; not confirmed against a live HAPI.
 - **Normalizer impact:** none on stored bytes.
-- **Reviewed:** pending owner.
+- **Reviewed:** 2026-11-21, owner: accepted as written, with HAPI's behaviour kept (batch approval of DEV-0013, 0015, 0017-0026, 0028-0030).
 
 ### DEV-0030 — decimal `/`, `div` and `mod` and UCUM canonical values follow `org.fhir.ucum.Decimal`'s precision rules and defects
 
@@ -1023,7 +1023,7 @@ file, so its prose is not redistributable here (see `oracles/PINS.md`).
   `Ucum-java` source and confirmed by compiling it; not confirmed against a
   live HAPI.
 - **Normalizer impact:** none on stored bytes.
-- **Reviewed:** pending owner. Raised 2026-11-21.
+- **Reviewed:** 2026-11-21, owner: accepted as written, with HAPI's behaviour kept (batch approval of DEV-0013, 0015, 0017-0026, 0028-0030). Raised 2026-11-21.
 
 ## Considered and not recorded as deviations
 

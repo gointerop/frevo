@@ -610,4 +610,4 @@ them is the whole reason that decision is safe to make.
 - **Size:** small; an exact-arithmetic arm in `crates/frevo-path/src/eval/arith.rs`,
   a numeric comparison in the quantity equality rule, and the flag plumbing.
 - **Status:** open
-- **Reviewed:** not yet. Raised 2026-11-21.
+- **Reviewed:** 2026-11-21, owner: accepted as written (with DEV-0030). Raised 2026-11-21.
