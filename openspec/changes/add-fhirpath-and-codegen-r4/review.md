@@ -1,4 +1,43 @@
-APPROVED
+CHANGES_REQUESTED
+
+Fifty-ninth review (commit `1d83e45`, 2026-11-21, diff against `1d83e45^`).
+It checks the amendment that specifies the in-process differential's 18
+undocumented diffs as HAPI's. Every new or changed value agrees with the
+pinned source and with `hapi-observed.json`. The owed probes (the values not
+yet run on HAPI) are all derivable from the source, and I traced each one.
+One behaviour is missing. The detail is in the dated section at the end.
+
+1. **`path.quantity.025` does not say that HAPI's static check rejects member
+   navigation on an engine-built quantity.** The check types a quantity
+   literal as `System.Quantity` (`resolveConstantType`,
+   `FHIRPathEngine.java:3118-3119`, `TypeDetails.FP_Quantity`,
+   `TypeDetails.java:69`). `getChildTypesByName` returns no child type for
+   any `System.` type (`:6335-6336`). The inner name is typed with
+   `canBeNone` false (`:1617-1618`), so `executeType` raises
+   `FHIRPATH_UNKNOWN_NAME` (`:1590-1593`, `Messages.properties:369`). With a
+   context type, `(1 'cm').code` therefore fails the check with
+   `Error evaluating FHIRPath expression: The name 'code' is not valid for any of the possible types: [http://hl7.org/fhirpath/System.Quantity]`,
+   expected at `(@char 10)`. A `*` or `/` result gets no type at all
+   (`operateTypes`, `case Times` and `case DivideBy`, `:2028-2045`, add a
+   type only for integer and decimal operands). So
+   `(2 'cm' * 1 'm').code` fails with the same message ending in
+   `possible types: []`, expected at `(@char 17)`. A `Quantity` read from a
+   resource is typed as FHIR `Quantity` and does check.
+   None of the cited probes grades this. The harness checks only a case
+   that has a `contextType` (`harness/fhirpath-compare/README.md`, "Check
+   uses ... when a case has a `contextType`"), and none of
+   `path.quantity.021#41`-`#46` or `path.quantity.023#25` has one. As
+   written, `path.quantity.025` says these elements navigate "as on a
+   `Quantity` read from a resource". Task 44a could reasonably carry that
+   into the checker, so that an invariant HAPI rejects at check time is
+   accepted. `path.navigation.019` is the precedent. Add a bullet that
+   states the check's rejection with both exact messages and positions, and
+   say that the evaluation values hold with the check skipped. Add owed
+   probes for `(1 'cm').code` and `(2 'cm' * 1 'm').code` with a
+   `contextType` to task 4b. The same applies to `path.quantity.026`'s
+   `(1 '').code` and `(1 '').system`.
+
+## Fifty-eighth-review summary as raised (commit `8b51103`)
 
 Fifty-eighth review (commit `8b51103`, 2026-11-21, diff against `66c9be2`).
 It resolves the fifty-seventh review's finding and its non-blocking note.
@@ -5238,3 +5277,129 @@ bullet, and the new `tasks/blockers.md` owed-text entry.
   agree".
 
 No findings and no notes.
+
+## Fifty-ninth review - commit `1d83e45` (2026-11-21)
+
+Scope: `path.literal.016`, `.017`, `path.quantity.025` and `.026` (new), and
+the amended `path.quantity.019`, `.020`, `.021`, `path.compare.014`,
+`path.math.017` and `path.literal.012`. Also tasks 4b and 44a-44c,
+`DEBT-0011`'s status and the `tasks/blockers.md` entry. Sources:
+`org.hl7.fhir.core` at `73c432b`, `Ucum-java` at `db9d22a`, and
+`hapi-observed.json`/`differential-results.json` at the commit.
+
+**The 18 diffs.** `differential-results.json` lists exactly 18 `disagree`
+probes: `path.compare.014#01`, `path.quantity.019#17`, `#18`,
+`path.quantity.020#27`, `#42`, `#43`, `#46`, `path.quantity.021#38`-`#42`,
+`#44`-`#46`, `path.quantity.023#25` and `path.quantity.024#33`, `#34`. Each one
+is now stated as HAPI's answer, in a scenario that a task pays. Each stated
+value matches `hapi-observed.json` character for character, under the
+worker stated. `check-registries.sh` reports "registers agree", with
+`DEBT-0011` as `blocking`.
+
+**Quantity element navigation (`path.quantity.025`).**
+- The literal is built at `:1132` with `setUnit(unit)`, where `unit` is set
+  only by a calendar keyword (`:1111`; the spec cites `:1109-1110`, the
+  enclosing `if`, which is close enough). The system and code come from
+  `ucum`. `year`/`years` and `month`/`months` leave `ucum` null, so
+  `(1 year).code` and `.system` are empty. `week` gives `wk`. The owed
+  values follow.
+- `pairToQty` (`:2314-2316`) sets only the value, system and code, so
+  `(2 'cm' * 1 'm').unit` is empty. The canonical code of a dimensionless
+  result is the empty string, which `setCode` drops. That matches the
+  observed `0.001 'null'` of `path.quantity.020#34`/`#35`, so
+  `(1 '%' * 1 '1').code` is empty.
+- Under the server worker, `#41`-`#45` answer the same and `#46` raises
+  `HAPI-0274: `, as stated.
+- Missing: the static check (finding 1).
+
+**`1 ''` (`path.quantity.026`).**
+- `readConstant("units")` returns `""`, which is not null, so the system is
+  set (`:1132`). `Quantity.setCode` drops an empty string
+  (`Quantity.java:620-629`).
+- `convertToString` concatenates `getCode()`, so the text is `'null'`
+  (`:898-900`).
+- `qtyToCanonicalPair` substitutes `"1"` for a null code (`:2293`), so
+  `= 1 '1'` is `true`.
+- `funcComparable` returns `false` on a null code (`:4625-4627`).
+- `qtyToPair` passes the null code (`:2323`). `multiply` concatenates it as
+  `null` (`UcumEssenceService.java:316`), and `divideBy` calls
+  `.contains` on it (`:322-323`).
+- All five values and messages match `#37`-`#40` and
+  `path.quantity.024#33`, `#34`. Under the server worker only `=`, `*` and
+  `/` raise `HAPI-0274: `; `toString` and `comparable` answer as under the
+  suite worker. That is consistent with "every one of these that consults
+  the UCUM service".
+
+**Unit decoding (`path.literal.016`).**
+- I traced `FHIRLexer.processConstant` (`:425-474`). Every arm except `u`
+  leaves `i` on the escaped character, and only the plain arm (`:469-472`)
+  advances. So `[hp\'_X]` decodes to `[hp''_X]` (observed `#25`, `#04`-`#07`).
+- `'a\tb'` decodes to `a`, a tab, `t`, `b`.
+- `\u` advances `i` by four after `i++` (`:461-464`), so it is decoded
+  once.
+- In `'a\\b'`, the second `\` starts a new escape over `b`, which reaches
+  `default` (`:466-467`).
+- Malformed `\u` in a unit is already `DEV-0011` item 1 (`FHIRLexer.java:462`),
+  so it needs no bullet here.
+
+**Wide decimals (`path.literal.017`, `path.quantity.020`).**
+- `Utilities.isDecimal(.., false)` returns true on `RANGE`
+  (`Utilities.java:228-231`). The 18-digit bound (`:302-303`) yields `RANGE`,
+  not `SYNTAX`, so a wide literal parses.
+- `DecimalType` keeps its text, so `toString()` is that text
+  (`convertToString`, primitive arm, `:890-891`).
+- Decimal `*` is `BigDecimal.multiply` (`:2792`). Ucum `Decimal` has no
+  digit limit (`Decimal.java`, no bound in the constructor, `multiply` or
+  `divide`).
+- The `[pi]` values and `/`'s 24-digit answer match `#27`, `#42`-`#47`.
+- Frevo's current refusal is exactly
+  `Unsupported("decimal arithmetic beyond 38 significant digits")`, which
+  task 44b removes.
+
+**`lunit` text.**
+- `opLessOrEqual` evaluates `lunit.equals(runit)` when only `lunit` is null
+  (`:2533-2537`).
+- The observed text is
+  `Cannot invoke "String.equals(Object)" because "lunit" is null` under both
+  workers for all three probes. Frevo currently says
+  `"java.lang.String.equals(Object)" because the value is null`, which is
+  task 44c.
+
+**`path.math.017` order and text.**
+- The divisor is parsed first (`:3051`, `:3091`), and the dividend only
+  when the divisor is non-zero (`:3052-3053`, `:3092-3093`). So the
+  corrected order is right, and a null dividend over `0` is empty.
+- `#61`/`#62` (null dividend over `2`) record `Cannot parse null string` on
+  JDK 25.
+- The live starter image runs JDK 21
+  (`hapi-fhir-jpaserver-starter/Dockerfile:41`,
+  `gcr.io/distroless/java21-debian13`; the tomcat target is `jre21`, `:24`).
+  I checked `openjdk/jdk21u` `java/lang/Integer.java:624`, and it throws
+  the same `"Cannot parse null string"`. The text therefore holds against
+  live HAPI too.
+- Frevo's current text is `For input string: ""` (observed), which is task
+  44c.
+
+**Owed probes stated as values.** The `\t`, `\u` and `\\` units, the wide
+literal, `(1 week).*`, `(1 year).code`/`.system`, `(2 'cm' * 1 'm').unit`,
+`(1 '%' * 1 '1').code`, `(1 '').code`/`.system`, and `path.math.017`'s
+null-divisor and zero-divisor arms are not yet observed. Each follows
+directly from the lines cited above. Task 4b requires a contradicted value
+to go back to the proposer, not into a test. That is an acceptable way to
+state them.
+
+**Non-blocking notes.**
+- `path.literal.016`'s `\\` message comes from the two-argument
+  `FHIRLexerException` constructor (`FHIRLexer.java:467`, `:28-31`). It
+  therefore has **no** `Error @l, c: ` prefix. The string-literal decoder,
+  by contrast, uses `lexer.error` (`FHIRPathEngine.java:1831`,
+  `FHIRLexer.java:139-141`) and has one. Saying "exactly, with no prefix"
+  would stop an implementer from routing both through one error builder.
+- `path.literal.017`'s example is fractional. An integer-shaped literal of
+  more than ten digits fails `Utilities.isInteger` (`:97-98`) and becomes a
+  `DecimalType` by the same `isDecimal` arm, so a 40-digit integer-shaped
+  literal is also covered by "no literal ... fails". An example would make
+  that tested rather than implied.
+- Naming the live image's JVM (JDK 21) beside "the differential's JVM"
+  (JDK 25) in `path.compare.014` and `path.math.017` would record why the
+  JDK 25 texts are safe to grade.
