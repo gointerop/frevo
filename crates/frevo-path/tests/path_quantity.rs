@@ -906,8 +906,10 @@ pub trait UcumOracle {
     /// (`ExpressionComposer.compose`), `""` for a dimensionless code. `value`
     /// is the plain string the engine passes (`toPlainString()`,
     /// FHIRPathEngine.java:2293), so a whole `value` takes the
-    /// `checkForCouldBeWholeNumber` step (:279-282). A `UcumException` is a
-    /// [`EngineError::Diagnostic`] carrying its `getMessage()` and no offset.
+    /// `checkForCouldBeWholeNumber` step (:279-282). A `UcumException`, or the
+    /// `NumberFormatException`, `NullPointerException` or `Error` the library
+    /// lets escape, is a [`EngineError::Diagnostic`] carrying its
+    /// `getMessage()` and no offset.
     fn canonical_form(&mut self, value: &str, code: &str) -> Result<(String, String), EngineError>;
 }
 
@@ -916,8 +918,8 @@ fn ucum_oracle_under_test() -> Box<dyn UcumOracle> {
 }
 
 /// Bound over `frevo_path::UcumEssence` for loading and reporting the data
-/// (task 43's loader). Canonical form stays `NotImplemented` until task 43
-/// ports the unit algebra. There is no way to evaluate without UCUM data:
+/// and over its `canonical_form` for the unit algebra (task 43). There is no
+/// way to evaluate without UCUM data:
 /// Frevo has no such configuration (`path.quantity.015`, `.016`).
 struct BoundUcum;
 
@@ -943,17 +945,33 @@ impl UcumOracle for BoundUcum {
         ucum_load(path)
     }
 
-    /// Unbound: the crate has no canonical-form API yet. Task 43 ports
-    /// `ExpressionParser`, `Converter`, `ExpressionComposer` and
-    /// `UcumEssenceService.getCanonicalForm` and binds this to it, mapping a
-    /// `UcumException` to a `Diagnostic` with its message.
-    fn canonical_form(
-        &mut self,
-        _value: &str,
-        _code: &str,
-    ) -> Result<(String, String), EngineError> {
-        Err(EngineError::NotImplemented)
+    /// Bound to `frevo_path::UcumEssence::canonical_form` over the pinned file
+    /// (task 43's port of `UcumEssenceService.getCanonicalForm`). Every
+    /// `UcumError` is a `Diagnostic` with its `getMessage()` and no offset: a
+    /// `UcumException`'s text (`.023`, `.024`), the `NumberFormatException`'s
+    /// (`.024`), and the `NullPointerException`'s or `Error`'s (`.021`).
+    fn canonical_form(&mut self, value: &str, code: &str) -> Result<(String, String), EngineError> {
+        pinned_essence()?
+            .canonical_form(value, code)
+            .map_err(|e| EngineError::Diagnostic {
+                message: e.message().to_owned(),
+                offset: None,
+            })
     }
+}
+
+/// The pinned essence file, loaded once for every canonical-form call. A load
+/// failure is a graded diagnostic naming the file, never a silent fallback.
+fn pinned_essence() -> Result<&'static frevo_path::UcumEssence, EngineError> {
+    static ONCE: OnceLock<Result<frevo_path::UcumEssence, String>> = OnceLock::new();
+    ONCE.get_or_init(|| {
+        frevo_path::UcumEssence::load(&ucum_essence_path()).map_err(|e| e.to_string())
+    })
+    .as_ref()
+    .map_err(|message| EngineError::Diagnostic {
+        message: message.clone(),
+        offset: None,
+    })
 }
 
 /// The canonical form of `value` `code`, which must canonicalise.

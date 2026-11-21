@@ -837,7 +837,8 @@ mod tests {
 
     const MINIMAL: &str = r#"<?xml version="1.0" encoding="ascii"?>
 <root xmlns="http://unitsofmeasure.org/ucum-essence" version="2.0.1"
-      revision="$Revision: 439 $">
+      revision="$Revision: 439 $"
+      revision-date="$Date: 2015-11-13 15:13:19 -0500 (Fri, 13 Nov 2015) $">
    <!-- a comment -->
    <prefix Code="k" CODE="K">
       <name>kilo</name>
@@ -876,7 +877,10 @@ mod tests {
         let essence = UcumEssence::parse(MINIMAL).unwrap();
         assert_eq!(essence.version(), "2.0.1");
         assert_eq!(essence.revision(), Some("$Revision: 439 $"));
-        assert_eq!(essence.revision_date(), None);
+        assert_eq!(
+            essence.revision_date(),
+            Some("$Date: 2015-11-13 15:13:19 -0500 (Fri, 13 Nov 2015) $")
+        );
 
         let kilo = essence.prefix("k").unwrap();
         assert_eq!(kilo.code_upper, "K");
@@ -941,26 +945,37 @@ mod tests {
 
     // covers: path.quantity.016
     #[test]
-    fn xml_that_is_not_ucum_is_refused() {
-        for (text, needle) in [
-            ("<tests name=\"x\"/>", "not the UCUM essence"),
-            ("<root version=\"1\"/>", "namespace"),
-            (
-                "<root xmlns=\"http://example.org\" version=\"1\"/>",
-                "namespace",
-            ),
-            (
-                "<root xmlns=\"http://unitsofmeasure.org/ucum-essence\"/>",
-                "version",
-            ),
-            (
-                "<root xmlns=\"http://unitsofmeasure.org/ucum-essence\" version=\"2\"/>",
-                "no base units",
-            ),
+    fn xml_that_is_not_ucum_is_refused_only_where_upstream_refuses_it() {
+        // `XmlDefinitionsParser.parse` (:64-106) refuses a root element other
+        // than `root` (:77-78), a missing or unparseable `revision-date`
+        // (:79-88; `getAttribute` gives `""`, which `yyyy-MM-dd` cannot read)
+        // and an unknown child element of the root (:91-101). The message text
+        // is not graded (path.quantity.016).
+        const DATE: &str =
+            "revision-date=\"$Date: 2015-11-13 15:13:19 -0500 (Fri, 13 Nov 2015) $\"";
+        for text in [
+            format!("<tests name=\"x\" {DATE}/>"),
+            "<root xmlns=\"http://unitsofmeasure.org/ucum-essence\" version=\"2\"/>".to_string(),
+            format!("<root {DATE}><foo/></root>"),
+            "<root revision-date=\"13 Nov 2015\"/>".to_string(),
         ] {
-            let err = UcumEssence::parse(text).unwrap_err();
-            assert!(err.message().contains(needle), "{text}: {err}");
+            assert!(UcumEssence::parse(&text).is_err(), "{text} must be refused");
         }
+
+        // What upstream does NOT check: the namespace, the `version` (a
+        // missing attribute reads as `""`) and whether any list is empty.
+        for text in [
+            format!("<root {DATE}/>"),
+            format!("<root xmlns=\"http://example.org\" version=\"1\" {DATE}/>"),
+            format!("<root xmlns=\"http://unitsofmeasure.org/ucum-essence\" {DATE}/>"),
+        ] {
+            let essence = UcumEssence::parse(&text).unwrap_or_else(|e| panic!("{text}: {e}"));
+            assert!(essence.prefixes().is_empty() && essence.units().is_empty());
+        }
+        let no_version = UcumEssence::parse(&format!("<root {DATE}/>")).unwrap();
+        assert_eq!(no_version.version(), "");
+        // A short `revision-date` is read as `yyyy-MM-dd` (the 1.0.10 branch).
+        assert!(UcumEssence::parse("<root revision-date=\"2015-11-13\"/>").is_ok());
     }
 
     // covers: path.quantity.016
@@ -984,30 +999,37 @@ mod tests {
 
     // covers: path.quantity.016
     #[test]
-    fn a_unit_with_a_bad_flag_or_no_value_is_refused() {
-        let bad_flag = MINIMAL.replace("isMetric=\"no\"", "isMetric=\"maybe\"");
-        assert!(
-            UcumEssence::parse(&bad_flag)
-                .unwrap_err()
-                .message()
-                .contains("isMetric")
-        );
+    fn a_flag_is_set_only_by_exactly_yes_and_a_unit_needs_a_value() {
+        // `"yes".equals(...)` (XmlDefinitionsParser.java:109-121): any other
+        // text loads, as not set.
+        let other_flag = MINIMAL.replace("isMetric=\"no\"", "isMetric=\"maybe\"");
+        let essence = UcumEssence::parse(&other_flag).unwrap_or_else(|e| panic!("{e}"));
+        assert!(!essence.unit("[in_i]").unwrap().is_metric);
+        let upper = MINIMAL.replace("isSpecial=\"yes\"", "isSpecial=\"YES\"");
+        let essence = UcumEssence::parse(&upper).unwrap_or_else(|e| panic!("{e}"));
+        assert!(!essence.unit("Cel").unwrap().is_special);
+
+        // A unit with no `value` element is refused: `parseValue` reads an
+        // attribute of the null `getNamedChild` (:123-137), which `parse`
+        // turns into a UcumException (:103-105).
         let no_value = MINIMAL.replace(
             "<value Unit=\"cm\" UNIT=\"CM\" value=\"254e-2\">2.54</value>",
             "",
         );
-        assert!(
-            UcumEssence::parse(&no_value)
-                .unwrap_err()
-                .message()
-                .contains("no <value>")
-        );
+        assert_ne!(no_value, MINIMAL);
+        assert!(UcumEssence::parse(&no_value).is_err());
+        // So is a malformed `value/@value`, for a unit and for a prefix.
+        let bad_unit_value = MINIMAL.replace("value=\"254e-2\"", "value=\"two\"");
+        assert_ne!(bad_unit_value, MINIMAL);
+        assert!(UcumEssence::parse(&bad_unit_value).is_err());
+        let bad_prefix_value = MINIMAL.replace("value=\"1e3\"", "value=\"abc\"");
+        assert_ne!(bad_prefix_value, MINIMAL);
+        assert!(UcumEssence::parse(&bad_prefix_value).is_err());
+
+        // A code defined twice loads; a lookup takes the first in file order
+        // (UcumModel.java:127-137).
         let twice = MINIMAL.replace("Code=\"Cel\"", "Code=\"[in_i]\"");
-        assert!(
-            UcumEssence::parse(&twice)
-                .unwrap_err()
-                .message()
-                .contains("twice")
-        );
+        let essence = UcumEssence::parse(&twice).unwrap_or_else(|e| panic!("{e}"));
+        assert_eq!(essence.unit("[in_i]").unwrap().value_unit, "cm");
     }
 }
