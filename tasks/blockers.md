@@ -3220,3 +3220,24 @@ faithfully:
   unexpected character '\0' at position 0: a + or - must be followed by at
   least one digit`, with a NUL character) and for a nested `[`
   (`... Nested [' at position 0`) have texts the spec leaves unstated.
+
+**Resolved in the spec, 2026-11-21 (proposer).** Items 2 and the four
+"not covered" facts:
+- `path.quantity.016` now states that a `base-unit` without `dim` fails the
+  load (`XmlDefinitionsParser.java:141`), that a `revision-date` of 26 to 31
+  characters fails (`substring(7, 32)`), and what the lenient
+  `SimpleDateFormat` accepts: RFC 822 offsets, `GMT`, `UTC`, one-digit
+  fields, leading whitespace, trailing text and rolled-over fields; `Z`,
+  `GMT-05:00` in the window, `/` separators and a leading `+` fail. Zone
+  abbreviations (`EST`, `PST`) depend on the JDK's locale data, are not
+  determinable from source, and are not graded; the port may refuse them.
+  Messages stay ungraded.
+- `path.quantity.024` states the sign-without-digit message (no space
+  before the quote; the next character, or U+0000 at the end) and the
+  `Nested [` / `] without [` messages with their positions.
+- Scoping: task 43 now satisfies `.016`, `.020` and the library-level halves
+  of `.023` and `.024`; task 44 also satisfies their engine-level halves.
+  No scenario was weakened. Items 1 and 3 stay with the oracle-builder.
+None of the new facts is a wrong answer against the specification (they
+concern loading a malformed essence file and error texts), so no DEV or DEBT
+entry was added.

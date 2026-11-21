@@ -993,8 +993,12 @@ checkpoint because it changes what a gate measures.
   `2.0.1`), not the `2.2` file `Ucum-java` bundles. Ported files carry the
   section 10 header and `docs/provenance.md` rows; the BSD-3-Clause notice goes
   to `NOTICE` with task 60's.
-  Satisfies `path.quantity.016`, `path.quantity.020`, `path.quantity.023` and
-  `path.quantity.024`.
+  Satisfies `path.quantity.016` and `path.quantity.020`, and the
+  library-level halves of `path.quantity.023` and `path.quantity.024`: each
+  special unit's canonical form or `UcumException`, and every parse outcome
+  and message, including the `NumberFormatException`, as the library raises
+  them from `getCanonicalForm`, `getCanonicalUnits`, `multiply` and
+  `divideBy`. Their engine-level halves are task 44's.
 
 - [ ] **44. Implement quantity semantics on top of it.** Note before starting:
   the ordered operators perform **no** dimension check, so incommensurable
@@ -1016,6 +1020,11 @@ checkpoint because it changes what a gate measures.
   server-facing worker raises `HAPI-0274: ` (`path.quantity.019`,
   `DEV-0029`), `comparable()`, the incommensurable-comparison result, and the unknown-unit
   and non-UCUM-system behaviours.
+  Also satisfies the engine-level halves of `path.quantity.023` and
+  `path.quantity.024`: what `=`, `~`, the ordered operators, `comparable()`,
+  `*` (with its ` (@char C)` suffix) and `/` answer for those units and codes,
+  including the `NumberFormatException` under each operator. Each of the two
+  scenarios is satisfied only when both tasks' halves are green.
   Satisfies `path.quantity.001` through `path.quantity.015`,
   `path.quantity.017` through `path.quantity.019`, `path.quantity.021` and
   `path.quantity.022`.

@@ -2718,7 +2718,11 @@ The engine SHALL compare, add, subtract, multiply and divide quantities by conve
   live HAPI runs, does not have it — the pinned file uses the long form, so
   both load it the same, and the server-facing worker never loads a file,
   `path.quantity.019`); every child element of the root must be `prefix`, `base-unit` or
-  `unit` (`:91-101`); a prefix's `value/@value` is a decimal read with
+  `unit` (`:91-101`); a `base-unit` must have a non-empty `dim`, because
+  `x.getAttribute("dim").charAt(0)` is read unconditionally (`:141`; an
+  absent attribute is `""`, and `"".charAt(0)` raises
+  `StringIndexOutOfBoundsException: Index 0 out of bounds for length 0`,
+  which `parse` wraps as a `UcumException`, `:103-105`); a prefix's `value/@value` is a decimal read with
   precision 24 (`:150-159`), and a unit's `value/@value` a decimal read with
   precision 24 when it contains a `.` and with its own precision otherwise
   (`:123-137`); a unit is metric or special only when the attribute is exactly
@@ -2726,9 +2730,33 @@ The engine SHALL compare, add, subtract, multiply and divide quantities by conve
   defined units, in file order (`UcumModel.java:127-137`). The pinned file
   yields 24 prefixes, 7 base units (`m`, `s`, `g`, `rad`, `K`, `C`, `cd`) and
   303 defined units
+- **AND** the `revision-date` reader is a lenient `java.text.SimpleDateFormat`
+  in the JVM's default locale and time zone (`XmlDefinitionsParser.java:79-88`).
+  Only whether the file loads is observable: the parsed date is kept in the
+  model (`UcumModel.java:66-71`) but no FHIRPath operation reads it. From the
+  source and the JDK's documented parsing, determinable and graded:
+  - a value of **26 to 31** characters fails, because `dt.substring(7, 32)`
+    raises `StringIndexOutOfBoundsException` (`Range [7, 32) out of bounds
+    for length <n>`), wrapped as a `UcumException`; a value of 32 or more
+    characters is parsed from its characters 7 to 31 only, so text after
+    them is ignored (the pinned value is 53 characters);
+  - the long form accepts an RFC 822 offset (`-0500`, `+0000`) and the zone
+    ids `GMT` and `UTC` after the time; a zone written `GMT-05:00` does not fit
+    the 25-character window and fails, and `Z` fails;
+  - the short form (`yyyy-MM-dd`, 1.0.10 only) accepts one- or two-digit
+    month and day fields (`2024-6-7`), leading whitespace (` 2024-06-17`),
+    trailing text (`2024-06-17x`, because `DateFormat.parse(String)` stops at
+    the end of the pattern) and out-of-range fields, which lenient parsing
+    rolls over (`2024-13-45` loads); it refuses other separators
+    (`2024/06/17`), a leading `+`, and the empty string
+  - not determinable from the source, and not graded: whether a zone
+    abbreviation such as `EST` or `PST` is accepted depends on the JDK's
+    locale zone-name data (the JDK 25 run in the scratchpad accepted both);
+    Frevo may refuse them, and the pinned file uses the RFC 822 form
 - **AND** an absent or unreadable file, a file that is not well-formed XML or
   carries a DOCTYPE, a root element other than `root`, a missing or
-  unparseable `revision-date`, an unknown child element or a malformed prefix
+  unparseable `revision-date` (including one of 26 to 31 characters), an
+  unknown child element, a `base-unit` without a `dim`, or a malformed prefix
   or unit value fails the run rather than silently treating units as incomparable:
   each raises a `UcumException` from the constructor
   (`UcumEssenceService.java:91-99`, `XmlDefinitionsParser.java:64-70`,
@@ -3147,9 +3175,19 @@ worker each of these operations raises `HAPI-0274: ` (`path.quantity.019`,
   (the end-of-input character is not ASCII, `Lexer.java:142-150`); an
   unexpected character
   `Error processing unit '<code>': unexpected character '<c>' at position <n>`
-  (`:74`); a `+` or `-` with no digit after it (`:87-89`); a nested `[` or a
-  `]` without `[` (`Error processing unit 'm]': ] without [' at position 0`,
-  `:122-133`); and input left after a stray `)`
+  (`:74`); a `+` or `-` with no digit after it
+  `Error processing unit'<code>': unexpected character '<c>' at position <n>: a + or - must be followed by at least one digit`
+  (`:87-89`; no space before the first quote), where `<c>` is the character
+  after the sign, and at the end of the code the `NO_CHAR` constant,
+  `Character.UNASSIGNED`, which is U+0000, so the message then contains a
+  NUL character (`Lexer.java:39`, `peekChar` `:176-178`): `+` gives it with
+  NUL at position 0, `m+` with NUL at position 1, `m-x` with `x` at
+  position 1, and `m+.` with `.` at position 1; a nested `[`
+  `Error processing unit '<code>': Nested [' at position <n>` and a `]`
+  without `[` `Error processing unit '<code>': ] without [' at position <n>`
+  (`:122-133`), the position being the start of the symbol token, so
+  `[[m]]`, `[m[` and `m[[g]]` give `Nested [` at position 0 and `m]` gives
+  `] without [` at position 0; and input left after a stray `)`
   `Expression was not parsed completely. Syntax Error?` (`ExpressionParser.java:51-52`,
   `m)m`), while a final stray `)` is accepted (`m)` canonicalises as `m`,
   because the lexer has consumed it when `finished()` is asked, `:203-205`).
