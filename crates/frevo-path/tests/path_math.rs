@@ -1,4 +1,4 @@
-//! Arithmetic and math functions: `path.math.001`-`014` and
+//! Arithmetic and math functions: `path.math.001`-`016` and
 //! `path.mathfn.001`-`011`.
 //!
 //! ```text
@@ -23,7 +23,13 @@
 //!   flagged, per the instruction not to implement something else silently.
 //!
 //! Provenance: `FHIRPathEngine.java` at
-//! `73c432b5f43ddbce979978a760ec4aa81e929094`.
+//! `73c432b5f43ddbce979978a760ec4aa81e929094`. The digits of `/`, and of `div`
+//! and `mod` with a decimal operand (`path.math.005`-`008`, `.015`, `.016`),
+//! are `org.fhir.ucum.Decimal`'s: `reference/Ucum-java` at
+//! `db9d22ade3f0f4a667b45817b85a9ac4534e4224` (`org.fhir:ucum` 1.0.10; live
+//! HAPI 8.12.0 runs 1.0.9, whose `Decimal` is bytecode-identical). Every value
+//! asserted for them is one the spec states, each confirmed by compiling that
+//! source; none is computed here.
 
 // `dead_code` is allowed for the shared harness module and nothing else; see
 // `tests/oracle/mod.rs:18-23`.
@@ -35,6 +41,7 @@ use std::sync::OnceLock;
 use oracle::engine::{
     CaseContext, EngineConfig, EngineError, StrictnessFlags, SuiteEngine, engine_under_test,
 };
+use oracle::input::{Document, SuiteInput};
 use oracle::run::{self, CaseReport, CaseStatus, RunReport};
 use oracle::suite::{Stage, Suite};
 use oracle::value::ResultItem;
@@ -221,6 +228,72 @@ fn expect_evaluation_error(expr: &str) -> String {
     message
 }
 
+/// `expr` must parse and check, then fail at evaluation with a diagnostic;
+/// returns the message and the offset. `NotImplemented` panics, so an unbuilt
+/// arm is never read as the error the scenario asks for.
+fn expect_evaluation_error_at(expr: &str) -> (String, Option<usize>) {
+    let mut engine = fresh_engine();
+    let context = CaseContext::default();
+    let parsed = engine
+        .parse(expr)
+        .unwrap_or_else(|e| panic!("{expr:?} must parse before it can fail at evaluation: {e}"));
+    engine
+        .check(parsed, &context, StrictnessFlags::CHECK)
+        .unwrap_or_else(|e| panic!("{expr:?} must pass the static check: {e}"));
+    match engine.evaluate(parsed, None, &context, StrictnessFlags::EVALUATE) {
+        Ok(items) => panic!("{expr:?} must fail at evaluation, but it returned {items:?}"),
+        Err(EngineError::Diagnostic { message, offset }) => (message, offset),
+        Err(e) => panic!("{expr:?} must fail with a diagnostic, not: {e}"),
+    }
+}
+
+/// `expr` evaluated over `inp`, after the static check.
+fn eval_over(expr: &str, inp: &SuiteInput) -> Vec<ResultItem> {
+    let mut engine = fresh_engine();
+    let resource_type = inp.resource_type();
+    let context = CaseContext {
+        root_resource_type: resource_type,
+        resource_type,
+        ..CaseContext::default()
+    };
+    let parsed = engine
+        .parse(expr)
+        .unwrap_or_else(|e| panic!("{expr:?} must parse: {e}"));
+    engine
+        .check(parsed, &context, StrictnessFlags::CHECK)
+        .unwrap_or_else(|e| panic!("{expr:?} must pass the static check: {e}"));
+    engine
+        .evaluate(parsed, Some(inp), &context, StrictnessFlags::EVALUATE)
+        .unwrap_or_else(|e| panic!("{expr:?} must evaluate: {e}"))
+}
+
+/// A hand-built `Parameters` in XML whose `parameter[i]` carries
+/// `valueDecimal` with the i-th text exactly as given. XML keeps a decimal's
+/// lexical form, which is what an exponent-form operand needs
+/// (`path.math.015`).
+fn parameters_with_decimals(name: &str, values: &[&str]) -> SuiteInput {
+    let mut body = String::from("<Parameters xmlns=\"http://hl7.org/fhir\">");
+    for (i, v) in values.iter().enumerate() {
+        body.push_str(&format!(
+            "<parameter><name value=\"p{i}\"/><valueDecimal value=\"{v}\"/></parameter>"
+        ));
+    }
+    body.push_str("</Parameters>");
+    let document = Document::Xml(
+        oracle::xml::parse(&body)
+            .unwrap_or_else(|e| panic!("the hand-built Parameters is XML: {e}")),
+    );
+    SuiteInput {
+        file: format!("hand-built-parameters-{name}.xml"),
+        bytes: body.into_bytes(),
+        document,
+    }
+}
+
+fn decimal(value: &str) -> Vec<ResultItem> {
+    primitive("decimal", value)
+}
+
 fn primitive(fhir_type: &str, value: &str) -> Vec<ResultItem> {
     vec![ResultItem::Primitive {
         fhir_type: fhir_type.to_string(),
@@ -376,17 +449,53 @@ fn multiplication_works_on_integers_decimals_and_quantities() {
 fn division_always_yields_a_decimal() {
     expect_group_except("testDivide", 7, &["testDivide7"]);
 
-    // `opDivideBy`'s numeric arm produces a DecimalType whatever the operand
-    // types (FHIRPathEngine.java:3012-3016), so dividing two integers that
-    // divide exactly is still a decimal and not an integer.
+    // `opDivideBy`'s numeric arm accepts `integer`, `decimal`, `unsignedInt`
+    // and `positiveInt` (FHIRPathEngine.java:3004) and always builds
+    // `new DecimalType(Decimal.divide(...).asDecimal())` (:3004-3012), so
+    // dividing two integers is a decimal, never an integer, and goes through
+    // `Decimal.divide` like every other pair (`path.math.015` owns the digits).
     assert_eq!(eval("4 / 2 = 2"), boolean(true));
     assert_eq!(eval("1 / 2 = 0.5"), boolean(true));
+    assert_eq!(eval("1 / 2"), decimal("0.5"), "1 / 2 is the decimal 0.5");
+    assert_eq!(eval("4 / 2"), decimal("2"));
     assert_eq!(
         eval("(4 / 2) is System.Decimal"),
         boolean(true),
         "two integers that divide exactly still give a decimal"
     );
     assert_eq!(eval("(4 / 2) is System.Integer"), boolean(false));
+
+    // testDivide7 (`0.0 / 0`), failed by HAPI: `Decimal.divide` returns
+    // `Decimal.zero()` for a zero dividend before it looks at the divisor
+    // (Decimal.java:631-632, the divisor check :634-635). `Decimal.zero()` is
+    // `new Decimal("0")` (:236-242), whose `asDecimal()` is `0` (:293-308),
+    // and the engine wraps it as `new DecimalType("0")` (:3009): one
+    // `decimal` whose string value is exactly `0`.
+    assert_eq!(eval("0.0 / 0"), decimal("0"));
+    let r = expect_case_status("testDivide", "testDivide7", CaseStatus::Failed);
+    assert_eq!(r.expression, "0.0 / 0");
+}
+
+/// The case's report, required to carry `want` (HAPI's recorded status).
+fn expect_case_status(group: &str, name: &str, want: CaseStatus) -> &'static CaseReport {
+    let (suite, report) = pinned();
+    let case = suite
+        .case(group, name)
+        .unwrap_or_else(|| panic!("{group}/{name} must resolve to exactly one case"));
+    let r = report
+        .get(&case.address.to_string())
+        .unwrap_or_else(|| panic!("{} must appear in the run report", case.address));
+    assert_eq!(
+        r.status,
+        want,
+        "{}: {:?} is {} (wanted {}) -- {}",
+        r.address,
+        r.expression,
+        r.status.as_str(),
+        want.as_str(),
+        r.reason
+    );
+    r
 }
 
 // ---------------------------------------------------------------------------
@@ -407,8 +516,16 @@ fn div_truncates_toward_zero() {
     assert_eq!(
         eval("(2.2 div 1.8) is System.Integer"),
         boolean(true),
-        "the decimal arm produces an IntegerType too (FHIRPathEngine.java:3051-3058)"
+        "the decimal arm produces an IntegerType too (FHIRPathEngine.java:3055-3060)"
     );
+
+    // testDiv6 (`0 div 0.0`), failed by HAPI: the zero-dividend rule of
+    // path.math.005. `Decimal.divInt` truncates the quotient `Decimal.zero()`
+    // (Decimal.java:785-790, `trunc` :338-351) to `0`, and the engine wraps
+    // that string as `new IntegerType("0")` (FHIRPathEngine.java:3060): one
+    // `integer` `0`.
+    assert_eq!(eval("0 div 0.0"), integer("0"));
+    expect_case_status("testDiv", "testDiv6", CaseStatus::Failed);
 }
 
 // ---------------------------------------------------------------------------
@@ -430,6 +547,56 @@ fn mod_returns_the_remainder() {
     );
     // Java's `%` keeps the sign of the dividend.
     assert_eq!(eval("(-5) mod 2"), integer("-1"));
+
+    // testMod6 and testMod7, failed by HAPI: `Decimal.modulo` calls `divInt`,
+    // which calls `divide` (Decimal.java:785-798), which throws
+    // `"Attempt to divide "+toString()+" by zero"` for a non-zero dividend and
+    // a zero divisor (:634-635; `toString()` is `asDecimal()`, :221-224).
+    // `opMod` rethrows it as `new PathEngineException(e)`
+    // (FHIRPathEngine.java:3098-3105), whose message is the cause's
+    // `toString()` (PathEngineException.java:95-97) with no location suffix
+    // and so no offset (path.errors.002). The texts are exactly HAPI's run's
+    // (hapi-8.12.0-results.json:857-858).
+    for (expr, want) in [
+        (
+            "5.5 mod 0",
+            "org.fhir.ucum.UcumException: Attempt to divide 5.5 by zero",
+        ),
+        (
+            "5 mod 0.0",
+            "org.fhir.ucum.UcumException: Attempt to divide 5 by zero",
+        ),
+    ] {
+        let (message, offset) = expect_evaluation_error_at(expr);
+        assert_eq!(message, want, "{expr}: HAPI's message, exactly");
+        assert_eq!(
+            offset, None,
+            "{expr}: `new PathEngineException(e)` has no location"
+        );
+    }
+    for name in ["testMod6", "testMod7"] {
+        let r = expect_case_status("testMod", name, CaseStatus::Failed);
+        assert!(
+            r.reason
+                .contains("org.fhir.ucum.UcumException: Attempt to divide"),
+            "testMod/{name} must fail with HAPI's message: {}",
+            r.reason
+        );
+    }
+
+    // testMod8 (`0.0 mod 0`), failed by HAPI: one `decimal` whose string value
+    // is exactly `-0.0`, not `0`. `modulo` is `this - trunc(this / other) *
+    // other` (Decimal.java:792-798): the quotient is `Decimal.zero()`
+    // (:631-632), the product is `Decimal.zero()` (:539-540), and `subtract`
+    // of two non-negative operands computes `other.doSubtract(this)` and flips
+    // its sign (:381-384); `asDecimal` writes the `-` because its all-zeros
+    // test counts the `.` (:157-164, :305-306); `new DecimalType("-0.0")`
+    // keeps that text (DecimalType.java:153-161, :199-202).
+    assert_eq!(eval("0.0 mod 0"), decimal("-0.0"));
+    expect_case_status("testMod", "testMod8", CaseStatus::Failed);
+    // Under path.equality.001's rule `-0` is not `0` after
+    // `removeTrailingZeros`, so the negative zero is observable.
+    assert_eq!(eval("(0.0 mod 0) = 0"), boolean(false));
 }
 
 // ---------------------------------------------------------------------------
@@ -441,30 +608,54 @@ fn mod_returns_the_remainder() {
 fn division_by_zero_yields_empty_only_where_the_pinned_engine_says_so() {
     // Three different mechanisms reach the same answer: `opDivideBy` catches
     // the UcumException `Decimal.divide` raises and returns nothing
-    // (FHIRPathEngine.java:3017-3019), while `opDiv` and `opMod` guard the
-    // divisor and add nothing to the result (:3048, :3089).
+    // (FHIRPathEngine.java:3009-3011), while `opDiv` and `opMod` guard an
+    // integer divisor and add nothing to the result (:3051-3054, :3091-3094).
     assert_eq!(eval("1 / 0"), empty());
     assert_eq!(eval("1 div 0"), empty());
     assert_eq!(eval("1 mod 0"), empty());
 
-    // Integer divisors: also `5 div 0` and `5 mod 0` (:3051-3054, :3092-3095).
+    // Integer divisors: also `5 div 0` and `5 mod 0` (:3051-3054, :3091-3094).
     assert_eq!(eval("5 div 0"), empty());
     assert_eq!(eval("5 mod 0"), empty());
     assert_eq!(eval("(1 / 0).empty()"), boolean(true));
 
     // `0.0 / 0`, `0 div 0.0` and `0.0 mod 0` yield ONE item, not an empty
     // collection (testDivide7, testDiv6, testMod8, recorded `failed` by HAPI,
-    // DEV-0017). The value is `org.fhir.ucum.Decimal`'s and is not stated by
-    // the spec, so only the count is asserted.
-    for expr in ["0.0 / 0", "0 div 0.0", "0.0 mod 0"] {
-        let items = eval(expr);
-        assert_eq!(items.len(), 1, "{expr} must yield one item, got {items:?}");
-    }
+    // DEV-0017), because `Decimal.divide` answers `Decimal.zero()` for a zero
+    // dividend before it checks the divisor (Decimal.java:631-635). The values
+    // are derived in path.math.005, .006 and .007.
+    assert_eq!(eval("0.0 / 0"), decimal("0"));
+    assert_eq!(eval("0 div 0.0"), integer("0"));
+    assert_eq!(eval("0.0 mod 0"), decimal("-0.0"));
+
+    // The same zero-dividend rule: the dividend's scale is not kept, the
+    // integer `div` arm still guards its divisor, and the `mod` zero is
+    // negative exactly when its text has a `.` (path.math.016).
+    assert_eq!(eval("0 / 5"), decimal("0"));
+    assert_eq!(eval("0.00 / 5"), decimal("0"));
+    assert_eq!(eval("0 / 0.0"), decimal("0"));
+    assert_eq!(eval("0 div 0"), empty(), "the integer arm, :3051-3054");
+    assert_eq!(eval("0 mod 2.5"), decimal("0"));
+    assert_eq!(eval("0 mod 0.0"), decimal("0"));
+    assert_eq!(eval("0.0 mod 2"), decimal("-0.0"));
 
     // `5.5 mod 0` and `5 mod 0.0` fail with an execution error (testMod6,
-    // testMod7, recorded `failed` by HAPI).
-    expect_evaluation_error("5.5 mod 0");
-    expect_evaluation_error("5 mod 0.0");
+    // testMod7, recorded `failed` by HAPI), with path.math.007's messages.
+    assert_eq!(
+        expect_evaluation_error("5.5 mod 0"),
+        "org.fhir.ucum.UcumException: Attempt to divide 5.5 by zero"
+    );
+    assert_eq!(
+        expect_evaluation_error("5 mod 0.0"),
+        "org.fhir.ucum.UcumException: Attempt to divide 5 by zero"
+    );
+
+    // A non-zero decimal or mixed dividend over a zero divisor is EMPTY under
+    // `/` and `div`: both arms catch the UcumException and add nothing
+    // (FHIRPathEngine.java:3009-3011, :3060-3063).
+    for expr in ["5 / 0.0", "5.5 / 0", "5 div 0.0", "5.5 div 0"] {
+        assert_eq!(eval(expr), empty(), "{expr}");
+    }
 
     // The suite cases at the status HAPI records: `failed` for the five the
     // spec names, `passed` for their neighbours.
@@ -718,6 +909,247 @@ fn subtracting_two_dates_is_an_error_and_not_a_duration() {
     // failure above a statement about the right operand
     // (`path.math.012` is the scenario for it).
     assert_eq!(eval("@2014-01-02 - 1 day"), date("2014-01-01"));
+}
+
+// ---------------------------------------------------------------------------
+// path.math.015 -- `/` rounds to the significant digits its operands carry
+// ---------------------------------------------------------------------------
+
+/// `(dividend, divisor, quotient)`: the acceptance table path.math.015 states,
+/// row for row, grouped by the rule that places each value
+/// (`Decimal.divide`, Decimal.java:627-769).
+const DIVIDE_TABLE: &[(&str, &str, &str)] = &[
+    // Both whole and the long division ends within max(digits) + 40 digits
+    // (:638, :670, :715-722): the exact quotient, trailing zeros dropped.
+    ("1", "2", "0.5"),
+    ("1", "8", "0.125"),
+    ("3", "8", "0.375"),
+    ("1", "64", "0.015625"),
+    ("1", "1024", "0.0009765625"),
+    ("7", "2", "3.5"),
+    ("19", "20", "0.95"),
+    ("123456789", "1000", "123456.789"),
+    ("4", "2", "2"),
+    // Both whole, non-terminating: P is the larger operand digit count
+    // (:724-731), rounding half up on the first dropped digit (:732-759).
+    ("1", "3", "0.3"),
+    ("2", "3", "0.7"),
+    ("5", "6", "0.8"),
+    ("1", "7", "0.1"),
+    ("1", "9", "0.1"),
+    ("5", "9", "0.6"),
+    ("1", "6", "0.2"),
+    ("10", "3", "3.3"),
+    ("20", "3", "6.7"),
+    ("22", "7", "3.1"),
+    ("100", "3", "33.3"),
+    ("200", "3", "66.7"),
+    ("1000", "3", "333.3"),
+    ("1", "11", "0.091"),
+    ("1", "30", "0.033"),
+    ("1", "300", "0.00333"),
+    // Only the dividend whole: P is the larger of the divisor's precision and
+    // the quotient's integer-digit count.
+    ("1", "3.0", "0.33"),
+    ("2", "3.0", "0.67"),
+    ("2", "3.00", "0.667"),
+    ("10", "3.0", "3.3"),
+    ("1", "8.0", "0.13"),
+    ("1", "0.3", "3"),
+    ("1", "0.9", "1"),
+    ("8", "0.9", "9"),
+    ("2", "0.6", "3"),
+    ("3", "1.5", "2.0"),
+    ("1", "0.125", "8.0"),
+    // Only the divisor whole: P is the larger of the dividend's precision and
+    // the quotient's integer-digit count.
+    ("1.0", "3", "0.33"),
+    ("1.00", "3", "0.333"),
+    ("10.0", "3", "3.33"),
+    ("10.00", "3", "3.333"),
+    ("0.1", "3", "0.03"),
+    ("0.10", "3", "0.033"),
+    ("1.000", "7", "0.1429"),
+    ("1.0", "8", "0.13"),
+    ("1.0", "16", "0.063"),
+    ("1.5", "3", "0.50"),
+    ("1.9", "2", "0.95"),
+    ("10.0", "4", "2.5"),
+    ("9.99", "3", "3.33"),
+    // Neither whole: P is the larger of the two precisions' minimum and the
+    // quotient's integer-digit count. A division that stops short of P keeps
+    // the digits the loop produced (:670-711): `4.0 / 2.0` is `2.0`.
+    ("1.2", "1.8", "0.67"),
+    ("4.0", "2.0", "2.0"),
+    ("10.00", "3.0", "3.3"),
+    ("0.5", "0.3", "2"),
+    ("1.5", "0.5", "3"),
+    ("7.5", "2.5", "3.0"),
+    ("1.25", "0.5", "3"),
+    // The rounding-carry defect: a carry out of the leading digit prepends
+    // `1` AND increments the exponent counter, so the result is one tenth of
+    // the correctly rounded value (:751-754, :764).
+    ("1.9", "0.2", "1.0"),
+    ("0.95", "0.1", "1.0"),
+    ("3.8", "0.4", "1.0"),
+    ("9.99", "1.0", "1.00"),
+    ("99.9", "1.0", "10.0"),
+    ("1.99", "2.0", "0.100"),
+    // Nothing is rounded here, so no carry.
+    ("19", "2.0", "9.5"),
+    ("1.9", "0.20", "9.5"),
+    ("95", "10.0", "9.5"),
+];
+
+// covers: path.math.015
+#[test]
+fn division_over_numbers_rounds_the_quotient_to_the_significant_digits_its_operands_carry() {
+    // `opDivideBy` is
+    // `new DecimalType(new Decimal(l.primitiveValue()).divide(new Decimal(r.primitiveValue())).asDecimal())`
+    // (FHIRPathEngine.java:3004-3012). No live case grades the rounding (every
+    // testDivide case terminates except testDivide5, whose `round(2)` hides
+    // the digits), so the table is graded in-process against the values the
+    // spec states. DEV-0030 records the rounding and the carry defect, and
+    // DEBT-0020 the wrong answers.
+    let mut wrong = Vec::new();
+    for &(a, b, want) in DIVIDE_TABLE {
+        let expr = format!("{a} / {b}");
+        let got = eval(&expr);
+        if got != decimal(want) {
+            wrong.push(format!("{expr}: wanted decimal {want}, got {got:?}"));
+        }
+    }
+    assert!(
+        wrong.is_empty(),
+        "{} of {} rows of path.math.015's table differ:\n  {}",
+        wrong.len(),
+        DIVIDE_TABLE.len(),
+        wrong.join("\n  ")
+    );
+
+    // The sign is negative exactly when one operand is negative, applied
+    // after rounding (:765).
+    assert_eq!(eval("(0 - 1) / 3"), decimal("-0.3"));
+    assert_eq!(eval("(0 - 2) / 3"), decimal("-0.7"));
+
+    // An operand read from data in exponent form is read lower-cased through
+    // `setValueScientific` (:76-83, :182-208), with its mantissa's precision.
+    let sci = parameters_with_decimals("exponent-form", &["1e3", "1.5e-1"]);
+    assert_eq!(
+        eval_over("Parameters.parameter[0].value / 3", &sci),
+        decimal("300")
+    );
+    assert_eq!(
+        eval_over("Parameters.parameter[1].value / 3", &sci),
+        decimal("0.050")
+    );
+
+    // The string value is observable through `toString()` and through
+    // equality (path.equality.001's string rule).
+    assert_eq!(eval("(1 / 3).toString()"), primitive("string", "0.3"));
+    assert_eq!(eval("1 / 3 = 0.3"), boolean(true));
+    assert_eq!(eval("1 / 3 = 0.333"), boolean(false));
+}
+
+// ---------------------------------------------------------------------------
+// path.math.016 -- `div` and `mod` with a decimal operand
+// ---------------------------------------------------------------------------
+
+// covers: path.math.016
+#[test]
+fn div_and_mod_with_a_decimal_operand_truncate_the_rounded_quotient() {
+    // `div` with a decimal operand is `new IntegerType(Decimal.divInt(...))`:
+    // `trunc` of path.math.015's rounded quotient (Decimal.java:785-790,
+    // `trunc` :338-351; FHIRPathEngine.java:3060). Both `integer` is the Java
+    // `int` arm (:3050-3054), which path.math.006 covers.
+    for (expr, want) in [
+        ("2.2 div 1.8", "1"),
+        ("7.5 div 2", "3"),
+        ("(0 - 7.5) div 2", "-3"),
+        ("5.5 div 2", "2"),
+        ("6.0 div 2", "3"),
+        ("10 div 3.0", "3"),
+        ("1 div 0.3", "3"),
+        ("10 div 0.3", "33"),
+        ("0.5 div 1", "0"),
+        ("1 div 3.0", "0"),
+        // The carry defect reaches `div`: the quotient is rounded first.
+        ("1.9 div 0.2", "1"),
+        ("0.95 div 0.1", "1"),
+    ] {
+        assert_eq!(eval(expr), integer(want), "{expr}");
+    }
+
+    // A truncated quotient outside the Java `int` range fails:
+    // `new IntegerType(String)` parses with `Integer.parseInt` and rethrows as
+    // `IllegalArgumentException(e)` (IntegerType.java:65-67, :86-92), whose
+    // message is the cause's `toString()`; the engine catches only
+    // UcumException (:3061).
+    assert_eq!(
+        expect_evaluation_error("3000000000.0 div 1"),
+        "java.lang.NumberFormatException: For input string: \"3000000000\""
+    );
+
+    // `mod` with a decimal operand is `this - trunc(this / other) * other`
+    // computed by `Decimal.subtract` and `Decimal.multiply`
+    // (Decimal.java:792-798, :368-386, :535-625).
+    for (expr, want) in [
+        ("2.2 mod 1.8", "0.4"),
+        ("5.5 mod 2", "1.5"),
+        ("(0 - 5.5) mod 2", "-1.5"),
+        ("5.5 mod (0 - 2)", "1.5"),
+        ("7 mod 2.5", "2.0"),
+        ("10 mod 3.0", "1.0"),
+        ("1 mod 0.3", "0.1"),
+        // The carry defect: trunc(1.9 / 0.2) is 1, so 1.9 - 0.2 is 1.7.
+        ("1.9 mod 0.2", "1.7"),
+        ("0 mod 2.5", "0"),
+    ] {
+        assert_eq!(eval(expr), decimal(want), "{expr}");
+    }
+
+    // A zero remainder is a negative zero whatever the operands' signs (every
+    // sign path of `Decimal.subtract` leaves it negative, :368-386, :439-486);
+    // `asDecimal` writes the `-` only when the zero's text contains a `.`
+    // (:305-306, :157-164). The zero has as many fractional `0`s as the wider
+    // fractional part of the dividend and of the trimmed product (:535-625).
+    for expr in [
+        "4.0 mod 2",
+        "6.0 mod 2",
+        "0.0 mod 2",
+        "(0 - 4.0) mod 2",
+        "4.0 mod (0 - 2)",
+        "4 mod 2.0",
+        "6 mod 3.0",
+        "(0 - 6) mod 3.0",
+        "4.0 mod 2.0",
+        "5 mod 2.5",
+        "7.5 mod 2.5",
+        "10.0 mod 2.5",
+        "3000000000.0 mod 1",
+    ] {
+        assert_eq!(eval(expr), decimal("-0.0"), "{expr}");
+    }
+    for expr in ["4.00 mod 2", "4 mod 2.00", "1.25 mod 0.25"] {
+        assert_eq!(eval(expr), decimal("-0.00"), "{expr}");
+    }
+    // The products `10` and `12` are trimmed to whole numbers, so the zero's
+    // text has no `.` and no `-` is written.
+    for expr in ["10 mod 2.5", "12 mod 1.5"] {
+        assert_eq!(eval(expr), decimal("0"), "{expr}");
+    }
+
+    // A zero divisor is path.math.008's: empty under `div`, an execution error
+    // under `mod`.
+    assert_eq!(eval("5.5 div 0"), empty());
+    assert_eq!(
+        expect_evaluation_error("5.5 mod 0"),
+        "org.fhir.ucum.UcumException: Attempt to divide 5.5 by zero"
+    );
+
+    // Only testDiv4 and testMod4 grade this in the suite, both passed by HAPI.
+    expect_case("testDiv", "testDiv4");
+    expect_case("testMod", "testMod4");
 }
 
 // ---------------------------------------------------------------------------

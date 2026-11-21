@@ -1096,6 +1096,15 @@ fn numeric_comparison_goes_through_binary_floating_point() {
 
     // `truncate` and `round` are exact too, so they are not in the double set.
     assert_eq!(eval(&format!("{LO}.round(17)")), decimal(LO));
+
+    // Nor are `/`, or `div` and `mod` with a decimal operand: they are neither
+    // exact nor a `double`, but `org.fhir.ucum.Decimal`'s precision-limited
+    // arithmetic (path.math.015, path.math.016, DEV-0030). A `double` would
+    // give `0.3333333333333333` and `0.40000000000000013`, and exact decimals
+    // `9.5` for the last. The values are those path.math.015 and .016 state.
+    assert_eq!(eval("1 / 3"), decimal("0.3"));
+    assert_eq!(eval("2.2 mod 1.8"), decimal("0.4"));
+    assert_eq!(eval("1.9 / 0.2"), decimal("1.0"));
 }
 
 // ---------------------------------------------------------------------------

@@ -1,4 +1,4 @@
-//! Quantities and UCUM: `path.quantity.001` through `path.quantity.019`.
+//! Quantities and UCUM: `path.quantity.001` through `path.quantity.024`.
 //!
 //! ```text
 //! cargo test -p frevo-path --test path_quantity
@@ -28,7 +28,7 @@
 //!    where `<=`, `>` and `>=` use `unit`. With the codes differing it compares
 //!    canonical decimals, and `qtyToCanonicalDecimal` returns `null` for a
 //!    quantity with no UCUM system (:2301-2303); the recursive call's
-//!    `isPrimitive()` on it (:2414) is a `NullPointerException`.
+//!    `isPrimitive()` on it (:2413) is a `NullPointerException`.
 //!
 //! HAPI's own run (`oracles/fhirpath/hapi-8.12.0-results.json`) grades:
 //!
@@ -53,8 +53,23 @@
 //! `path.quantity.019` is the Frevo side of `DEV-0029`: HAPI's server-facing
 //! worker raises `HAPI-0274: ` wherever the engine consults UCUM, and Frevo
 //! answers as the suite's worker does in every configuration. Its UCUM-dependent
-//! assertions stay red until the unit algebra exists (task 43;
-//! `tasks/blockers.md`, 2026-11-20, "the UCUM unit algebra cannot be ported").
+//! assertions stay red until the unit algebra exists (task 43).
+//!
+//! # The unit algebra (`path.quantity.016`, `.020`-`.024`)
+//!
+//! Every UCUM value asserted here is one the spec states, derived from
+//! `reference/Ucum-java` at `db9d22ade3f0f4a667b45817b85a9ac4534e4224`
+//! (`org.fhir:ucum` 1.0.10; live HAPI 8.12.0 runs 1.0.9, identical in every
+//! class cited) over the pinned `ucum-essence.xml` (`2.0.1`), and confirmed by
+//! compiling that source; none is computed here. Canonical forms that are not
+//! observable through an operator are graded in-process through the
+//! [`UcumOracle::canonical_form`] seam, which answers `NotImplemented` until
+//! task 43 gives the crate a canonical-form API to bind it to.
+//!
+//! Positions in a `*` error's ` (@char C)` suffix are HAPI's lexer column of
+//! the `*` token (`getOpStart()`, FHIRPathEngine.java:2801; the column rule of
+//! `path.errors.002`: a token adds its length, a space adds 2), and Frevo's
+//! offset is that token's zero-based byte offset.
 
 // `dead_code` is allowed for the shared harness module and nothing else; see
 // `tests/oracle/mod.rs:18-23`.
@@ -67,7 +82,7 @@ use std::sync::OnceLock;
 use oracle::engine::{
     CaseContext, EngineConfig, EngineError, StrictnessFlags, SuiteEngine, engine_under_test,
 };
-use oracle::input::{self, SuiteInput};
+use oracle::input::{self, Document, SuiteInput};
 use oracle::run::{self, CaseReport, CaseStatus, RunReport};
 use oracle::suite::Suite;
 use oracle::value::{QuantityValue, ResultItem, UCUM_SYSTEM};
@@ -281,6 +296,109 @@ fn boolean(value: bool) -> Vec<ResultItem> {
 
 fn empty() -> Vec<ResultItem> {
     Vec::new()
+}
+
+fn string(value: &str) -> Vec<ResultItem> {
+    vec![ResultItem::Primitive {
+        fhir_type: "string".to_string(),
+        value: value.to_string(),
+    }]
+}
+
+/// What `pairToQty` builds (FHIRPathEngine.java:2314-2316): the value, the
+/// UCUM system, the canonical code -- absent when the canonical code is empty
+/// (`Quantity.setCode`, Quantity.java:620-629) -- and no `unit`.
+fn ucum_result(value: &str, code: Option<&str>) -> Vec<ResultItem> {
+    vec![ResultItem::Quantity(QuantityValue {
+        value: value.to_string(),
+        comparator: None,
+        unit: None,
+        system: Some(UCUM_SYSTEM.to_string()),
+        code: code.map(str::to_string),
+        has_element_id: false,
+        has_extensions: false,
+    })]
+}
+
+/// `expr` over `inp` must parse and check, then fail at evaluation with a
+/// diagnostic; returns the message and the offset as reported.
+fn expect_error_with_offset(expr: &str, inp: Option<&SuiteInput>) -> (String, Option<usize>) {
+    let mut engine = fresh_engine();
+    let resource_type = inp.and_then(|i| i.resource_type());
+    let context = CaseContext {
+        root_resource_type: resource_type,
+        resource_type,
+        ..CaseContext::default()
+    };
+    let parsed = engine
+        .parse(expr)
+        .unwrap_or_else(|e| panic!("{expr:?} must parse before it can fail at evaluation: {e}"));
+    engine
+        .check(parsed, &context, StrictnessFlags::CHECK)
+        .unwrap_or_else(|e| panic!("{expr:?} must pass the static check: {e}"));
+    match engine.evaluate(parsed, inp, &context, StrictnessFlags::EVALUATE) {
+        Ok(items) => panic!("{expr:?} must fail at evaluation, but it returned {items:?}"),
+        Err(EngineError::Diagnostic { message, offset }) => (message, offset),
+        Err(e) => panic!("{expr:?} must fail with an execution error, not: {e}"),
+    }
+}
+
+/// A `*` whose UCUM service raised `UcumException`: `opTimes` rethrows
+/// `new PathEngineException(e.getMessage(), null, expr.getOpStart(), ...)`
+/// (FHIRPathEngine.java:2800-2801), so the message is the exception's text,
+/// then ` (@char C)` naming the `*` token, and the offset is that token's.
+fn expect_times_error(expr: &str, inp: Option<&SuiteInput>, ucum_message: &str, column: usize) {
+    let at = expr
+        .find(" * ")
+        .map(|i| i + 1)
+        .unwrap_or_else(|| panic!("{expr:?} must contain one `*` operator"));
+    let (message, offset) = expect_error_with_offset(expr, inp);
+    assert_eq!(
+        message,
+        format!("{ucum_message} (@char {column})"),
+        "{expr:?}: the UcumException's message and the `*` token's column, exactly"
+    );
+    assert_eq!(
+        offset,
+        Some(at),
+        "{expr:?}: the offset is the `*` token's zero-based byte offset"
+    );
+}
+
+/// The JVM's message for `divideBy` reading the `null` code of a UCUM-system
+/// quantity that has no `code` (UcumEssenceService.java:322-323,
+/// `path.quantity.021`).
+const NPE_PAIR_CODE_CONTAINS: &str = "Cannot invoke \"String.contains(java.lang.CharSequence)\" \
+     because the return value of \"org.fhir.ucum.Pair.getCode()\" is null";
+
+/// The JVM's message for `multiply` or `divideBy` dereferencing the `null`
+/// pair `qtyToPair` returns for a quantity without the UCUM system, naming the
+/// `UcumEssenceService` parameter (`path.quantity.018`).
+fn npe_pair_get_value(parameter: &str) -> String {
+    format!("Cannot invoke \"org.fhir.ucum.Pair.getValue()\" because \"{parameter}\" is null")
+}
+
+/// A hand-built `Parameters` whose `parameter[i]` is the i-th
+/// `valueQuantity` JSON object, given as its members' text.
+fn parameters_with_quantities(name: &str, quantities: &[&str]) -> SuiteInput {
+    let params: Vec<String> = quantities
+        .iter()
+        .enumerate()
+        .map(|(i, q)| format!(r#"{{"name":"p{i}","valueQuantity":{{{q}}}}}"#))
+        .collect();
+    let body = format!(
+        r#"{{"resourceType":"Parameters","parameter":[{}]}}"#,
+        params.join(",")
+    );
+    let document = Document::Json(
+        oracle::json::parse(&body)
+            .unwrap_or_else(|e| panic!("the hand-built Parameters is JSON: {e}")),
+    );
+    SuiteInput {
+        file: format!("hand-built-parameters-{name}.json"),
+        bytes: body.into_bytes(),
+        document,
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -804,6 +922,16 @@ pub trait UcumOracle {
         expression: &str,
         ucum: UcumData,
     ) -> Result<Vec<ResultItem>, EngineError>;
+
+    /// `UcumEssenceService.getCanonicalForm(new Pair(new Decimal(value), code))`
+    /// over the pinned file (UcumEssenceService.java:266-285): the canonical
+    /// value's `asDecimal()` and the canonical unit string
+    /// (`ExpressionComposer.compose`), `""` for a dimensionless code. `value`
+    /// is the plain string the engine passes (`toPlainString()`,
+    /// FHIRPathEngine.java:2293), so a whole `value` takes the
+    /// `checkForCouldBeWholeNumber` step (:279-282). A `UcumException` is a
+    /// [`EngineError::Diagnostic`] carrying its `getMessage()` and no offset.
+    fn canonical_form(&mut self, value: &str, code: &str) -> Result<(String, String), EngineError>;
 }
 
 fn ucum_oracle_under_test() -> Box<dyn UcumOracle> {
@@ -846,6 +974,37 @@ impl UcumOracle for BoundUcum {
         _ucum: UcumData,
     ) -> Result<Vec<ResultItem>, EngineError> {
         Err(EngineError::NotImplemented)
+    }
+
+    /// Unbound: the crate has no canonical-form API yet. Task 43 ports
+    /// `ExpressionParser`, `Converter`, `ExpressionComposer` and
+    /// `UcumEssenceService.getCanonicalForm` and binds this to it, mapping a
+    /// `UcumException` to a `Diagnostic` with its message.
+    fn canonical_form(
+        &mut self,
+        _value: &str,
+        _code: &str,
+    ) -> Result<(String, String), EngineError> {
+        Err(EngineError::NotImplemented)
+    }
+}
+
+/// The canonical form of `value` `code`, which must canonicalise.
+fn canonical(value: &str, code: &str) -> (String, String) {
+    ucum_oracle_under_test()
+        .canonical_form(value, code)
+        .unwrap_or_else(|e| panic!("{value} '{code}' must canonicalise: {e}"))
+}
+
+/// The `UcumException` message canonicalising `code` raises.
+fn canonical_error(code: &str) -> String {
+    match ucum_oracle_under_test().canonical_form("1", code) {
+        Err(EngineError::Diagnostic { message, offset }) => {
+            assert_eq!(offset, None, "{code:?}: a UcumException carries no offset");
+            message
+        }
+        Ok(c) => panic!("{code:?} must raise UcumException, but canonicalised to {c:?}"),
+        Err(e) => panic!("{code:?}: the UCUM service gave no graded answer: {e}"),
     }
 }
 
@@ -939,30 +1098,199 @@ fn ucum_data_comes_from_the_pinned_essence_file_and_its_absence_fails_the_run() 
         .unwrap_or_else(|e| panic!("the pinned UCUM file must load: {e}"));
     assert_eq!(loaded, UCUM_ESSENCE_VERSION);
 
-    // An absent file fails rather than degrading to "units are incomparable".
-    let missing = input::repo_path("oracles/fhir-test-cases/fetched/ucum/does-not-exist.xml");
-    match oracle.load_ucum(&missing) {
-        Err(EngineError::Diagnostic { message, .. }) => {
-            assert!(
-                !message.is_empty(),
-                "the failure must name what could not be loaded"
-            );
-        }
-        Ok(v) => panic!(
-            "an absent UCUM file must fail the run, not report a version ({v}). \
-             Silently treating units as incomparable would turn every quantity \
-             comparison into the no-UCUM branch without saying so."
-        ),
-        Err(e) => panic!("the engine gave no graded answer: {e}"),
+    // The root's other two attributes, exactly as the suite worker's file
+    // (`org.hl7.fhir.r4/src/test/resources/ucum/ucum-essence.xml` at
+    // `73c432b5`) carries them, so the fetched copy is pinned to that file and
+    // not to Ucum-java's bundled `2.2` file.
+    for attr in [
+        "revision=\"$Revision: 439 $\"",
+        "revision-date=\"$Date: 2015-11-13 15:13:19 -0500 (Fri, 13 Nov 2015) $\"",
+    ] {
+        assert!(
+            text.contains(attr),
+            "the pinned UCUM data must carry {attr}"
+        );
     }
 
-    // So does an unparseable one. The suite file itself is valid XML but is not
-    // UCUM data, which separates "cannot read" from "is not UCUM".
+    // The suite worker's class-path resource is byte-identical to the fetched
+    // copy. `reference/` is cloned on demand and never in CI, so this half is
+    // graded only where the clone is present; the fetched copy, which CI
+    // fetches, is graded unconditionally above and below.
+    let class_path = input::repo_path(
+        "reference/org.hl7.fhir.core/org.hl7.fhir.r4/src/test/resources/ucum/ucum-essence.xml",
+    );
+    if class_path.is_file() {
+        let pinned = std::fs::read(&class_path).expect("the class-path resource is readable");
+        assert!(
+            pinned == text.as_bytes(),
+            "the fetched copy must be byte-identical to the suite worker's file"
+        );
+    }
+
+    // The file as `XmlDefinitionsParser.parse` reads it (:64-106) yields 24
+    // prefixes, the 7 base units in file order, and 303 defined units.
+    let essence = frevo_path::UcumEssence::load(&path)
+        .unwrap_or_else(|e| panic!("the pinned UCUM file must load: {e}"));
+    assert_eq!(essence.version(), UCUM_ESSENCE_VERSION);
+    assert_eq!(essence.revision(), Some("$Revision: 439 $"));
+    assert_eq!(
+        essence.revision_date(),
+        Some("$Date: 2015-11-13 15:13:19 -0500 (Fri, 13 Nov 2015) $")
+    );
+    assert_eq!(essence.prefixes().len(), 24);
+    assert_eq!(
+        essence
+            .base_units()
+            .iter()
+            .map(|b| b.code.as_str())
+            .collect::<Vec<_>>(),
+        ["m", "s", "g", "rad", "K", "C", "cd"]
+    );
+    assert_eq!(essence.units().len(), 303);
+
+    // A unit is metric or special only when the attribute is exactly `yes`
+    // (:109-121): any other text loads, as not metric. `mol` is metric in the
+    // pinned file.
+    assert!(
+        essence.unit("mol").is_some_and(|u| u.is_metric),
+        "mol is metric in the pinned file"
+    );
+    let not_exactly_yes = mutate(
+        &text,
+        "<unit Code=\"mol\" CODE=\"MOL\" isMetric=\"yes\"",
+        "<unit Code=\"mol\" CODE=\"MOL\" isMetric=\"YES\"",
+    );
+    let relaxed = frevo_path::UcumEssence::parse(&not_exactly_yes)
+        .unwrap_or_else(|e| panic!("isMetric=\"YES\" is not a load failure: {e}"));
+    assert!(
+        relaxed.unit("mol").is_some_and(|u| !u.is_metric),
+        "isMetric=\"YES\" is not `yes`, so mol is read as not metric"
+    );
+
+    // A short `revision-date` (25 characters or fewer) is read as
+    // `yyyy-MM-dd` (:79-88; the branch 1.0.10 has).
+    let short_date = mutate(
+        &text,
+        "revision-date=\"$Date: 2015-11-13 15:13:19 -0500 (Fri, 13 Nov 2015) $\"",
+        "revision-date=\"2015-11-13\"",
+    );
+    let short = write_fixture("short-revision-date", &short_date);
+    assert_eq!(
+        oracle
+            .load_ucum(&short)
+            .unwrap_or_else(|e| panic!("a yyyy-MM-dd revision-date must load: {e}")),
+        UCUM_ESSENCE_VERSION
+    );
+
+    // Every load failure fails the run rather than silently treating units as
+    // incomparable (UcumEssenceService.java:91-99, XmlDefinitionsParser.java
+    // :64-70, :103-105). One file per condition; Frevo's message must name the
+    // file, and its text is otherwise not graded (no HAPI surface shows it).
+    let absent = input::repo_path("oracles/fhir-test-cases/fetched/ucum/does-not-exist.xml");
+    expect_load_failure(&mut *oracle, "an absent file", &absent);
+    // Unreadable: a directory where the file should be.
+    let unreadable = fixture_dir().join("unreadable.xml");
+    std::fs::create_dir_all(&unreadable).expect("the fixture directory can be created");
+    expect_load_failure(&mut *oracle, "an unreadable file", &unreadable);
+
+    let revision_date = "revision-date=\"$Date: 2015-11-13 15:13:19 -0500 (Fri, 13 Nov 2015) $\"";
+    let malformed: [(&str, String); 8] = [
+        ("not-well-formed", mutate(&text, "</root>", "</rot>")),
+        (
+            "doctype",
+            mutate(
+                &text,
+                "<?xml version=\"1.0\" encoding=\"ascii\"?>",
+                "<?xml version=\"1.0\" encoding=\"ascii\"?>\n<!DOCTYPE root>",
+            ),
+        ),
+        (
+            "root-not-root",
+            mutate(&mutate(&text, "<root ", "<ucum "), "</root>", "</ucum>"),
+        ),
+        ("missing-revision-date", mutate(&text, revision_date, "")),
+        (
+            // Longer than 25 characters, so characters 7-31 are parsed as
+            // `yyyy-MM-dd HH:mm:ss Z`.
+            "unparseable-long-revision-date",
+            mutate(
+                &text,
+                revision_date,
+                "revision-date=\"$Date: xxxx-11-13 15:13:19 -0500 (Fri, 13 Nov 2015) $\"",
+            ),
+        ),
+        (
+            // 25 characters or fewer, so parsed as `yyyy-MM-dd`.
+            "unparseable-short-revision-date",
+            mutate(&text, revision_date, "revision-date=\"13 Nov 2015\""),
+        ),
+        (
+            "unknown-child-element",
+            mutate(&text, "</root>", "<foo/>\n</root>"),
+        ),
+        (
+            "malformed-prefix-value",
+            mutate(&text, "<value value=\"1e24\">", "<value value=\"abc\">"),
+        ),
+    ];
+    for (name, body) in &malformed {
+        let file = write_fixture(name, body);
+        expect_load_failure(&mut *oracle, name, &file);
+    }
+    let bad_unit = mutate(
+        &text,
+        "<value Unit=\"[pi].rad/360\" UNIT=\"[PI].RAD/360\" value=\"2\">",
+        "<value Unit=\"[pi].rad/360\" UNIT=\"[PI].RAD/360\" value=\"two\">",
+    );
+    let file = write_fixture("malformed-unit-value", &bad_unit);
+    expect_load_failure(&mut *oracle, "malformed-unit-value", &file);
+
+    // And a file that is XML but not UCUM data at all.
     let not_ucum = input::repo_path(oracle::suite::SUITE_PATH);
-    match oracle.load_ucum(&not_ucum) {
-        Err(EngineError::Diagnostic { .. }) => {}
-        Ok(v) => panic!("a file that is not UCUM data must not load as version {v}"),
-        Err(e) => panic!("the engine gave no graded answer: {e}"),
+    expect_load_failure(&mut *oracle, "the FHIRPath suite file", &not_ucum);
+}
+
+/// `text` with the single occurrence of `from` replaced by `to`. Requiring
+/// exactly one occurrence keeps every fixture a one-condition mutation of the
+/// pinned file.
+fn mutate(text: &str, from: &str, to: &str) -> String {
+    assert_eq!(
+        text.matches(from).count(),
+        1,
+        "the pinned file must contain {from:?} exactly once"
+    );
+    text.replacen(from, to, 1)
+}
+
+fn fixture_dir() -> PathBuf {
+    let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join("path_quantity_016");
+    std::fs::create_dir_all(&dir).expect("the fixture directory can be created");
+    dir
+}
+
+fn write_fixture(name: &str, body: &str) -> PathBuf {
+    let file = fixture_dir().join(format!("{name}.xml"));
+    std::fs::write(&file, body).expect("the fixture can be written");
+    file
+}
+
+/// Loading `path` must fail with a graded diagnostic that names the file.
+fn expect_load_failure(oracle: &mut dyn UcumOracle, condition: &str, path: &Path) {
+    let name = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .expect("the fixture has a file name");
+    match oracle.load_ucum(path) {
+        Err(EngineError::Diagnostic { message, .. }) => assert!(
+            message.contains(name),
+            "{condition}: the failure must name the file {name:?}: {message:?}"
+        ),
+        Ok(v) => panic!(
+            "{condition}: the UCUM file must fail to load, not report version {v}. Silently \
+             treating units as incomparable would turn every quantity comparison into the \
+             no-UCUM branch without saying so."
+        ),
+        Err(e) => panic!("{condition}: the engine gave no graded answer: {e}"),
     }
 }
 
@@ -1001,6 +1329,63 @@ fn a_quantity_with_an_unknown_unit_code_does_not_crash() {
     // scenario asks for.
     assert_eq!(eval("(1 'zzz' = 1 'cm').empty()"), boolean(true));
     assert_eq!(eval("1 'zzz' ~ 1 'zzz'"), boolean(true));
+
+    // `zzz` is not a unit of the pinned file, so parsing it raises
+    // UcumException (ExpressionParser.java:130-134), which
+    // `qtyToCanonicalPair` turns into null (FHIRPathEngine.java:2292-2298),
+    // and `qtyEqual` falls back to the `code` rule (:2276-2285). Different
+    // codes are null, which `opEquals` makes empty (:2114-2127), on either
+    // side and under `!=` too.
+    assert_eq!(eval("1 'zzz' != 1 'cm'"), empty());
+    assert_eq!(eval("1 'cm' = 1 'zzz'"), empty());
+
+    // Under `~` the same null is unboxed by `doEquivalent` (:2204-2206): the
+    // failure path.quantity.009 states.
+    assert_eq!(
+        expect_execution_error_over("1 'zzz' ~ 1 'cm'", None),
+        NPE_QTY_EQUIVALENT
+    );
+
+    // `<` compares the `code` lists (:2438-2441): equal lists compare the
+    // values; different ones canonicalise, the unknown unit's canonical
+    // decimal is null (:2305-2311), and the recursive `opLessThan` calls
+    // `isPrimitive()` on it (:2413).
+    assert_eq!(eval("1 'zzz' < 2 'zzz'"), boolean(true));
+    for expr in ["1 'zzz' < 1 'cm'", "1 'cm' < 1 'zzz'"] {
+        assert_eq!(
+            expect_execution_error_over(expr, None),
+            NPE_LIST_GET_IS_PRIMITIVE,
+            "{expr}"
+        );
+    }
+
+    // `>`, `>=` and `<=` compare the `unit` lists, which two quoted-code
+    // literals do not have (`:1132` sets `unit` only for a calendar keyword),
+    // so they compare the values with no UCUM step (:2485-2488, :2533-2539,
+    // :2583-2586).
+    assert_eq!(eval("2 'zzz' > 1 'cm'"), boolean(true));
+    assert_eq!(eval("1 'zzz' >= 1 'cm'"), boolean(true));
+    assert_eq!(eval("1 'zzz' <= 2 'cm'"), boolean(true));
+
+    // `isComparable` raises for the unknown unit (UcumEssenceService.java
+    // :232-240, :333-343) and `funcComparable` answers false (:4632-4636).
+    assert_eq!(eval("1 'zzz'.comparable(1 'cm')"), boolean(false));
+
+    // `*` shows the parse error of path.quantity.024, with the ` (@char C)`
+    // suffix naming the `*` token; `/` swallows it and is empty (:3020-3022).
+    expect_times_error(
+        "1 'zzz' * 1 'm'",
+        None,
+        "Error processing unit 'zzz.m': The unit 'zzz' is unknown' at position 0",
+        11,
+    );
+    expect_times_error(
+        "1 'm' * 1 'zzz'",
+        None,
+        "Error processing unit 'm.zzz': The unit 'zzz' is unknown' at position 2",
+        9,
+    );
+    assert_eq!(eval("1 'zzz' / 1 'm'"), empty());
 }
 
 // ---------------------------------------------------------------------------
@@ -1047,6 +1432,84 @@ fn a_quantity_whose_system_is_not_ucum_is_not_canonicalised() {
     // And a quantity that does carry the UCUM system canonicalises, which is
     // what makes the above about the system and not about calendar words.
     assert_eq!(eval("1 'wk' = 7 'd'"), boolean(true));
+
+    // The ordered operators dereference the null canonical decimal with
+    // path.quantity.013's message: `<` when the `code` lists differ, `>` when
+    // the `unit` lists differ. With equal (empty) code lists, `<` compares the
+    // values.
+    for expr in ["1 year < 2 'a'", "1 year > 1 'a'"] {
+        assert_eq!(
+            expect_execution_error_over(expr, None),
+            NPE_LIST_GET_IS_PRIMITIVE,
+            "{expr}"
+        );
+    }
+    assert_eq!(eval("1 year < 2 years"), boolean(true));
+
+    // `~` with differing codes falls back like `=`, and `doEquivalent`
+    // unboxes the null (:2349-2358, :2204-2206).
+    assert_eq!(
+        expect_execution_error_over("1 year ~ 1 'cm'", None),
+        NPE_QTY_EQUIVALENT
+    );
+
+    // `*` and `/` pass the null pair `qtyToPair` returns (:2319-2328) to the
+    // UCUM service, which dereferences it; the NullPointerException is not a
+    // UcumException, so neither arm catches it (:2797-2802, :3017-3022) and
+    // `/` fails too. The JVM's message names the `UcumEssenceService`
+    // parameter (UcumEssenceService.java:314-325). No offset.
+    for (expr, parameter) in [
+        ("1 year * 1 'm'", "o1"),
+        ("1 'm' * 1 year", "o2"),
+        ("1 year / 1 'm'", "dividend"),
+        ("1 'm' / 1 year", "divisor"),
+    ] {
+        assert_eq!(
+            expect_execution_error_over(expr, None),
+            npe_pair_get_value(parameter),
+            "{expr}"
+        );
+    }
+
+    // Two quantities of the same non-UCUM system: equal codes compare their
+    // values, differing codes are empty under `=` and fail under `~`.
+    // `comparable()` is false for a missing or different system, and for the
+    // same non-UCUM system true only when the codes are equal
+    // (`funcComparable`, :4609-4641).
+    let other = parameters_with_quantities(
+        "non-ucum-system",
+        &[
+            r#""value":1,"system":"http://example.org/units","code":"x""#,
+            r#""value":1,"system":"http://example.org/units","code":"x""#,
+            r#""value":2,"system":"http://example.org/units","code":"y""#,
+            r#""value":1,"system":"http://example.org/other","code":"x""#,
+        ],
+    );
+    let p = |i: usize| format!("Parameters.parameter[{i}].value");
+    assert_eq!(
+        eval_over(&format!("{} = {}", p(0), p(1)), Some(&other)),
+        boolean(true)
+    );
+    assert_eq!(
+        eval_over(&format!("{} ~ {}", p(0), p(1)), Some(&other)),
+        boolean(true)
+    );
+    assert_eq!(
+        eval_over(&format!("{} = {}", p(0), p(2)), Some(&other)),
+        empty()
+    );
+    assert_eq!(
+        expect_execution_error_over(&format!("{} ~ {}", p(0), p(2)), Some(&other)),
+        NPE_QTY_EQUIVALENT
+    );
+    for (i, j, want) in [(0, 1, true), (0, 2, false), (0, 3, false)] {
+        assert_eq!(
+            eval_over(&format!("{}.comparable({})", p(i), p(j)), Some(&other)),
+            boolean(want),
+            "parameter[{i}].comparable(parameter[{j}])"
+        );
+    }
+    assert_eq!(eval("1 year.comparable(1 'a')"), boolean(false));
 }
 
 // ---------------------------------------------------------------------------
@@ -1136,4 +1599,507 @@ fn frevo_answers_as_the_suite_worker_where_hapis_server_worker_raises_hapi_0274(
     // `comparable()` with two UCUM codes that differ (:4631).
     assert_eq!(eval("1 'cm'.comparable(1 '[in_i]')"), boolean(true));
     assert_eq!(eval("1 'cm'.comparable(1 's')"), boolean(false));
+
+    // And every operation of path.quantity.017, .018 and .020 to .024 that
+    // reaches one of those calls, including the fallbacks for an unknown,
+    // special or non-UCUM unit, which HAPI's server worker takes only after
+    // it has been asked (:2265, :2338, :2443, :2793, :3013). Frevo answers as
+    // the suite's worker, and a failure is the suite worker's, never
+    // `HAPI-0274: `.
+    assert_eq!(eval("1 'zzz' = 1 'cm'"), empty());
+    assert_eq!(eval("1 'Cel' = 1 'Cel'"), boolean(true));
+    assert_eq!(eval("1 'mg/dL' = 10 'mg/L'"), boolean(false));
+    assert_eq!(eval("2 'm' * 3 'm'"), ucum_result("6", Some("m2")));
+    let message = expect_execution_error_over("1 year < 2 'a'", None);
+    assert!(
+        !message.contains("HAPI-0274"),
+        "Frevo answers as the suite worker, not the server worker: {message:?}"
+    );
+    assert_eq!(message, NPE_LIST_GET_IS_PRIMITIVE);
+}
+
+// ---------------------------------------------------------------------------
+// path.quantity.020 -- canonical form
+// ---------------------------------------------------------------------------
+
+// covers: path.quantity.020
+#[test]
+fn a_canonical_form_is_a_value_over_base_units_sorted_by_base_unit_code() {
+    // `Converter.normalise` (Converter.java:57-127) then
+    // `ExpressionComposer.compose` (ExpressionComposer.java:97-109): base
+    // units merged, zero exponents removed, sorted by `String.compareTo`
+    // (upper case first), joined by `.`, a dimensionless code giving `""`.
+    for (code, want) in [
+        ("g/m", "g.m-1"),
+        ("kg.m/s2", "g.m.s-2"),
+        ("mm[Hg]", "g.m-1.s-2"),
+        ("mg/dL", "g.m-3"),
+        ("L", "m3"),
+        ("l", "m3"),
+        ("/min", "s-1"),
+        ("10*3/uL", "m-3"),
+        ("mol/L", "m-3"),
+        ("1", ""),
+        ("%", ""),
+        ("[ppth]", ""),
+        ("10*-3", ""),
+        ("{tablets}", ""),
+        ("[iU]", ""),
+        ("[pi]", ""),
+        // Each operator applies to the one component after it, left to
+        // right; a parenthesised term is normalised on its own (:65-97).
+        ("m/s.s", "m"),
+        ("m/(s.s)", "m.s-2"),
+    ] {
+        assert_eq!(
+            canonical("1", code).1,
+            want,
+            "the canonical unit of {code:?}"
+        );
+    }
+
+    // The canonical value is the quantity's value times the code's factor,
+    // by `Decimal.multiply` (UcumEssenceService.java:268-285).
+    for (value, code, want_value, want_code) in [
+        ("4.0000", "g", "4.0000", "g"),
+        ("4000.0", "mg", "4.0000", "g"),
+        ("4", "g", "4", "g"),
+        ("4000", "mg", "4", "g"),
+        ("4040", "mg", "4.04", "g"),
+        ("1", "kg", "1000", "g"),
+        ("1", "[lb_av]", "453.59237", "g"),
+        ("185", "[lb_av]", "83914.58845", "g"),
+        ("1", "[in_i]", "0.0254", "m"),
+        ("2.54", "cm", "0.0254", "m"),
+        ("1", "[ft_i]", "0.3048", "m"),
+        ("12", "[in_i]", "0.3048", "m"),
+        ("1.5", "km", "1500", "m"),
+        ("7", "d", "604800", "s"),
+        ("1", "wk", "604800", "s"),
+        ("1", "h", "3600", "s"),
+        ("1", "a", "31557600", "s"),
+        ("1", "mo", "2629800", "s"),
+        ("1", "mo_s", "2551442.976", "s"),
+        ("1", "L", "0.001", "m3"),
+        ("1", "mL", "0.000001", "m3"),
+        ("1", "mg/dL", "10", "g.m-3"),
+        ("1", "mm[Hg]", "133322", "g.m-1.s-2"),
+        ("1", "/min", "0.01666666666666666666666666666667", "s-1"),
+        ("1", "%", "0.01", ""),
+        (
+            "1",
+            "[pi]",
+            "3.1415926535897932384626433832795028841971693993751058209749445923",
+            "",
+        ),
+        ("1", "mol/L", "602213670000000000000000000", "m-3"),
+        ("-5.5", "mg", "-0.0055", "g"),
+        // The whole-number step (`checkForCouldBeWholeNumber`,
+        // UcumEssenceService.java:279-282, Decimal.java:831-855) applies only
+        // when the value is whole.
+        ("60", "/min", "1", "s-1"),
+        ("60.0", "/min", "1.0000000000000000000000000000002", "s-1"),
+    ] {
+        assert_eq!(
+            canonical(value, code),
+            (want_value.to_string(), want_code.to_string()),
+            "the canonical form of {value} '{code}'"
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// path.quantity.021 -- `*` and `/` answer in canonical units
+// ---------------------------------------------------------------------------
+
+// covers: path.quantity.021
+#[test]
+fn quantity_multiplication_and_division_answer_in_canonical_units() {
+    // `multiply` joins the codes as `<left>.<right>`, `divideBy` as
+    // `<left>/<right>` with a side holding `/` or `*` parenthesised
+    // (UcumEssenceService.java:314-325); the result is canonicalised and
+    // built by `pairToQty` with no `unit` (FHIRPathEngine.java:2314-2316).
+    for (expr, value, code) in [
+        ("2.0 'cm' * 2.0 'm'", "0.040", Some("m2")),
+        ("2 'cm' * 2 'm'", "0.04", Some("m2")),
+        ("2 'm' * 3 'm'", "6", Some("m2")),
+        ("2 'm/s' * 3 's'", "6", Some("m")),
+        ("2 'g' * 3 '1'", "6", Some("g")),
+        ("2 'm' * 3 '{tablets}'", "6", Some("m")),
+        ("2 'kg' * 3 '[lb_av]'", "2721554.22", Some("g2")),
+        ("2 'mm[Hg]' * 3 'm2'", "799932", Some("g.m.s-2")),
+        ("2 '%' * 3 '%'", "0.0006", None),
+        ("4.0 'g' / 2.0 'm'", "2.0", Some("g.m-1")),
+        ("1.0 'm' / 1.0 'm'", "1.0", None),
+        ("2 'g' / 4 'g'", "0.50", None),
+        ("1 'm' / 3 's'", "0.3", Some("m.s-1")),
+        (
+            "6 'km' / 2 'h'",
+            "0.8333333333333333333333333333334",
+            Some("m.s-1"),
+        ),
+        ("6 'kg.m' / 2 's'", "3000", Some("g.m.s-1")),
+        ("6 'g/m' / 2 'm/s'", "3", Some("g.m-2.s")),
+        ("6 'g/m' / 3 's'", "2.00", Some("g.m-1.s-1")),
+        ("6 'm' / 3 's/m'", "2", Some("m2.s-1")),
+        ("6 'm.s' / 3 'g'", "2.00", Some("g-1.m.s")),
+        ("6 '1' / 3 'm'", "2.00", Some("m-1")),
+        ("6 '10*3' / 3 '1'", "2000", None),
+    ] {
+        assert_eq!(eval(expr), ucum_result(value, code), "{expr}");
+    }
+
+    // `toString()` is the value's plain string, a space and the code in
+    // quotes (`convertToString`, :887-906), so a dimensionless result prints
+    // `'null'`.
+    assert_eq!(eval("(2 'm' * 3 'm').toString()"), string("6 'm2'"));
+    assert_eq!(eval("(1.0 'm' / 1.0 'm').toString()"), string("1.0 'null'"));
+
+    // Why the suite's three cases are true (path.quantity.006 to .008).
+    for name in ["testQuantity9", "testQuantity10", "testQuantity11"] {
+        expect_case("testQuantity", name);
+    }
+
+    // A zero divisor value is empty under `/`; a zero dividend is `0`.
+    assert_eq!(eval("1 'm' / 0 's'"), empty());
+    assert_eq!(eval("0 'm' / 0 's'"), ucum_result("0", Some("m.s-1")));
+
+    // A UcumException fails `*` with its message and the `*` suffix, and
+    // makes `/` empty (:2800-2801, :3020-3022).
+    expect_times_error(
+        "1 'm' * 1 'zzz'",
+        None,
+        "Error processing unit 'm.zzz': The unit 'zzz' is unknown' at position 2",
+        9,
+    );
+    assert_eq!(eval("1 'zzz' / 1 'm'"), empty());
+
+    // A UCUM-system quantity with no `code` enters with the code null
+    // (`qtyToPair`, :2319-2328).
+    let no_code = parameters_with_quantities(
+        "ucum-no-code",
+        &[
+            r#""value":1,"system":"http://unitsofmeasure.org""#,
+            r#""value":1,"system":"http://unitsofmeasure.org","code":"m""#,
+            r#""value":0,"system":"http://unitsofmeasure.org","code":"m""#,
+            r#""value":0,"system":"http://unitsofmeasure.org""#,
+        ],
+    );
+    let p = |i: usize| format!("Parameters.parameter[{i}].value");
+    // Under `*` the joined string spells it `null`. `Parameters.parameter[0]
+    // .value` is 29 characters, so the `*` is at column 32, byte 30.
+    expect_times_error(
+        &format!("{} * {}", p(0), p(1)),
+        Some(&no_code),
+        "Error processing unit 'null.m': The unit 'null' is unknown' at position 0",
+        32,
+    );
+    // Under `/`, on either side, `divideBy` divides the values and then reads
+    // `getCode().contains("/")` (UcumEssenceService.java:322-323): the JVM's
+    // NullPointerException, uncaught, with no offset; a zero dividend over a
+    // zero divisor still reaches the code ...
+    for (l, r) in [(0, 1), (1, 0), (3, 2), (2, 3)] {
+        assert_eq!(
+            expect_execution_error_over(&format!("{} / {}", p(l), p(r)), Some(&no_code)),
+            NPE_PAIR_CODE_CONTAINS,
+            "parameter[{l}] / parameter[{r}]"
+        );
+    }
+    // ... and only a zero divisor under a non-zero dividend stays empty,
+    // because `Decimal.divide` raises before any code is read
+    // (Decimal.java:634-635).
+    for (l, r) in [(0, 2), (1, 3)] {
+        assert_eq!(
+            eval_over(&format!("{} / {}", p(l), p(r)), Some(&no_code)),
+            empty(),
+            "parameter[{l}] / parameter[{r}]"
+        );
+    }
+    // Under `=` the same quantity is read as the code `1` (:2293).
+    assert_eq!(
+        eval_over(&format!("{} = 1 '1'", p(0)), Some(&no_code)),
+        boolean(true)
+    );
+
+    // A quantity and a number are the incompatible-type error (:2803-2804,
+    // :3023-3024).
+    expect_evaluation_error("2 'm' * 3");
+    expect_evaluation_error("2 'm' / 3");
+}
+
+// ---------------------------------------------------------------------------
+// path.quantity.022 -- canonical comparison
+// ---------------------------------------------------------------------------
+
+// covers: path.quantity.022
+#[test]
+fn canonical_values_compare_as_strings_for_equality_and_as_doubles_for_ordering() {
+    // Different canonical unit strings: `=` false, `!=` true, `~` false, not
+    // empty (FHIRPathEngine.java:2268-2273, :2341-2346).
+    assert_eq!(eval("1 'cm' = 1 's'"), boolean(false));
+    assert_eq!(eval("1 'g' != 1 'm'"), boolean(true));
+    assert_eq!(eval("1 'cm' ~ 1 's'"), boolean(false));
+
+    // Equal canonical units: the canonical values' strings under
+    // path.equality.001's trailing-zero rule (:2270, :2161-2184).
+    for (expr, want) in [
+        ("4.0000 'g' = 4000.0 'mg'", true),
+        ("4 'g' = 4000 'mg'", true),
+        ("1 '[in_i]' = 2.54 'cm'", true),
+        ("1 'L' = 1000 'mL'", true),
+        ("1 'h' = 60 'min'", true),
+        ("1 'a' = 365.25 'd'", true),
+        ("1 'kg' = 1000 'g'", true),
+        ("1 'g/L' = 1000 'mg/L'", true),
+        ("185 '[lb_av]' = 83914.58845 'g'", true),
+        ("100 '%' = 1 '1'", true),
+        ("1 '10*3' = 1000 '1'", true),
+        ("60 '/min' = 1 '/s'", true),
+        ("4 'g' = 4040 'mg'", false),
+        ("1 'mo' = 30 'd'", false),
+        // `10` against `10.00`, read as `1` against `10` (DEBT-0020).
+        ("1 'mg/dL' = 10 'mg/L'", false),
+        ("10 'mg/L' = 1 'mg/dL'", false),
+        // The whole-number step of path.quantity.020.
+        ("60.0 '/min' = 1 '/s'", false),
+    ] {
+        assert_eq!(eval(expr), boolean(want), "{expr}");
+    }
+
+    // Ordering converts each canonical value with `Double.valueOf`, with no
+    // check that the canonical units agree (:2419, :2440-2450).
+    for (expr, want) in [
+        ("1 'kg' < 2000 'g'", true),
+        ("4 'g' < 4040 'mg'", true),
+        ("1 'mo' < 30 'd'", false),
+        ("6 days < 1 week", true),
+        ("1 'cm' < 1 's'", true),
+    ] {
+        assert_eq!(eval(expr), boolean(want), "{expr}");
+    }
+
+    // The suite's cases, all passed by HAPI.
+    for n in 1..=8 {
+        expect_case("testQuantity", &format!("testQuantity{n}"));
+    }
+    for (group, name) in [
+        ("testLessThan", "testLessThan31"),
+        ("testEquality", "testEquality28"),
+        ("testNEquality", "testNEquality24"),
+        ("testEquivalent", "testEquivalent22"),
+        ("testNotEquivalent", "testNotEquivalent22"),
+        ("testLessThan", "testLessThan22"),
+        ("testLessOrEqual", "testLessOrEqual22"),
+        ("testGreatorOrEqual", "testGreatorOrEqual22"),
+        ("testGreaterThan", "testGreaterThan22"),
+    ] {
+        expect_case(group, name);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// path.quantity.023 -- special units
+// ---------------------------------------------------------------------------
+
+// covers: path.quantity.023
+#[test]
+fn special_units_are_not_canonicalised_unless_a_handler_maps_them_to_a_ratio_unit() {
+    // Handlers with an offset (Converter.java:168-171).
+    for code in ["Cel", "[degF]"] {
+        assert_eq!(
+            canonical_error(code),
+            "Not handled yet (special unit with offset from 0 at intersect)",
+            "{code}"
+        );
+    }
+    // Special units with no handler (:163-164); the registry's `[hp_X]` and
+    // `[hp_C]` keys do not match the file's codes.
+    for code in [
+        "[degRe]", "[hp'_X]", "[hp'_C]", "[hp'_M]", "[hp'_Q]", "B[10.nV]",
+    ] {
+        assert_eq!(
+            canonical_error(code),
+            "Not handled yet (special unit)",
+            "{code}"
+        );
+    }
+    // The seventh never reaches that check: `/` ends a symbol even inside
+    // brackets (Lexer.java:136-140).
+    assert_eq!(
+        canonical_error("[m/s2/Hz^(1/2)]"),
+        "Error processing unit '[m/s2/Hz^(1/2)]': The unit '[m' is unknown' at position 0"
+    );
+
+    // The other special units canonicalise as the handler's unit: the same
+    // canonical unit string as that unit.
+    for (special, unit) in [
+        ("[p'diop]", "deg"),
+        ("%[slope]", "deg"),
+        ("[pH]", "mol/l"),
+        ("Np", "1"),
+        ("B", "1"),
+        ("bit_s", "1"),
+        ("B[SPL]", "10*-5.Pa"),
+        ("B[V]", "V"),
+        ("B[mV]", "mV"),
+        ("B[uV]", "uV"),
+        ("B[W]", "W"),
+        ("B[kW]", "kW"),
+    ] {
+        assert_eq!(
+            canonical("1", special).1,
+            canonical("1", unit).1,
+            "{special} canonicalises in {unit}'s units"
+        );
+    }
+    for expr in [
+        "1 '[pH]' = 1 'mol/L'",
+        "1 'B' = 1 '1'",
+        "1 'Np' = 1 '1'",
+        "1 'B[SPL]' = 2 '10*-5.Pa'",
+        "1 '%[slope]' = 1 'deg'",
+    ] {
+        assert_eq!(eval(expr), boolean(true), "{expr}");
+    }
+
+    // An operand that raises falls back as path.quantity.017 states.
+    assert_eq!(eval("1 'Cel' = 1 'Cel'"), boolean(true));
+    assert_eq!(eval("1 'Cel' = 274.15 'K'"), empty());
+    assert_eq!(
+        expect_execution_error_over("1 'Cel' ~ 274.15 'K'", None),
+        NPE_QTY_EQUIVALENT
+    );
+    assert_eq!(
+        expect_execution_error_over("1 'Cel' < 2 'K'", None),
+        NPE_LIST_GET_IS_PRIMITIVE
+    );
+    assert_eq!(eval("1 'Cel'.comparable(1 'K')"), boolean(false));
+    expect_times_error(
+        "1 'Cel' * 1 'm'",
+        None,
+        "Not handled yet (special unit with offset from 0 at intersect)",
+        11,
+    );
+    assert_eq!(eval("1 'Cel' / 1 'm'"), empty());
+}
+
+// ---------------------------------------------------------------------------
+// path.quantity.024 -- the UCUM grammar and its messages
+// ---------------------------------------------------------------------------
+
+/// The `NumberFormatException` message `Lexer.getTokenAsInt` raises for a
+/// number outside the Java `int` range (`path.quantity.024`).
+const NFE_10000000000: &str = "For input string: \"10000000000\"";
+
+// covers: path.quantity.024
+#[test]
+fn ucum_codes_are_parsed_by_the_pinned_grammar_and_its_errors_are_the_messages_times_shows() {
+    // The lexer and parser (Lexer.java:61-140, ExpressionParser.java:48-146):
+    // a number after a symbol is its exponent, and a final stray `)` is
+    // accepted because the lexer has consumed it (:203-205).
+    assert_eq!(canonical("1", "m2").1, "m2");
+    assert_eq!(canonical("1", "m)").1, "m");
+
+    // The messages, `<code>` being the whole code and the position the
+    // 0-based start of the token being read. The quote before ` at position`
+    // is in the library's text.
+    for (code, want) in [
+        (
+            "zzz",
+            "Error processing unit 'zzz': The unit 'zzz' is unknown' at position 0",
+        ),
+        (
+            "m.zzz",
+            "Error processing unit 'm.zzz': The unit 'zzz' is unknown' at position 2",
+        ),
+        (
+            "[m/s2/Hz^(1/2)]",
+            "Error processing unit '[m/s2/Hz^(1/2)]': The unit '[m' is unknown' at position 0",
+        ),
+        (
+            "m(s",
+            "Error processing unit 'm(s': Expected '/' or '.'' at position 1",
+        ),
+        (
+            ".m",
+            "Error processing unit '.m': unexpected token looking for a symbol or a number' at position 0",
+        ),
+        (
+            "m.)",
+            "Error processing unit 'm.)': unexpected token looking for a symbol or a number' at position 2",
+        ),
+        (
+            "{abc",
+            "Error processing unit'{abc': Annotation contains non-ascii characters",
+        ),
+        (
+            "m  ",
+            "Error processing unit 'm  ': unexpected character ' ' at position 1",
+        ),
+        (
+            "m]",
+            "Error processing unit 'm]': ] without [' at position 0",
+        ),
+        ("m)m", "Expression was not parsed completely. Syntax Error?"),
+    ] {
+        assert_eq!(canonical_error(code), want, "{code:?}");
+    }
+    // Templates whose position the spec does not place: the prefix only.
+    assert!(canonical_error("m.").starts_with(
+        "Error processing unit 'm.': unexpected end of expression looking for a symbol or a \
+         number' at position "
+    ));
+    assert!(canonical_error("(m").starts_with(
+        "Error processing unit '(m': Unexpected Token Type 'NONE' looking for a close bracket' \
+         at position "
+    ));
+    // A sign with no digit and a nested `[` raise; their text is not stated.
+    for code in ["+", "m-", "[m["] {
+        canonical_error(code);
+    }
+
+    // For a UcumException only `*` shows the message; `=` falls back to the
+    // code rule, `comparable()` is false, `/` is empty, and an ordered
+    // operator that canonicalises fails with path.quantity.013's message.
+    expect_times_error(
+        "1 'm' * 1 'zzz'",
+        None,
+        "Error processing unit 'm.zzz': The unit 'zzz' is unknown' at position 2",
+        9,
+    );
+    assert_eq!(eval("1 'm' = 1 'zzz'"), empty());
+    assert_eq!(eval("1 'm'.comparable(1 'zzz')"), boolean(false));
+    assert_eq!(eval("1 'm' / 1 'zzz'"), empty());
+    assert_eq!(
+        expect_execution_error_over("1 'm' < 1 'zzz'", None),
+        NPE_LIST_GET_IS_PRIMITIVE
+    );
+
+    // A number outside the Java `int` range throws NumberFormatException from
+    // `Lexer.getTokenAsInt` (Lexer.java:199-201), which no arm catches: every
+    // operator fails with its message and no offset, except `comparable()`,
+    // whose `getCanonicalUnits` re-wraps it (UcumEssenceService.java:237-239).
+    for expr in [
+        "1 '10000000000' = 1 'm'",
+        "1 '10000000000' = 1 '10000000000'",
+        "1 '10000000000' ~ 1 'm'",
+        "1 '10000000000' ~ 1 '10000000000'",
+        "1 '10000000000' < 1 'm'",
+        "1 'm10000000000' * 1 'm'",
+        "1 'm10000000000' / 1 'm'",
+    ] {
+        assert_eq!(
+            expect_execution_error_over(expr, None),
+            NFE_10000000000,
+            "{expr}"
+        );
+    }
+    assert_eq!(eval("1 '10000000000'.comparable(1 'm')"), boolean(false));
+
+    // `[s]` is not a unit of the pinned file; `[in_i]` canonicalises to `m`.
+    assert_eq!(eval("1 'cm'.comparable(1 '[s]')"), boolean(false));
+    assert_eq!(eval("1 'cm'.comparable(1 '[in_i]')"), boolean(true));
+    for name in ["Comparable1", "Comparable2", "Comparable3"] {
+        expect_case("Comparable", name);
+    }
 }
