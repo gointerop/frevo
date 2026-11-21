@@ -1,7 +1,7 @@
 # 6. Where the FHIRPath engine gets its UCUM data
 
-- **Status:** proposed. The implementer of task 44 adopted it; it is raised for
-  the owner at the next checkpoint.
+- **Status:** accepted by the owner on 2026-11-21 as proposed. The implementer of
+  task 44 adopted it first.
 - **Date:** 2026-11-21
 - **Context phase:** `add-fhirpath-and-codegen-r4`, task 44
 
