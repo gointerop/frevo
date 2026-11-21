@@ -486,6 +486,19 @@ fn element_classes(
                 .into_iter()
                 .collect();
             let snapshot = inputs.element(root, &element.path);
+            // A `System.*` element with no `structuredefinition-fhir-type`
+            // extension takes the class of the field HAPI inherits for it.
+            // The only such element in the 4.0.1 package is `xhtml.id`, the
+            // `id` `XhtmlType` inherits from `Element`, so a `StringType`
+            // (`codegen.ancestry.002`; the package reader's fallback already
+            // reads it as `string`). Any other is refused: a new one is a
+            // reviewed decision, not a guess.
+            if snapshot.is_some_and(|s| s.untyped_system_type) && element.path != "xhtml.id" {
+                return Err(refuse(format!(
+                    "{} declares a System type with no structuredefinition-fhir-type                      extension; only xhtml.id is mapped (to StringType), and a new one needs                      a reviewed rule",
+                    element.path
+                )));
+            }
             for (i, declared) in element.types.iter().enumerate() {
                 let class = value_class(element, declared, inputs, draft, snapshot, &enumeration)
                     .ok_or_else(|| {
@@ -576,11 +589,10 @@ fn value_class(
     }
     // A `System.*` type was read through its `structuredefinition-fhir-type`
     // extension (`package::fhir_type_of`), so `Element.id` is `string` and
-    // `Extension.url` is `uri`. `xhtml.id` declares `System.String` with no
-    // such extension; the package reader's fallback reads it as `string`, the
-    // type `Element.id` has, so it is a `StringType` like every other
-    // element's `id`. The spec fixes no rule for it (a gap the proposer is
-    // closing); this is the reading the rest of the table implies.
+    // `Extension.url` is `uri`. `xhtml.id`, the one `System.*` element with
+    // no such extension, was checked in `element_classes` and reads as
+    // `string`, the `StringType` field `XhtmlType` inherits from `Element`
+    // (`codegen.ancestry.002`).
     draft.qualified(&RowOf::Type(declared.to_string()))
 }
 

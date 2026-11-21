@@ -479,8 +479,11 @@ checkpoint because it changes what a gate measures.
   rather than into `frevo-model`, because `frevo-path` is the crate that
   evaluates against it and `path.api.008` forbids it depending on
   `frevo-model`. `xhtml.id` declares `System.String` with no fhir-type
-  extension; it is read as `string`, so `StringType`, as `Element.id` is (a
-  spec gap the proposer is closing).
+  extension and maps to `StringType`, the field `XhtmlType` inherits from
+  `Element`, as `codegen.ancestry.002` now states. The generator refuses any
+  other `System.*` element that lacks the extension. The drift check covers
+  the table (`run::drift_check_outputs`, `codegen.output.005`, `bb94e47`), and
+  `codegen_r4` is 56 of 56.
 
 - [x] **15. Check the compile-time budget and decide.** Measure a cold
   `cargo build -p frevo-model --release` on the reference environment against

@@ -64,6 +64,11 @@ pub struct SnapshotElement {
     /// element: the name its nested type is given (`Contact` for
     /// `Patient.contact`).
     pub explicit_type_name: Option<String>,
+    /// Whether a declared type is a `System.*` code with no
+    /// `structuredefinition-fhir-type` extension beside it, so that its FHIR
+    /// type in [`SnapshotElement::fhir_types`] is the reader's fallback. In the
+    /// 4.0.1 package that is only `xhtml.id`.
+    pub untyped_system_type: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -497,6 +502,10 @@ fn snapshot_element(value: &Value) -> SnapshotElement {
             binding_name: type_extension(b, BINDING_NAME_EXTENSION, "valueString"),
         }),
         explicit_type_name: type_extension(value, EXPLICIT_TYPE_NAME_EXTENSION, "valueString"),
+        untyped_system_type: declared.iter().any(|t| {
+            string_at(t, "code").is_some_and(|c| c.starts_with(SYSTEM_TYPE_PREFIX))
+                && type_extension(t, FHIR_TYPE_EXTENSION, "valueUrl").is_none()
+        }),
     }
 }
 
