@@ -1,4 +1,39 @@
-CHANGES_REQUESTED
+APPROVED
+
+Fifty-fifth review (commit `702d582`, 2026-11-21, diff against `505399b`).
+It resolves all three findings and both notes of the fifty-fourth review.
+
+I re-ran the path-based probes against the pinned R4 Java model and
+`hl7.fhir.r4.core#4.0.1`, applying the amended rules and the thirteen
+`class-name` entries. That covers 716 elements: every `System.*`-typed
+element mapped through its `structuredefinition-fhir-type`, every
+`contentReference` element, and the `Resource.id` entry. All 716 match the
+class HAPI holds:
+- every resource's `id` is `IdType`;
+- `Element.id` is `StringType`;
+- `Extension.url` is `UriType`;
+- each `contentReference` element has the referenced element's class.
+
+The earlier checks still hold:
+- `Enumeration`: 324 elements predicted, 323 held as `Enumeration`;
+- the superclass and component-name results.
+
+The table as specified gives `path.api.005`'s answers. `Patient.id` is an
+`IdType`, assignable to `id`, `uri` and `Element`. So `Patient.id` as `uri`
+is accepted, and as `string` it fails with
+`HAPI-0256: FhirPath expression returned unexpected type IdType - Expected org.hl7.fhir.r4.model.StringType`.
+
+All new citations are right: `Quantity.java:231`, `Resource.java:53`,
+`Element.java:56`, `Extension.java:55` and `Consent.java:1224`, `:2287`,
+`:2572`.
+
+Counts are codegen 54, model 83, path 390, total 527, with no duplicates.
+`openspec validate --strict` passes, and the registers agree.
+
+Three non-blocking notes are in the dated section at the end. The earlier
+record follows.
+
+## Fifty-fourth-review findings as raised (commits `7bd6842`, `cf5cda3`)
 
 Fifty-fourth review (commits `7bd6842` and `cf5cda3`, 2026-11-21).
 `MODEL` is `reference/org.hl7.fhir.core/org.hl7.fhir.r4/src/main/java/org/hl7/fhir/r4/model/`
@@ -4910,3 +4945,62 @@ chain.
    `8e50594`, although the medians are those recorded at `8e50594`. The
    scenario cites `8e50594` through the blocker table, which is consistent.
    A later re-record should state which commit it measured.
+
+## Fifty-fifth review - commit `702d582` (2026-11-21)
+
+Scope:
+- `codegen.ancestry.002` to `.005`, `codegen.binding.002` and `DEBT-0021`,
+  as corrected;
+- `model.perf.004`'s notes;
+- the `tasks/blockers.md` correction.
+
+**Method.** `anc2.py` reuses `anc.py`'s package and Java walk. It then
+applies:
+- the thirteen `class-name` entries;
+- the `System.*` rule (map through `structuredefinition-fhir-type`, then
+  apply the primitive naming rule);
+- the `Resource.id` `element-class` entry, applied to every resource's
+  top-level `id`.
+
+It compares each predicted class with HAPI's declared class. For `id` and
+`url` the declared class is inherited, so it comes from `Resource.java:53`,
+`Element.java:56` and `Extension.java:55`. For each `contentReference`
+element, the class of the referenced element is compared with the Java
+field's class. Result: 716 elements checked, 0 mismatches.
+
+**Confirmed.**
+- Finding 1: both `Consent` entries are added, with the right lines.
+  `codegen.ancestry.002`, `.004`, `DEBT-0021` and the blocker now say
+  thirteen.
+- Finding 2: the `System.*` rule and the `Resource.id` entry together give:
+  - `IdType` for every resource's `id`;
+  - `StringType` for `Element.id`;
+  - `UriType` for `Extension.url`.
+
+  `codegen.ancestry.005` lists `Patient.id` to `IdType`. With the `id`
+  superclass entry, `IdType` is assignable to `id`, `uri` and `Element`, and
+  not to `string`. That is `path.api.005`'s accept-as-`uri` and
+  `HAPI-0256: ... IdType - Expected org.hl7.fhir.r4.model.StringType`.
+- Finding 3: the figures are 324 predicted and 323 held (291 + 29 + 4), and
+  `Quantity.java:231` is right. `codegen.binding.002` now says 323.
+- Fifty-fourth-review notes: `model.perf.004` now gives 42.6 µs at `40ffd16`,
+  and has a note on the bench files' `commit` fields.
+- No stale "eleven" or "320" is left outside the blocker's historical
+  paragraph, which is followed by its correction.
+
+**Non-blocking notes.**
+1. `xhtml.id` is the one `System.String` element in the package with no
+   `structuredefinition-fhir-type` extension. So the `System.*` rule says
+   nothing about it. No navigation reaches it as a typed value, but the
+   generator needs a defined behaviour. Default it to `StringType`, as
+   `Element.id`, or refuse it explicitly.
+2. `model.perf.004` says the bench files' `commit` fields "name later
+   recordings". Their model rows are identical, to the third decimal, to the
+   `8e50594` table. They look carried over rather than re-measured. The
+   scenario's conclusion, that the files are not the source, is unaffected.
+3. `DEBT-0021` still says the comparison matched element classes by name and
+   may miss a differing class. The fifty-fourth and fifty-fifth reviews'
+   path-based comparisons found nothing further over every single-typed
+   element, `System.*`-typed element and `contentReference`. Only
+   choice-typed elements, whose Java field is `Type`, stay unchecked by path.
+   The debt could be narrowed to that.
