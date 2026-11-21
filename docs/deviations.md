@@ -99,6 +99,15 @@ file, so its prose is not redistributable here (see `oracles/PINS.md`).
   validation invariant, which the differential harness already compares.
 - **Reviewed:** 2026-11-08, owner — accepted. Match HAPI, no
   configuration flag; nothing owed beyond parity.
+- **Confirmed against HAPI 8.12.0 (in-process probe, 2026-11-21):** reproduced.
+  Over `patient-example.xml`, through `FhirPathR4` and through the raw
+  `FHIRPathEngine` (`org.hl7.fhir.r4` 6.9.12, `hapi-fhir-structures-r4` 8.12.0),
+  `Patient.name.prefix.single()` throws `The function single can only be used on
+  a singleton value but found 0 (@char 21)` (`FhirPathExecutionException`,
+  `HAPI-0255` prefix, on `FhirPathR4`; `PathEngineException` on the raw engine),
+  `Patient.name.single()` throws the same with `found 3 (@char 14)`, and
+  `Patient.id.single()` is `id:example`. Frevo returns the same message text and
+  the same values.
 
 ### DEV-0002 — an ordered comparison with a multi-item operand returns empty instead of erroring
 
@@ -122,6 +131,10 @@ file, so its prose is not redistributable here (see `oracles/PINS.md`).
   the differential harness compares.
 - **Reviewed:** 2026-11-08, owner — accepted. Match HAPI, no
   configuration flag; nothing owed beyond parity.
+- **Confirmed against HAPI 8.12.0 (in-process probe, 2026-11-21):** reproduced.
+  `(1 | 2) < 3`, `(1 | 2) > 0`, `(1 | 2) <= 3`, `(1 | 2) >= 0` and
+  `1 < (2 | 3)` each evaluate to the empty collection on `FhirPathR4` and on the
+  raw engine, as does `{} < 3`. Frevo returns empty for all six.
 
 ### DEV-0003 — `<` rejects `unsignedInt` and `positiveInt` while `<=`, `>` and `>=` accept them
 
@@ -148,6 +161,19 @@ file, so its prose is not redistributable here (see `oracles/PINS.md`).
 - **Normalizer impact:** none.
 - **Reviewed:** 2026-11-08, owner — accepted. Match HAPI, no
   configuration flag; the residual hazard is tracked as `DEBT-0003`.
+- **Confirmed against HAPI 8.12.0 (in-process probe, 2026-11-21):** reproduced,
+  and wider than the entry says. Over a `Media` with `height` 5 and `width` 10
+  (both `positiveInt`), `Media.height < Media.width` throws `Unable to compare
+  values of type positiveInt and positiveInt (@char 1)`, and so do
+  `Media.height < 7` (`positiveInt and integer`) and `7 < Media.height`
+  (`integer and positiveInt`), while `>`, `<=` and `>=` return booleans
+  (`Media.height > Media.width` is `false`, `<=` is `true`, `>=` is `false`,
+  `7 > Media.height` is `true`). Over a `Bundle` with `total` 5 (`unsignedInt`),
+  `Bundle.total < 7` and `Bundle.total < Bundle.total` throw the same message
+  with `unsignedInt` and the other three operators answer. Identical on
+  `FhirPathR4` and the raw engine, and identical in Frevo (message text and
+  values). The asymmetry holds for a mixed `positiveInt` or `unsignedInt` and
+  `integer` operand, not only for two of the same type.
 
 ### DEV-0004 — numeric comparison and the transcendental math functions go through binary floating point
 
@@ -174,6 +200,22 @@ file, so its prose is not redistributable here (see `oracles/PINS.md`).
   outcomes are.
 - **Reviewed:** 2026-11-08, owner — accepted. Match HAPI, no
   configuration flag; the residual hazard is tracked as `DEBT-0005`.
+- **Confirmed against HAPI 8.12.0 (in-process probe, 2026-11-21):** reproduced.
+  `1.00000000000000000001 <= 1.00000000000000000000` is `true` (exact decimals
+  give `false`), `1.00000000000000000002 >= 1.00000000000000000003` is `true`,
+  `1.00000000000000000002 > 1.00000000000000000001` and
+  `1.00000000000000000001 < 1.00000000000000000002` are `false`, and
+  `9007199254740993.0 > 9007199254740992.0` is `false`, whereas `=` on the same
+  pair is `false` and `+` is exact (`9007199254740993.0 + 1` is
+  `9007199254740994.0`). `(1.00000000000000000002 |
+  1.00000000000000000001).sort()` keeps its input order (the two compare equal
+  under `Double.compare`). The math functions round-trip through `double`:
+  `1.00000000000000000001.abs()` is `1.0`, `9007199254740993.0.abs()` is
+  `9007199254740992`, `9007199254740993.0.sqrt()` is `94906265.62425156`,
+  `0.1.ln()` is `-2.3025850929940455`, and `9007199254740993.0.ceiling()` is the
+  integer `2147483647` (clamped to `Integer.MAX_VALUE`, not recorded above).
+  Identical on `FhirPathR4` and the raw engine, and identical in Frevo for every
+  expression listed.
 
 ### DEV-0005 — comparing incommensurable quantities compares magnitudes instead of erroring
 
@@ -182,8 +224,11 @@ file, so its prose is not redistributable here (see `oracles/PINS.md`).
 - **HAPI 8.12.0 behaviour:** `1 'cm' < 1 's'` returns `true`.
   `qtyToCanonicalDecimal` (`ENGINE:2301`) asks UCUM for each operand's canonical
   form and returns the bare decimal with **no** dimension check; `opLessThan`
-  then compares `0.01 < 1`. With no UCUM service configured, `ENGINE:2444`
-  returns `false` outright for two quantities whose unit codes differ.
+  then compares `0.01 < 1`. With a worker context whose `getUcumService()`
+  returns `null`, `ENGINE:2444` returns `false` outright for two quantities
+  whose unit codes differ. (Corrected 2026-11-21: `FhirPathR4`'s
+  `HapiWorkerContext` does not return `null`, it throws; see the confirmation
+  line below.)
 - **Specification requirement:** FHIRPath 2.0.0, Quantity — comparison is
   defined for commensurable units; units that cannot be converted give an empty
   result or an error.
@@ -196,6 +241,27 @@ file, so its prose is not redistributable here (see `oracles/PINS.md`).
 - **Normalizer impact:** none.
 - **Reviewed:** 2026-11-08, owner — accepted. Match HAPI, no
   configuration flag; the residual hazard is tracked as `DEBT-0001`.
+- **Confirmed against HAPI 8.12.0 (in-process probe, 2026-11-21):** reproduced
+  with a UCUM service, and the no-UCUM branch is corrected. With `ucum` 1.0.9's
+  `ucum-essence.xml` supplied to the raw engine through a delegating
+  `IWorkerContext` (`HapiWorkerContext.setUcumService` itself throws),
+  `1 'cm' < 1 's'` is `true`, `1 'cm' < 1 'm'` is `true`, `1 'kg' < 1 'cm'` is
+  `false`, `1 'cm' = 1 's'` is `false`, `1 'cm' > 1 's'` is `false` and `<=`
+  and `>=` are `true`; Frevo returns the same eight results (it always has UCUM
+  data, `path.quantity.016`). Through `FhirPathR4`, or the raw engine over
+  `HapiWorkerContext`, the `getUcumService() == null` branch is never reached:
+  `HapiWorkerContext.getUcumService()` throws `UnsupportedOperationException`
+  with message `HAPI-0274: `, so `1 'cm' < 1 's'`, `1 'cm' < 1 'm'`,
+  `1 'kg' < 1 'cm'` and `1 'cm' = 1 's'` raise it, while `1 'cm' < 1 'cm'` is
+  `false` and `>`, `<=`, `>=` return the same booleans as the UCUM run. So on
+  the server-facing path HAPI raises where Frevo answers `true`; the entry's
+  decision (answer a boolean) holds for a UCUM-equipped engine, such as the
+  suite's and the validator's, and this narrower difference was not recorded
+  with it. It needs the owner's ruling at the checkpoint: keep answering (the
+  current behaviour) or raise `UnsupportedOperationException`-equivalent errors
+  when no UCUM data is configured, which Frevo cannot be today. No
+  search-parameter expression known to this change compares quantities with
+  differing unit codes (not checked against the generated table).
 
 ### DEV-0006 — a string function over a non-string focus returns empty instead of erroring
 
@@ -222,6 +288,14 @@ file, so its prose is not redistributable here (see `oracles/PINS.md`).
 - **Normalizer impact:** none.
 - **Reviewed:** 2026-11-08, owner — accepted. Match HAPI, no
   configuration flag; nothing owed beyond parity.
+- **Confirmed against HAPI 8.12.0 (in-process probe, 2026-11-21):** reproduced.
+  On `FhirPathR4` and the raw engine, `1.startsWith('1')`, `1.endsWith('1')`,
+  `1.contains('1')`, `1.length()`, `1.upper()`, `1.5.startsWith('1')`,
+  `true.startsWith('t')`, `1.substring(0)`, `1.replace('1','2')`,
+  `1.matches('1')` and `1.indexOf('1')` are all empty, while
+  `'a'.startsWith('a')` is `true`. With `setDoImplicitStringConversion(true)` on
+  the raw engine `1.startsWith('1')` is `true` and `1.length()` is `1`. Frevo
+  agrees on all of them, including the implicit-conversion setting.
 
 ### DEV-0007 — `extension(url)` also returns modifier extensions
 
@@ -245,6 +319,15 @@ file, so its prose is not redistributable here (see `oracles/PINS.md`).
 - **Normalizer impact:** none.
 - **Reviewed:** 2026-11-08, owner — accepted. Match HAPI, no
   configuration flag; the residual hazard is tracked as `DEBT-0002`.
+- **Confirmed against HAPI 8.12.0 (in-process probe, 2026-11-21):** reproduced.
+  Over a `Patient` with extension `http://x/e` = `plain` and modifierExtension
+  `http://x/m` = `modifier` and `http://x/e` = `modifier-same-url`,
+  `Patient.extension('http://x/m').value` is `string:modifier` and
+  `Patient.extension('http://x/e').value` is `plain, modifier-same-url`
+  (ordinary extensions first), whereas `Patient.extension.where(url =
+  'http://x/m').value` is empty and `Patient.extension.where(url =
+  'http://x/e').value` is `plain`. Identical on `FhirPathR4` and the raw
+  engine, and in Frevo.
 
 ### DEV-0008 — `now()` is not stable within one evaluation, and `today()` reads the process time zone
 
@@ -273,6 +356,20 @@ file, so its prose is not redistributable here (see `oracles/PINS.md`).
   no new rule.
 - **Reviewed:** 2026-11-08, owner — accepted. Match HAPI, no
   configuration flag; nothing owed beyond parity.
+- **Confirmed against HAPI 8.12.0 (in-process probe, 2026-11-21):** reproduced
+  for the time zone, and for `now()` as far as a probe can show. Through
+  `FhirPathR4`, `now() = now()` evaluated 20,000 times was `true` 19,999 times
+  and `false` once, so two calls in one expression can differ (`now() != now()`
+  was `false` in all 20,000 runs and `(now() | now()).count()` was `1` in all
+  2,000, so the divergence is a millisecond boundary and rare). `today()` and
+  `now()` follow `TimeZone.getDefault()`: at 2026-11-21T14:11Z a default of
+  `UTC` gave `today()` `2026-11-21`, `Pacific/Kiritimati` (+14:00) gave
+  `2026-11-22` and `now()` `2026-11-22T04:11:18+14:00`, and `Pacific/Pago_Pago`
+  (-11:00) gave `2026-11-21` and `2026-11-21T03:11:18-11:00`. Frevo with the
+  evaluation zone set to 0, +840 and -660 minutes gives the same `today()` and
+  `now()` offsets and dates. Frevo's `now() = now()` was `true` in the one run
+  probed here; its freshness is asserted by `path.datetime.003`, not by this
+  probe.
 
 ### DEV-0009 — `toDate()` does not exist in the R4 engine
 
@@ -281,7 +378,9 @@ file, so its prose is not redistributable here (see `oracles/PINS.md`).
 - **HAPI 8.12.0 behaviour:** `'2015'.toDate()` fails to parse.
   `ExpressionNode.Function` has `ConvertsToDate` but no `ToDate`, and
   `Function.fromCode` has no `"toDate"` case, so the name resolves to no
-  function. `toTime` and `toBoolean` both exist.
+  function. `toBoolean` exists and works; `toTime` and `toDateTime` exist but
+  are stubs that raise "not implemented" (`DEV-0021`). (Corrected 2026-11-21:
+  this entry used to say only that `toTime` exists.)
 - **Specification requirement:** FHIRPath 2.0.0, Conversion — `toDate()` is
   defined alongside `convertsToDate()`.
 - **Chosen behaviour:** HAPI
@@ -294,6 +393,19 @@ file, so its prose is not redistributable here (see `oracles/PINS.md`).
 - **Normalizer impact:** none.
 - **Reviewed:** 2026-11-08, owner — accepted. Match HAPI, no
   configuration flag; the residual hazard is tracked as `DEBT-0004`.
+- **Confirmed against HAPI 8.12.0 (in-process probe, 2026-11-21):** reproduced,
+  with the wording corrected above. `'2015'.toDate()` and
+  `'2015-01-01'.toDate()` fail to parse on the raw engine with
+  `FHIRLexerException: Error @1, 15: The name toDate is not a valid function
+  name` (`@1, 21` for the second), and on `FhirPathR4` as
+  `FhirPathExecutionException: HAPI-2409: ...` wrapping the same text. In the
+  same probe `'2015'.toBoolean()` is empty, `'2015'.toTime()` and
+  `'2015'.toDateTime()` raise `The function toTime is not implemented (@char
+  8)` (likewise `toDateTime`), and `'2015'.convertsToDate()`,
+  `'2015-01-01'.convertsToDate()` and `'2015-02-04T14'.convertsToDate()` are
+  `true`. Frevo gives the same failure (`The name toDate is not a valid function
+  name`, reported at offset 7 where HAPI's lexer reports column 15) and the same
+  other results.
 
 ### DEV-0010 — a host constant resolved implicitly before navigation shadows a real element
 
@@ -310,6 +422,12 @@ file, so its prose is not redistributable here (see `oracles/PINS.md`).
   `IMPLICIT_AFTER` only after navigation produced an empty result, which is a
   harmless fall-through. Both are gated on a non-null application context, so
   with a null `appInfo` neither fires however the host service is configured.
+  That makes the behaviour **unreachable through `FhirPathR4`** (corrected
+  2026-11-21): its `evaluate` calls `FHIRPathEngine.evaluate(Base,
+  ExpressionNode)`, which builds the execution context with a null `appInfo`
+  (`ENGINE:697-703`), so only a caller of the raw engine's
+  `evaluate(Object appContext, ...)` overloads (`ENGINE:716`, `753-796`)
+  reaches it.
 - **Specification requirement:** FHIRPath 2.0.0, Path selection — a leading
   identifier selects children of the context by name; environment variables are
   written `%name` and are a distinct production. Nothing in the grammar lets a
@@ -331,6 +449,21 @@ file, so its prose is not redistributable here (see `oracles/PINS.md`).
 - **Reviewed:** 2026-11-08, owner — accepted. Match HAPI, no configuration
   flag; the residual hazard is tracked as `DEBT-0010`. Raised after the review
   of DEV-0001..0009 and signed off separately, as a new deviation requires.
+- **Confirmed against HAPI 8.12.0 (in-process probe, 2026-11-21):** reproduced,
+  with the reachability corrected above. Over `patient-example.xml`, a raw
+  `FHIRPathEngine` with a host service answering `shadowed` for `name`,
+  `shadowed-type` for `Patient` and `after-answer` for `foo`, and a non-null
+  application context: `name` is `string:shadowed` (host asked
+  `name/IMPLICIT_BEFORE`, the three `HumanName`s never navigated), `Patient` is
+  `string:shadowed-type`, `Patient.name` and `name.given.first()` are empty,
+  `foo` is `string:after-answer`, and `name.where(given.exists()).count()` is
+  `0` (asked `name/IMPLICIT_BEFORE`, then `given/IMPLICIT_BEFORE` and
+  `given/IMPLICIT_AFTER` over the shadowing string). With a null application context the
+  same host is never asked and `name` gives the three `HumanName`s. Through
+  `FhirPathR4.setEvaluationContext`, `name` gives the three `HumanName`s and
+  the evaluation context is never called, whatever it answers. Frevo with an
+  application context and the same host gives the same values, and the same
+  questions in the same order, including the three asked for the `where` case.
 
 ### DEV-0011 — the front end diagnoses six inputs on which the pinned lexer crashes, accepts or truncates
 
