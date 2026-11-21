@@ -3514,3 +3514,37 @@ the spec's message.
 evaluates against it, and `path.api.008` forbids it depending on
 `frevo-model`. If the spec wants the table in `frevo-model` as well,
 `frevo-model` would need a copy or a seam.
+
+## 2026-11-21 — `add-fhirpath-and-codegen-r4` — task 27: `run_medians_us` is wired, but this host is too loaded to record it
+
+**Raised by** the implementer. The recorder and the three `bench/micro/`
+benches now record `run_medians_us` (`cf7e660`):
+- every row carries five per-run medians, in run order;
+- `record::write_merged` refuses a row without exactly five;
+- `model_micro`, `path_bytes` and `path-compile` run five times, and each row is
+  the median run;
+- `path-suite-wallclock` records each of its five cold runs.
+
+The recordings are **not** committed. `bench/micro/results.json` and
+`baseline.json` stay as they were, so `model.perf.006` is still red, with
+`no_regression_against_the_recorded_baseline` failing for lack of the arrays.
+Task 27 stays unticked.
+
+Why: on 2026-11-21 several other agent processes were running on this host,
+and every recording came out 1.5-2x slower than the same commit's morning
+figures. `model-full-parse` measured 30.4 us against 12.8 us, `path-compile`
+10.6 us against 7.3 us, and the suite wall-clock 0.31-0.45 s against 0.23 s.
+Committing those figures would have turned absolute budgets red that
+pass on a quiet host: `model.perf.003` (20 us), `model-meta-update-64kib`,
+`model-canonical-encode` and `path.perf.002`. Per `model.perf.006`, a local
+recording is advisory, and these were not even representative of the host.
+
+**Decision needed (owner or CI).** Record both files on CI or on the reference
+environment, or on this host while it is quiet:
+
+    cargo bench -p frevo-model --bench model_micro
+    cargo bench -p frevo-model --bench path_bytes
+    cargo bench -p frevo-path  --bench path_micro
+    (then the same three with `-- --out bench/micro/baseline.json`)
+
+Then re-run `model_bytes_lazy_perf` and `path_perf`.
