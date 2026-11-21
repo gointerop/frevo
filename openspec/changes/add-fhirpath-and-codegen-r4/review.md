@@ -1,4 +1,22 @@
-CHANGES_REQUESTED
+APPROVED
+
+Fifty-second review (commit `e0cc795`, 2026-11-21, diff against `bd3c207`).
+It resolves the fifty-first review's one finding: `path.math.017` now states
+the mantissa rule as the `float` test itself, for either sign. I re-ran every
+stated value against three builds: the `javac -g` build of `Ucum-java` 1.0.10
+and the published 1.0.10 and 1.0.9 jars. The three outputs are identical, and
+they match the spec:
+- each refused and accepted mantissa;
+- the `-33554432e0` outcomes;
+- the `StringIndexOutOfBoundsException` text for a non-ASCII digit, under
+  `/`, `div` and `mod`.
+
+`DEV-0030` and the blocker note agree with the spec. The counts hold (path
+390, total 522). `openspec validate --strict` passes, and the registers agree.
+One non-blocking note is in the dated section at the end. The earlier record
+follows.
+
+## Fifty-first-review findings as raised (commit `23fbf60`)
 
 Fifty-first review (commit `23fbf60`, 2026-11-21, diff against `f2bb275`).
 `UCUM` is `reference/Ucum-java/src/main/java/org/fhir/ucum/` at `db9d22ad`,
@@ -4553,3 +4571,46 @@ values.
    empty. The scenario already says this input is unreachable from a valid
    resource, and `DEV-0030` records the difference. Naming the actual HAPI
    outcome would make the deviation entry exact.
+
+## Fifty-second review - commit `e0cc795` (2026-11-21)
+
+Scope:
+- `path.math.017`: the mantissa rule, the `-33554432e0` outcomes, the JDK
+  attribution and the non-ASCII digit outcome;
+- `DEV-0030`;
+- the `tasks/blockers.md` update.
+
+The probe driver ran on three builds: the `javac -g` build of
+`reference/Ucum-java` 1.0.10 and the published 1.0.10 and 1.0.9 jars. The
+three outputs are identical.
+
+**Confirmed.**
+- Refused with `'<value>' is not a valid decimal (numeric)`: `16777216e0`,
+  `16777217e0`, `16777215.5e0`, `-16777220e0`, `-33554432e0`,
+  `-1234567890.5e0` and `1234567890.5e0`.
+- Accepted: `16777215e0` (read as `16777215`), `16777215.4e0`, `16777218e0`,
+  `-16777216e0`, `-16777217e0`, `-16777218e0`, and `1.6777216e7` (read as
+  `16777216`).
+- `-33554432e0` raises
+  `org.fhir.ucum.UcumException: '-33554432e0' is not a valid decimal (numeric)`
+  in the constructor. So `/` is empty and `mod` fails with that cause, as
+  stated.
+- U+0661 U+0662 under `divide`, `divInt` and `modulo` with `1` raises
+  `java.lang.StringIndexOutOfBoundsException: Index 2 out of bounds for length 2`.
+  It is not a `UcumException`, so it escapes every arm (`ENGINE:3010`,
+  `:3061`, `:3101`).
+- The JDK attribution (`Cannot parse null string` on JDK 25, `null` on JDK 8)
+  is correct and stays ungraded.
+- `DEV-0030` repeats the rule, using the same example values, and the
+  non-ASCII outcome. The blocker note asks for the port to be checked against
+  the negative cases.
+- Counts: path 390, total 522. `openspec validate --strict` passes, and
+  `check-registries.sh` reports "registers agree".
+
+**Non-blocking note.** The parenthetical explaining the accepted values says
+that between 2^24 and 2^25 "`f + 1` is a tie that rounds to the even
+neighbour". That is the reason for `16777218e0` and `-16777218e0`. It is not
+the reason for `-16777216e0` and `-16777217e0`. Both of those round to
+`f = -16777216`, and `f + 1 = -16777215` is exactly representable, so no tie
+arises. The listed values and the stated test are right. Only the
+explanation of two of them is loose.
