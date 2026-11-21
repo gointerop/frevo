@@ -1,5 +1,24 @@
 APPROVED
 
+Sixty-fourth review (commit `5fec667`, 2026-11-21, diff against `5fec667^`).
+The amendment changes wording only. It describes the differential as the
+owner-ruled in-process HAPI 8.12.0 probe. No `#### Scenario:` line was
+added, removed or renumbered, and no behaviour changed.
+
+Every claim checks out against
+`harness/fhirpath-compare/differential-results.json` (last written at
+`7a72377`) and against `crates/frevo-model/tests/model_parser_errors.rs`:
+- The 62-scenario count, split 35 named + 6 partial + 21 differential-only.
+- The worker under which `path.quantity.019` is graded.
+- The `model-parser-errors` coverage of `model.json.025` and
+  `model.canonical.007`.
+- The statement that the choice-typed classes are ungraded (`DEBT-0021`).
+
+There are no findings. The detail is in the dated section at the end. The
+earlier record follows.
+
+## Sixty-third review header as issued (commit `661613d`)
+
 Sixty-third review (commit `661613d`, 2026-11-21, diff against `661613d^`).
 It resolves both findings of the sixty-second review.
 - `path.quantity.027` now states the exact check-time texts of
@@ -5746,3 +5765,72 @@ back to the proposer.
 **Checks.** `openspec validate add-fhirpath-and-codegen-r4 --strict`
 passes, and `harness/scripts/check-registries.sh` reports that the
 registers agree. No scenario ID was added, removed or renumbered.
+
+## Sixty-fourth review - commit `5fec667` (2026-11-21)
+
+Scope: `git diff 5fec667^..5fec667`, covering `spec.md`,
+`specs/path/spec.md`, `specs/model/spec.md`, `specs/codegen/spec.md`,
+`docs/tech-debt.md` and `tasks/blockers.md`.
+
+**Wording only.** The diff adds or removes no `#### Scenario:` line. No
+WHEN, THEN or AND clause changes a value, and only grading prose moved.
+
+**The 62 scenarios.**
+- `differential-results.json` has 62 keys under `scenarios`. The totals
+  are 57 `agree` and 5 `disagree-documented`. At the probe level there are
+  809 agree, 51 disagree-documented and 8 hapi-unreachable.
+- All 35 scenarios that `spec.md` names (the list in the oracle section,
+  with `path.boundary.012`-`019` as eight) are keys.
+- All 6 partial scenarios (`path.math.015`, `.016`, `path.quantity.020`,
+  `.021`, `.022`, `.024`) are keys.
+- That leaves exactly 21 keys:
+  - `path.collection.010`, `.013`;
+  - `path.compare.014`;
+  - `path.convert.004`, `.011`, `.013`;
+  - `path.filter.003`, `.009`;
+  - `path.literal.016`, `.017`;
+  - `path.math.018`;
+  - `path.mathfn.004`, `.010`;
+  - `path.quantity.025`, `.026`, `.027`;
+  - `path.string.019`, `.025`, `.026`, `.028`, `.029`.
+
+  Each of the 21 calls itself differential-only in `specs/path/spec.md`
+  (`.mathfn.004` and `.string.029` with a capital "Differential-only").
+- Conversely, every scenario whose text says "differential-only" is a key,
+  so no scenario is claimed as graded by the probe without being covered.
+  `path.check.015` and `path.quantity.016` mention the differential only to
+  say it does not grade them.
+
+**`path.quantity.019`.** All 18 of its probes carry `"worker": "server"`.
+`HapiFhirPathDifferential.java:321` builds that worker as
+`new HapiWorkerContext(ctx, ctx.getValidationSupport())`. So the new
+wording, "under `HapiWorkerContext`, the server-facing worker", is
+accurate.
+
+**`model.json.025` and `model.canonical.007`.** In
+`crates/frevo-model/tests/model_parser_errors.rs`:
+- `model.json.025` is covered at `:422` and `:492` (and `:656`).
+  - The `:422` test decodes the dangling `#org1` document leniently and
+    asserts code 1826.
+  - The same test asserts strict failure with 1826, and the forward
+    reference in both modes.
+  - The `:492` test covers the exemptions.
+- `model.canonical.007` is covered at `:559` and `:611` (and `:657`).
+  - The `:559` test asserts encode code 2724 in lenient mode and strict
+    failure with 2724.
+  - The `:611` test covers the exemptions in both modes.
+
+That matches "a hand-built document asserted in both parse modes" and "a
+hand-built resource encoded and asserted against HAPI's message code".
+
+**`codegen.ancestry.001` / `DEBT-0021`.** The probe has no typed-evaluation
+case. Every key is a `path.*` FHIRPath scenario, so "nothing in this change
+grades the rest" is accurate, and the debt entry carries its trigger.
+
+**`tasks/blockers.md`.** `harness/fhirpath-compare/README.md:92-93` does
+still say "56 in all", so the owed edit is real. It lies outside the
+proposer's paths, and it is wording, not behaviour.
+
+**Checks.** `openspec validate add-fhirpath-and-codegen-r4 --strict`
+passes, and `harness/scripts/check-registries.sh` reports that the
+registers agree.
