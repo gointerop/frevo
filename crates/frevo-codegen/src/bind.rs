@@ -540,3 +540,72 @@ macro_rules! bind_class_table {
         }
     };
 }
+
+/// Bind the oracle's `OutputDriftCheck` trait to
+/// [`crate::run::drift_check_outputs`] (`codegen.output.005`): one drift check
+/// over `frevo-model`'s generated sources and the class table.
+///
+/// ```ignore
+/// fn output_drift_check_under_test() -> Box<dyn OutputDriftCheck> {
+///     Box::new(BoundOutputDriftCheck)
+/// }
+///
+/// frevo_codegen::bind_output_drift_check!(BoundOutputDriftCheck);
+/// ```
+#[macro_export]
+macro_rules! bind_output_drift_check {
+    ($name:ident) => {
+        /// The two-output drift check under test, bound to `frevo-codegen` by
+        /// `frevo_codegen::bind_output_drift_check!`.
+        struct $name;
+
+        impl OutputDriftCheck for $name {
+            fn drift_check_outputs(
+                &self,
+                request: &GenerateRequest,
+                model_dir: &Path,
+                class_table: &Path,
+            ) -> Result<DriftReport, CodegenError> {
+                let request = $crate::run::GenerateRequest {
+                    fhir_version: request.fhir_version.clone(),
+                    package_dir: request.package_dir.clone(),
+                    expected_sha256: request.expected_sha256.clone(),
+                    out_dir: request.out_dir.clone(),
+                    reference_dir: request.reference_dir.clone(),
+                };
+                match $crate::run::drift_check_outputs(&request, model_dir, class_table) {
+                    Ok(report) => Ok(DriftReport {
+                        in_sync: report.in_sync,
+                        differing_files: report.differing_files,
+                        remediation: report.remediation,
+                    }),
+                    Err($crate::error::CodegenError::NotImplemented) => {
+                        Err(CodegenError::NotImplemented)
+                    }
+                    Err($crate::error::CodegenError::Failed {
+                        exit_code,
+                        kind,
+                        message,
+                    }) => Err(CodegenError::Failed {
+                        exit_code,
+                        kind: match kind {
+                            $crate::error::FailureKind::DigestMismatch => {
+                                FailureKind::DigestMismatch
+                            }
+                            $crate::error::FailureKind::PackageMissing => {
+                                FailureKind::PackageMissing
+                            }
+                            $crate::error::FailureKind::InventoryMismatch => {
+                                FailureKind::InventoryMismatch
+                            }
+                            $crate::error::FailureKind::NameCollision => FailureKind::NameCollision,
+                            $crate::error::FailureKind::Codec => FailureKind::Codec,
+                            $crate::error::FailureKind::Other => FailureKind::Other,
+                        },
+                        message,
+                    }),
+                }
+            }
+        }
+    };
+}

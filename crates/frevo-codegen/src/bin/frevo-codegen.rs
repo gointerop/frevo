@@ -3,7 +3,7 @@
 //! ```text
 //! frevo-codegen generate   --version r4 [--package <dir>] [--out <dir>] [--sha256 <hex>]
 //! frevo-codegen cross-check --version r4 [--package <dir>] --hapi-profiles <dir>
-//! frevo-codegen drift-check --version r4 [--package <dir>] --checked-in <dir>
+//! frevo-codegen drift-check --version r4 [--package <dir>] --checked-in <dir> [--class-table <file>]
 //! frevo-codegen class-table --version r4 [--out <dir>]
 //! frevo-codegen verify    [--package <dir>]
 //! frevo-codegen pin
@@ -28,7 +28,7 @@ frevo-codegen — generate the Rust FHIR model from a pinned definition package
 Usage:
   frevo-codegen generate     --version r4 [--package <dir>] [--out <dir>] [--sha256 <hex>]
   frevo-codegen cross-check  --version r4 [--package <dir>] --hapi-profiles <dir>
-  frevo-codegen drift-check  --version r4 [--package <dir>] --checked-in <dir>
+  frevo-codegen drift-check  --version r4 [--package <dir>] --checked-in <dir> [--class-table <file>]
   frevo-codegen class-table  --version r4 [--out <dir>]
   frevo-codegen verify       [--package <dir>]
   frevo-codegen pin
@@ -41,6 +41,8 @@ Options:
   --sha256 <hex>         the digest to verify against; defaults to the recorded one
   --hapi-profiles <dir>  HAPI's profile/ directory, for the cross-check
   --checked-in <dir>     the committed output tree, for the drift check
+  --class-table <file>   the committed class table the drift check also compares; defaults
+                         to crates/frevo-path/src/eval/r4_classes.tsv
 ";
 
 fn main() -> ExitCode {
@@ -95,12 +97,22 @@ fn dispatch(arguments: &[String]) -> Result<String, CodegenError> {
         }
         "drift-check" => {
             let checked_in = flags.required("--checked-in")?;
-            let request = flags.request()?;
-            let report = run::drift_check(&request, &checked_in)?;
+            let class_table = flags
+                .named
+                .iter()
+                .find(|(name, _)| name == "--class-table")
+                .map(|(_, path)| path.clone())
+                .unwrap_or_else(|| pin::repo_path(frevo_codegen::classtable::CHECKED_IN_TABLE));
+            let mut request = flags.request()?;
+            // The fresh class table is written to a scratch directory, never
+            // over the checked-in one.
+            request.out_dir = std::env::temp_dir().join("frevo-codegen-drift-check");
+            let report = run::drift_check_outputs(&request, &checked_in, &class_table)?;
             if report.in_sync {
                 Ok(format!(
-                    "{} is in sync with a fresh run.",
-                    checked_in.display()
+                    "{} and {} are in sync with a fresh run.",
+                    checked_in.display(),
+                    class_table.display()
                 ))
             } else {
                 Err(CodegenError::other(format!(
@@ -185,7 +197,7 @@ impl Flags {
                 "--package" => flags.package = Some(PathBuf::from(value)),
                 "--out" => flags.out = Some(PathBuf::from(value)),
                 "--sha256" => flags.sha256 = Some(value.clone()),
-                "--hapi-profiles" | "--checked-in" => {
+                "--hapi-profiles" | "--checked-in" | "--class-table" => {
                     flags.named.push((flag.to_string(), PathBuf::from(value)));
                 }
                 other => {

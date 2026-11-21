@@ -332,6 +332,42 @@ pub fn drift_check(request: &GenerateRequest, checked_in_dir: &Path) -> Result<D
     })
 }
 
+/// The CI drift check over both checked-in outputs (`codegen.output.005`):
+/// `frevo-model`'s generated sources in `model_dir`, compared with a fresh
+/// generation as [`drift_check`] compares them, and the class table at
+/// `class_table`, compared with a fresh `class-table` run. One report names
+/// every differing file of either, and its remediation is to regenerate.
+pub fn drift_check_outputs(
+    request: &GenerateRequest,
+    model_dir: &Path,
+    class_table: &Path,
+) -> Result<DriftReport> {
+    let model = drift_check(request, model_dir)?;
+    let fresh = crate::classtable::generate(&crate::classtable::Request {
+        exceptions: pin::repo_path(crate::classtable::EXCEPTIONS_FILE),
+        out_dir: request.out_dir.join("class-table"),
+        reference_dir: None,
+    })?;
+    let mut differing = model.differing_files;
+    match std::fs::read(class_table) {
+        Ok(bytes) if bytes == fresh.file.bytes => {}
+        _ => differing.push(class_table.display().to_string().replace('\\', "/")),
+    }
+    Ok(DriftReport {
+        in_sync: differing.is_empty(),
+        differing_files: differing,
+        remediation: format!(
+            "regenerate the checked-in outputs: `{name} generate --version {VERSION_SELECTOR}              --out {model}` and `{name} class-table --version {VERSION_SELECTOR} --out {table}`,              then commit the result. A generated file is never corrected by hand.",
+            name = pin::GENERATOR_NAME,
+            model = model_dir.display(),
+            table = class_table
+                .parent()
+                .map(|p| p.display().to_string())
+                .unwrap_or_default(),
+        ),
+    })
+}
+
 /// Every file under `dir`, relative, with `/` separators.
 fn checked_in_files(dir: &Path) -> Vec<String> {
     fn walk(root: &Path, dir: &Path, out: &mut Vec<String>) {

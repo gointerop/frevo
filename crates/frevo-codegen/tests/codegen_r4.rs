@@ -5040,21 +5040,10 @@ pub trait OutputDriftCheck {
 }
 
 fn output_drift_check_under_test() -> Box<dyn OutputDriftCheck> {
-    Box::new(UnboundOutputDriftCheck)
+    Box::new(BoundOutputDriftCheck)
 }
 
-struct UnboundOutputDriftCheck;
-
-impl OutputDriftCheck for UnboundOutputDriftCheck {
-    fn drift_check_outputs(
-        &self,
-        _request: &GenerateRequest,
-        _model_dir: &Path,
-        _class_table: &Path,
-    ) -> Result<DriftReport, CodegenError> {
-        Err(CodegenError::NotImplemented)
-    }
-}
+frevo_codegen::bind_output_drift_check!(BoundOutputDriftCheck);
 
 fn run_output_drift_check(
     request: &GenerateRequest,
