@@ -3241,3 +3241,47 @@ faithfully:
 None of the new facts is a wrong answer against the specification (they
 concern loading a malformed essence file and error texts), so no DEV or DEBT
 entry was added.
+
+## 2026-11-21 — `add-fhirpath-and-codegen-r4` — task 44: one `path.quantity.018` assertion contradicts the engine, and four lib tests are stale
+
+**Raised by** the implementer of task 44. Quantity semantics are wired
+(`src/eval/{quantity,equality,compare,arith,collection}.rs`, ADR 0006).
+`path_quantity` is 23 of 24, `path_compare_equality` 27 of 27, `path_math` 28
+of 28 and `path_convert` 14 of 14. Task 44 is **not ticked** because:
+
+1. **A `path.quantity.018` assertion disagrees with how the pinned engine
+   evaluates a function argument.**
+   `tests/path_quantity.rs:1474-1480` expects
+   `Parameters.parameter[0].value.comparable(Parameters.parameter[1].value)`
+   to be `true`. But `funcComparable` evaluates its argument with the focus as
+   the input: `execute(context, focus, exp.getParameters().get(0), true)`
+   (`FHIRPathEngine.java:4613`). At entry, an upper-case name is a type test
+   against the focus item (`execute(context, item, exp, atEntry)`, `:3192-3207`).
+   The focus is a `Quantity`, so `Parameters` matches nothing, the argument is
+   empty, and `funcComparable` answers `false` at `:4614-4616`. Frevo answers
+   `false`, as HAPI would. The spec's `funcComparable` rule (same non-UCUM
+   system, equal codes, so `true`) is right. The test cannot reach that rule
+   this way; it needs an argument that evaluates to the other quantity, such as
+   `%resource.parameter[1].value` or a quantity literal. Oracle-builder, and the
+   proposer if the scenario text should name the form.
+2. **Four lib unit tests in `crates/frevo-path/src/eval/tests.rs` still
+   require quantity operations to be `Unsupported`.** These are
+   `every_unimplemented_function_is_unsupported_and_never_empty`
+   (`1 'mg'.comparable(1 'g')`),
+   `every_binary_operator_is_unsupported_and_never_empty` (`1 'mg' / 2 'g'`,
+   `1 'mg' * 2 'g'`, `1 'mg' < 2 'g'`, `1 'mg' ~ 1 'mg'`),
+   `a_unary_sign_over_an_unbuilt_operation_is_unsupported` (`-(1 'mg' / 2 'g')`,
+   `-(1 'mg' * 2 'g')`) and
+   `equality_reaches_the_decimal_rule_and_leaves_quantities_unsupported`
+   (`1 'mg' = 1 'g'`). `path.quantity.014`, `.021` and `.022` now give those
+   expressions values. Lib is 132 of 136 until the oracle-builder re-aligns
+   them.
+
+**Not covered by the spec; needs the proposer.** Following the source:
+- A quantity with no `value` that reaches `qtyToCanonicalDecimal` (the
+  ordered operators) or `qtyToPair` (`*` and `/`) fails with
+  `Cannot invoke "java.math.BigDecimal.toPlainString()" because the return
+  value of "org.hl7.fhir.r4.model.Quantity.getValue()" is null`.
+- Where the UCUM data comes from is ADR 0006 (proposed): installed, or
+  `FREVO_UCUM_ESSENCE`, or the fetched copy in the source tree. A deployed
+  server must set one of the first two.

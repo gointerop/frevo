@@ -26,8 +26,7 @@
 //!   (`compareDateTimeElements`, `:635-648`; [`super::rewrite`],
 //!   `path.compare.013`);
 //! - two quantities whose units differ go through UCUM canonical form without a
-//!   dimension check (`DEV-0005`), which needs task 43 and is
-//!   [`EvalError::Unsupported`] until then.
+//!   dimension check (`DEV-0005`).
 
 use std::cmp::Ordering;
 
@@ -203,19 +202,32 @@ fn quantities(
         let (lv, rv) = (value_list(&lq)?, value_list(&rq)?);
         return op_ordered(model, &lv, &rv, kind, at);
     }
-    // `qtyToCanonicalDecimal` answers `null` for a quantity that is not in the
-    // UCUM system, and the recursive call then dereferences it.
-    let ucum = Some(operand::UCUM_SYSTEM);
-    if lq.system.as_deref() != ucum || rq.system.as_deref() != ucum {
-        // `left.get(0).isPrimitive()` on the one-item list holding that
-        // `null` (`FHIRPathEngine.java:2413`), worded as the JVM words it.
+    // `qtyToCanonicalDecimal` of each side, left first; it answers `null` for
+    // a quantity outside the UCUM system or a code the service refuses, and
+    // the recursive call then dereferences it.
+    let dl = super::quantity::canonical_decimal(&lq)?;
+    let dr = super::quantity::canonical_decimal(&rq)?;
+    let (Some(a), Some(b)) = (dl, dr) else {
+        // `left.get(0).isPrimitive()` (or `right.get(0)`) on the one-item
+        // list holding that `null` (`FHIRPathEngine.java:2413`), worded as
+        // the JVM words it.
         return Err(EvalError::plain(
             "Cannot invoke \"org.hl7.fhir.r4.model.Base.isPrimitive()\" because the return \
              value of \"java.util.List.get(int)\" is null",
         ));
-    }
-    Err(EvalError::unsupported_at(
-        "ordering quantities through their UCUM canonical form",
-        at,
-    ))
+    };
+    // Two `DecimalType`s: `Double.valueOf` of each, with no check that the
+    // canonical units agree (`DEV-0005`, `path.quantity.022`).
+    let double = |t: &str| {
+        t.trim()
+            .parse::<f64>()
+            .map_err(|_| EvalError::plain(format!("For input string: \"{t}\"")))
+    };
+    let (x, y) = (double(&a)?, double(&b)?);
+    Ok(boolean(match kind {
+        Ordered::Less => x < y,
+        Ordered::Greater => x > y,
+        Ordered::LessOrEqual => x <= y,
+        Ordered::GreaterOrEqual => x >= y,
+    }))
 }

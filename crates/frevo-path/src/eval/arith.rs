@@ -29,8 +29,9 @@
 //!   is how a unary minus on a quantity literal is evaluated, and `q - q` is
 //!   empty because the branch yields nothing unless the left operand is `0`;
 //! - date and dateTime plus or minus a quantity is `dateAdd` (task 38,
-//!   `temporal::date_add`); quantity arithmetic that goes through UCUM is
-//!   task 43's and is [`EvalError::Unsupported`].
+//!   `temporal::date_add`); `*` and `/` of two quantities go through the UCUM
+//!   service (`path.quantity.021`): a `UcumException` fails `*` at the
+//!   operator and makes `/` empty.
 
 use crate::seam::model::Model;
 use crate::seam::value::{Decimal, Value};
@@ -39,7 +40,9 @@ use super::EvalError;
 use super::error::At;
 use super::navigate::fhir_type;
 use super::operand::{self, STRING_TYPES, has_type, int_of, is_primitive, is_quantity, text_of};
+use super::quantity;
 use super::temporal;
+use super::ucum_algebra::UcumError;
 use super::ucum_decimal::{Failure, UcumDecimal};
 
 /// Which operator.
@@ -328,10 +331,19 @@ pub(super) fn op_arith(
                 )?));
             }
             if is_quantity(model, l) && is_quantity(model, r) {
-                return Err(EvalError::unsupported(
-                    "multiplying quantities through the UCUM unit algebra",
-                    op_at.offset,
-                ));
+                // `qtyToPair` of each side, then `UcumService.multiply`, which
+                // dereferences a `null` pair (`o1` first). A `UcumException`
+                // is rethrown at the operator (`:2800-2801`).
+                let pl = quantity::to_pair(&operand::qty_of(l)?)?;
+                let pr = quantity::to_pair(&operand::qty_of(r)?)?;
+                let pl = pl.ok_or_else(|| quantity::null_pair("o1"))?;
+                let pr = pr.ok_or_else(|| quantity::null_pair("o2"))?;
+                let service = quantity::service()?;
+                return match service.multiply(&pl.0, pl.1.as_deref(), &pr.0, pr.1.as_deref()) {
+                    Ok(p) => Ok(vec![quantity::pair_to_value(p, at.offset)?]),
+                    Err(UcumError::Ucum(m)) => Err(EvalError::execution(m, op_at)),
+                    Err(e) => Err(quantity::uncaught(&e)),
+                };
             }
             Err(incompatible(op, l, r, at))
         }
@@ -346,10 +358,19 @@ pub(super) fn op_arith(
                 };
             }
             if is_quantity(model, l) && is_quantity(model, r) {
-                return Err(EvalError::unsupported(
-                    "dividing quantities through the UCUM unit algebra",
-                    at.offset,
-                ));
+                // `qtyToPair` of each side, then `UcumService.divideBy`, which
+                // dereferences a `null` pair (`dividend` first). A
+                // `UcumException` is swallowed (`:3020-3022`).
+                let pl = quantity::to_pair(&operand::qty_of(l)?)?;
+                let pr = quantity::to_pair(&operand::qty_of(r)?)?;
+                let pl = pl.ok_or_else(|| quantity::null_pair("dividend"))?;
+                let pr = pr.ok_or_else(|| quantity::null_pair("divisor"))?;
+                let service = quantity::service()?;
+                return match service.divide_by(&pl.0, pl.1.as_deref(), &pr.0, pr.1.as_deref()) {
+                    Ok(p) => Ok(vec![quantity::pair_to_value(p, at.offset)?]),
+                    Err(UcumError::Ucum(_)) => Ok(Vec::new()),
+                    Err(e) => Err(quantity::uncaught(&e)),
+                };
             }
             Err(incompatible(op, l, r, at))
         }

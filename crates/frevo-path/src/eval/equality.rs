@@ -13,9 +13,8 @@
 //! `Base` objects, so "is this a `DecimalType`" is a question about the value's
 //! FHIR type name; `equalsDeep` is one structural comparison over `Node`
 //! instead of one generated method per class; the date rules live in
-//! [`super::temporal`]; and the one rule that needs the UCUM unit algebra --
-//! two quantities that are both in the UCUM system -- is
-//! [`EvalError::Unsupported`] until task 43 builds it, never a guessed answer.
+//! [`super::temporal`]; and the quantity rules reach the UCUM service through
+//! [`super::quantity`].
 //!
 //! `funcHasValue` is at `:5776`, `funcComparable` at `:4609`. Task 35 added equivalence (`~`, `!~`) and the date and quantity rules of
 //! `doEquals`.
@@ -61,10 +60,8 @@ impl Run<'_> {
     /// (`:4637-4639`). None of those consults the worker's UCUM service, so
     /// they are the same answers under every worker (`path.quantity.019`).
     ///
-    /// One branch is [`EvalError::Unsupported`] rather than answered: two
-    /// different UCUM codes, which upstream asks `UcumService.isComparable`
-    /// (`:4631-4636`) -- the unit algebra of task 43, which is blocked on the
-    /// owner (`tasks/blockers.md`); any answer here would be a guess.
+    /// Two different UCUM codes ask the service's `isComparable`
+    /// (`:4631-4636`), and a code it cannot canonicalise is `false`.
     pub(super) fn func_comparable(
         &self,
         context: Context<'_>,
@@ -98,10 +95,14 @@ impl Run<'_> {
             return Ok(vec![Value::Boolean(true)]);
         }
         if s1 == operand::UCUM_SYSTEM {
-            return Err(EvalError::unsupported(
-                "the function comparable() of two different UCUM codes, which needs the UCUM unit algebra",
-                offset,
-            ));
+            // `isComparable`, whose `getCanonicalUnits` re-wraps every
+            // exception as `UcumException`, which is caught (`:4632-4636`).
+            let _ = offset;
+            return match super::quantity::service()?.is_comparable(Some(u1), Some(u2)) {
+                Ok(b) => Ok(vec![Value::Boolean(b)]),
+                Err(super::UcumError::Error(m)) => Err(EvalError::plain(m)),
+                Err(_) => Ok(vec![Value::Boolean(false)]),
+            };
         }
         Ok(vec![Value::Boolean(false)])
     }
@@ -208,9 +209,10 @@ fn decimal(text: &str) -> Result<Decimal, EvalError> {
 /// differ only in how the two decimals are compared. `None` is upstream's
 /// `null`: the quantities cannot be compared.
 ///
-/// The UCUM branch -- both quantities in the UCUM system -- converts each to
-/// its canonical form, which is the unit algebra task 43 builds, and so is
-/// [`EvalError::Unsupported`] until then.
+/// Both quantities are first converted to canonical form (`qtyToCanonicalPair`),
+/// which yields nothing outside the UCUM system or for a code the service
+/// refuses; only when both convert are the canonical units and values
+/// compared (`path.quantity.020`, `.022`).
 fn qty_compare(
     model: &dyn Model,
     left: &Value,
@@ -225,12 +227,22 @@ fn qty_compare(
     let (Some(lv), Some(rv)) = (&l.value, &r.value) else {
         return Ok(None);
     };
-    let ucum = Some(operand::UCUM_SYSTEM);
-    if l.system.as_deref() == ucum && r.system.as_deref() == ucum {
-        return Err(EvalError::unsupported(
-            "comparing quantities through their UCUM canonical form",
-            offset,
-        ));
+    // `worker.getUcumService() != null`, which holds in every Frevo
+    // configuration (`DEV-0029`): both sides are canonicalised, left first,
+    // before either is looked at, so an exception from either escapes.
+    let dl = super::quantity::canonical_pair(&l)?;
+    let dr = super::quantity::canonical_pair(&r)?;
+    if let (Some((lv, lc)), Some((rv, rc))) = (dl, dr) {
+        if lc != rc {
+            return Ok(Some(false));
+        }
+        // `new DecimalType(asDecimal())` on each side, compared as strings
+        // (`decEqual`) or by `Utilities.equivalentNumber`.
+        return Ok(Some(if equivalent {
+            equivalent_number(&lv, &rv)
+        } else {
+            dec_equal(&lv, &rv)
+        }));
     }
     if l.code.is_some() || r.code.is_some() {
         if l.code.is_none() || r.code.is_none() || l.code != r.code {

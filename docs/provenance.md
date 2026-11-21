@@ -106,7 +106,10 @@ UCUM unit algebra over it — `src/eval/ucum.rs` (`XmlDefinitionsParser`'s
 `Canonical`, `ExpressionComposer.compose(Canonical, false)`, the
 `special/Registry` handlers, and `UcumEssenceService`'s
 `getCanonicalForm`, `getCanonicalUnits`, `multiply`, `divideBy` and
-`isComparable`), at the same SHA and under the same notice, and
+`isComparable`), at the same SHA and under the same notice, with the
+engine's side of the service in `src/eval/quantity.rs`
+(`qtyToCanonicalPair`, `qtyToCanonicalDecimal`, `pairToQty` and
+`qtyToPair` of `FHIRPathEngine.java`, at `73c432b5`, ADR 0006), and
 date arithmetic and the clock — `src/eval/temporal.rs` (`dateAdd`,
 `funcToday`, `funcNow`, and `BaseDateTimeType.java`'s `add`, `copy`
 precision check and string rendering), and the math functions —

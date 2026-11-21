@@ -39,8 +39,9 @@ pub use check::{
     CollectionStatus, WarningId,
 };
 pub use eval::{
-    EngineSettings, EvalError, Evaluator, InvalidVersion, PathError, UCUM_ESSENCE_NAMESPACE,
-    UcumBaseUnit, UcumError, UcumEssence, UcumFunction, UcumLoadError, UcumPrefix, UcumUnit,
+    EngineSettings, EvalError, Evaluator, InvalidVersion, PathError, UCUM_ESSENCE_ENV,
+    UCUM_ESSENCE_NAMESPACE, UcumBaseUnit, UcumError, UcumEssence, UcumFunction, UcumLoadError,
+    UcumPrefix, UcumUnit, install_ucum_essence,
 };
 
 pub use seam::host::{ConstantMode, FunctionDetails, HostError, HostServices};

@@ -81,8 +81,14 @@ pub(super) fn convert_to_string(value: &Value) -> String {
             (Some(unit), _) if q.system.is_none() || q.system.as_deref() == UCUM => {
                 format!("{} {unit}", q.value.lexical())
             }
-            (_, Some(code)) if q.system.as_deref() == UCUM => {
-                format!("{} '{code}'", q.value.lexical())
+            // `"'"+q.getCode()+"'"`, so a missing code prints `'null'`
+            // (`path.quantity.021`).
+            (_, code) if q.system.as_deref() == UCUM => {
+                format!(
+                    "{} '{}'",
+                    q.value.lexical(),
+                    code.as_deref().unwrap_or("null")
+                )
             }
             _ => "Quantity".to_string(),
         },

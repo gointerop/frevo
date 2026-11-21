@@ -46,11 +46,6 @@ pub enum EvalError {
 }
 
 impl EvalError {
-    /// The not-implemented kind, at `at`'s byte offset.
-    pub(crate) fn unsupported_at(feature: impl Into<String>, at: At) -> Self {
-        EvalError::unsupported(feature, at.offset)
-    }
-
     pub(crate) fn unsupported(feature: impl Into<String>, offset: usize) -> Self {
         EvalError::Unsupported {
             feature: feature.into(),

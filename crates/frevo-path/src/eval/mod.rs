@@ -45,6 +45,7 @@ mod logic;
 mod mathfn;
 mod navigate;
 mod operand;
+mod quantity;
 mod rewrite;
 mod settings;
 mod strext;
@@ -75,6 +76,7 @@ use std::sync::{Arc, Mutex};
 
 pub use api::PathError;
 pub use error::EvalError;
+pub use quantity::{UCUM_ESSENCE_ENV, install_ucum_essence};
 pub use settings::{EngineSettings, InvalidVersion};
 pub use ucum::{
     UCUM_ESSENCE_NAMESPACE, UcumBaseUnit, UcumEssence, UcumFunction, UcumLoadError, UcumPrefix,
