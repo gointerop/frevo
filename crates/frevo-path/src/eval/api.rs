@@ -292,9 +292,13 @@ mod tests {
         let e = Evaluator::new(&StubModel);
         match e.evaluate_text_as("1", None, "string") {
             Err(PathError::Evaluate(EvalError::Execution { message, offset })) => {
+                // path.api.005: the item's Java simple name and the requested
+                // type's fully qualified name, read from the generated class
+                // table; an integer the engine builds is an `IntegerType`.
                 assert_eq!(
                     message,
-                    "FhirPath expression returned unexpected type integer - Expected string"
+                    "HAPI-0256: FhirPath expression returned unexpected type IntegerType - \
+                     Expected org.hl7.fhir.r4.model.StringType"
                 );
                 assert_eq!(offset, None);
             }
