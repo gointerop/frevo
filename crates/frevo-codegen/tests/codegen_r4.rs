@@ -5015,6 +5015,182 @@ fn a_drift_check_fails_when_checked_in_output_does_not_match_a_fresh_run() {
     );
 }
 
+/// The checked-in R4 class table `frevo-path` evaluates against
+/// (`codegen.ancestry.001`), which `codegen.output.005`'s one drift check
+/// covers beside `frevo-model`'s generated sources.
+pub const CHECKED_IN_CLASS_TABLE: &str = "crates/frevo-path/src/eval/r4_classes.tsv";
+
+/// The drift check over both checked-in outputs (`codegen.output.005`): the
+/// generated model tree and the class-table file, compared in one check with
+/// a fresh generation and a fresh `frevo-codegen class-table --version r4`
+/// run. The class table is a parameter so that a test can point the check at
+/// a mutated copy and never touch the checked-in file.
+///
+/// `run::drift_check` takes only the model directory today, and the
+/// `Codegen` trait's `drift_check`, which `bind_oracle!` implements, has that
+/// shape, so this is a separate seam. It is unbound until the implementer
+/// extends the check; [`CodegenError::NotImplemented`] is never a verdict.
+pub trait OutputDriftCheck {
+    fn drift_check_outputs(
+        &self,
+        request: &GenerateRequest,
+        model_dir: &Path,
+        class_table: &Path,
+    ) -> Result<DriftReport, CodegenError>;
+}
+
+fn output_drift_check_under_test() -> Box<dyn OutputDriftCheck> {
+    Box::new(UnboundOutputDriftCheck)
+}
+
+struct UnboundOutputDriftCheck;
+
+impl OutputDriftCheck for UnboundOutputDriftCheck {
+    fn drift_check_outputs(
+        &self,
+        _request: &GenerateRequest,
+        _model_dir: &Path,
+        _class_table: &Path,
+    ) -> Result<DriftReport, CodegenError> {
+        Err(CodegenError::NotImplemented)
+    }
+}
+
+fn run_output_drift_check(
+    request: &GenerateRequest,
+    model_dir: &Path,
+    class_table: &Path,
+    what: &str,
+) -> DriftReport {
+    output_drift_check_under_test()
+        .drift_check_outputs(request, model_dir, class_table)
+        .unwrap_or_else(|e| match e {
+            CodegenError::NotImplemented => panic!(
+                "{what}: the drift check over the model and the class table must run, but no \
+                 such check is bound yet (codegen_r4.rs::output_drift_check_under_test; \
+                 run::drift_check compares only frevo-model's sources)"
+            ),
+            e => panic!("{what}: the drift check must run: {e}"),
+        })
+}
+
+/// Whether a differing-file entry names the class table.
+fn names_class_table(entry: &str) -> bool {
+    entry.replace('\\', "/").ends_with("r4_classes.tsv")
+}
+
+// covers: codegen.output.005
+#[test]
+fn one_drift_check_covers_the_model_sources_and_the_class_table() {
+    let class_table = repo_path(CHECKED_IN_CLASS_TABLE);
+    let pristine = std::fs::read(&class_table).unwrap_or_else(|e| {
+        panic!("{CHECKED_IN_CLASS_TABLE} must be checked in (codegen.ancestry.001): {e}")
+    });
+    let model_dir = repo_path(GENERATED_OUT_DIR);
+    let out = scratch_dir("output-005-outputs");
+    let request = GenerateRequest::pinned(&out);
+
+    // In sync: both checked-in outputs match a fresh run.
+    let in_sync = run_output_drift_check(&request, &model_dir, &class_table, "in sync");
+    assert!(
+        in_sync.in_sync,
+        "the checked-in model and class table must match a fresh run; these differ: {:?}",
+        in_sync.differing_files
+    );
+    assert_eq!(in_sync.differing_files, Vec::<String>::new());
+
+    // A copy of the class table with one row changed. The checked-in file is
+    // never written.
+    let text = String::from_utf8(pristine.clone())
+        .unwrap_or_else(|e| panic!("{CHECKED_IN_CLASS_TABLE} must be UTF-8: {e}"));
+    let mut lines: Vec<&str> = text.lines().collect();
+    let row = lines
+        .iter()
+        .rposition(|l| !l.trim().is_empty() && !l.starts_with('#'))
+        .expect("the class table has at least one row");
+    let changed = format!("{}x", lines[row]);
+    lines[row] = &changed;
+    let mut mutated = lines.join("\n");
+    if text.ends_with('\n') {
+        mutated.push('\n');
+    }
+    assert_ne!(mutated.as_bytes(), pristine.as_slice());
+    let copy_dir = scratch_dir("output-005-class-table");
+    let copy = copy_dir.join("r4_classes.tsv");
+    std::fs::write(&copy, &mutated).expect("the scratch copy is writable");
+
+    let drifted = run_output_drift_check(&request, &model_dir, &copy, "a mutated class table");
+    assert!(
+        !drifted.in_sync,
+        "a changed class-table row must be detected"
+    );
+    assert_eq!(
+        drifted.differing_files.len(),
+        1,
+        "only the class table differs, and the check must name it: {:?}",
+        drifted.differing_files
+    );
+    assert!(
+        names_class_table(&drifted.differing_files[0]),
+        "the check must name the class table, not {:?}",
+        drifted.differing_files
+    );
+    let remediation = drifted.remediation.to_lowercase();
+    assert!(
+        remediation.contains("regenerate"),
+        "the remediation must say to regenerate; it said {:?}",
+        drifted.remediation
+    );
+    assert!(
+        !remediation.contains("edit the"),
+        "it must not tell anyone to edit the output: {:?}",
+        drifted.remediation
+    );
+
+    // One check covers both: a hand-edited model file and the changed table
+    // are named together.
+    let report = generator_under_test()
+        .generate(&request)
+        .unwrap_or_else(|e| panic!("generation must succeed: {e}"));
+    let mutated_model = scratch_dir("output-005-both");
+    for file in &report.files {
+        let target = mutated_model.join(&file.path);
+        if let Some(parent) = target.parent() {
+            std::fs::create_dir_all(parent).expect("scratch directories are creatable");
+        }
+        std::fs::write(&target, &file.bytes).expect("scratch files are writable");
+    }
+    let victim = &report.files[0];
+    let mut edited = victim.text().to_string();
+    edited.push_str("\n// a hand edit\n");
+    std::fs::write(mutated_model.join(&victim.path), edited).expect("scratch files are writable");
+    let both = run_output_drift_check(&request, &mutated_model, &copy, "both outputs drifted");
+    assert!(!both.in_sync);
+    assert_eq!(
+        both.differing_files.len(),
+        2,
+        "the model file and the class table, and only they: {:?}",
+        both.differing_files
+    );
+    assert!(
+        both.differing_files.contains(&victim.path),
+        "{:?}",
+        both.differing_files
+    );
+    assert!(
+        both.differing_files.iter().any(|f| names_class_table(f)),
+        "{:?}",
+        both.differing_files
+    );
+
+    // The checked-in table was only read.
+    assert_eq!(
+        std::fs::read(&class_table).expect("the checked-in table is still readable"),
+        pristine,
+        "the test must never modify {CHECKED_IN_CLASS_TABLE}"
+    );
+}
+
 // covers: codegen.output.006
 #[test]
 fn generated_code_contains_no_unsafe() {
