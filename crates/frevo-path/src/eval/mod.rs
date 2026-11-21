@@ -54,6 +54,7 @@ mod temporal;
 mod terminology;
 mod types;
 mod ucum;
+mod ucum_decimal;
 mod utility;
 mod xhtml;
 mod xhtml_entities;

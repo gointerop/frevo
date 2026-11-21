@@ -18,21 +18,19 @@
 //! - `/` answers a decimal, `div` an integer, for every operand pair, and
 //!   `div` and `mod` over two integers answer empty for a zero divisor;
 //! - the decimal arms of `/`, `div` and `mod` go through the UCUM library's own
-//!   `Decimal` (`org.fhir.ucum.Decimal`), not `BigDecimal`: a zero **dividend**
-//!   answers zero even when the divisor is zero, a non-zero dividend over a
-//!   zero divisor is empty for `/` and `div` and an **error** for `mod`;
+//!   `Decimal` (`org.fhir.ucum.Decimal`, ported in `ucum_decimal.rs`), not
+//!   `BigDecimal`: a quotient is rounded to the significant digits its operands
+//!   carry, with that library's rounding-carry defect (`path.math.015`,
+//!   `path.math.016`, `DEV-0030`); a zero **dividend** answers zero even when
+//!   the divisor is zero, a non-zero dividend over a zero divisor is empty for
+//!   `/` and `div` and an **error** for `mod`, and a zero remainder is a
+//!   negative zero;
 //! - `0 - q` for a quantity `q` is `q` with its value's absolute value, which
 //!   is how a unary minus on a quantity literal is evaluated, and `q - q` is
 //!   empty because the branch yields nothing unless the left operand is `0`;
 //! - date and dateTime plus or minus a quantity is `dateAdd` (task 38,
 //!   `temporal::date_add`); quantity arithmetic that goes through UCUM is
 //!   task 43's and is [`EvalError::Unsupported`].
-//!
-//! The one place this module is not a port: `org.fhir.ucum.Decimal.divide`
-//! decides how many digits a non-terminating quotient carries, and that
-//! library is not in `reference/`. A quotient that terminates is exact and
-//! written with no trailing zeros; one that does not is
-//! [`EvalError::Unsupported`] rather than a guess at its digits.
 
 use crate::seam::model::Model;
 use crate::seam::value::{Decimal, Value};
@@ -42,6 +40,7 @@ use super::error::At;
 use super::navigate::fhir_type;
 use super::operand::{self, STRING_TYPES, has_type, int_of, is_primitive, is_quantity, text_of};
 use super::temporal;
+use super::ucum_decimal::{Failure, UcumDecimal};
 
 /// Which operator.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -120,63 +119,36 @@ fn int_value(i: i32) -> Vec<Value> {
     vec![Value::Integer(i64::from(i))]
 }
 
-/// What `org.fhir.ucum.Decimal.divide` gives, for the cases that do not need
-/// its digit-count rules.
-enum Quotient {
-    /// The dividend is zero.
-    Zero,
-    /// A non-zero dividend over a zero divisor.
-    ByZero,
-    /// The quotient terminates; the value as a decimal.
-    Exact(Decimal),
-    /// The quotient does not terminate within the digits this port carries.
-    Inexact,
+/// `new Decimal(l.primitiveValue())` for both operands. A primitive with no
+/// value is `null`, on which the constructor's `toLowerCase()` raises a
+/// `NullPointerException` the engine does not catch.
+fn ucum_pair(
+    model: &dyn Model,
+    l: &Value,
+    r: &Value,
+) -> Result<Result<(UcumDecimal, UcumDecimal), Failure>, EvalError> {
+    let read = |v: &Value| {
+        text_of(model, v).ok_or_else(|| {
+            EvalError::plain(
+                "Cannot invoke \"String.toLowerCase()\" because the value is null".to_string(),
+            )
+        })
+    };
+    let (lt, rt) = (read(l)?, read(r)?);
+    Ok(UcumDecimal::new(&lt).and_then(|a| UcumDecimal::new(&rt).map(|b| (a, b))))
 }
 
-fn divide(a: &Decimal, b: &Decimal, at: usize) -> Result<Quotient, EvalError> {
-    if a.mantissa() == 0 {
-        return Ok(Quotient::Zero);
-    }
-    if b.mantissa() == 0 {
-        return Ok(Quotient::ByZero);
-    }
-    let negative = (a.mantissa() < 0) != (b.mantissa() < 0);
-    let (num, den) = (a.mantissa().unsigned_abs(), b.mantissa().unsigned_abs());
-    let whole = num / den;
-    let mut rem = num % den;
-    let mut fraction = String::new();
-    while rem != 0 {
-        if fraction.len() >= 36 {
-            return Ok(Quotient::Inexact);
-        }
-        rem = rem.checked_mul(10).ok_or_else(|| too_wide(at))?;
-        fraction.push(char::from(b'0' + u8::try_from(rem / den).unwrap_or(0)));
-        rem %= den;
-    }
-    let digits = format!("{whole}{fraction}");
-    let mut mantissa: i128 = digits.parse().map_err(|_| too_wide(at))?;
-    // The quotient of the mantissas is scaled by `10^(sb - sa)`.
-    let mut scale = i64::try_from(fraction.len()).unwrap_or(i64::MAX)
-        - (i64::from(b.scale()) - i64::from(a.scale()));
-    while scale < 0 {
-        mantissa = mantissa.checked_mul(10).ok_or_else(|| too_wide(at))?;
-        scale += 1;
-    }
-    if negative {
-        mantissa = -mantissa;
-    }
-    let scale = u32::try_from(scale).map_err(|_| too_wide(at))?;
-    Ok(Quotient::Exact(make_decimal(mantissa, scale, at)?))
+/// A `java.lang.Error` out of `Decimal`, which no arm catches: its message,
+/// with no position (`path.errors.002`).
+fn java_error(message: &str) -> EvalError {
+    EvalError::plain(message.to_string())
 }
 
-/// `divInt` of the UCUM `Decimal`: the quotient truncated toward zero, or
-/// `None` for a zero divisor.
-fn div_int(a: &Decimal, b: &Decimal, at: usize) -> Result<Option<i128>, EvalError> {
-    let (x, y, _) = align(a, b, at)?;
-    if y == 0 {
-        return Ok(None);
-    }
-    Ok(Some(x / y))
+/// `new DecimalType(String)` of `Decimal.asDecimal()`.
+fn ucum_value(d: &UcumDecimal, at: usize) -> Result<Vec<Value>, EvalError> {
+    Ok(dec_value(
+        Decimal::parse(&d.as_decimal()).ok_or_else(|| too_wide(at))?,
+    ))
 }
 
 /// The preconditions every operator checks before it looks at types.
@@ -365,19 +337,11 @@ pub(super) fn op_arith(
         Arith::DivideBy => {
             let four = ["integer", "decimal", "unsignedInt", "positiveInt"];
             if both(&four) {
-                let (a, b) = (
-                    operand::decimal_of(model, l)?,
-                    operand::decimal_of(model, r)?,
-                );
-                return match divide(&a, &b, at.offset)? {
-                    Quotient::Zero => Ok(dec_value(make_decimal(0, 0, at.offset)?)),
-                    Quotient::ByZero => Ok(Vec::new()),
-                    Quotient::Exact(d) => Ok(dec_value(d)),
-                    Quotient::Inexact => Err(EvalError::unsupported(
-                        "a non-terminating quotient (the digit count belongs to \
-                         org.fhir.ucum.Decimal.divide, which is not in reference/)",
-                        at.offset,
-                    )),
+                // `catch (UcumException e)`: just return nothing.
+                return match ucum_pair(model, l, r)?.and_then(|(a, b)| a.divide(&b)) {
+                    Ok(q) => ucum_value(&q, at.offset),
+                    Err(Failure::Ucum(_)) => Ok(Vec::new()),
+                    Err(Failure::Error(m)) => Err(java_error(m)),
                 };
             }
             if is_quantity(model, l) && is_quantity(model, r) {
@@ -397,18 +361,23 @@ pub(super) fn op_arith(
                 return Ok(int_value(int_of(model, l)?.wrapping_div(divisor)));
             }
             if both(&numeric) {
-                let (a, b) = (
-                    operand::decimal_of(model, l)?,
-                    operand::decimal_of(model, r)?,
-                );
-                if a.mantissa() == 0 {
-                    return Ok(int_value(0));
-                }
-                return Ok(match div_int(&a, &b, at.offset)? {
-                    None => Vec::new(),
-                    // `new IntegerType(String)` of the truncated quotient.
-                    Some(q) => int_value(q as i32),
-                });
+                let q = match ucum_pair(model, l, r)?.and_then(|(a, b)| a.div_int(&b)) {
+                    Ok(q) => q,
+                    // `catch (UcumException e)`: just return nothing.
+                    Err(Failure::Ucum(_)) => return Ok(Vec::new()),
+                    Err(Failure::Error(m)) => return Err(java_error(m)),
+                };
+                // `new IntegerType(String)`: `Integer.parseInt`, whose
+                // `NumberFormatException` is rethrown as
+                // `IllegalArgumentException(e)` (`IntegerType.java:65-67`,
+                // `:86-92`) with the cause's `toString()` as its message.
+                let text = q.as_decimal();
+                return match text.parse::<i32>() {
+                    Ok(i) => Ok(int_value(i)),
+                    Err(_) => Err(EvalError::plain(format!(
+                        "java.lang.NumberFormatException: For input string: \"{text}\""
+                    ))),
+                };
             }
             Err(incompatible(op, l, r, at))
         }
@@ -421,27 +390,17 @@ pub(super) fn op_arith(
                 return Ok(int_value(int_of(model, l)?.wrapping_rem(modulus)));
             }
             if both(&numeric) {
-                let (a, b) = (
-                    operand::decimal_of(model, l)?,
-                    operand::decimal_of(model, r)?,
-                );
-                if a.mantissa() == 0 {
-                    return Ok(dec_value(a));
-                }
-                let (x, y, scale) = align(&a, &b, at.offset)?;
-                if y == 0 {
+                return match ucum_pair(model, l, r)?.and_then(|(a, b)| a.modulo(&b)) {
+                    Ok(m) => ucum_value(&m, at.offset),
                     // `new PathEngineException(e)` around the UcumException
                     // (`FHIRPathEngine.java:3102`): the cause's `toString()`,
                     // and no location, so no suffix and no offset
                     // (`path.errors.002`).
-                    return Err(EvalError::plain(format!(
-                        "org.fhir.ucum.UcumException: Attempt to divide {} by zero",
-                        a.lexical()
-                    )));
-                }
-                let quotient = x / y;
-                let rem = x - quotient.checked_mul(y).ok_or_else(|| too_wide(at.offset))?;
-                return Ok(dec_value(make_decimal(rem, scale, at.offset)?));
+                    Err(Failure::Ucum(m)) => Err(EvalError::plain(format!(
+                        "org.fhir.ucum.UcumException: {m}"
+                    ))),
+                    Err(Failure::Error(m)) => Err(java_error(m)),
+                };
             }
             Err(incompatible(op, l, r, at))
         }

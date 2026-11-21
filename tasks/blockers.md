@@ -3088,3 +3088,31 @@ and `reference/clone.sh` (a `chore/` re-pin, since `reference/**` is read-only
 here) so 1.0.9 is pinned as what the differential runs, alongside or instead
 of 1.0.10; or record that 1.0.10 stays the pin because it is the suite run's
 and the classes are identical. Not edited by the proposer.
+
+## 2026-11-21 — `add-fhirpath-and-codegen-r4` — two lib unit tests assert that `1 / 3` is unsupported, which path.math.015 contradicts
+
+**Raised by** the implementer of task 37. With `org.fhir.ucum.Decimal`
+ported (`crates/frevo-path/src/eval/ucum_decimal.rs`), every task-37 test
+passes (`path_math` 25 of 27, the two red ones being `path.math.003`'s and
+`path.mathfn.001`'s, tasks 39/43; `path_compare_equality` 19 of 27, the eight
+red ones all UCUM quantity cases of task 43). But two unit tests in
+`crates/frevo-path/src/eval/tests.rs` now fail:
+
+- `every_binary_operator_is_unsupported_and_never_empty` (`:641-643`) requires
+  `1 / 3` to be `EvalError::Unsupported`;
+- `a_unary_sign_over_an_unbuilt_operation_is_unsupported` (`:647-650`)
+  requires `-1.0 / 3` and `-(1 / 3)` to be `EvalError::Unsupported`.
+
+They used a non-terminating quotient as the sample of "a built operator
+whose rule is not built" while the digit rule was unspecified. The reviewed
+spec now states the rule: `path.math.015` makes `1 / 3` the decimal `0.3`
+and `(0 - 1) / 3` `-0.3`, and the oracle tests assert exactly that
+(`tests/path_math.rs:935`, `:1032`, `tests/path_compare_equality.rs:1105`).
+The implementer may not edit a test, so the lib binary goes from 136/0 to
+134/2 and task 37 is **not ticked**.
+
+**Decision needed.** The oracle-builder replaces the stale samples with an
+operation that is still unbuilt (for example a quantity division such as
+`1 'mg' / 2 'g'`, task 43), keeping each test's property (a built operator
+over an unbuilt rule is `Unsupported`, never empty; a unary sign over one
+surfaces it). Then task 37 can be ticked.
