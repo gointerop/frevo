@@ -1126,6 +1126,30 @@ adapter copies of finding 3.
 **Not deferred to `docs/tech-debt.md`:** these are gate conditions, and
 deciding to defer a missed budget is the owner's call, not the implementer's.
 
+**Resolved 2026-11-21 for findings 3 and 4** (owner decision, relayed to the
+proposer by the coordinator as given through the user; findings 1 and 2 were
+met in `8e50594`, see the follow-up below):
+- `model.perf.004`: the 25% ratio is replaced by absolute budgets, a 4 KiB
+  edit at most 5 µs and a 64 KiB edit at most 12 µs, justified in the
+  scenario by the medians recorded at `8e50594` (1.62-1.65 and 5.53-5.56 µs);
+  the in-process half must not time `FrevoCodec::owned`'s two input copies
+  (the oracle-builder fixes the test). No chunked writer is introduced.
+- `model.perf.006`: graded on the median of five bench runs against a 15%
+  limit; the authoritative baseline is recorded on CI or the reference
+  environment, local runs advisory.
+No DEV or DEBT entry: these are budget amendments, not HAPI deviations or
+deferred work.
+
+**Owed text, not written by the proposer (protected or other branches):**
+- `design.md` section 8, the `model-meta-update` row (`design.md:636`):
+  "the two medians within 25%" becomes "median at most 5 µs at 4 KiB and at
+  most 12 µs at 64 KiB"; and `design.md:660`: the model workloads' regression
+  gate is the median of five runs at 15%, baseline from CI or the reference
+  environment.
+- `bench/targets.md` Regression policy (`:131-136`) and the
+  `model-meta-update` budget in `bench/micro/workloads.yaml`: the same, on a
+  `chore/` branch.
+
 ## 2026-11-12 — `add-fhirpath-and-codegen-r4` — task 27 follow-up: `model.perf.003` and `.005` now met; `.004` and `.006` remain the owner's
 
 **Raised by** `implementer`, task 27 (budget work). Updates findings 1 and 2 of
@@ -1209,6 +1233,13 @@ a faster full parse alone would have pushed the 10% ratio to 9.8%; it is now
   of the per-run medians (worst pair 3.1% here, leaving the 10% threshold
   three times the noise), or grade on that statistic of p10; and/or grade on
   CI's reference environment only.
+
+**Resolved 2026-11-21** (owner decision, relayed by the coordinator):
+`model.perf.004` takes absolute budgets (5 µs at 4 KiB, 12 µs at 64 KiB) and
+`model.perf.006` the median of five runs at 15%, baseline from CI or the
+reference environment; see the resolution note on the entry above. The spec
+delta is amended in place; the `design.md` and `bench/targets.md` text owed is
+listed there.
 
 ## 2026-11-12 — `add-fhirpath-and-codegen-r4` — task 31: the evaluator core exists, and no `path.navigation.*` test can go green on it alone
 

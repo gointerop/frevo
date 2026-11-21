@@ -729,7 +729,12 @@ checkpoint because it changes what a gate measures.
 
 - [ ] **27. Land the model benchmarks and record the baseline.** The five
   `bench/micro/` model workloads with their budgets and the first baseline for
-  the regression policy.
+  the regression policy. Budgets as amended by the owner on 2026-11-21:
+  `model-meta-update` at most 5 µs (4 KiB) and 12 µs (64 KiB), and the
+  regression gate on the median of five runs at 15%, the baseline recorded on
+  CI or the reference environment (`model.perf.004`, `.006`). The
+  oracle-builder moves `FrevoCodec::owned`'s input copies out of
+  `model.perf.004`'s timed region.
   Satisfies `model.perf.001` through `model.perf.006`.
   **Implemented, not ticked.** `model_bytes_lazy_perf` is 14 of 18 (it was 12
   of 18) and `model_mutate` 7 of 7 (it was 6 of 7: `model.mutate.007` now

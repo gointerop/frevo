@@ -670,9 +670,31 @@ Budgets, their derivation and the workloads that measure them are in
 
 #### Scenario: [model.perf.004] a metadata update is proportional to `meta`, not to the document
 
-- **WHEN** the `model-meta-update` workload runs over a 4 KiB and a 64 KiB
-  resource
-- **THEN** the median times differ by at most 25%
+- **WHEN** the `model-meta-update` workload sets `meta.versionId` and
+  `meta.lastUpdated` and serialises, over a 4 KiB and a 64 KiB resource
+- **THEN** the median time is at most **5 µs** at 4 KiB and at most **12 µs**
+  at 64 KiB (owner decision 2026-11-21, replacing the earlier "within 25% of
+  each other", which no implementation can meet: producing a contiguous 64 KiB
+  output alone costs more than a 4 KiB edit)
+- **AND** the budgets rest on the recorded medians (`tasks/blockers.md`,
+  2026-11-12, task 27 and its follow-up, commit `8e50594`, a Windows
+  development host, not the reference environment): 1.62-1.65 µs at 4 KiB
+  and 5.53-5.56 µs at 64 KiB, the 64 KiB surcharge of about 3.9 µs being the
+  copy into the output buffer, not a re-parse. They leave about 3x and 2.2x
+  headroom, and 12 µs is still below one full decode of the 4 KiB fixture
+  (`model-full-parse`, 12.8 µs median at `8e50594`; about 45 µs before it) and
+  far below a full decode of the 64 KiB document
+- **AND** the edit stays proportional to `meta`: it scans no element outside
+  `meta` beyond what locating it costs, and does not re-parse the document
+- **AND** the in-process half of this scenario times only the two `set`s and
+  the serialisation: the owned input document is prepared **outside** the
+  timed region. It must not time the test adapter's own copies
+  (`FrevoCodec::owned` copies the input twice, `to_vec` and then
+  `Arc::from(Box<[u8]>)`, inside the timed closure today; the oracle-builder
+  moves them out)
+- **AND** the authoritative grade is the `bench/micro/` workload run on CI or
+  on the reference environment of `bench/targets.md`; a local run is
+  advisory
 
 #### Scenario: [model.perf.005] canonical serialisation of a constructed resource stays within budget
 
@@ -684,5 +706,18 @@ Budgets, their derivation and the workloads that measure them are in
 
 - **WHEN** any `bench/micro/` model workload is compared with the baseline
   recorded for the previous commit on `main`
-- **THEN** no workload is more than 10% slower, per the regression policy in
-  `bench/targets.md`
+- **THEN** the compared statistic is the **median of five bench runs** (each
+  run's per-workload median, then the median of the five), on both sides, and
+  no workload is more than **15%** slower (owner decision 2026-11-21,
+  replacing a 10% limit on a single run)
+- **AND** the authoritative baseline is recorded on CI or on the reference
+  environment of `bench/targets.md`; a local run is advisory, never updates
+  the baseline and never fails the gate
+- **AND** the limits rest on the recorded noise (`tasks/blockers.md`,
+  2026-11-12, task 27 and its follow-up): two single runs of the **same**
+  binary moved 10.1%, 13.5% and 20.3%, while the median of three runs had a
+  worst pair of 3.1% over ten runs; five runs and 15% keep the gate above the
+  observed episodes without hiding a real regression of that size
+- **AND** for these workloads this supersedes the single-run 10% rule of
+  `bench/targets.md` (Regression policy, `:131-136`), whose text is updated by
+  a `chore/` change (`tasks/blockers.md`)

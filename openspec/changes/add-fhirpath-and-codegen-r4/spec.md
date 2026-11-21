@@ -251,6 +251,13 @@ with their citations, and the answers `path.api.005` needs. `path.api.005`
 and `codegen.binding.002` were amended in place to point at it. None was
 removed, renumbered, reused or repurposed.
 
+By owner decision (2026-11-21, task 27's budget entries in
+`tasks/blockers.md`), `model.perf.004` now grades absolute budgets (4 KiB
+edit at most 5 µs, 64 KiB at most 12 µs) instead of a 25% ratio, and its
+in-process half no longer times the test adapter's copies; `model.perf.006`
+grades the median of five runs against a 15% limit, with the baseline from CI
+or the reference environment. Both were amended in place; no ID was added.
+
 After the task-37 port, four `Decimal` behaviours it met were specified from
 the pinned source: `path.math.016` gained the `java.lang.Error("Unhandled")`
 of `doSubtract` and the round-up-before-truncation results, and **1 ID was
