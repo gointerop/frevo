@@ -2973,3 +2973,15 @@ this repository has allow.
    `Cannot invoke "java.lang.String.equals(Object)" because the value is null`.
    Recording it so a differential diff on the text is expected, not a
    surprise.
+
+## 2026-11-20 — `add-fhirpath-and-codegen-r4` — UCUM source: pin resolved, awaiting the owner's go-ahead
+
+**Raised by** the lead. Resolution, read-only: `org.hl7.fhir.core` 6.9.12
+(`pom.xml:233-236`) declares `org.fhir:ucum:1.0.10`. Its source is
+`https://github.com/FHIR/Ucum-java`, tag `1.0.10`, commit
+`db9d22ade3f0f4a667b45817b85a9ac4534e4224` (BSD-3-Clause). To unblock tasks 43/44
+(and the `Decimal` rule in blockers 2026-11-17): add a sixth row to
+`reference/PINS.md` and `reference/clone.sh`, then run the script. `reference/**`
+is read-only on every branch, so this needs the owner's approval as a re-pin
+(`chore/oracles-*`-style branch). Ported files would need the §10 header and a
+NOTICE entry for the BSD text.
