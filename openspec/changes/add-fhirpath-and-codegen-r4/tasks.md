@@ -213,6 +213,33 @@ checkpoint because it changes what a gate measures.
   **Ticked 2026-11-21 (verified at `761a9e7`):** the tests and the owed probes
   landed there, tagged `covers:`; they failed until tasks 44a to 44c.
 
+- [ ] **4c. Write the failing tests for `path.math.018` and
+  `path.quantity.027`.** These are two HAPI behaviours the implementer of
+  tasks 44a to 44c found unspecified. `oracle-builder` work, before task
+  44d:
+  - one test per ID, tagged `// covers:`, asserting the values each scenario
+    states;
+  - probes in `harness/fhirpath-compare/differential/probes.py` over
+    `parameters-novalue-numbers.xml`:
+    - for `path.math.018`: `+`, `-` and `*` with the no-value `integer` `i`
+      on the left and on the right of `1`; the no-value `decimal` `d` with
+      `1`; `i` with `1.5`; and `1.5 * d`;
+    - for `path.quantity.027`, with no `contextType`: `children()` and
+      `descendants()` on `1 'cm'`, `1 year`, `1 week`, `1 ''` and
+      `2 'cm' * 1 'm'`, and their `count()`;
+    - also for `path.quantity.027`, check-time probes **with** a
+      `contextType`: `(1 'cm').children().count()` (passes),
+      `(1 'cm').children().first()` and `(1 'cm').children().code` (both
+      rejected);
+  - then re-run the HAPI side and the differential. A stated value the run
+    contradicts goes back to the proposer, not into the test. That includes
+    the decimal arm's `"val" is null` text, which has so far been seen only
+    on the bare JDK.
+  Until this lands, `harness/scripts/scenario-coverage.sh --change
+  add-fhirpath-and-codegen-r4` reports `path.math.018` and
+  `path.quantity.027` as uncovered.
+  Satisfies the tests for `path.math.018` and `path.quantity.027`.
+
 - [x] **5. Write the failing tests for every `codegen.*` and `model.*`
   scenario.** Same discipline: one test per scenario ID with a `covers:`
   comment, 49 plus 83 of them, including the `bench/micro/` workloads as
@@ -1236,6 +1263,24 @@ checkpoint because it changes what a gate measures.
   **Ticked 2026-11-21:** `eval/compare.rs` raises the `"lunit" is null` text
   and `eval/arith.rs` (`parse_int`) the `Cannot parse null string` text for
   the integer arms of `div` and `mod`, divisor first, both with no offset.
+
+- [ ] **44d. Fail `+`, `-` and `*` over a no-value operand as HAPI does, and
+  list an engine-built quantity's children.** Found by the implementer of
+  tasks 44a to 44c (owner's standing ruling: HAPI wins, no new deviation).
+  The integer arms of `+`, `-` and `*` read the left operand and then the
+  right with `Integer.parseInt`, so a no-value `integer` operand fails with
+  exactly `Cannot parse null string` (Frevo says `For input string: ""`
+  today). The decimal arms build `new BigDecimal` from the left operand and
+  then the right, so a no-value `decimal` operand, or a no-value `integer`
+  operand beside a decimal, fails with exactly
+  `Cannot invoke "String.toCharArray()" because "val" is null`. All of these
+  have no offset (`path.math.018`). `children()` and `descendants()` on a
+  quantity literal or a `*`/`/` result list its set elements in
+  `Quantity.listChildren` order: value, unit, system, code. Frevo answers
+  empty today (`path.quantity.027`). The static check must keep accepting
+  `children()` and `descendants()` here with no type, and keep rejecting a
+  named step after them. Depends on task 4c.
+  Satisfies `path.math.018` and `path.quantity.027`.
 
 - [x] **45. Implement the boundary functions.** `lowBoundary`, `highBoundary` and
   `precision` as the pinned engine computes them: decimal boundaries edited as

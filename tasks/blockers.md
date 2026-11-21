@@ -3778,3 +3778,21 @@ a scale shift past `MAX_SHIFT` (10,000 places), for example
 `1.5.round(20000)` (`DEBT-0014`). Then: tick task 44b, set `DEBT-0011` to
 `paid` with `a900207`, and re-run the differential.
 
+
+## 2026-11-21 — `add-fhirpath-and-codegen-r4` — specified: two HAPI behaviours the task-44 implementer found
+
+These are resolved under the owner's standing ruling (HAPI wins, no new
+deviation). I checked both against the pinned `FHIRPathEngine.java`:
+
+1. **`+`, `-` and `*` over a no-value operand.** The integer arms call
+   `Integer.parseInt` on both operands (`:2700`, `:2790`, `:2962`), so a
+   no-value operand fails with `Cannot parse null string`. The decimal arms
+   call `new BigDecimal(null)` (`:2702`, `:2792`, `:2964`), which gives
+   `Cannot invoke "String.toCharArray()" because "val" is null` (seen on
+   bare JDK 25 only). This is now `path.math.018`.
+2. **`children()` and `descendants()` of an engine-built quantity.** They list
+   the set elements in `Quantity.listChildren` order. The check does not
+   reject them. This is now `path.quantity.027`.
+
+Task 4c (oracle-builder) writes the tests and probes, and task 44d
+(implementer) makes Frevo match. Both IDs are uncovered until task 4c lands.

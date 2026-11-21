@@ -1876,6 +1876,48 @@ identical, so every value stated here holds for both; only
 - **AND** no live case grades it, so it is differential-only, graded
   in-process against the values stated
 
+#### Scenario: [path.math.018] `+`, `-` and `*` over an operand with no value fail as the arm's parse fails
+
+- **WHEN** `+`, `-` or `*` is evaluated with an `integer` or `decimal`
+  element with no value (an element carrying only an extension, so its
+  `primitiveValue()` is `null`) as either operand, such as
+  `Parameters.parameter.where(name = 'i').value` (an `integer`) or
+  `Parameters.parameter.where(name = 'd').value` (a `decimal`) over
+  `parameters-novalue-numbers.xml`
+- **THEN** when both operands are `integer`, the integer arm calls
+  `Integer.parseInt` on the left `primitiveValue()` and then on the right
+  (`+` `FHIRPathEngine.java:2699-2700`, `*` `:2789-2790`, `-` `:2961-2962`),
+  so a null on either side raises a `NumberFormatException` that the engine
+  does not catch. Its message is `Cannot parse null string` on JDK 25 and on
+  JDK 21 (the live starter image's, `hapi-fhir-jpaserver-starter/Dockerfile:41`),
+  as `path.math.017` states for `div` and `mod`. So
+  `Parameters.parameter.where(name = 'i').value + 1`,
+  `1 + Parameters.parameter.where(name = 'i').value`, and the same with `-`
+  and `*`, each fail with an execution error whose message is exactly
+  `Cannot parse null string`, with no offset (`path.errors.002`)
+- **AND** when either operand is a `decimal`, the decimal arm builds
+  `new BigDecimal(primitiveValue())`, left first (`+` `:2701-2702`, `*`
+  `:2791-2792`, `-` `:2963-2964`), and a null raises the JVM's
+  `NullPointerException`, which no arm catches. Its message on JDK 25 is
+  exactly `Cannot invoke "String.toCharArray()" because "val" is null` (the
+  JDK's own text for `new BigDecimal((String) null)`, observed by running that
+  constructor directly on Temurin 25.0.1, not yet through HAPI). So
+  `Parameters.parameter.where(name = 'd').value + 1`,
+  `Parameters.parameter.where(name = 'i').value + 1.5` and
+  `1.5 * Parameters.parameter.where(name = 'd').value` fail with an execution
+  error carrying that message and no offset
+- **AND** the static check cannot see the missing value, because it types the
+  operand from the model, so the failure is at evaluation, with the check
+  run or skipped. HAPI's server-facing worker answers the same, because no
+  worker is consulted
+- **AND** these are the same class of failure `path.math.017` states and
+  `DEV-0030` records for the `div` and `mod` arms; this scenario states them
+  for `+`, `-` and `*` and adds no deviation
+- **AND** no live case grades it, so it is differential-only, graded
+  in-process against the values stated. Every probe is owed (task 4c). The
+  decimal arm's message is graded once the HAPI probe has observed it; a
+  contradicting observation goes back to the proposer
+
 ### Requirement: Math functions
 
 The engine SHALL implement the math functions `FHIRPathEngine` implements, each over a singleton numeric focus. An empty focus yields an empty collection for `exp` only; the other nine raise (`path.mathfn.010`). `round` and `truncate` are exact; the other eight go through a binary `double` (`path.compare.012`).
@@ -3431,6 +3473,51 @@ worker each of these operations raises `HAPI-0274: ` (`path.quantity.019`,
   in-process against the values stated (`path.quantity.021#37`-`#40`,
   `path.quantity.024#33`, `#34`; the `.code` and `.system` cases are owed
   probes)
+
+#### Scenario: [path.quantity.027] `children()` and `descendants()` of an engine-built quantity list its set elements
+
+- **WHEN** `children()` or `descendants()` is evaluated on a quantity literal
+  or on the result of quantity `*` or `/`
+- **THEN** `funcChildren` and `funcDescendants` call
+  `getChildrenByName(item, "*")` (`FHIRPathEngine.java:4810-4836`, `:255-278`),
+  which is `Base.listChildrenByName("*")` (`Base.java:226-233`): every value
+  of every property `Quantity.listChildren` declares, in declaration order —
+  `id` and `extension` (`Element.java:235-240`), then `value`, `comparator`,
+  `unit`, `system`, `code` (`Quantity.java:631-643`) — an unset property
+  contributing nothing
+- **AND** so, with the check skipped, under the suite's worker:
+  - `(1 'cm').children()` is `decimal:1`, `uri:http://unitsofmeasure.org`,
+    `code:cm`, and `(1 'cm').children().count()` is `integer:3`
+  - `(1 year).children()` is `decimal:1`, `string:year`
+  - `(1 week).children()` is `decimal:1`, `string:week`,
+    `uri:http://unitsofmeasure.org`, `code:wk`
+  - `(1 '').children()` is `decimal:1`, `uri:http://unitsofmeasure.org`
+    (no code, `path.quantity.026`)
+  - `(2 'cm' * 1 'm').children()` is `decimal:0.02`,
+    `uri:http://unitsofmeasure.org`, `code:m2` (no `unit`,
+    `path.quantity.021`)
+- **AND** `descendants()` answers the same items as `children()` for each of
+  these, because the children are primitives with no `id` or `extension`
+  set, so the next round adds nothing (`:4816-4825`):
+  `(1 'cm').descendants().count()` is `integer:3`
+- **AND** the static check, when it runs (with a context type), does **not**
+  reject `children()` or `descendants()` here, unlike a named member
+  (`path.quantity.025`): it types them with `childTypes(focus, "*")` and
+  `"**"` (`:3512-3515`, `:3902-3908`), which for `System.Quantity`, or for the
+  untyped `*` and `/` result, collects no type and raises nothing. So
+  `(1 'cm').children().count()` passes the check and is `integer:3`. The
+  result is unordered under the check, so `(1 'cm').children().first()` fails
+  it as `path.navigation.022` states, and a named step after it, such as
+  `(1 'cm').children().code`, fails with `FHIRPATH_UNKNOWN_NAME` over no types,
+  as `path.quantity.025` states for a `*` result
+- **AND** HAPI's server-facing worker answers the same for a literal, since no
+  worker is consulted; a `*` or `/` result raises `HAPI-0274: ` there first
+  (`path.quantity.019`, `DEV-0029`)
+- **AND** this is the specification's `children()` and adds no deviation
+- **AND** no live case grades it, so it is differential-only, graded
+  in-process against the values stated. Every value is derived from the
+  source, and the `(1 'cm').children()` items were seen by the implementer
+  of task 44a; all are owed probes (task 4c)
 
 ### Requirement: Boundary functions
 
