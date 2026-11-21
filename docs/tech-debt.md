@@ -318,7 +318,13 @@ them is the whole reason that decision is safe to make.
   behaviour wins, so this is now work in the way of
   `add-fhirpath-and-codegen-r4`: its task 44b pays it, against
   `path.literal.017` and `path.quantity.020`, and sets this entry to `paid`
-  with the commit.
+  with the commit. Implemented in `a900207` (2026-11-21): `Decimal`'s
+  mantissa is `Unscaled`, of any number of digits
+  (`crates/frevo-path/src/seam/unscaled.rs`), and every `frevo-path` test of
+  `path.literal.017` and `path.quantity.020` passes. It stays `blocking`
+  only until task 44b is ticked, which waits on two in-crate tests that
+  still assert the 38-digit refusal (`tasks/blockers.md`, 2026-11-21,
+  "task 44b: two in-crate tests assert the refusal it removes").
 - **Reviewed:** not yet. Raised 2026-11-12 with `DEV-0011`, which is itself
   awaiting the owner at the next phase boundary. Recorded now rather than at
   sign-off because the obligation exists the moment the fallback ships.
@@ -391,7 +397,16 @@ them is the whole reason that decision is safe to make.
 - **Trigger:** the first differential diff or suite case doing arithmetic on a
   decimal with negative scale; or the arbitrary-precision decimal of DEBT-0011.
 - **Size:** small; best done with DEBT-0011.
-- **Status:** open
+- **Status:** open — the DEBT-0011 decimal arrived in `a900207` (task 44b) and
+  this was not folded in, because it is not free: a signed scale changes how
+  an arithmetic result over a negative-scale value renders (`BigDecimal`'s
+  `1.23E+4` against today's plain digits), which needs HAPI observations no
+  scenario states yet. One more consequence of the non-negative scale since
+  `a900207`: a value is shifted into it by appending zeros, so a shift of
+  more than 10,000 places (`MAX_SHIFT`, an exponent such as `1e20000` read
+  from data, or `round(20000)`) is `EvalError::Unsupported` where
+  `BigDecimal` keeps one digit and a scale. A signed scale removes that
+  bound too.
 - **Reviewed:** not yet. Raised 2026-11-17.
 
 ### DEBT-0015 — the regular-expression functions differ from `java.util.regex` in corners where Frevo answers rather than errors

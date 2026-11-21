@@ -3742,3 +3742,39 @@ Task 4b (oracle-builder) writes the tests. Until it lands,
    "which `f64` cannot.", add "It is unbounded in significant digits: a literal,
    operator or UCUM canonical value never fails on its width
    (`path.literal.017`, `path.quantity.020`; `DEBT-0011`, paid by task 44b)."
+
+## 2026-11-21 — `add-fhirpath-and-codegen-r4` — task 44b: two in-crate tests assert the refusal it removes
+
+**Raised by** the implementer of tasks 44a to 44c. Tasks 44a and 44c are
+ticked (`ba22997`). Task 44b is implemented (`a900207`): `Decimal` carries a
+mantissa of any number of digits, and all eight target tests pass, including
+`path_literals::a_decimal_literal_is_carried_at_any_number_of_significant_digits`
+(`path.literal.017`) and the `[pi]` bullet of
+`path_quantity::a_canonical_form_is_a_value_over_base_units_sorted_by_base_unit_code`
+(`path.quantity.020`). Every integration test target of `frevo-path` passes.
+
+Two in-crate tests still encode the refusal that `path.literal.017` removes,
+so lib is 137 of 139:
+
+- `crates/frevo-path/src/eval/tests.rs`,
+  `every_binary_operator_is_unsupported_and_never_empty` (`:642-655`), asserts
+  that `1.0000000000000000000001 * 1.0000000000000000000001` and
+  `99999999999999999999999999999999999999 + 1.5` are `EvalError::Unsupported`
+  naming "38 significant digits";
+- the same file, `a_unary_sign_over_an_unbuilt_operation_is_unsupported`
+  (`:658-668`), asserts the same of their negations.
+
+Both now evaluate (the first to the exact 45-digit product
+`1.00000000000000000000020000000000000000000001`, as `BigDecimal` gives).
+`path.literal.017` states that no arithmetic over such a value fails on a
+limit of significant digits, so the assertions contradict the approved spec.
+The implementer may not edit them, so task 44b stays unticked and `DEBT-0011`
+stays `blocking` with the commit noted.
+
+**Decision needed (oracle-builder):** re-align the two tests, as `f2bb275` and
+`0ffc970` did when their earlier examples were built. One decimal path that is
+still Unsupported, if the never-empty property should keep a decimal example:
+a scale shift past `MAX_SHIFT` (10,000 places), for example
+`1.5.round(20000)` (`DEBT-0014`). Then: tick task 44b, set `DEBT-0011` to
+`paid` with `a900207`, and re-run the differential.
+

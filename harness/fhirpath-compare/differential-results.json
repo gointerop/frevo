@@ -1891,15 +1891,15 @@
       "verdict": "agree"
     },
     "path.compare.014": {
-      "agree": 0,
-      "disagree": 1,
+      "agree": 1,
+      "disagree": 0,
       "disagree_documented": 0,
       "hapi_unreachable": 0,
       "probes": [
         {
           "expr": "1 'kg' <= 1 year",
           "frevo": {
-            "error": "Cannot invoke \"java.lang.String.equals(Object)\" because the value is null",
+            "error": "Cannot invoke \"String.equals(Object)\" because \"lunit\" is null",
             "stage": "eval"
           },
           "hapi": {
@@ -1908,11 +1908,11 @@
             "stage": "eval"
           },
           "id": "path.compare.014#01",
-          "verdict": "disagree",
+          "verdict": "agree",
           "worker": "suite"
         }
       ],
-      "verdict": "disagree"
+      "verdict": "agree"
     },
     "path.compare.015": {
       "agree": 21,
@@ -3942,8 +3942,8 @@
       "verdict": "agree"
     },
     "path.literal.016": {
-      "agree": 3,
-      "disagree": 2,
+      "agree": 5,
+      "disagree": 0,
       "disagree_documented": 0,
       "hapi_unreachable": 0,
       "probes": [
@@ -3973,7 +3973,9 @@
           "expr": "(1 'a\\tb').code",
           "frevo": {
             "hasLog": false,
-            "items": [],
+            "items": [
+              "code:a<U+0009>tb"
+            ],
             "log": "",
             "stage": "ok"
           },
@@ -3986,7 +3988,7 @@
             "stage": "ok"
           },
           "id": "path.literal.016#02",
-          "verdict": "disagree",
+          "verdict": "agree",
           "worker": "suite"
         },
         {
@@ -4015,7 +4017,9 @@
           "expr": "(1 'a\\u0041b').code",
           "frevo": {
             "hasLog": false,
-            "items": [],
+            "items": [
+              "code:aAb"
+            ],
             "log": "",
             "stage": "ok"
           },
@@ -4028,7 +4032,7 @@
             "stage": "ok"
           },
           "id": "path.literal.016#04",
-          "verdict": "disagree",
+          "verdict": "agree",
           "worker": "suite"
         },
         {
@@ -4048,20 +4052,23 @@
           "worker": "suite"
         }
       ],
-      "verdict": "disagree"
+      "verdict": "agree"
     },
     "path.literal.017": {
-      "agree": 0,
-      "disagree": 5,
+      "agree": 5,
+      "disagree": 0,
       "disagree_documented": 0,
       "hapi_unreachable": 0,
       "probes": [
         {
           "expr": "0.12345678901234567890123456789012345678901234567890",
           "frevo": {
-            "error": "Invalid Constant 0.12345678901234567890123456789012345678901234567890: it has more significant digits than this engine's decimal representation carries",
-            "offset": 0,
-            "stage": "parse"
+            "hasLog": false,
+            "items": [
+              "decimal:0.12345678901234567890123456789012345678901234567890"
+            ],
+            "log": "",
+            "stage": "ok"
           },
           "hapi": {
             "hasLog": false,
@@ -4073,15 +4080,18 @@
           },
           "id": "path.literal.017#01",
           "note": "more than 38 significant digits (DEBT-0011)",
-          "verdict": "disagree",
+          "verdict": "agree",
           "worker": "suite"
         },
         {
           "expr": "0.12345678901234567890123456789012345678901234567890.toString()",
           "frevo": {
-            "error": "Invalid Constant 0.12345678901234567890123456789012345678901234567890: it has more significant digits than this engine's decimal representation carries",
-            "offset": 0,
-            "stage": "parse"
+            "hasLog": false,
+            "items": [
+              "string:0.12345678901234567890123456789012345678901234567890"
+            ],
+            "log": "",
+            "stage": "ok"
           },
           "hapi": {
             "hasLog": false,
@@ -4093,15 +4103,18 @@
           },
           "id": "path.literal.017#02",
           "note": "more than 38 significant digits (DEBT-0011)",
-          "verdict": "disagree",
+          "verdict": "agree",
           "worker": "suite"
         },
         {
           "expr": "0.12345678901234567890123456789012345678901234567890 = 0.12345678901234567890123456789012345678901234567890",
           "frevo": {
-            "error": "Invalid Constant 0.12345678901234567890123456789012345678901234567890: it has more significant digits than this engine's decimal representation carries",
-            "offset": 0,
-            "stage": "parse"
+            "hasLog": false,
+            "items": [
+              "boolean:true"
+            ],
+            "log": "",
+            "stage": "ok"
           },
           "hapi": {
             "hasLog": false,
@@ -4113,15 +4126,18 @@
           },
           "id": "path.literal.017#03",
           "note": "more than 38 significant digits (DEBT-0011)",
-          "verdict": "disagree",
+          "verdict": "agree",
           "worker": "suite"
         },
         {
           "expr": "1234567890123456789012345678901234567890",
           "frevo": {
-            "error": "Invalid Constant 1234567890123456789012345678901234567890: it has more significant digits than this engine's decimal representation carries",
-            "offset": 0,
-            "stage": "parse"
+            "hasLog": false,
+            "items": [
+              "decimal:1234567890123456789012345678901234567890"
+            ],
+            "log": "",
+            "stage": "ok"
           },
           "hapi": {
             "hasLog": false,
@@ -4133,15 +4149,18 @@
           },
           "id": "path.literal.017#04",
           "note": "more than 38 significant digits (DEBT-0011)",
-          "verdict": "disagree",
+          "verdict": "agree",
           "worker": "suite"
         },
         {
           "expr": "1234567890123456789012345678901234567890.toString()",
           "frevo": {
-            "error": "Invalid Constant 1234567890123456789012345678901234567890: it has more significant digits than this engine's decimal representation carries",
-            "offset": 0,
-            "stage": "parse"
+            "hasLog": false,
+            "items": [
+              "string:1234567890123456789012345678901234567890"
+            ],
+            "log": "",
+            "stage": "ok"
           },
           "hapi": {
             "hasLog": false,
@@ -4153,11 +4172,11 @@
           },
           "id": "path.literal.017#05",
           "note": "more than 38 significant digits (DEBT-0011)",
-          "verdict": "disagree",
+          "verdict": "agree",
           "worker": "suite"
         }
       ],
-      "verdict": "disagree"
+      "verdict": "agree"
     },
     "path.math.015": {
       "agree": 73,
@@ -7058,8 +7077,8 @@
       "verdict": "agree"
     },
     "path.math.017": {
-      "agree": 52,
-      "disagree": 2,
+      "agree": 54,
+      "disagree": 0,
       "disagree_documented": 3,
       "hapi_unreachable": 8,
       "probes": [
@@ -8250,7 +8269,7 @@
         {
           "expr": "Parameters.parameter.where(name = 'i').value div 2",
           "frevo": {
-            "error": "For input string: \"\"",
+            "error": "Cannot parse null string",
             "stage": "eval"
           },
           "hapi": {
@@ -8261,13 +8280,13 @@
           "id": "path.math.017#61",
           "input": "local:parameters-novalue-numbers.xml",
           "note": "Integer.parseInt(null): the text is graded (Cannot parse null string, JDK 21 and 25)",
-          "verdict": "disagree",
+          "verdict": "agree",
           "worker": "suite"
         },
         {
           "expr": "Parameters.parameter.where(name = 'i').value mod 2",
           "frevo": {
-            "error": "For input string: \"\"",
+            "error": "Cannot parse null string",
             "stage": "eval"
           },
           "hapi": {
@@ -8278,7 +8297,7 @@
           "id": "path.math.017#62",
           "input": "local:parameters-novalue-numbers.xml",
           "note": "Integer.parseInt(null): the text is graded (Cannot parse null string, JDK 21 and 25)",
-          "verdict": "disagree",
+          "verdict": "agree",
           "worker": "suite"
         },
         {
@@ -8340,7 +8359,7 @@
           "worker": "suite"
         }
       ],
-      "verdict": "disagree"
+      "verdict": "disagree-documented"
     },
     "path.mathfn.004": {
       "agree": 6,
@@ -10103,8 +10122,8 @@
       "verdict": "agree"
     },
     "path.quantity.019": {
-      "agree": 6,
-      "disagree": 2,
+      "agree": 8,
+      "disagree": 0,
       "disagree_documented": 10,
       "hapi_unreachable": 0,
       "probes": [
@@ -10525,7 +10544,7 @@
         {
           "expr": "1 'kg' <= 1 year",
           "frevo": {
-            "error": "Cannot invoke \"java.lang.String.equals(Object)\" because the value is null",
+            "error": "Cannot invoke \"String.equals(Object)\" because \"lunit\" is null",
             "stage": "eval"
           },
           "hapi": {
@@ -10535,13 +10554,13 @@
           },
           "id": "path.quantity.019#17",
           "note": "never consults the worker: same answer under both workers",
-          "verdict": "disagree",
+          "verdict": "agree",
           "worker": "server"
         },
         {
           "expr": "Parameters.parameter[0].value <= Parameters.parameter[2].value",
           "frevo": {
-            "error": "Cannot invoke \"java.lang.String.equals(Object)\" because the value is null",
+            "error": "Cannot invoke \"String.equals(Object)\" because \"lunit\" is null",
             "stage": "eval"
           },
           "hapi": {
@@ -10551,15 +10570,15 @@
           },
           "id": "path.quantity.019#18",
           "input": "suite:parameters-example-quantities.xml",
-          "verdict": "disagree",
+          "verdict": "agree",
           "worker": "server"
         }
       ],
-      "verdict": "disagree"
+      "verdict": "disagree-documented"
     },
     "path.quantity.020": {
-      "agree": 43,
-      "disagree": 4,
+      "agree": 47,
+      "disagree": 0,
       "disagree_documented": 0,
       "hapi_unreachable": 0,
       "probes": [
@@ -11268,8 +11287,12 @@
         {
           "expr": "(1 '[pi]' * 1 '1').toString()",
           "frevo": {
-            "error": "Unsupported { feature: \"decimal arithmetic beyond 38 significant digits\", offset: 1 }",
-            "stage": "not-implemented"
+            "hasLog": false,
+            "items": [
+              "string:3.1415926535897932384626433832795028841971693993751058209749445923 'null'"
+            ],
+            "log": "",
+            "stage": "ok"
           },
           "hapi": {
             "hasLog": false,
@@ -11285,7 +11308,7 @@
             "stage": "eval"
           },
           "id": "path.quantity.020#27",
-          "verdict": "disagree",
+          "verdict": "agree",
           "worker": "suite"
         },
         {
@@ -11669,8 +11692,12 @@
         {
           "expr": "1 '[pi]' * 1 'm'",
           "frevo": {
-            "error": "Unsupported { feature: \"decimal arithmetic beyond 38 significant digits\", offset: 0 }",
-            "stage": "not-implemented"
+            "hasLog": false,
+            "items": [
+              "Quantity:3.1415926535897932384626433832795028841971693993751058209749445923||http://unitsofmeasure.org|m"
+            ],
+            "log": "",
+            "stage": "ok"
           },
           "hapi": {
             "hasLog": false,
@@ -11687,14 +11714,18 @@
           },
           "id": "path.quantity.020#42",
           "note": "the [pi] factor carries 65 significant digits",
-          "verdict": "disagree",
+          "verdict": "agree",
           "worker": "suite"
         },
         {
           "expr": "2 '[pi]' * 1 '1'",
           "frevo": {
-            "error": "Unsupported { feature: \"decimal arithmetic beyond 38 significant digits\", offset: 0 }",
-            "stage": "not-implemented"
+            "hasLog": false,
+            "items": [
+              "Quantity:6.2831853071795864769252867665590057683943387987502116419498891846||http://unitsofmeasure.org|"
+            ],
+            "log": "",
+            "stage": "ok"
           },
           "hapi": {
             "hasLog": false,
@@ -11711,7 +11742,7 @@
           },
           "id": "path.quantity.020#43",
           "note": "the [pi] factor carries 65 significant digits",
-          "verdict": "disagree",
+          "verdict": "agree",
           "worker": "suite"
         },
         {
@@ -11773,8 +11804,12 @@
         {
           "expr": "(1 '[pi]' * 1 '1').value",
           "frevo": {
-            "error": "Unsupported { feature: \"decimal arithmetic beyond 38 significant digits\", offset: 1 }",
-            "stage": "not-implemented"
+            "hasLog": false,
+            "items": [
+              "decimal:3.1415926535897932384626433832795028841971693993751058209749445923"
+            ],
+            "log": "",
+            "stage": "ok"
           },
           "hapi": {
             "hasLog": false,
@@ -11791,7 +11826,7 @@
           },
           "id": "path.quantity.020#46",
           "note": "the [pi] factor carries 65 significant digits",
-          "verdict": "disagree",
+          "verdict": "agree",
           "worker": "suite"
         },
         {
@@ -11823,11 +11858,11 @@
           "worker": "suite"
         }
       ],
-      "verdict": "disagree"
+      "verdict": "agree"
     },
     "path.quantity.021": {
-      "agree": 38,
-      "disagree": 8,
+      "agree": 46,
+      "disagree": 0,
       "disagree_documented": 0,
       "hapi_unreachable": 0,
       "probes": [
@@ -12772,12 +12807,8 @@
         {
           "expr": "1 '' / 1 'm'",
           "frevo": {
-            "hasLog": false,
-            "items": [
-              "Quantity:1.00||http://unitsofmeasure.org|m-1"
-            ],
-            "log": "",
-            "stage": "ok"
+            "error": "Cannot invoke \"String.contains(java.lang.CharSequence)\" because the return value of \"org.fhir.ucum.Pair.getCode()\" is null",
+            "stage": "eval"
           },
           "hapi": {
             "error": "Cannot invoke \"String.contains(java.lang.CharSequence)\" because the return value of \"org.fhir.ucum.Pair.getCode()\" is null",
@@ -12791,7 +12822,7 @@
           },
           "id": "path.quantity.021#38",
           "note": "an empty unit literal",
-          "verdict": "disagree",
+          "verdict": "agree",
           "worker": "suite"
         },
         {
@@ -12799,7 +12830,7 @@
           "frevo": {
             "hasLog": false,
             "items": [
-              "string:1 ''"
+              "string:1 'null'"
             ],
             "log": "",
             "stage": "ok"
@@ -12814,7 +12845,7 @@
           },
           "id": "path.quantity.021#39",
           "note": "an empty unit literal",
-          "verdict": "disagree",
+          "verdict": "agree",
           "worker": "suite"
         },
         {
@@ -12822,7 +12853,7 @@
           "frevo": {
             "hasLog": false,
             "items": [
-              "boolean:true"
+              "boolean:false"
             ],
             "log": "",
             "stage": "ok"
@@ -12837,14 +12868,16 @@
           },
           "id": "path.quantity.021#40",
           "note": "an empty unit literal",
-          "verdict": "disagree",
+          "verdict": "agree",
           "worker": "suite"
         },
         {
           "expr": "(1 'cm').code",
           "frevo": {
             "hasLog": false,
-            "items": [],
+            "items": [
+              "code:cm"
+            ],
             "log": "",
             "stage": "ok"
           },
@@ -12858,14 +12891,16 @@
           },
           "id": "path.quantity.021#41",
           "note": "a quantity literal's elements",
-          "verdict": "disagree",
+          "verdict": "agree",
           "worker": "suite"
         },
         {
           "expr": "(1 'cm').value",
           "frevo": {
             "hasLog": false,
-            "items": [],
+            "items": [
+              "decimal:1"
+            ],
             "log": "",
             "stage": "ok"
           },
@@ -12879,7 +12914,7 @@
           },
           "id": "path.quantity.021#42",
           "note": "a quantity literal's elements",
-          "verdict": "disagree",
+          "verdict": "agree",
           "worker": "suite"
         },
         {
@@ -12905,7 +12940,9 @@
           "expr": "(1 'cm').system",
           "frevo": {
             "hasLog": false,
-            "items": [],
+            "items": [
+              "uri:http://unitsofmeasure.org"
+            ],
             "log": "",
             "stage": "ok"
           },
@@ -12919,14 +12956,16 @@
           },
           "id": "path.quantity.021#44",
           "note": "a quantity literal's elements",
-          "verdict": "disagree",
+          "verdict": "agree",
           "worker": "suite"
         },
         {
           "expr": "(1 year).unit",
           "frevo": {
             "hasLog": false,
-            "items": [],
+            "items": [
+              "string:year"
+            ],
             "log": "",
             "stage": "ok"
           },
@@ -12940,14 +12979,16 @@
           },
           "id": "path.quantity.021#45",
           "note": "a quantity literal's elements",
-          "verdict": "disagree",
+          "verdict": "agree",
           "worker": "suite"
         },
         {
           "expr": "(2 'cm' * 1 'm').code",
           "frevo": {
             "hasLog": false,
-            "items": [],
+            "items": [
+              "code:m2"
+            ],
             "log": "",
             "stage": "ok"
           },
@@ -12966,11 +13007,11 @@
           },
           "id": "path.quantity.021#46",
           "note": "a quantity literal's elements",
-          "verdict": "disagree",
+          "verdict": "agree",
           "worker": "suite"
         }
       ],
-      "verdict": "disagree"
+      "verdict": "agree"
     },
     "path.quantity.022": {
       "agree": 29,
@@ -13750,8 +13791,8 @@
       "verdict": "agree"
     },
     "path.quantity.023": {
-      "agree": 27,
-      "disagree": 1,
+      "agree": 28,
+      "disagree": 0,
       "disagree_documented": 0,
       "hapi_unreachable": 0,
       "probes": [
@@ -14327,7 +14368,9 @@
           "expr": "(1 '[hp\\'_X]').code",
           "frevo": {
             "hasLog": false,
-            "items": [],
+            "items": [
+              "code:[hp''_X]"
+            ],
             "log": "",
             "stage": "ok"
           },
@@ -14341,7 +14384,7 @@
           },
           "id": "path.quantity.023#25",
           "note": "what the literal's code is",
-          "verdict": "disagree",
+          "verdict": "agree",
           "worker": "suite"
         },
         {
@@ -14418,11 +14461,11 @@
           "worker": "suite"
         }
       ],
-      "verdict": "disagree"
+      "verdict": "agree"
     },
     "path.quantity.024": {
-      "agree": 54,
-      "disagree": 2,
+      "agree": 56,
+      "disagree": 0,
       "disagree_documented": 0,
       "hapi_unreachable": 0,
       "probes": [
@@ -15107,7 +15150,7 @@
         {
           "expr": "1 '' * 1 'm'",
           "frevo": {
-            "error": "Error processing unit '.m': unexpected token looking for a symbol or a number' at position 0 (@char 8)",
+            "error": "Error processing unit 'null.m': The unit 'null' is unknown' at position 0 (@char 8)",
             "offset": 5,
             "stage": "eval"
           },
@@ -15122,13 +15165,13 @@
             "stage": "eval"
           },
           "id": "path.quantity.024#33",
-          "verdict": "disagree",
+          "verdict": "agree",
           "worker": "suite"
         },
         {
           "expr": "1 'm' * 1 ''",
           "frevo": {
-            "error": "Error processing unit 'm.': unexpected end of expression looking for a symbol or a number' at position 2 (@char 9)",
+            "error": "Error processing unit 'm.null': The unit 'null' is unknown' at position 2 (@char 9)",
             "offset": 6,
             "stage": "eval"
           },
@@ -15143,7 +15186,7 @@
             "stage": "eval"
           },
           "id": "path.quantity.024#34",
-          "verdict": "disagree",
+          "verdict": "agree",
           "worker": "suite"
         },
         {
@@ -15656,11 +15699,11 @@
           "worker": "suite"
         }
       ],
-      "verdict": "disagree"
+      "verdict": "agree"
     },
     "path.quantity.025": {
-      "agree": 7,
-      "disagree": 3,
+      "agree": 10,
+      "disagree": 0,
       "disagree_documented": 0,
       "hapi_unreachable": 0,
       "probes": [
@@ -15668,7 +15711,9 @@
           "expr": "(1 week).unit",
           "frevo": {
             "hasLog": false,
-            "items": [],
+            "items": [
+              "string:week"
+            ],
             "log": "",
             "stage": "ok"
           },
@@ -15682,14 +15727,16 @@
           },
           "id": "path.quantity.025#01",
           "note": "a quantity the engine builds: its elements",
-          "verdict": "disagree",
+          "verdict": "agree",
           "worker": "suite"
         },
         {
           "expr": "(1 week).code",
           "frevo": {
             "hasLog": false,
-            "items": [],
+            "items": [
+              "code:wk"
+            ],
             "log": "",
             "stage": "ok"
           },
@@ -15703,14 +15750,16 @@
           },
           "id": "path.quantity.025#02",
           "note": "a quantity the engine builds: its elements",
-          "verdict": "disagree",
+          "verdict": "agree",
           "worker": "suite"
         },
         {
           "expr": "(1 week).system",
           "frevo": {
             "hasLog": false,
-            "items": [],
+            "items": [
+              "uri:http://unitsofmeasure.org"
+            ],
             "log": "",
             "stage": "ok"
           },
@@ -15724,7 +15773,7 @@
           },
           "id": "path.quantity.025#03",
           "note": "a quantity the engine builds: its elements",
-          "verdict": "disagree",
+          "verdict": "agree",
           "worker": "suite"
         },
         {
@@ -15877,11 +15926,11 @@
           "worker": "suite"
         }
       ],
-      "verdict": "disagree"
+      "verdict": "agree"
     },
     "path.quantity.026": {
-      "agree": 4,
-      "disagree": 1,
+      "agree": 5,
+      "disagree": 0,
       "disagree_documented": 0,
       "hapi_unreachable": 0,
       "probes": [
@@ -15931,7 +15980,9 @@
           "expr": "(1 '').system",
           "frevo": {
             "hasLog": false,
-            "items": [],
+            "items": [
+              "uri:http://unitsofmeasure.org"
+            ],
             "log": "",
             "stage": "ok"
           },
@@ -15945,7 +15996,7 @@
           },
           "id": "path.quantity.026#03",
           "note": "an empty unit literal: Quantity.setCode(\"\") leaves no code",
-          "verdict": "disagree",
+          "verdict": "agree",
           "worker": "suite"
         },
         {
@@ -15987,7 +16038,7 @@
           "worker": "suite"
         }
       ],
-      "verdict": "disagree"
+      "verdict": "agree"
     },
     "path.strictness.005": {
       "agree": 10,
@@ -19207,15 +19258,13 @@
   },
   "totals": {
     "probes": {
-      "agree": 742,
-      "disagree": 31,
+      "agree": 773,
       "disagree-documented": 51,
       "hapi-unreachable": 8
     },
     "scenarios": {
-      "agree": 46,
-      "disagree": 11,
-      "disagree-documented": 3
+      "agree": 55,
+      "disagree-documented": 5
     }
   }
 }
