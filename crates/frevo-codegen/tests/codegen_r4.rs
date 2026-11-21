@@ -6196,10 +6196,9 @@ fn class_names_and_the_fhir_type_hierarchy_follow_fixed_rules() {
     // field HAPI inherits for it: `xhtml.id`, the only one in the 4.0.1
     // package, is `Element`'s `StringType` field (Element.java:56).
     assert_eq!(table.element_row("xhtml.id").simple_name, "StringType");
-    // The refusal of any OTHER such element is not driven here: the
-    // class-table generator loads only the pinned package and verifies its
-    // digest (`classtable::generate`), so no mutated package can reach the
-    // check; see tasks/blockers.md.
+    // The refusal of any OTHER such element is
+    // `a_system_element_without_a_fhir_type_extension_other_than_xhtml_id_is_refused`,
+    // driven over a mutated scratch copy of the package.
     // A `Quantity` element profiled `SimpleQuantity` is still a `Quantity`.
     assert_eq!(
         table
@@ -6221,6 +6220,158 @@ fn class_names_and_the_fhir_type_hierarchy_follow_fixed_rules() {
 // ---------------------------------------------------------------------------
 // codegen.ancestry.003
 // ---------------------------------------------------------------------------
+
+/// Copy the pinned package's `package/` directory into a fresh scratch
+/// directory, file by file, and return the scratch root. The checked-in
+/// inputs are only read.
+fn copy_of_pinned_package(label: &str) -> PathBuf {
+    let source = frevo_codegen::pin::default_package_dir().join("package");
+    assert!(
+        source.join("package.json").is_file(),
+        "the pinned package must be fetched at {}",
+        source.display()
+    );
+    let root = scratch_dir(label);
+    let target = root.join("package");
+    std::fs::create_dir_all(&target).expect("the scratch package is creatable");
+    for entry in std::fs::read_dir(&source).expect("the pinned package is readable") {
+        let entry = entry.expect("a directory entry");
+        let path = entry.path();
+        if path.is_file() {
+            std::fs::copy(&path, target.join(entry.file_name()))
+                .expect("a package file can be copied");
+        }
+    }
+    root
+}
+
+/// Remove the `structuredefinition-fhir-type` extension from every `type` of
+/// the element at `path`, in the snapshot and the differential of `file`.
+/// Returns how many types were changed, so a fixture that matched nothing is
+/// a visible failure, not a vacuous pass.
+fn strip_fhir_type_extension(file: &Path, path: &str) -> usize {
+    let text = std::fs::read_to_string(file).expect("the scratch definition is readable");
+    let mut doc: serde_json::Value =
+        serde_json::from_str(&text).expect("the scratch definition is JSON");
+    let mut changed = 0;
+    for part in ["snapshot", "differential"] {
+        let Some(elements) = doc
+            .get_mut(part)
+            .and_then(|p| p.get_mut("element"))
+            .and_then(|e| e.as_array_mut())
+        else {
+            continue;
+        };
+        for element in elements
+            .iter_mut()
+            .filter(|e| e.get("path").and_then(|p| p.as_str()) == Some(path))
+        {
+            for ty in element
+                .get_mut("type")
+                .and_then(|t| t.as_array_mut())
+                .into_iter()
+                .flatten()
+            {
+                let Some(object) = ty.as_object_mut() else {
+                    continue;
+                };
+                if object.remove("extension").is_some() {
+                    changed += 1;
+                }
+            }
+        }
+    }
+    std::fs::write(file, serde_json::to_string(&doc).expect("JSON serialises"))
+        .expect("the scratch definition is writable");
+    changed
+}
+
+// covers: codegen.ancestry.002
+#[test]
+fn a_system_element_without_a_fhir_type_extension_other_than_xhtml_id_is_refused() {
+    // codegen.ancestry.002: the generator maps `xhtml.id`, the one `System.*`
+    // element with no `structuredefinition-fhir-type` extension in the 4.0.1
+    // package, to `StringType`, and refuses any other such element, so a new
+    // one is a reviewed decision. Driven through the synthetic class-table
+    // entry point over a scratch copy of the pinned package, with the real
+    // exception file; the digest is not checked there, by design.
+    // Two separate copies: `package::load` memoises per directory, so the
+    // mutated run must not reuse the control run's directory, or it would be
+    // handed the cached, unmutated package.
+    let control_package = copy_of_pinned_package("ancestry-002-system-control-pkg");
+    let package = copy_of_pinned_package("ancestry-002-system-mutated-pkg");
+    let exceptions = repo_path(CLASS_TABLE_EXCEPTIONS);
+
+    // Positive control: the unmutated copy generates, and reproduces the
+    // checked-in table byte for byte.
+    let out = scratch_dir("ancestry-002-system-control");
+    let control = frevo_codegen::classtable::generate_synthetic(
+        &frevo_codegen::classtable::Request {
+            exceptions: exceptions.clone(),
+            out_dir: out.clone(),
+            reference_dir: None,
+        },
+        &control_package,
+    )
+    .unwrap_or_else(|e| panic!("an exact copy of the pinned package must generate: {e}"));
+    let checked_in = std::fs::read(repo_path(CHECKED_IN_CLASS_TABLE))
+        .unwrap_or_else(|e| panic!("{CHECKED_IN_CLASS_TABLE} must be checked in: {e}"));
+    assert_eq!(
+        std::fs::read(out.join(frevo_codegen::classtable::TABLE_FILE))
+            .expect("the control run writes the table"),
+        checked_in,
+        "an exact copy of the pinned package must reproduce the checked-in table"
+    );
+    assert!(
+        control.elements.contains_key("Extension.url"),
+        "the control maps Extension.url"
+    );
+
+    // The mutation: `Extension.url` (typed `System.String`, fhir-type `uri`)
+    // loses its extension, so it becomes a second unmapped `System.*` element.
+    let changed = strip_fhir_type_extension(
+        &package
+            .join("package")
+            .join("StructureDefinition-Extension.json"),
+        "Extension.url",
+    );
+    assert!(
+        changed > 0,
+        "the fixture must remove at least one fhir-type extension from Extension.url"
+    );
+
+    let refused = frevo_codegen::classtable::generate_synthetic(
+        &frevo_codegen::classtable::Request {
+            exceptions,
+            out_dir: scratch_dir("ancestry-002-system-refused"),
+            reference_dir: None,
+        },
+        &package,
+    );
+    match refused {
+        Ok(_) => panic!(
+            "a System.* element other than xhtml.id with no fhir-type extension must be \
+             refused, but the class table generated"
+        ),
+        Err(frevo_codegen::CodegenError::Failed {
+            exit_code,
+            kind,
+            message,
+        }) => {
+            assert_ne!(exit_code, 0, "a refusal exits non-zero");
+            assert_eq!(kind, frevo_codegen::FailureKind::Other, "{message}");
+            assert!(
+                message.contains("Extension.url"),
+                "the refusal must name the element: {message}"
+            );
+            assert!(
+                message.contains("xhtml.id"),
+                "and say that only xhtml.id is mapped: {message}"
+            );
+        }
+        Err(other) => panic!("the generator must refuse with a diagnosed failure, not {other:?}"),
+    }
+}
 
 // covers: codegen.ancestry.003
 #[test]

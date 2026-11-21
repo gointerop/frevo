@@ -3611,3 +3611,14 @@ package-directory request that skips the pin digest the way
 `generate_synthetic` does, or record the untested refusal in
 `docs/known-gaps.md` with the owner's approval. The oracle-builder adds the
 test once a seam exists.
+
+**Resolved 2026-11-21 (oracle-builder).** The implementer added
+`frevo_codegen::classtable::generate_synthetic(request, package_dir)`
+(`b9266b1`), which loads a package directory without the pin digest check.
+`codegen_r4.rs::a_system_element_without_a_fhir_type_extension_other_than_xhtml_id_is_refused`
+(`// covers: codegen.ancestry.002`) now drives the refusal over a scratch
+copy of the pinned package with the fhir-type extension removed from
+`Extension.url`. It asserts a `FailureKind::Other` refusal with a non-zero
+exit code that names `Extension.url` and `xhtml.id`. Its positive control is
+that an exact copy reproduces the checked-in `r4_classes.tsv` byte for byte.
+Neither decision is needed any more.
