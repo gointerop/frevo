@@ -311,7 +311,8 @@ them is the whole reason that decision is safe to make.
   arithmetic operators and the comparison operators all have to take it, and
   `path.literal.004`'s precision-preservation requirement means the presented
   form has to survive alongside the value.
-- **Status:** blocking — the trigger fired on 2026-11-21: the in-process HAPI
+- **Status:** paid — in `a900207` (task 44b, ticked after the two stale
+  in-crate tests were re-aligned in `50da39e`). The trigger fired on 2026-11-21: the in-process HAPI
   differential found `1 '[pi]' * 1 '1'` (`path.quantity.020#27`, `#42`, `#43`,
   `#46`) answering HAPI's 65-digit value while Frevo refuses it as decimal
   arithmetic beyond 38 significant digits. The owner ruled that HAPI's
@@ -321,10 +322,7 @@ them is the whole reason that decision is safe to make.
   with the commit. Implemented in `a900207` (2026-11-21): `Decimal`'s
   mantissa is `Unscaled`, of any number of digits
   (`crates/frevo-path/src/seam/unscaled.rs`), and every `frevo-path` test of
-  `path.literal.017` and `path.quantity.020` passes. It stays `blocking`
-  only until task 44b is ticked, which waits on two in-crate tests that
-  still assert the 38-digit refusal (`tasks/blockers.md`, 2026-11-21,
-  "task 44b: two in-crate tests assert the refusal it removes").
+  `path.literal.017` and `path.quantity.020` passes.
 - **Reviewed:** not yet. Raised 2026-11-12 with `DEV-0011`, which is itself
   awaiting the owner at the next phase boundary. Recorded now rather than at
   sign-off because the obligation exists the moment the fallback ships.

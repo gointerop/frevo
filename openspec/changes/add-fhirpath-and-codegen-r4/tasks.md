@@ -1196,7 +1196,7 @@ checkpoint because it changes what a gate measures.
   (`syntax/parser.rs`). The check pass is unchanged: both check-rejection
   tests still pass.
 
-- [ ] **44b. Close `DEBT-0011`: carry decimals at any number of significant
+- [x] **44b. Close `DEBT-0011`: carry decimals at any number of significant
   digits.** From the in-process HAPI differential: `1 '[pi]' * 1 '1'` and its
   siblings (`path.quantity.020#27`, `#42`, `#43`, `#46`) fail on Frevo with
   `Unsupported("decimal arithmetic beyond 38 significant digits")` where HAPI
@@ -1214,6 +1214,11 @@ checkpoint because it changes what a gate measures.
   `path-suite-wallclock` regresses more than 10% against task 55's `c11ac47`
   figures. Depends on task 4b.
   Satisfies `path.literal.017` and the `[pi]` bullet of `path.quantity.020`.
+  **Ticked 2026-11-21 (implemented in `a900207`, green at `50da39e`):**
+  `Decimal`'s mantissa is `Unscaled` (`crates/frevo-path/src/seam/unscaled.rs`),
+  of any number of digits; `DEBT-0011` is paid and `DEBT-0014` left open.
+  `path_perf` before/after (release): `path-eval-compiled` 3.564 -> 3.504 us,
+  `path-suite-wallclock` 0.233 -> 0.230 s (c11ac47: 3.484 us, 0.219 s).
 
 - [x] **44c. Match the `NullPointerException` and `NumberFormatException`
   texts the differential recorded.** `<=` with no `unit` on the left and one
