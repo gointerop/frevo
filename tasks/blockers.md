@@ -3116,3 +3116,36 @@ operation that is still unbuilt (for example a quantity division such as
 `1 'mg' / 2 'g'`, task 43), keeping each test's property (a built operator
 over an unbuilt rule is `Unsupported`, never empty; a unary sign over one
 surfaces it). Then task 37 can be ticked.
+
+## 2026-11-21 — `add-fhirpath-and-codegen-r4` — four `Decimal` behaviours the task-37 port met are now specified
+
+**Raised by** the task-37 implementer in the port (`f19fe27`, module notes of
+`crates/frevo-path/src/eval/ucum_decimal.rs` and `arith.rs`), relayed by the
+coordinator: four upstream behaviours of `org.fhir.ucum.Decimal` that no
+scenario stated.
+
+**Resolved in the spec, 2026-11-21 (proposer).** Each is cited to
+`reference/Ucum-java` 1.0.10 (`db9d22ad`) and was confirmed by running the
+compiled source:
+1. `java.lang.Error("Unhandled")` from `doSubtract` (`Decimal.java:462-468`)
+   under decimal `mod` (`0.05 mod 0.03`, `1e3 mod 7`), not caught by the
+   engine (`FHIRPathEngine.java:3101`): `path.math.016`. Frevo's message is
+   `Unhandled`; the HTTP answer is `add-server-skeleton`'s.
+2. Exponent-form refusals (`Utilities.isDecimal`'s `float` test, the `+`
+   exponent): `'16777216e0' is not a valid decimal (numeric)` and
+   `1e+3' is not a valid decimal`, empty under `/` and `div`, an error under
+   `mod`: new `path.math.017`.
+3. An operand with no value: `Cannot invoke "String.toLowerCase()" because
+   "value" is null` (`Decimal.java:76-78`, parameter name kept by `-g`), and,
+   for the integer arms of `div`/`mod`, the JDK's `Integer.parseInt(null)`
+   text, which depends on the JVM: `path.math.017`. **Note for the
+   implementer:** `arith.rs`'s `ucum_pair` says
+   `... because the value is null`; the spec's text is
+   `... because "value" is null`.
+4. ASCII digits versus `Character.isDigit`: stated in `path.math.017` as
+   unreachable from a valid FHIR `integer` or `decimal`, and noted in
+   `DEV-0030`.
+
+Also added to `path.math.016`: a quotient rounded up before truncation
+(`0.5 div 0.03` is `17`, `0.5 mod 0.03` is `-0.01`). New uncovered ID for the
+oracle-builder: `path.math.017`; `path.math.016` gains cases.

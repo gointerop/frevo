@@ -596,7 +596,8 @@ them is the whole reason that decision is safe to make.
 - **Cost if unpaid:** silently wrong numbers for anyone evaluating FHIRPath
   through Frevo, as through HAPI: `1.9 / 0.2` is `1.0` (a factor of ten),
   `1.25 / 0.5` is `3`, `1.0 / 8` is `0.13`, `1.9 div 0.2` is `1`,
-  `4.0 mod 2 = 0` is `false`, and `1 'mg/dL' = 10 'mg/L'` and
+  `4.0 mod 2 = 0` is `false`, `0.5 mod 0.03` is `-0.01`, `0.05 mod 0.03`
+  fails with `Unhandled`, `16777216e0 / 2` is empty, and `1 'mg/dL' = 10 'mg/L'` and
   `60.0 '/min' = 1 '/s'` are `false`, while `1 'B' = 1 '1'` is `true` (a
   logarithmic unit read as a ratio unit, `path.quantity.023`). An invariant or calculated value using
   them passes or fails on the wrong number.

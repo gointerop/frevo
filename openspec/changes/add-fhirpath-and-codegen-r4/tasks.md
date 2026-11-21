@@ -892,8 +892,8 @@ checkpoint because it changes what a gate measures.
   (`path.math.015`, `.016`, `DEV-0030`); the ported file carries the
   section 10 header and a `docs/provenance.md` row, and the BSD-3-Clause notice
   goes to `NOTICE`.
-  Satisfies `path.math.001` through `path.math.011`, `path.math.015` and
-  `path.math.016`.
+  Satisfies `path.math.001` through `path.math.011`, `path.math.015`,
+  `path.math.016` and `path.math.017`.
 
 - [x] **38. Implement date and dateTime arithmetic.** Calendar-duration addition
   and subtraction with the engine's month-end behaviour, precision preservation,

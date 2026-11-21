@@ -942,7 +942,7 @@ file, so its prose is not redistributable here (see `oracles/PINS.md`).
 ### DEV-0030 — decimal `/`, `div` and `mod` and UCUM canonical values follow `org.fhir.ucum.Decimal`'s precision rules and defects
 
 - **Area:** path
-- **Scenario IDs:** path.math.015, path.math.016, path.quantity.017, path.quantity.018, path.quantity.020, path.quantity.021, path.quantity.022, path.quantity.023, path.quantity.024
+- **Scenario IDs:** path.math.015, path.math.016, path.math.017, path.quantity.017, path.quantity.018, path.quantity.020, path.quantity.021, path.quantity.022, path.quantity.023, path.quantity.024
 - **HAPI 8.12.0 behaviour:** `opDivideBy`, and `opDiv` and `opMod` with a
   decimal operand, compute through `org.fhir.ucum.Decimal`
   (`ENGINE:3004-3012`, `3055-3063`, `3095-3103`; `UCUM` =
@@ -983,6 +983,20 @@ file, so its prose is not redistributable here (see `oracles/PINS.md`).
   (`UCUM/Lexer.java:199-201`), which is not a `UcumException`, so `=`, `~`,
   the ordered operators, `*` and `/` fail and only `comparable()` answers
   `false` (`UCUM/UcumEssenceService.java:237-239`).
+  Decimal `mod` fails with `java.lang.Error("Unhandled")` when the dividend
+  and the product `trunc(q) * other` are both below `0.1`, or when an
+  exponent-form dividend's point lies past its digits
+  (`UCUM/Decimal.java:462-468`): `0.05 mod 0.03`, `1e3 mod 7`; the engine
+  catches only `UcumException` (`ENGINE:3101`). A quotient rounded up before
+  truncation gives `0.5 div 0.03` = `17` and `0.5 mod 0.03` = `-0.01`.
+  Exponent-form data whose `float` mantissa is 2^24 or more, or whose
+  exponent has a `+`, is refused (`UCUM/Decimal.java:182-208`,
+  `UCUM/Utilities.java:45-63`): empty under `/` and `div`, an error under
+  `mod`. An operand with no value fails with a `NullPointerException`
+  (`UCUM/Decimal.java:76-78`). Frevo differs from HAPI in one place: it reads
+  only ASCII digits where `Decimal` takes any Unicode digit
+  (`Character.isDigit`, `UCUM/Decimal.java:130`, `:202`); no valid `integer`
+  or `decimal` can carry one (`path.math.017`).
   Quantity `*` and `/` answer in canonical units with no `unit` element
   (`ENGINE:2314-2316`), so `(1.0 'm' / 1.0 'm').toString()` is `1.0 'null'`.
 - **Specification requirement:** FHIRPath 2.0.0 — `/` is decimal division,

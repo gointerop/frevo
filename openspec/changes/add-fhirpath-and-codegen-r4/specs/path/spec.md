@@ -1613,7 +1613,9 @@ identical, so every value stated here holds for both; only
   after rounding (`:765`): `(0 - 1) / 3` is `-0.3`, `(0 - 2) / 3` is `-0.7`
 - **AND** an operand read from data in exponent form (`1e3`, `1.5e-1`) is read
   lower-cased through `setValueScientific` (`:76-83`, `:182-208`), and its
-  precision is its mantissa's: `1e3 / 3` is `300`, `1.5e-1 / 3` is `0.050`
+  precision is its mantissa's: `1e3 / 3` is `300`, `1.5e-1 / 3` is `0.050`;
+  the exponent forms `Decimal` refuses, and an operand with no value, are
+  `path.math.017`'s
 - **AND** the string value is observable as `(1 / 3).toString()`, which is
   `'0.3'`, and through equality: `1 / 3 = 0.3` is `true` and
   `1 / 3 = 0.333` is `false` (`path.equality.001`'s string rule)
@@ -1639,9 +1641,11 @@ identical, so every value stated here holds for both; only
   `2.2 div 1.8` is `1`, `7.5 div 2` is `3`, `(0 - 7.5) div 2` is `-3`,
   `5.5 div 2` is `2`, `6.0 div 2` is `3`, `10 div 3.0` is `3`, `1 div 0.3`
   is `3`, `10 div 0.3` is `33`, `0.5 div 1` is `0`, `1 div 3.0` is `0`
-- **AND** because the quotient is rounded before it is truncated, the carry
-  defect of `path.math.015` reaches `div`: `1.9 div 0.2` and `0.95 div 0.1`
-  are `1`
+- **AND** because the quotient is rounded before it is truncated, a quotient
+  rounded **up** to the next integer is truncated there: `0.5 div 0.03` is
+  `17` (`0.5 / 0.03` is `17`, P being 2), so `0.5 mod 0.03` and
+  `0.15 mod 0.04` are `-0.01`; and the carry defect of `path.math.015`
+  reaches `div`: `1.9 div 0.2` and `0.95 div 0.1` are `1`
 - **AND** a truncated quotient outside the Java `int` range fails:
   `3000000000.0 div 1` raises an execution error with the message
   `java.lang.NumberFormatException: For input string: "3000000000"`, because
@@ -1672,6 +1676,32 @@ identical, so every value stated here holds for both; only
   are trimmed to whole numbers. `path.math.007`'s `testMod8` is the same rule
 - **AND** a zero divisor is `path.math.008`'s: empty under `div`, an execution
   error under `mod`
+- **AND** `mod` can fail with `java.lang.Error("Unhandled")`, raised by
+  `Decimal.doSubtract` when it cannot place the point of the aligned
+  difference (`Decimal.java:462-468`; for every sign combination of these
+  inputs `subtract` reaches `doSubtract`, `:368-386`, and `doAdd` carries the
+  same two throws, `:405-411`). Two conditions trigger it:
+  - the larger point position of the dividend and of the product
+    `trunc(this / other) * other` is **negative**, which happens when both are
+    below `0.1` in magnitude (`:463-464`): `0.05 mod 0.03`, `0.08 mod 0.03`,
+    `0.05 mod 0.05`, `0.099 mod 0.04`, `(0 - 0.05) mod 0.03` and
+    `0.05 mod (0 - 0.03)` fail, while `0.1 mod 0.03` is `0.01` and
+    `0.05 mod 0.3` is `0.05` (the product is `Decimal.zero()`, whose point is
+    at 1);
+  - that position lies **past** the difference's digits (`:465-468`), which
+    happens for a dividend read from data in exponent form whose point lies
+    beyond its digits (`path.math.015`): `1e3 mod 7`, `1e3 mod 3`,
+    `1e3 mod 1`, `2e3 mod 7`, `-1e3 mod 7` and `3.5e38 mod 1` fail, while
+    `1e2 mod 30` is `10`, `1e3 mod 400` is `200` and `3.5e1 mod 1` is `0`
+- **AND** the `Error` is not a `UcumException`, nor an `Exception`: `opMod`
+  catches only `UcumException` (`FHIRPathEngine.java:3101`), and nothing in
+  the engine catches a `java.lang.Error`, so evaluation fails with it. Frevo
+  returns an execution error whose message is exactly `Unhandled`, the
+  `Error`'s message, with no offset (`path.errors.002`). What a live HAPI
+  server answers when the `Error` leaves `FhirPathR4`, which catches only
+  `FHIRException` (`FhirPathR4.java:66-70`), is not determinable from the
+  engine and is `add-server-skeleton`'s. `/` and `div` never reach `subtract`
+  and do not fail this way
 - **AND** no worker is consulted, so HAPI's server-facing engine answers the
   same
 - **AND** the specification makes `1.9 div 0.2` `9`, `1.9 mod 0.2` `0.1` and
@@ -1679,6 +1709,76 @@ identical, so every value stated here holds for both; only
 - **AND** only `testDiv4` and `testMod4` grade this in the suite (both passed
   by HAPI); the rest is differential-only, graded in-process against the
   values stated
+
+#### Scenario: [path.math.017] an operand `Decimal` cannot read is empty or fails as the operator's catch decides
+
+- **WHEN** `/`, or `div` or `mod` with a decimal operand, is evaluated over a
+  number whose string value `new Decimal(String)` refuses
+  (`reference/Ucum-java/src/main/java/org/fhir/ucum/Decimal.java:76-83`;
+  such a value reaches the engine only from data, because a FHIRPath number
+  literal has no exponent and only ASCII digits, `FHIRLexer.java:160-170`)
+- **THEN** a value in exponent form is lower-cased and split at `e`
+  (`:78-80`, `setValueScientific` `:182-208`), and it is refused when:
+  - its mantissa fails `Utilities.isDecimal`, which parses it as a Java
+    `float` and requires `f != f + 1` (`Utilities.java:45-54`), so a positive
+    mantissa of `16777216` (2^24) or more is refused: `16777216e0` and
+    `16777215.5e0` raise `UcumException` with the messages
+    `'16777216e0' is not a valid decimal (numeric)` and
+    `'16777215.5e0' is not a valid decimal (numeric)` (`Decimal.java:187-188`),
+    while `16777215e0` is read as `16777215`, `-16777216e0` is accepted (its
+    `float` plus one differs) and `1.6777216e7` is accepted
+    (`1.6777216e7 / 3` is `5592405.3`); an empty or `-` mantissa gets the same
+    message
+  - its exponent is empty, `-`, or not a Java `int` (`Utilities.isInteger`,
+    `Utilities.java:56-63`): `'<value>' is not a valid decimal (exponent)`
+    (`Decimal.java:189-190`), so `1e` gives
+    `'1e' is not a valid decimal (exponent)`
+  - its exponent starts with `+`: `Integer.parseInt` accepts `+3`, but the
+    digit loop admits only a leading `-` (`:197-205`) and raises a message
+    with **no** opening quote, `1e+3' is not a valid decimal` (`:203`);
+    `1E+3` gives the same text, lower-cased
+  - the mantissa, or a value without an exponent, fails `setValueDecimal`'s
+    digit check: `'<value>' is not a valid decimal`, the value shown after
+    its sign and leading zeros are stripped (`:114-139`)
+- **AND** the refusal is a `UcumException`, so `/` and `div` are **empty**
+  (`FHIRPathEngine.java:3009-3011`, `:3060-3063`) and `mod` fails with the
+  cause's `toString()` as `path.math.007` states: `16777216e0 mod 2` fails
+  with `org.fhir.ucum.UcumException: '16777216e0' is not a valid decimal (numeric)`
+  and `1e+3 mod 2` with
+  `org.fhir.ucum.UcumException: 1e+3' is not a valid decimal`, while
+  `16777216e0 / 2`, `16777216e0 div 2`, `1e+3 / 2` and `1e+3 div 2` are
+  empty
+- **WHEN** an operand is an `integer` or `decimal` element with no value (an
+  element carrying only an extension), so its `primitiveValue()` is `null`
+- **THEN** `/`, and the decimal arms of `div` and `mod`, fail on
+  `value.toLowerCase()` in the constructor (`Decimal.java:76-78`; the left
+  operand is read first, `FHIRPathEngine.java:3007-3008`, `:3058-3059`,
+  `:3098-3099`) with the JVM's `NullPointerException`, which no arm catches,
+  and the message exactly
+  `Cannot invoke "String.toLowerCase()" because "value" is null`: the
+  parameter name survives because the published jar keeps debug information,
+  as for `path.quantity.018`, confirmed by compiling the pinned source with
+  `-g`. Frevo returns an execution error with that message and no offset
+- **AND** the `integer` arms of `div` and `mod` instead call
+  `Integer.parseInt(null)` on the divisor first (`FHIRPathEngine.java:3051`,
+  `:3091`), a `NumberFormatException` the engine does not catch. Its message
+  is the JDK's, `Cannot parse null string` on JDK 25 and
+  `Cannot parse null string: null` on earlier releases, so it depends on the
+  JVM live HAPI runs, which the source does not fix; the differential records
+  which; until then the text of this one case is not graded, only that
+  evaluation fails
+- **AND** `Decimal` tests a digit with `Character.isDigit`
+  (`Decimal.java:130`, `:202`), which accepts every Unicode decimal digit and
+  then computes with `c - '0'`. Frevo reads only ASCII digits and refuses any
+  other character as `'<value>' is not a valid decimal`. The two agree on
+  every value a FHIR `integer` or `decimal` can hold, because both types'
+  lexical forms are ASCII (`-?(0|[1-9][0-9]*)(\.[0-9]+)?([eE][+-]?[0-9]+)?`)
+  and FHIRPath number literals are ASCII; a non-ASCII digit can arrive only
+  in primitive text a valid resource cannot carry, which no oracle grades
+- **AND** the refusals and failures differ from the specification; recorded as
+  `DEV-0030`, which also notes the ASCII-digit choice
+- **AND** no live case grades it, so it is differential-only, graded
+  in-process against the values stated
 
 ### Requirement: Math functions
 

@@ -9,8 +9,8 @@ capability, because that is the layout `openspec validate` parses and
 |---|---|---:|
 | `codegen` | [`specs/codegen/spec.md`](specs/codegen/spec.md) | 49 |
 | `model` | [`specs/model/spec.md`](specs/model/spec.md) | 83 |
-| `path` | [`specs/path/spec.md`](specs/path/spec.md) | 389 |
-| **Total** | | **521** |
+| `path` | [`specs/path/spec.md`](specs/path/spec.md) | 390 |
+| **Total** | | **522** |
 
 This file carries no normative text of its own. It carries the ID registry,
 which is the thing a later change must not collide with.
@@ -243,6 +243,13 @@ rule by the zero's text; the spec names 1.0.9 as the version live HAPI runs
 citations were corrected (`convertToString`, `:2413`, the ordered-operator
 branches). No ID was added.
 
+After the task-37 port, four `Decimal` behaviours it met were specified from
+the pinned source: `path.math.016` gained the `java.lang.Error("Unhandled")`
+of `doSubtract` and the round-up-before-truncation results, and **1 ID was
+added**, `path.math.017`: exponent-form values `Decimal` refuses, an operand
+with no value, and the ASCII-digit note. None was removed, renumbered, reused
+or repurposed.
+
 | Area | IDs allocated | Range |
 |---|---:|---|
 | `codegen.inputs.*` | 6 | `001`-`006` |
@@ -274,7 +281,7 @@ branches). No ID was added.
 | `path.equality.*` | 12 | `001`-`012` |
 | `path.compare.*` | 15 | `001`-`015` |
 | `path.logic.*` | 10 | `001`-`010` |
-| `path.math.*` | 16 | `001`-`016` |
+| `path.math.*` | 17 | `001`-`017` |
 | `path.mathfn.*` | 11 | `001`-`011` |
 | `path.string.*` | 29 | `001`-`029` |
 | `path.convert.*` | 14 | `001`-`014` |
@@ -312,11 +319,11 @@ contain `<test ...>` text — and are leftover Java, not well-formed test
 elements. `documentFunctions` is 115 cases, not 114. The `invalid` counts are
 unaffected: 7 syntax, 29 semantic, 27 execution.
 
-**Thirty-four scenarios have no live case in the pinned suite to grade them and
+**Thirty-five scenarios have no live case in the pinned suite to grade them and
 say so in their own text**: `path.subset.003`, `path.subset.013`,
 `path.compare.007`, `path.compare.011`, `path.compare.015`, `path.errors.006`,
 `path.errors.007`, `path.navigation.025`, `path.quantity.019`, `path.convert.012`,
-`path.datetime.003`, `path.quantity.015`, `path.quantity.017`,
+`path.datetime.003`, `path.math.017`, `path.quantity.015`, `path.quantity.017`,
 `path.quantity.018`, `path.quantity.023`,
 `path.boundary.012` through `path.boundary.019`, `path.env.015`,
 `path.env.016`, `path.env.017`, `path.utility.017`, `path.utility.022`,
@@ -747,6 +754,7 @@ Every allocated ID, grouped as it is grouped in the delta files.
 - `path.math.014` — subtracting two dateTimes is not addition of a duration
 - `path.math.015` — `/` over numbers rounds the quotient to the significant digits its operands carry
 - `path.math.016` — `div` and `mod` with a decimal operand truncate the rounded quotient
+- `path.math.017` — an operand `Decimal` cannot read is empty or fails as the operator's catch decides
 
 **Requirement: Math functions**
 
