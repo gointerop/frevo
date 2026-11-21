@@ -442,7 +442,10 @@ checkpoint because it changes what a gate measures.
 - [x] **14b. Generate the R4 model class table.** Owner decision 2026-11-21,
   option (c) (`tasks/blockers.md`, "the R4 Java class ancestry table"). In
   `frevo-codegen`: derive, from the pinned R4 StructureDefinitions only, one
-  `@generated` table of every R4 model class row (primitive, complex and
+  `@generated` table (`frevo-codegen class-table --version r4`, written to
+  `crates/frevo-path/src/eval/r4_classes.tsv` because `path.api.008` keeps
+  `frevo-path` free of `frevo-model`; covered by the drift check) of every R4
+  model class row (primitive, complex and
   resource types, nested components, `Enumeration`) with its Java simple and
   qualified names, the FHIR type names it is assignable to and its interface
   kinds, plus each element's value class, by the rules of
