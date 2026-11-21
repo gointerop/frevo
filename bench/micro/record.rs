@@ -81,10 +81,19 @@ pub fn json_string(s: &str) -> String {
 
 /// One recorded row: its name and the rest of its members, each already a
 /// JSON literal (`("median_us", "12.345")`, `("scenario", "\"x\"")`).
+#[derive(Clone)]
 pub struct Row {
     pub name: String,
     pub members: Vec<(&'static str, String)>,
 }
+
+/// Bench runs per recording (`model.perf.006`): every row records each run's
+/// median under `run_medians_us`, in run order, and the gate compares the
+/// median of the five.
+pub const RUNS: usize = 5;
+
+/// The member every row must carry (`model.perf.006`).
+pub const RUN_MEDIANS: &str = "run_medians_us";
 
 impl Row {
     pub fn new(name: &str) -> Self {
@@ -102,6 +111,21 @@ impl Row {
     pub fn num(mut self, key: &'static str, value: f64, decimals: usize) -> Self {
         self.members.push((key, format!("{value:.decimals$}")));
         self
+    }
+
+    /// An array of numbers, as `run_medians_us` records the per-run medians.
+    pub fn nums(mut self, key: &'static str, values: &[f64], decimals: usize) -> Self {
+        let items: Vec<String> = values.iter().map(|v| format!("{v:.decimals$}")).collect();
+        self.members.push((key, format!("[{}]", items.join(", "))));
+        self
+    }
+
+    /// A member's JSON literal.
+    pub fn member(&self, key: &str) -> Option<&str> {
+        self.members
+            .iter()
+            .find(|(k, _)| *k == key)
+            .map(|(_, v)| v.as_str())
     }
 
     pub fn int(mut self, key: &'static str, value: u64) -> Self {
@@ -164,6 +188,9 @@ fn existing_rows(path: &Path) -> Vec<String> {
 
 /// Write `rows` into `path`, replacing the rows whose names `owns` claims and
 /// keeping every other row as it was.
+///
+/// Every row written must carry [`RUN_MEDIANS`] with exactly [`RUNS`]
+/// numbers (`model.perf.006`); a bench that measured once is refused.
 pub fn write_merged(
     path: &Path,
     repo: &Path,
@@ -201,6 +228,18 @@ pub fn write_merged(
             "{bench} writes a row it does not own: {}",
             row.name
         );
+        let runs = row.member(RUN_MEDIANS).map(|v| {
+            v.trim_matches(['[', ']'])
+                .split(',')
+                .filter(|s| !s.trim().is_empty())
+                .count()
+        });
+        assert_eq!(
+            runs,
+            Some(RUNS),
+            "{bench}: the row {} must record {RUNS} per-run medians under {RUN_MEDIANS}",
+            row.name
+        );
         lines.push(row.line(bench, &commit, dirty, &at));
     }
 
@@ -225,4 +264,33 @@ pub fn write_merged(
     }
     s.push_str("  ]\n}\n");
     std::fs::write(path, s).unwrap_or_else(|e| panic!("write {}: {e}", path.display()));
+}
+
+/// One row per workload from [`RUNS`] runs of the same rows: each workload's
+/// row is the run whose `median_us` is the middle of the five, with every
+/// run's `median_us` recorded under [`RUN_MEDIANS`], in run order. A row that
+/// already records its own run medians (one that times several cold runs
+/// itself) is taken from the first run unchanged.
+pub fn median_of_runs(runs: &[Vec<Row>]) -> Vec<Row> {
+    let first = &runs[0];
+    (0..first.len())
+        .map(|i| {
+            if first[i].member(RUN_MEDIANS).is_some() {
+                return first[i].clone();
+            }
+            let medians: Vec<f64> = runs
+                .iter()
+                .map(|run| {
+                    run[i]
+                        .member("median_us")
+                        .and_then(|v| v.parse().ok())
+                        .unwrap_or_else(|| panic!("{} records no median_us", run[i].name))
+                })
+                .collect();
+            let mut order: Vec<usize> = (0..medians.len()).collect();
+            order.sort_by(|&a, &b| medians[a].total_cmp(&medians[b]));
+            let middle = order[order.len() / 2];
+            runs[middle][i].clone().nums(RUN_MEDIANS, &medians, 3)
+        })
+        .collect()
 }

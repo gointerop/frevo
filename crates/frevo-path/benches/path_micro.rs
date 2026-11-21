@@ -219,6 +219,7 @@ fn path_suite_wallclock() -> Row {
         );
         last = line;
     }
+    let run_medians_us: Vec<f64> = seconds.iter().map(|s| s * 1e6).collect();
     seconds.sort_by(f64::total_cmp);
     let count = |key: &str| -> u64 {
         field(&last, key)
@@ -232,6 +233,7 @@ fn path_suite_wallclock() -> Row {
         .num("min_s", seconds[0], 3)
         .num("max_s", seconds[seconds.len() - 1], 3)
         .int("runs", SUITE_RUNS as u64)
+        .nums(record::RUN_MEDIANS, &run_medians_us, 0)
         .int("cases", count("cases"))
         .int("passed", count("passed"))
         .int("failed", count("failed"))
@@ -273,7 +275,14 @@ fn main() {
         );
     }
 
-    let rows = vec![path_compile(samples), path_suite_wallclock()];
+    // `record::RUNS` runs of `path-compile`, each row the median run with every
+    // run's median recorded; `path-suite-wallclock` times its own
+    // `SUITE_RUNS` cold runs and records each (`model.perf.006`).
+    let compile_runs: Vec<Vec<Row>> = (0..record::RUNS)
+        .map(|_| vec![path_compile(samples)])
+        .collect();
+    let mut rows = record::median_of_runs(&compile_runs);
+    rows.push(path_suite_wallclock());
     for r in &rows {
         let members: Vec<String> = r
             .members

@@ -467,7 +467,17 @@ fn main() {
         .expect("patient-example canonicalises");
     let bytes: Arc<[u8]> = Arc::from(canonical);
 
-    let (rows, notes) = run_workloads(samples, &bytes);
+    // `record::RUNS` runs; each row is the median run, with every run's
+    // median recorded (`model.perf.006`).
+    let mut all = Vec::new();
+    let mut notes = Vec::new();
+    for _ in 0..record::RUNS {
+        let (rows, run_notes) = run_workloads(samples, &bytes);
+        all.push(rows);
+        notes.extend(run_notes);
+    }
+    notes.dedup();
+    let rows = record::median_of_runs(&all);
     println!(
         "{:<22} {:>8} {:>10} {:>10} {:>10}  budget",
         "workload", "bytes", "median us", "p10 us", "p90 us"

@@ -521,7 +521,13 @@ fn main() {
         return;
     }
 
-    let rows = run_workloads(samples, &small, &large);
+    // `record::RUNS` runs; each row is the median run, with every run's
+    // median recorded (`model.perf.006`).
+    let runs: Vec<Vec<Row>> = (0..record::RUNS)
+        .map(|_| run_workloads(samples, &small, &large))
+        .collect();
+    let records = record::median_of_runs(&runs.iter().map(|r| to_records(r)).collect::<Vec<_>>());
+    let rows = runs.into_iter().next().unwrap_or_default();
     println!(
         "{:<26} {:>8} {:>10} {:>10} {:>10} {:>8}  budget",
         "workload", "bytes", "median us", "p10 us", "p90 us", "tokens"
@@ -547,7 +553,7 @@ fn main() {
             &repo,
             "model_micro",
             &|name| name.starts_with("model-"),
-            &to_records(&rows),
+            &records,
         );
         println!("\nwrote {}", out.display());
     }
