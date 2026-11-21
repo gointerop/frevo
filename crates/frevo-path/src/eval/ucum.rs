@@ -2,20 +2,32 @@
 //! and defined units the unit algebra works from (`design.md` section 5,
 //! `path.quantity.016`).
 //!
-//! Original Frevo work, **not** a port. Upstream reads this file through
-//! `org.fhir.ucum.UcumEssenceService` (`org.fhir:ucum`), whose source is not
-//! under `reference/` at any pin in `reference/PINS.md`, so nothing here is
-//! derived from it. What is read is the file's own format: the `root` element
-//! in the `http://unitsofmeasure.org/ucum-essence` namespace with its `version`
-//! attribute, and its `prefix`, `base-unit` and `unit` children.
+//! Derived from Ucum-java/src/main/java/org/fhir/ucum/definitions/XmlDefinitionsParser.java
+//! (`parse` at `:64-106`, `parseUnit`, `parseValue`, `parseBaseUnit` and
+//! `parsePrefix` at `:109-160`), Ucum-java/src/main/java/org/fhir/ucum/utils/XmlUtils.java
+//! (`parseDOM`, `getNamedChild`, `getNamedChildText`, `getFirstChild`,
+//! `getNextSibling`, `getNamedChildren`) and
+//! Ucum-java/src/main/java/org/fhir/ucum/UcumModel.java (`getUnit`,
+//! `getBaseUnit`), at db9d22ade3f0f4a667b45817b85a9ac4534e4224 (tag
+//! `1.0.10`). Original work Copyright (c) 2006+, Health Intersections Pty Ltd,
+//! licensed under the BSD 3-Clause License, whose text is reproduced in
+//! `ucum_decimal.rs` and in `NOTICE`.
+//! Modified by the Frevo authors: the DOM is this module's own reader, which
+//! refuses a document type declaration as `parseDOM` does; a load failure is a
+//! [`UcumLoadError`] naming the file rather than a wrapped `UcumException`;
+//! and the lenient `SimpleDateFormat` that reads `revision-date` is reproduced
+//! for the forms listed at `parse_revision_date` only.
 //!
-//! What this module does **not** do yet is the algebra itself -- canonical
-//! form, commensurability, multiplication and division of units (task 43). The
-//! digits that algebra produces are `org.fhir.ucum.Decimal`'s and the reduction
-//! is `org.fhir.ucum.Converter`'s, and neither can be specified without their
-//! source; see `tasks/blockers.md`. The defining expressions are therefore kept
-//! here as the file states them, as text, and no number in them is
-//! interpreted.
+//! What the parser accepts is what upstream accepts: no namespace and no
+//! `version` is required (a missing attribute reads as `""`), a code may be
+//! defined twice (a lookup takes the first, base units before defined units,
+//! `UcumModel.java:127-137`), any of the three lists may be empty, and a flag
+//! is set only by exactly `yes`. What it refuses is upstream's list
+//! (`path.quantity.016`): an unreadable or not well-formed file, a DOCTYPE, a
+//! root element other than `root`, a missing or unparseable `revision-date`,
+//! an unknown child element of the root, a prefix or unit with no `value`
+//! element or a malformed `value/@value`, and a base unit with no `dim`
+//! (`"".charAt(0)`).
 //!
 //! The data is never embedded in the binary or committed: it is loaded at run
 //! time from a path the operator or CI supplies
@@ -28,6 +40,8 @@ use std::collections::HashMap;
 use std::error::Error;
 use std::fmt;
 use std::path::{Path, PathBuf};
+
+use super::ucum_decimal::{Failure, UcumDecimal};
 
 /// The namespace of the essence file's root element.
 pub const UCUM_ESSENCE_NAMESPACE: &str = "http://unitsofmeasure.org/ucum-essence";
@@ -167,16 +181,29 @@ pub struct UcumEssence {
     prefixes: Vec<UcumPrefix>,
     base_units: Vec<UcumBaseUnit>,
     units: Vec<UcumUnit>,
+    /// `Prefix.getValue()`, by prefix index: `new Decimal(value, 24)`.
+    prefix_values: Vec<UcumDecimal>,
+    /// `Value.getValue()`, by unit index.
+    unit_values: Vec<UcumDecimal>,
+    /// The first index of each code, which is what upstream's linear scans
+    /// find.
     prefix_index: HashMap<String, usize>,
     base_unit_index: HashMap<String, usize>,
     unit_index: HashMap<String, usize>,
 }
 
+/// `UcumModel.getUnit`'s answer: a base unit or a defined unit, by index.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum UnitRef {
+    Base(usize),
+    Defined(usize),
+}
+
 impl UcumEssence {
     /// Load the essence data from `path`.
     ///
-    /// An absent, unreadable or unparseable file, or one that is XML but not
-    /// UCUM essence data, is an error naming the file.
+    /// Every condition under which `XmlDefinitionsParser.parse` raises is an
+    /// error naming the file (`path.quantity.016`).
     pub fn load(path: &Path) -> Result<UcumEssence, UcumLoadError> {
         let text = std::fs::read_to_string(path)
             .map_err(|e| UcumLoadError::new(format!("cannot read the file: {e}")).at(path))?;
@@ -189,8 +216,9 @@ impl UcumEssence {
         UcumEssence::from_root(&root)
     }
 
-    /// The root element's `version` attribute, as `2.0.1`. This is what a run
-    /// reports beside its results (`path.quantity.016`).
+    /// The root element's `version` attribute, as `2.0.1` (`""` when
+    /// absent, as `getAttribute` reads it). This is what a run reports beside
+    /// its results (`path.quantity.016`).
     pub fn version(&self) -> &str {
         &self.version
     }
@@ -220,57 +248,65 @@ impl UcumEssence {
         &self.units
     }
 
-    /// The prefix with case-sensitive code `code`.
+    /// The first prefix with case-sensitive code `code`.
     pub fn prefix(&self, code: &str) -> Option<&UcumPrefix> {
         self.prefix_index.get(code).map(|&i| &self.prefixes[i])
     }
 
-    /// The base unit with case-sensitive code `code`.
+    /// The first base unit with case-sensitive code `code`.
     pub fn base_unit(&self, code: &str) -> Option<&UcumBaseUnit> {
         self.base_unit_index.get(code).map(|&i| &self.base_units[i])
     }
 
-    /// The defined unit with case-sensitive code `code`.
+    /// The first defined unit with case-sensitive code `code`.
     pub fn unit(&self, code: &str) -> Option<&UcumUnit> {
         self.unit_index.get(code).map(|&i| &self.units[i])
     }
 
+    /// `UcumModel.getUnit`: the first base unit with the code, else the first
+    /// defined unit.
+    pub(super) fn find_unit(&self, code: &str) -> Option<UnitRef> {
+        if let Some(&i) = self.base_unit_index.get(code) {
+            return Some(UnitRef::Base(i));
+        }
+        self.unit_index.get(code).map(|&i| UnitRef::Defined(i))
+    }
+
+    /// `Prefix.getValue()` of prefix `i`.
+    pub(super) fn prefix_value(&self, i: usize) -> &UcumDecimal {
+        &self.prefix_values[i]
+    }
+
+    /// `Value.getValue()` of defined unit `i`.
+    pub(super) fn unit_value(&self, i: usize) -> &UcumDecimal {
+        &self.unit_values[i]
+    }
+
+    /// `XmlDefinitionsParser.parse(InputStream)` after `parseDOM`.
     fn from_root(root: &xml::Element) -> Result<UcumEssence, UcumLoadError> {
         if root.name != "root" {
             return Err(UcumLoadError::new(format!(
-                "the root element is <{}>, not the UCUM essence <root>",
+                "Unable to process XML document: expected 'root' but found '{}'",
                 root.name
             )));
         }
-        match root.attr("xmlns") {
-            Some(UCUM_ESSENCE_NAMESPACE) => {}
-            Some(other) => {
-                return Err(UcumLoadError::new(format!(
-                    "the root element is in namespace {other:?}, not {UCUM_ESSENCE_NAMESPACE:?}"
-                )));
-            }
-            None => {
-                return Err(UcumLoadError::new(format!(
-                    "the root element is not in the {UCUM_ESSENCE_NAMESPACE:?} namespace"
-                )));
-            }
-        }
-        let version = match root.attr("version") {
-            Some(v) if !v.trim().is_empty() => v.to_owned(),
-            _ => {
-                return Err(UcumLoadError::new(
-                    "the root element has no version attribute",
-                ));
-            }
-        };
+        let revision_date = root.attr("revision-date");
+        parse_revision_date(revision_date.unwrap_or("")).map_err(|e| {
+            UcumLoadError::new(format!(
+                "the revision-date {:?} does not parse: {e}",
+                revision_date.unwrap_or("")
+            ))
+        })?;
 
         let mut essence = UcumEssence {
-            version,
+            version: root.attr("version").unwrap_or("").to_owned(),
             revision: root.attr("revision").map(str::to_owned),
-            revision_date: root.attr("revision-date").map(str::to_owned),
+            revision_date: revision_date.map(str::to_owned),
             prefixes: Vec::new(),
             base_units: Vec::new(),
             units: Vec::new(),
+            prefix_values: Vec::new(),
+            unit_values: Vec::new(),
             prefix_index: HashMap::new(),
             base_unit_index: HashMap::new(),
             unit_index: HashMap::new(),
@@ -279,93 +315,136 @@ impl UcumEssence {
         for child in root.elements() {
             match child.name.as_str() {
                 "prefix" => {
-                    let prefix = read_prefix(child)?;
-                    insert_unique(
-                        &mut essence.prefix_index,
-                        &prefix.code,
-                        essence.prefixes.len(),
-                        "prefix",
-                    )?;
+                    let (prefix, value) = read_prefix(child)?;
+                    let at = essence.prefixes.len();
+                    essence
+                        .prefix_index
+                        .entry(prefix.code.clone())
+                        .or_insert(at);
                     essence.prefixes.push(prefix);
+                    essence.prefix_values.push(value);
                 }
                 "base-unit" => {
                     let base = read_base_unit(child)?;
-                    insert_unique(
-                        &mut essence.base_unit_index,
-                        &base.code,
-                        essence.base_units.len(),
-                        "base-unit",
-                    )?;
+                    let at = essence.base_units.len();
+                    essence
+                        .base_unit_index
+                        .entry(base.code.clone())
+                        .or_insert(at);
                     essence.base_units.push(base);
                 }
                 "unit" => {
-                    let unit = read_unit(child)?;
-                    insert_unique(
-                        &mut essence.unit_index,
-                        &unit.code,
-                        essence.units.len(),
-                        "unit",
-                    )?;
+                    let (unit, value) = read_unit(child)?;
+                    let at = essence.units.len();
+                    essence.unit_index.entry(unit.code.clone()).or_insert(at);
                     essence.units.push(unit);
+                    essence.unit_values.push(value);
                 }
                 other => {
-                    return Err(UcumLoadError::new(format!(
-                        "unexpected element <{other}> in the UCUM essence root"
-                    )));
+                    return Err(UcumLoadError::new(format!("unknown element name {other}")));
                 }
             }
-        }
-
-        if essence.base_units.is_empty() {
-            return Err(UcumLoadError::new("the file defines no base units"));
-        }
-        if essence.units.is_empty() {
-            return Err(UcumLoadError::new("the file defines no units"));
         }
         Ok(essence)
     }
 }
 
-fn insert_unique(
-    index: &mut HashMap<String, usize>,
-    code: &str,
-    at: usize,
-    kind: &str,
-) -> Result<(), UcumLoadError> {
-    if index.insert(code.to_owned(), at).is_some() {
-        return Err(UcumLoadError::new(format!(
-            "<{kind}> code {code:?} is defined twice"
-        )));
+/// `SimpleDateFormat.parse` of `revision-date` (`XmlDefinitionsParser.java:79-88`):
+/// longer than 25 characters, characters 7 to 31 as `yyyy-MM-dd HH:mm:ss Z`
+/// (a value of 26 to 31 characters makes `substring(7, 32)` throw); otherwise
+/// the whole value as `yyyy-MM-dd`.
+///
+/// The format is lenient, as a `SimpleDateFormat` is by default: a numeric
+/// field is one or more ASCII digits after optional spaces or tabs, with no
+/// range check, a pattern space matches any run of whitespace, and text after
+/// the last field is ignored. The zone `Z` is read in its RFC 822 form
+/// (`-0500`) or as text opening with `GMT`. That is the part of
+/// `SimpleDateFormat` reproduced: a zone written as another name (`EST`), or
+/// a signed or grouped number in a field, which the JDK may accept, is a load
+/// failure here; the pinned file uses neither.
+fn parse_revision_date(dt: &str) -> Result<(), String> {
+    let units: Vec<u16> = dt.encode_utf16().collect();
+    if units.len() > 25 {
+        let Some(window) = units.get(7..32) else {
+            return Err(format!("begin 7, end 32, length {}", units.len()));
+        };
+        let text = String::from_utf16_lossy(window);
+        let b = text.as_bytes();
+        let mut at = 0;
+        for (field, sep) in [
+            ("yyyy", b'-'),
+            ("MM", b'-'),
+            ("dd", b' '),
+            ("HH", b':'),
+            ("mm", b':'),
+            ("ss", b' '),
+        ] {
+            date_number(b, &mut at, field)?;
+            date_literal(b, &mut at, sep)?;
+        }
+        date_zone(b, at)
+    } else {
+        let b = dt.as_bytes();
+        let mut at = 0;
+        date_number(b, &mut at, "yyyy")?;
+        date_literal(b, &mut at, b'-')?;
+        date_number(b, &mut at, "MM")?;
+        date_literal(b, &mut at, b'-')?;
+        date_number(b, &mut at, "dd")
+    }
+}
+
+fn date_number(b: &[u8], at: &mut usize, field: &str) -> Result<(), String> {
+    while matches!(b.get(*at), Some(b' ' | b'\t')) {
+        *at += 1;
+    }
+    let start = *at;
+    while matches!(b.get(*at), Some(c) if c.is_ascii_digit()) {
+        *at += 1;
+    }
+    if *at == start {
+        return Err(format!("no number for {field} at {start}"));
     }
     Ok(())
 }
 
-fn required<'a>(element: &'a xml::Element, attr: &str) -> Result<&'a str, UcumLoadError> {
-    match element.attr(attr) {
-        Some(v) if !v.is_empty() => Ok(v),
-        _ => Err(UcumLoadError::new(format!(
-            "<{}{}> has no {attr} attribute",
-            element.name,
-            element
-                .attr("Code")
-                .map(|c| format!(" Code={c:?}"))
-                .unwrap_or_default()
-        ))),
+fn date_literal(b: &[u8], at: &mut usize, sep: u8) -> Result<(), String> {
+    if sep == b' ' {
+        while matches!(b.get(*at), Some(c) if c.is_ascii_whitespace()) {
+            *at += 1;
+        }
+        return Ok(());
+    }
+    if b.get(*at) == Some(&sep) {
+        *at += 1;
+        Ok(())
+    } else {
+        Err(format!("expected {:?} at {}", char::from(sep), *at))
     }
 }
 
-fn yes(element: &xml::Element, attr: &str) -> Result<bool, UcumLoadError> {
-    match element.attr(attr) {
-        None | Some("no") => Ok(false),
-        Some("yes") => Ok(true),
-        Some(other) => Err(UcumLoadError::new(format!(
-            "<{} Code={:?}> has {attr}={other:?}, which is neither \"yes\" nor \"no\"",
-            element.name,
-            element.attr("Code").unwrap_or_default()
-        ))),
+fn date_zone(b: &[u8], at: usize) -> Result<(), String> {
+    let rest = b.get(at..).unwrap_or(&[]);
+    let rfc822 = rest.len() >= 5
+        && matches!(rest[0], b'+' | b'-')
+        && rest[1..5].iter().all(u8::is_ascii_digit);
+    if rfc822 || rest.starts_with(b"GMT") {
+        return Ok(());
     }
+    Err(format!("no time zone at {at}"))
 }
 
+/// `getAttribute`, which is `""` for an absent attribute.
+fn attr<'a>(element: &'a xml::Element, name: &str) -> &'a str {
+    element.attr(name).unwrap_or("")
+}
+
+/// `"yes".equals(x.getAttribute(name))`.
+fn yes(element: &xml::Element, name: &str) -> bool {
+    element.attr(name) == Some("yes")
+}
+
+/// `XmlUtils.getNamedChildText`, trimmed.
 fn child_text(element: &xml::Element, name: &str) -> Option<String> {
     element
         .elements()
@@ -373,6 +452,8 @@ fn child_text(element: &xml::Element, name: &str) -> Option<String> {
         .map(|c| c.text().trim().to_owned())
 }
 
+/// `XmlUtils.getNamedChild(x, "value")`, which upstream dereferences: a
+/// missing `value` is a `NullPointerException` that fails the load.
 fn value_element(element: &xml::Element) -> Result<&xml::Element, UcumLoadError> {
     element
         .elements()
@@ -381,68 +462,101 @@ fn value_element(element: &xml::Element) -> Result<&xml::Element, UcumLoadError>
             UcumLoadError::new(format!(
                 "<{} Code={:?}> has no <value>",
                 element.name,
-                element.attr("Code").unwrap_or_default()
+                attr(element, "Code")
             ))
         })
 }
 
-fn read_prefix(element: &xml::Element) -> Result<UcumPrefix, UcumLoadError> {
-    let value = value_element(element)?;
-    Ok(UcumPrefix {
-        code: required(element, "Code")?.to_owned(),
-        code_upper: required(element, "CODE")?.to_owned(),
-        name: child_text(element, "name").unwrap_or_default(),
-        print_symbol: child_text(element, "printSymbol"),
-        value: required(value, "value")?.to_owned(),
-    })
-}
-
-fn read_base_unit(element: &xml::Element) -> Result<UcumBaseUnit, UcumLoadError> {
-    Ok(UcumBaseUnit {
-        code: required(element, "Code")?.to_owned(),
-        code_upper: required(element, "CODE")?.to_owned(),
-        dim: required(element, "dim")?.to_owned(),
-        name: child_text(element, "name").unwrap_or_default(),
-        property: child_text(element, "property"),
-    })
-}
-
-fn read_unit(element: &xml::Element) -> Result<UcumUnit, UcumLoadError> {
-    let value = value_element(element)?;
-    let function = match value.elements().find(|c| c.name == "function") {
-        Some(f) => Some(UcumFunction {
-            name: required(f, "name")?.to_owned(),
-            value: required(f, "value")?.to_owned(),
-            unit: required(f, "Unit")?.to_owned(),
-        }),
-        None => None,
+fn bad_value(element: &xml::Element, text: &str, why: &Failure) -> UcumLoadError {
+    let why = match why {
+        Failure::Ucum(m) => m.clone(),
+        Failure::Error(m) => (*m).to_owned(),
     };
-    let is_special = yes(element, "isSpecial")?;
-    if is_special && function.is_none() && value.attr("value").is_none() {
+    UcumLoadError::new(format!(
+        "<{} Code={:?}> has the value {text:?}: {why}",
+        element.name,
+        attr(element, "Code")
+    ))
+}
+
+/// `parsePrefix`: `new Decimal(value/@value, 24)`.
+fn read_prefix(element: &xml::Element) -> Result<(UcumPrefix, UcumDecimal), UcumLoadError> {
+    let value = value_element(element)?;
+    let text = attr(value, "value");
+    let decimal =
+        UcumDecimal::with_precision(text, 24).map_err(|e| bad_value(element, text, &e))?;
+    Ok((
+        UcumPrefix {
+            code: attr(element, "Code").to_owned(),
+            code_upper: attr(element, "CODE").to_owned(),
+            name: child_text(element, "name").unwrap_or_default(),
+            print_symbol: child_text(element, "printSymbol"),
+            value: text.to_owned(),
+        },
+        decimal,
+    ))
+}
+
+/// `parseBaseUnit`: `getAttribute("dim").charAt(0)` fails on an absent or
+/// empty `dim`.
+fn read_base_unit(element: &xml::Element) -> Result<UcumBaseUnit, UcumLoadError> {
+    let dim = attr(element, "dim");
+    if dim.is_empty() {
         return Err(UcumLoadError::new(format!(
-            "special <unit Code={:?}> has neither a <function> nor a value",
-            element.attr("Code").unwrap_or_default()
+            "<base-unit Code={:?}> has no dim",
+            attr(element, "Code")
         )));
     }
-    Ok(UcumUnit {
-        code: required(element, "Code")?.to_owned(),
-        code_upper: element.attr("CODE").map(str::to_owned),
-        is_metric: yes(element, "isMetric")?,
-        is_special,
-        is_arbitrary: yes(element, "isArbitrary")?,
-        class: element.attr("class").map(str::to_owned),
-        names: element
-            .elements()
-            .filter(|c| c.name == "name")
-            .map(|c| c.text().trim().to_owned())
-            .collect(),
-        print_symbol: child_text(element, "printSymbol"),
+    Ok(UcumBaseUnit {
+        code: attr(element, "Code").to_owned(),
+        code_upper: attr(element, "CODE").to_owned(),
+        dim: dim.to_owned(),
+        name: child_text(element, "name").unwrap_or_default(),
         property: child_text(element, "property"),
-        value_unit: required(value, "Unit")?.to_owned(),
-        value_unit_upper: value.attr("UNIT").map(str::to_owned),
-        value: value.attr("value").map(str::to_owned),
-        function,
     })
+}
+
+/// `parseUnit` and `parseValue`: a value with a `.` is read with precision
+/// 24, any other with its own.
+fn read_unit(element: &xml::Element) -> Result<(UcumUnit, UcumDecimal), UcumLoadError> {
+    let value = value_element(element)?;
+    let text = attr(value, "value");
+    let decimal = if text.contains('.') {
+        UcumDecimal::with_precision(text, 24)
+    } else {
+        UcumDecimal::new(text)
+    }
+    .map_err(|e| bad_value(element, text, &e))?;
+    let function = value
+        .elements()
+        .find(|c| c.name == "function")
+        .map(|f| UcumFunction {
+            name: attr(f, "name").to_owned(),
+            value: attr(f, "value").to_owned(),
+            unit: attr(f, "Unit").to_owned(),
+        });
+    Ok((
+        UcumUnit {
+            code: attr(element, "Code").to_owned(),
+            code_upper: element.attr("CODE").map(str::to_owned),
+            is_metric: yes(element, "isMetric"),
+            is_special: yes(element, "isSpecial"),
+            is_arbitrary: yes(element, "isArbitrary"),
+            class: element.attr("class").map(str::to_owned),
+            names: element
+                .elements()
+                .filter(|c| c.name == "name")
+                .map(|c| c.text().trim().to_owned())
+                .collect(),
+            print_symbol: child_text(element, "printSymbol"),
+            property: child_text(element, "property"),
+            value_unit: attr(value, "Unit").to_owned(),
+            value_unit_upper: value.attr("UNIT").map(str::to_owned),
+            value: value.attr("value").map(str::to_owned),
+            function,
+        },
+        decimal,
+    ))
 }
 
 /// A minimal, strict XML reader: enough for the essence file and strict

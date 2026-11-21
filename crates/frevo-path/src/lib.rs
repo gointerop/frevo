@@ -40,7 +40,7 @@ pub use check::{
 };
 pub use eval::{
     EngineSettings, EvalError, Evaluator, InvalidVersion, PathError, UCUM_ESSENCE_NAMESPACE,
-    UcumBaseUnit, UcumEssence, UcumFunction, UcumLoadError, UcumPrefix, UcumUnit,
+    UcumBaseUnit, UcumError, UcumEssence, UcumFunction, UcumLoadError, UcumPrefix, UcumUnit,
 };
 
 pub use seam::host::{ConstantMode, FunctionDetails, HostError, HostServices};

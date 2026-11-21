@@ -59,7 +59,11 @@ Ucum-java (org.fhir:ucum)
 https://github.com/FHIR/Ucum-java
 Licensed under the BSD 3-Clause License, reproduced below as it requires.
 crates/frevo-path/src/eval/ucum_decimal.rs derives from its
-org.fhir.ucum.Decimal and org.fhir.ucum.Utilities.
+org.fhir.ucum.Decimal and org.fhir.ucum.Utilities,
+crates/frevo-path/src/eval/ucum.rs from its XmlDefinitionsParser, XmlUtils
+and UcumModel, and crates/frevo-path/src/eval/ucum_algebra.rs from its Lexer,
+ExpressionParser, Converter, Canonical, ExpressionComposer,
+UcumEssenceService and special unit handlers.
 
   BSD 3-Clause License
 

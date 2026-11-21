@@ -36,7 +36,7 @@ against the specification and the oracles, not from upstream source), `empty`
 |---|---|---|---|---|
 | `frevo-codegen` | empty | — | — | — |
 | `frevo-model` | generated (`src/r4/`); derived (`src/codec/{decode,built}.rs`) | `hapi-fhir` | `hapi-fhir-base/.../parser/{ParserState,JsonParser,LenientErrorHandler,StrictErrorHandler,ParseLocation,IParserErrorHandler,BaseParser}.java`, `hapi-fhir-base/.../util/{FhirTerser,UrlUtil}.java`, `hapi-fhir-base/.../context/FhirContext.java` | `7ab4c7c7c49281496faa1b3c2498a652457669ae` |
-| `frevo-path` | derived | `org.hl7.fhir.core` | `org.hl7.fhir.r4/.../r4/fhirpath/{FHIRLexer,ExpressionNode,FHIRPathEngine,FHIRPathConstant,TypeDetails}.java`, `org.hl7.fhir.r4/.../r4/model/{IdType,Base,BaseDateTimeType,TimeType}.java`, `org.hl7.fhir.r4/.../r4/terminologies/ValueSetCheckerSimple.java`, `org.hl7.fhir.utilities/.../{Utilities,SourceLocation}.java`, `org.hl7.fhir.utilities/.../exceptions/PathEngineException.java`, `org.hl7.fhir.r4/.../r4/model/{Narrative,XhtmlType}.java`, `org.hl7.fhir.utilities/.../xhtml/{XhtmlParser,XhtmlComposer,XhtmlNode}.java`; `hapi-fhir` `hapi-fhir-base/.../model/primitive/XhtmlDt.java` at `7ab4c7c7c49281496faa1b3c2498a652457669ae`; `Ucum-java` `src/main/java/org/fhir/ucum/{Decimal,Utilities}.java` at `db9d22ade3f0f4a667b45817b85a9ac4534e4224` (BSD-3-Clause) | `73c432b5f43ddbce979978a760ec4aa81e929094` |
+| `frevo-path` | derived | `org.hl7.fhir.core` | `org.hl7.fhir.r4/.../r4/fhirpath/{FHIRLexer,ExpressionNode,FHIRPathEngine,FHIRPathConstant,TypeDetails}.java`, `org.hl7.fhir.r4/.../r4/model/{IdType,Base,BaseDateTimeType,TimeType}.java`, `org.hl7.fhir.r4/.../r4/terminologies/ValueSetCheckerSimple.java`, `org.hl7.fhir.utilities/.../{Utilities,SourceLocation}.java`, `org.hl7.fhir.utilities/.../exceptions/PathEngineException.java`, `org.hl7.fhir.r4/.../r4/model/{Narrative,XhtmlType}.java`, `org.hl7.fhir.utilities/.../xhtml/{XhtmlParser,XhtmlComposer,XhtmlNode}.java`; `hapi-fhir` `hapi-fhir-base/.../model/primitive/XhtmlDt.java` at `7ab4c7c7c49281496faa1b3c2498a652457669ae`; `Ucum-java` `src/main/java/org/fhir/ucum/{Decimal,Utilities,Lexer,ExpressionParser,Converter,Canonical,ExpressionComposer,UcumEssenceService,UcumModel}.java`, `.../ucum/definitions/XmlDefinitionsParser.java`, `.../ucum/utils/XmlUtils.java`, `.../ucum/special/{Registry,HoldingHandler,CelsiusHandler,FahrenheitHandler}.java` at `db9d22ade3f0f4a667b45817b85a9ac4534e4224` (BSD-3-Clause) | `73c432b5f43ddbce979978a760ec4aa81e929094` |
 | `frevo-convert` | empty | — | — | — |
 | `frevo-package` | empty | — | — | — |
 | `frevo-validator` | empty | — | — | — |
@@ -98,7 +98,15 @@ a port of `Ucum-java`'s `org.fhir.ucum.Decimal` (`Decimal(String)`,
 `doAdd`, `doSubtract`, `multiply`, `divide`, `divInt`, `modulo` and their
 string helpers) and `Utilities` (`isDecimal`, `isInteger`, `noString`,
 `padLeft`) at `db9d22ade3f0f4a667b45817b85a9ac4534e4224` (tag `1.0.10`),
-under the BSD 3-Clause notice the file and `NOTICE` reproduce, and
+under the BSD 3-Clause notice the file and `NOTICE` reproduce, and the
+UCUM unit algebra over it — `src/eval/ucum.rs` (`XmlDefinitionsParser`'s
+`parse`, `parseUnit`, `parseValue`, `parseBaseUnit` and `parsePrefix`,
+`XmlUtils`' DOM helpers and `UcumModel.getUnit`) and
+`src/eval/ucum_algebra.rs` (`Lexer`, `ExpressionParser`, `Converter`,
+`Canonical`, `ExpressionComposer.compose(Canonical, false)`, the
+`special/Registry` handlers, and `UcumEssenceService`'s
+`getCanonicalForm`, `getCanonicalUnits`, `multiply`, `divideBy` and
+`isComparable`), at the same SHA and under the same notice, and
 date arithmetic and the clock — `src/eval/temporal.rs` (`dateAdd`,
 `funcToday`, `funcNow`, and `BaseDateTimeType.java`'s `add`, `copy`
 precision check and string rendering), and the math functions —

@@ -54,6 +54,7 @@ mod temporal;
 mod terminology;
 mod types;
 mod ucum;
+mod ucum_algebra;
 mod ucum_decimal;
 mod utility;
 mod xhtml;
@@ -79,6 +80,7 @@ pub use ucum::{
     UCUM_ESSENCE_NAMESPACE, UcumBaseUnit, UcumEssence, UcumFunction, UcumLoadError, UcumPrefix,
     UcumUnit,
 };
+pub use ucum_algebra::UcumError;
 
 use self::error::At;
 

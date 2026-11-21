@@ -3163,3 +3163,60 @@ negative-mantissa cases.
 **Resolved 2026-11-21** by `45e6b43`: the two lib tests no longer use a
 quotient as their unbuilt sample, lib is 136 of 136, and task 37 is ticked
 (`ffe839b`).
+
+## 2026-11-21 — `add-fhirpath-and-codegen-r4` — task 43's library is ported, but three of its four scenarios need test changes and one needs task 44
+
+**Raised by** the implementer of task 43. The `org.fhir.ucum` parts the
+engine calls are ported (`crates/frevo-path/src/eval/ucum.rs`,
+`ucum_algebra.rs`, `ucum_decimal.rs`) and exposed as
+`frevo_path::UcumEssence::{canonical_form, canonical_units, is_comparable,
+multiply, divide_by}` with `frevo_path::UcumError`. `path.quantity.016` is
+green. Checked in-process against the spec (with a probe that was then
+removed): every canonical unit and value of `path.quantity.020`, every
+special-unit outcome of `.023`, every parse message of `.024`, and every
+`*` / `/` result of `.021` the library computes. Task 43 is **not ticked**
+because:
+
+1. **The test seam is unbound in the test file.**
+   `crates/frevo-path/tests/path_quantity.rs:950-956`
+   (`BoundUcum::canonical_form`) returns `EngineError::NotImplemented`, and
+   its comment says task 43 binds it. That is a test-file edit, which the
+   implementer may not make. The binding the spec describes is:
+   `UcumEssence::load(&ucum_essence_path())?.canonical_form(value, code)`,
+   mapping `UcumError::Ucum(m)` to `EngineError::Diagnostic { message: m,
+   offset: None }`. Until then, `path.quantity.020`'s test cannot pass, and
+   neither can the canonical halves of `.023` and `.024`.
+2. **`.023` and `.024` also grade engine semantics that belong to task 44.**
+   `1 '[pH]' = 1 'mol/L'`, `1 'Cel' ~ 274.15 'K'`, `1 'Cel' < 2 'K'`,
+   `.comparable()`, the `*` error with its ` (@char C)` suffix, an empty
+   `/`, and the `NumberFormatException` under `=`, `~`, `<`, `*` and `/`
+   (`path_quantity.rs:1906-1934`, `:2015-2055`) all go through `qtyEqual`,
+   `qtyEquivalent`, the ordered operators, `funcComparable` and the quantity
+   arms of `*` and `/`. Task 44 is "quantity semantics on top of it", and
+   it satisfies `path.quantity.021` and `.022`. Either the engine-level
+   assertions move to task 44's scenarios, or task 43 grows to include
+   wiring the engine (a `tasks.md` change for the proposer).
+3. **Three lib unit tests encode the old strict loader**
+   (`crates/frevo-path/src/eval/ucum.rs`, the `tests` module):
+   `reads_the_version_and_the_three_tables` (its `MINIMAL` fixture has no
+   `revision-date`, which `path.quantity.016` makes a load failure),
+   `xml_that_is_not_ucum_is_refused` (it requires the messages to name a
+   namespace, a version and "no base units"; upstream requires none of
+   those, and these fixtures now fail for their missing `revision-date`),
+   and `a_unit_with_a_bad_flag_or_no_value_is_refused` (it requires
+   `isMetric="maybe"` and a duplicate code to be refused, which upstream
+   accepts). Lib is 133 of 136 until the oracle-builder updates them to the
+   spec's failure list.
+
+**Not covered by the spec; needs the proposer.** Following the source
+faithfully:
+- A base unit with no `dim` fails the load (`"".charAt(0)`).
+- A `revision-date` of 26 to 31 characters fails, because
+  `substring(7, 32)` throws.
+- The lenient `SimpleDateFormat` is reproduced only for unsigned digit
+  fields, whitespace-tolerant spaces, and an RFC 822 or `GMT` zone. Another
+  zone name (`EST`) is refused here, although the JDK may accept it.
+- `Lexer` messages for a sign with no digit (`Error processing unit'+':
+  unexpected character '\0' at position 0: a + or - must be followed by at
+  least one digit`, with a NUL character) and for a nested `[`
+  (`... Nested [' at position 0`) have texts the spec leaves unstated.

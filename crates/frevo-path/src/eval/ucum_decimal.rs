@@ -9,7 +9,9 @@
 //! `isWholeNumber` and `asDecimal` at `:289-308`, `trunc` at `:338-351`,
 //! `subtract`, `doAdd`, `doSubtract`, `stringAddition` and
 //! `stringSubtraction` at `:368-532`, `multiply` at `:535-625`, `divide` at
-//! `:627-769`, `trimLeadingZeros`, `divInt` and `modulo` at `:772-798`) and
+//! `:627-769`, `trimLeadingZeros`, `divInt` and `modulo` at `:772-798`, the
+//! `Decimal(String, int)` and `Decimal(int)` constructors and `one` at
+//! `:96-112`, `:248-254`, and `checkForCouldBeWholeNumber` at `:831-855`) and
 //! from Ucum-java/src/main/java/org/fhir/ucum/Utilities.java (`isDecimal`,
 //! `isInteger`, `noString` and `padLeft`), at
 //! db9d22ade3f0f4a667b45817b85a9ac4534e4224 (tag `1.0.10`; live HAPI 8.12.0
@@ -241,7 +243,7 @@ fn is_decimal(s: &[u8]) -> bool {
 }
 
 /// `org.fhir.ucum.Decimal`.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(super) struct UcumDecimal {
     precision: i32,
     scientific: bool,
@@ -262,6 +264,27 @@ impl UcumDecimal {
             result.set_value_decimal(value.as_bytes())?;
         }
         Ok(result)
+    }
+
+    /// `new Decimal(String, int)`: the value read as `new Decimal(String)`
+    /// reads it, then given `precision` (`Decimal.java:96-104`).
+    pub(super) fn with_precision(value: &str, precision: i32) -> Result<Self, Failure> {
+        let mut result = Self::new(value)?;
+        result.precision = precision;
+        Ok(result)
+    }
+
+    /// `new Decimal(int)`: `setValueDecimal(Integer.toString(i))`
+    /// (`Decimal.java:106-112`).
+    pub(super) fn from_int(i: i32) -> Self {
+        let mut result = UcumDecimal::default();
+        let _ = result.set_value_decimal(i.to_string().as_bytes());
+        result
+    }
+
+    /// `Decimal.one()`: `new Decimal("1")`.
+    pub(super) fn one() -> Self {
+        Self::from_int(1)
     }
 
     fn not_valid(value: &[u8], suffix: &str) -> Failure {
@@ -360,7 +383,7 @@ impl UcumDecimal {
     }
 
     /// `isWholeNumber`: the written form has no `.`.
-    fn is_whole_number(&self) -> bool {
+    pub(super) fn is_whole_number(&self) -> bool {
         !self.as_decimal().contains('.')
     }
 
@@ -750,6 +773,37 @@ impl UcumDecimal {
         result.precision = prec;
         result.scientific = self.scientific || other.scientific;
         Ok(result)
+    }
+
+    /// `checkForCouldBeWholeNumber` (`Decimal.java:831-855`): with a
+    /// precision above 17 and more than three digits, a run of `9`s or `0`s
+    /// ending at the second-to-last digit, starting after the first digit and
+    /// more than three digits from the end, is cut off (rounding the digit
+    /// before a run of `9`s up). The point does not move.
+    pub(super) fn check_for_could_be_whole_number(&mut self) {
+        if self.precision > 17 && self.digits.len() > 3 {
+            let mut i = self.digits.len() - 2;
+            let ch = self.digits[i];
+            if ch == b'9' {
+                while i > 0 && self.digits[i - 1] == b'9' {
+                    i -= 1;
+                }
+                if i > 0 && i < self.digits.len() - 3 {
+                    let mut cut = self.digits[..i - 1].to_vec();
+                    cut.push(self.digits[i - 1] + 1);
+                    self.digits = cut;
+                    self.precision = ilen(&self.digits);
+                }
+            } else if ch == b'0' {
+                while i > 0 && self.digits[i - 1] == b'0' {
+                    i -= 1;
+                }
+                if i > 0 && i < self.digits.len() - 3 {
+                    self.digits.truncate(i);
+                    self.precision = ilen(&self.digits);
+                }
+            }
+        }
     }
 
     /// `divInt`: `trunc` of the rounded quotient.
