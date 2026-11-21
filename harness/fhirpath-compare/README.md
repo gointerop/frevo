@@ -89,8 +89,8 @@ The owner decided how the differential gate of `add-fhirpath-and-codegen-r4`
 is graded. The scenarios that no suite case can grade are run on HAPI 8.12.0's
 R4 `FHIRPathEngine` in-process, beside Frevo. These are the thirty-five named
 scenarios and the six partial ones in the change's `spec.md`, plus every
-scenario in `specs/path/spec.md` that calls itself differential-only, 56 in
-all.
+scenario in `specs/path/spec.md` that calls itself differential-only, 62 in
+all (35 named, 6 partial, 21 differential-only).
 
 | Path | What it is |
 |---|---|
