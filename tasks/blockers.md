@@ -3558,3 +3558,27 @@ Then re-run `model_bytes_lazy_perf` and `path_perf`.
 - **Task 54's stale lib test:** `8023ed2` re-aligned it to `path.api.005`'s
   `HAPI-0256` text. Lib is 136 of 136 and `path_api` 15 of 15. Task 54 is
   ticked.
+
+## 2026-11-21 — `add-fhirpath-and-codegen-r4` — owed `design.md` text: the generated class table in `frevo-path`
+
+**Raised by** the proposer, from the fifty-seventh review's finding on
+`64530a2`. `codegen.ancestry.001` now places the generated R4 class table at
+`crates/frevo-path/src/eval/r4_classes.tsv` (because `path.api.008` keeps
+`frevo-path` free of `frevo-model`), and `codegen.output.005`'s drift check
+names it. `design.md` still contradicts that in two places. It is
+hook-protected, so the text is recorded here for whoever may edit it.
+
+**Owed to `design.md` (protected, so not written by the proposer).**
+1. Section 1, the artifact table (`design.md:15`): add a row before the
+   `crates/frevo-path/**` row,
+
+   > | `crates/frevo-path/src/eval/r4_classes.tsv` — the R4 model class table (`codegen.ancestry.*`) | `frevo-codegen class-table --version r4` | `hl7.fhir.r4.core#4.0.1` StructureDefinitions and `crates/frevo-codegen/data/r4-class-table-exceptions.toml` | `@generated` |
+
+   and narrow the existing row's artifact cell to
+   "`crates/frevo-path/**`, except `src/eval/r4_classes.tsv`".
+2. Section 9, the layout block (`design.md:681-683`): add the line
+
+   > `crates/frevo-path/src/eval/r4_classes.tsv  @generated R4 class table (frevo-codegen class-table)`
+
+   after the `crates/frevo-model/src/r4/       @generated output` line, so
+   both generated outputs are listed.

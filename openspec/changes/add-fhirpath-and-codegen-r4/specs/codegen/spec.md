@@ -444,8 +444,11 @@ accepted by the project's lint and format gates without hand editing.
 
 #### Scenario: [codegen.output.005] a drift check fails when checked-in output does not match a fresh run
 
-- **WHEN** the checked-in `frevo-model` sources differ from a fresh generation
-- **THEN** the check fails and names the differing files
+- **WHEN** the checked-in generated outputs — `frevo-model`'s generated
+  sources and the R4 class table `crates/frevo-path/src/eval/r4_classes.tsv`
+  (`codegen.ancestry.001`) — differ from a fresh generation
+- **THEN** the check fails and names the differing files, one check covering
+  both
 - **AND** the message says to regenerate, not to edit
 
 #### Scenario: [codegen.output.006] generated code contains no `unsafe`
@@ -513,9 +516,10 @@ measures.
     version, the package name, version and SHA-256, the exception file's path
     and SHA-256, and a statement that edits are overwritten
     (`codegen.output.003`);
-  - the drift check of `codegen.output.005` covers this file as it covers
-    `frevo-model`'s generated sources: a checked-in `r4_classes.tsv` that
-    differs from a fresh run fails the check, naming the file;
+  - the drift check of `codegen.output.005`, whose `WHEN` names this file
+    beside `frevo-model`'s generated sources, grades it: a checked-in
+    `r4_classes.tsv` that differs from a fresh run fails the check, naming
+    the file;
   - one row per FHIR type of kind `primitive-type`, `complex-type` and
     `resource` defined by specialization in the package, including the
     abstract `Element`, `BackboneElement`, `Resource` and `DomainResource`;
