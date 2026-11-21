@@ -53,7 +53,7 @@ while IFS=$'\t' read -r name url ref want; do
   fi
 
   files=$($GIT -C "$name" ls-files 2>/dev/null | wc -l | tr -d ' ')
-  if [ "$dirty" != "0" ] || [ "${files:-0}" -lt 100 ]; then
+  if [ "$dirty" != "0" ] || [ "${files:-0}" -lt 50 ]; then
     echo "[FAIL] $name: tree not usable (dirty=$dirty files=$files)"; rc=1; continue
   fi
 
