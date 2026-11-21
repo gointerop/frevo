@@ -1461,7 +1461,7 @@ checkpoint because it changes what a gate measures.
   derived file has its header; `src/eval/error.rs`, the one derived file
   missing it (from `PathEngineException.java`), gained it.
 
-- [ ] **61a. Confirm the ten deviation entries against the implementation.**
+- [x] **61a. Confirm the ten deviation entries against the implementation.**
   `DEV-0001` to `DEV-0010` in `docs/deviations.md` were written from the pinned
   Java source before any Rust existed. Re-run each one's reproducing expression
   through both engines, confirm the recorded HAPI behaviour is what HAPI
@@ -1471,6 +1471,15 @@ checkpoint because it changes what a gate measures.
   than none, because it licenses a difference nobody checked. `DEV-0010` needs
   `DEBT-0010` added to `docs/tech-debt.md`, which lives on `main` and so cannot
   be written from this branch; open that as part of the merge.
+  **Ticked 2026-11-21 (done at `505399b`).** Each entry's reproducing
+  expressions were re-run through an in-process HAPI 8.12.0 probe (`FhirPathR4`
+  and the raw `FHIRPathEngine`, `org.hl7.fhir.r4` 6.9.12) and through Frevo,
+  and all ten reproduce. Three entries were corrected: `DEV-0005`
+  (`FhirPathR4` throws rather than reaching the no-UCUM branch), `DEV-0009`
+  (`toTime` and `toDateTime` are stubs) and `DEV-0010` (unreachable through
+  `FhirPathR4`, whose application context is null). The `Reviewed` lines are
+  filled in. `DEBT-0010` is present in `docs/tech-debt.md`. The ten are raised
+  at the checkpoint.
 
 - [ ] **62. Update `tasks/graph.yaml` and finalise ADR 0004.** Set this change's
   `status` to `done`, so `add-server-skeleton` and `add-store-schema` unblock.
