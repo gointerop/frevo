@@ -1,0 +1,16 @@
+{
+  "resourceType": "Patient",
+  "id": "me",
+  "modifierExtension": [
+    {
+      "url": "http://example.org/x",
+      "valueString": "m"
+    }
+  ],
+  "extension": [
+    {
+      "url": "http://example.org/y",
+      "valueString": "e"
+    }
+  ]
+}

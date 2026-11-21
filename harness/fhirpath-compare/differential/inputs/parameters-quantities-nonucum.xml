@@ -1,0 +1,26 @@
+<Parameters xmlns="http://hl7.org/fhir">
+  <parameter>
+    <name value="q1"/>
+    <valueQuantity><value value="1"/><system value="http://example.org/u"/><code value="x"/></valueQuantity>
+  </parameter>
+  <parameter>
+    <name value="q2"/>
+    <valueQuantity><value value="1"/><system value="http://example.org/u"/><code value="x"/></valueQuantity>
+  </parameter>
+  <parameter>
+    <name value="q3"/>
+    <valueQuantity><value value="1"/><system value="http://example.org/u"/><code value="y"/></valueQuantity>
+  </parameter>
+  <parameter>
+    <name value="q4"/>
+    <valueQuantity><value value="2"/><system value="http://example.org/u"/><code value="x"/></valueQuantity>
+  </parameter>
+  <parameter>
+    <name value="u1"/>
+    <valueQuantity><value value="1"/><system value="http://unitsofmeasure.org"/></valueQuantity>
+  </parameter>
+  <parameter>
+    <name value="u0"/>
+    <valueQuantity><value value="0"/><system value="http://unitsofmeasure.org"/></valueQuantity>
+  </parameter>
+</Parameters>

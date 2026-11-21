@@ -75,7 +75,44 @@ cargo run --release --manifest-path harness/fhirpath-compare-haste/Cargo.toml
 cargo run --release --manifest-path harness/fhirpath-compare/Cargo.toml
 ```
 
+`cargo run` with no `--bin` runs this suite comparison (`default-run`). The
+`differential` binary is described at the end of this file.
+
 `results.json` has one entry per case: the `address`, then the `hapi`, `frevo`,
 `helios` and `haste` statuses, plus a `<engine>_reason` for each engine's
 non-passes. It also holds each engine's totals and the wall-clock of each full
 run (HAPI's is not recorded).
+
+## The differential-only scenarios (`--bin differential`)
+
+The owner decided how the differential gate of `add-fhirpath-and-codegen-r4`
+is graded. The scenarios that no suite case can grade are run on HAPI 8.12.0's
+R4 `FHIRPathEngine` in-process, beside Frevo. These are the thirty-five named
+scenarios and the six partial ones in the change's `spec.md`, plus every
+scenario in `specs/path/spec.md` that calls itself differential-only, 56 in
+all.
+
+| Path | What it is |
+|---|---|
+| `differential/probes.py` | the probes, scenario by scenario, with the hand-built inputs. It writes `differential/probes.json` and `differential/inputs/` |
+| `../hapi-fhirpath-differential/` | the Maven probe. It evaluates every probe on HAPI under both workers and writes `differential/hapi-observed.json`. Its README describes the configuration and the outcome format |
+| `src/bin/differential.rs` | runs every probe on Frevo through the oracle seam and writes `differential-results.json` |
+| `differential-results.json` | keyed by scenario id. For each probe it holds Frevo's outcome, HAPI's outcome under the worker the scenario states, HAPI's other worker when that one answers differently, and a verdict |
+
+The verdicts are:
+
+- `agree`: Frevo and HAPI give the same outcome.
+- `disagree-documented`: the outcomes differ, and the probe names the register
+  entry under which the scenario already says Frevo differs from HAPI.
+- `hapi-unreachable`: HAPI's own parser refuses the input, so no HAPI
+  evaluation over it exists.
+- `disagree`: the outcomes differ, and nothing documents the difference.
+
+A scenario's verdict is its worst probe's.
+
+To rerun the whole comparison, run the commands in
+`../hapi-fhirpath-differential/README.md`, then:
+
+```sh
+cargo run --release --manifest-path harness/fhirpath-compare/Cargo.toml --bin differential
+```

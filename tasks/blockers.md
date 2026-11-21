@@ -3630,3 +3630,74 @@ process (`ccfb14c`). In-process repetition, not only host load, had made runs
 2 to 5 about 1.6x slower. Both files were recorded at `ccfb14c`:
 `model_bytes_lazy_perf` is 18 of 18 and `path_perf` 6 of 6. The recording is
 advisory; the authoritative baseline is CI's or the reference environment's.
+
+## 2026-11-21 — `add-fhirpath-and-codegen-r4` — the in-process HAPI differential: 18 undocumented diffs in 5 scenarios
+
+**What was run.** The owner decided that the differential-only scenarios are
+graded by an in-process HAPI 8.12.0 probe. `harness/hapi-fhirpath-differential/`
+and `harness/fhirpath-compare/src/bin/differential.rs` run 807 probes over 56
+scenarios on HAPI (`org.hl7.fhir.r4` 6.9.12 `FHIRPathEngine`, under the
+suite worker and under `HapiWorkerContext`, `org.fhir:ucum` 1.0.9, JDK 25) and
+on Frevo. The results are in `harness/fhirpath-compare/differential-results.json`:
+
+- 730 probes agree.
+- 51 differ exactly as `DEV-0023`, `DEV-0026`, `DEV-0029` and `DEV-0030`
+  record. For `DEV-0026` and `DEV-0029`, Frevo equals HAPI's other worker on
+  every one of them.
+- 8 cannot be graded, because HAPI's own parser refuses the input.
+- 18 differ, and no register entry records the difference.
+
+Nothing was fixed. This branch's implementer and the owner each have a decision
+to make.
+
+1. **Navigating into a quantity value**: `path.quantity.021#41`-`#46` and
+   `path.quantity.023#25`. HAPI builds every quantity, whether a literal or a
+   `*` / `/` result, as a FHIR `Quantity`, so its elements navigate:
+   `(1 'cm').code` is `code:cm`, `(1 'cm').value` is `decimal:1`,
+   `(1 'cm').system` is the UCUM URI, `(1 year).unit` is `string:year`, and
+   `(2 'cm' * 1 'm').code` is `code:m2`. Frevo answers empty for all of them
+   (`(1 'cm').unit` is empty on both sides). No scenario states either
+   behaviour (`path.literal.012` grades only the value, code and system of the
+   literal itself). This is a proposal defect, and it needs a scenario and a
+   Frevo change, or a deviation.
+2. **An empty unit literal `1 ''`**: `path.quantity.021#38`-`#40` and
+   `path.quantity.024#33`-`#34`. `Quantity.setCode("")` leaves the code absent
+   (`Quantity.java:620-629`), so on HAPI `1 ''` is a UCUM quantity with no code.
+   The results are `1 ''.toString()` is `1 'null'`, `1 '' / 1 'm'` raises the
+   `Pair.getCode()` NPE, `1 ''.comparable(1 '1')` is `false`, and `*` reports
+   unit `'null'`. Frevo keeps the code as `""`, giving `1 ''`, `1.00 'm-1'`,
+   `true`, and the parse errors of `'.m'` / `'m.'`. `path.quantity.021` states
+   the `setCode` rule and the no-code answers, but not for a literal. This
+   looks like a Frevo bug.
+3. **A canonical factor above 38 significant digits**:
+   `path.quantity.020#27`, `#42`, `#43` and `#46`. `1 '[pi]' * 1 '1'` (and
+   `* 1 'm'`, `2 '[pi]' * 1 '1'`, `.value`) answers HAPI's 65-digit value.
+   Frevo answers `EvalError::Unsupported("decimal arithmetic beyond 38
+   significant digits")`. `path.quantity.020` states that 65-digit value, and
+   Frevo's seam test `canonical()` passes, but the operator does not. This is
+   `DEBT-0011`'s 128-bit limit reached through arithmetic. Its trigger, "the
+   first differential diff ... above 38 significant digits", has now fired.
+4. **NPE text on `<=` with no left unit**: `path.compare.014#01`,
+   `path.quantity.019#17` and `#18`. HAPI (JDK 25) says
+   `Cannot invoke "String.equals(Object)" because "lunit" is null`. Frevo says
+   `Cannot invoke "java.lang.String.equals(Object)" because the value is null`
+   (`crates/frevo-path/src/eval/compare.rs:66-71`). Both fail at evaluation.
+   Neither scenario states the text. Every other NPE text the spec does state,
+   Frevo matches, so a decision is needed on whether this one is matched or
+   recorded.
+
+**Recorded, not graded.**
+
+- `path.math.017`'s integer arm (`Integer.parseInt(null)`) reads
+  `Cannot parse null string` on JDK 25. Frevo says `For input string: ""`.
+- `1e`, `1e-`, `e3` and `-e3` cannot be held by a HAPI `DecimalType`, because
+  `XmlParser` refuses each with a `NumberFormatException`. The refusal texts
+  `path.math.017` states for them therefore describe a state that HAPI never
+  evaluates (`hapi-unreachable`).
+
+**Decision needed.** For 1, the owner or proposer decides whether quantity
+values are navigable, and adds a scenario or a deviation. For 2, the
+implementer fixes the literal path, unless the owner records it. For 3, the
+owner either schedules `DEBT-0011` or records `path.quantity.020`'s `[pi]`
+value as a known gap. For 4, the owner decides whether to match the text or
+record the difference.

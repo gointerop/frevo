@@ -1,0 +1,11 @@
+{
+  "resourceType": "Observation",
+  "id": "nc",
+  "status": "final",
+  "code": {
+    "text": "x"
+  },
+  "subject": {
+    "reference": "#p1"
+  }
+}

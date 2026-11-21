@@ -1,0 +1,13 @@
+{
+  "resourceType": "Observation",
+  "id": "nv",
+  "status": "final",
+  "code": {
+    "text": "x"
+  },
+  "valueQuantity": {
+    "unit": "mg",
+    "system": "http://unitsofmeasure.org",
+    "code": "mg"
+  }
+}

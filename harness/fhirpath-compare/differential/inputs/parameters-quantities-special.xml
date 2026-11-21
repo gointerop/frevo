@@ -1,0 +1,10 @@
+<Parameters xmlns="http://hl7.org/fhir">
+  <parameter>
+    <name value="hx"/>
+    <valueQuantity><value value="1"/><system value="http://unitsofmeasure.org"/><code value="[hp'_X]"/></valueQuantity>
+  </parameter>
+  <parameter>
+    <name value="pd"/>
+    <valueQuantity><value value="1"/><system value="http://unitsofmeasure.org"/><code value="[p'diop]"/></valueQuantity>
+  </parameter>
+</Parameters>

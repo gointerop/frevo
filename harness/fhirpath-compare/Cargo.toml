@@ -22,6 +22,7 @@ edition = "2024"
 publish = false
 license = "Apache-2.0"
 description = "Differential run of the FHIRPath suite through helios-fhirpath and haste-fhirpath (dev-only)."
+default-run = "fhirpath-compare"
 
 [workspace]
 

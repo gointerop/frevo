@@ -1,0 +1,10 @@
+{
+  "resourceType": "ImagingStudy",
+  "id": "ui",
+  "status": "available",
+  "subject": {
+    "reference": "Patient/example"
+  },
+  "numberOfSeries": 2,
+  "numberOfInstances": 3
+}

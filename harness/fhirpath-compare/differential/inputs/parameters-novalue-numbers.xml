@@ -1,0 +1,10 @@
+<Parameters xmlns="http://hl7.org/fhir">
+  <parameter>
+    <name value="d"/>
+    <valueDecimal><extension url="http://example.org/x"><valueString value="y"/></extension></valueDecimal>
+  </parameter>
+  <parameter>
+    <name value="i"/>
+    <valueInteger><extension url="http://example.org/x"><valueString value="y"/></extension></valueInteger>
+  </parameter>
+</Parameters>
