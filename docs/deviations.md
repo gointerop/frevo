@@ -989,14 +989,20 @@ file, so its prose is not redistributable here (see `oracles/PINS.md`).
   (`UCUM/Decimal.java:462-468`): `0.05 mod 0.03`, `1e3 mod 7`; the engine
   catches only `UcumException` (`ENGINE:3101`). A quotient rounded up before
   truncation gives `0.5 div 0.03` = `17` and `0.5 mod 0.03` = `-0.01`.
-  Exponent-form data whose `float` mantissa is 2^24 or more, or whose
-  exponent has a `+`, is refused (`UCUM/Decimal.java:182-208`,
+  Exponent-form data whose mantissa, rounded to a `float` `f`, has
+  `f + 1 == f` in `float` arithmetic (either sign: `16777216e0`,
+  `-33554432e0`, `1234567890.5e0`; but `-16777217e0` and `16777218e0` are
+  read), or whose exponent has a `+`, is refused (`UCUM/Decimal.java:182-208`,
   `UCUM/Utilities.java:45-63`): empty under `/` and `div`, an error under
   `mod`. An operand with no value fails with a `NullPointerException`
   (`UCUM/Decimal.java:76-78`). Frevo differs from HAPI in one place: it reads
   only ASCII digits where `Decimal` takes any Unicode digit
-  (`Character.isDigit`, `UCUM/Decimal.java:130`, `:202`); no valid `integer`
-  or `decimal` can carry one (`path.math.017`).
+  (`Character.isDigit`, `UCUM/Decimal.java:130`, `:202`). For such a digit
+  HAPI raises `java.lang.StringIndexOutOfBoundsException` from `divide`
+  (Arabic-Indic one-two over `1`: `Index 2 out of bounds for length 2`),
+  escaping every arm, where Frevo's refusal leaves `/` and `div` empty and
+  fails `mod`; no valid `integer` or `decimal` can carry one
+  (`path.math.017`).
   Quantity `*` and `/` answer in canonical units with no `unit` element
   (`ENGINE:2314-2316`), so `(1.0 'm' / 1.0 'm').toString()` is `1.0 'null'`.
 - **Specification requirement:** FHIRPath 2.0.0 — `/` is decimal division,

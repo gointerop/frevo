@@ -3149,3 +3149,13 @@ compiled source:
 Also added to `path.math.016`: a quotient rounded up before truncation
 (`0.5 div 0.03` is `17`, `0.5 mod 0.03` is `-0.01`). New uncovered ID for the
 oracle-builder: `path.math.017`; `path.math.016` gains cases.
+
+**Update 2026-11-21 (proposer, fifty-first review).** `path.math.017`'s
+mantissa rule is now the `float` test itself (`Utilities.java:45-54`), for
+either sign: `-16777220e0`, `-33554432e0`, `±1234567890.5e0` are refused,
+`-16777217e0`, `-16777218e0`, `16777218e0`, `16777215.4e0` are read. HAPI's
+outcome for a non-ASCII digit (`StringIndexOutOfBoundsException` from
+`divide`, escaping every arm) is named in the scenario and in `DEV-0030`. The
+`Integer.parseInt(null)` text is attributed to JDK 25 and JDK 8 (`null`),
+still ungraded. The implementer's port should be checked against the
+negative-mantissa cases.

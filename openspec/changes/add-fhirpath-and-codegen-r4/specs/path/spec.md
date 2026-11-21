@@ -1719,16 +1719,20 @@ identical, so every value stated here holds for both; only
   literal has no exponent and only ASCII digits, `FHIRLexer.java:160-170`)
 - **THEN** a value in exponent form is lower-cased and split at `e`
   (`:78-80`, `setValueScientific` `:182-208`), and it is refused when:
-  - its mantissa fails `Utilities.isDecimal`, which parses it as a Java
-    `float` and requires `f != f + 1` (`Utilities.java:45-54`), so a positive
-    mantissa of `16777216` (2^24) or more is refused: `16777216e0` and
-    `16777215.5e0` raise `UcumException` with the messages
-    `'16777216e0' is not a valid decimal (numeric)` and
-    `'16777215.5e0' is not a valid decimal (numeric)` (`Decimal.java:187-188`),
-    while `16777215e0` is read as `16777215`, `-16777216e0` is accepted (its
-    `float` plus one differs) and `1.6777216e7` is accepted
-    (`1.6777216e7 / 3` is `5592405.3`); an empty or `-` mantissa gets the same
-    message
+  - its mantissa fails `Utilities.isDecimal` (`Utilities.java:45-54`): the
+    mantissa is parsed with `Float.parseFloat`, which rounds it half to even
+    to a binary32 value `f`; then `f + 1` is computed in `float`, rounded the
+    same way, and the mantissa is refused when that sum equals `f`. The test
+    is on the rounded `float`, for either sign, not on a magnitude threshold.
+    Refused, with `'<value>' is not a valid decimal (numeric)`
+    (`Decimal.java:187-188`): `16777216e0`, `16777217e0`, `16777215.5e0`,
+    `-16777220e0`, `-33554432e0`, `-1234567890.5e0` and `1234567890.5e0`.
+    Accepted: `16777215e0` (read as `16777215`), `16777215.4e0`,
+    `16777218e0`, `-16777216e0`, `-16777217e0` and `-16777218e0` (between
+    2^24 and 2^25 the `float` spacing is 2, so `f + 1` is a tie that rounds to
+    the even neighbour, which is not `f` for these values), and `1.6777216e7`
+    (`1.6777216e7 / 3` is `5592405.3`). An empty or `-` mantissa gets the
+    same message
   - its exponent is empty, `-`, or not a Java `int` (`Utilities.isInteger`,
     `Utilities.java:56-63`): `'<value>' is not a valid decimal (exponent)`
     (`Decimal.java:189-190`), so `1e` gives
@@ -1747,7 +1751,8 @@ identical, so every value stated here holds for both; only
   and `1e+3 mod 2` with
   `org.fhir.ucum.UcumException: 1e+3' is not a valid decimal`, while
   `16777216e0 / 2`, `16777216e0 div 2`, `1e+3 / 2` and `1e+3 div 2` are
-  empty
+  empty; likewise `-33554432e0 / 2` is empty and `-33554432e0 mod 2` fails
+  with `org.fhir.ucum.UcumException: '-33554432e0' is not a valid decimal (numeric)`
 - **WHEN** an operand is an `integer` or `decimal` element with no value (an
   element carrying only an extension), so its `primitiveValue()` is `null`
 - **THEN** `/`, and the decimal arms of `div` and `mod`, fail on
@@ -1762,15 +1767,20 @@ identical, so every value stated here holds for both; only
 - **AND** the `integer` arms of `div` and `mod` instead call
   `Integer.parseInt(null)` on the divisor first (`FHIRPathEngine.java:3051`,
   `:3091`), a `NumberFormatException` the engine does not catch. Its message
-  is the JDK's, `Cannot parse null string` on JDK 25 and
-  `Cannot parse null string: null` on earlier releases, so it depends on the
-  JVM live HAPI runs, which the source does not fix; the differential records
+  is the JDK's and varies by release (`Cannot parse null string` on JDK 25,
+  `null` on JDK 8), so it depends on the JVM live HAPI runs, which the source does not fix; the differential records
   which; until then the text of this one case is not graded, only that
   evaluation fails
 - **AND** `Decimal` tests a digit with `Character.isDigit`
-  (`Decimal.java:130`, `:202`), which accepts every Unicode decimal digit and
-  then computes with `c - '0'`. Frevo reads only ASCII digits and refuses any
-  other character as `'<value>' is not a valid decimal`. The two agree on
+  (`Decimal.java:130`, `:202`), which accepts every Unicode decimal digit, so
+  the constructor succeeds and the arithmetic then indexes past its digit
+  strings: Arabic-Indic one-two (U+0661 U+0662) under `/`, `div` or `mod`
+  with `1` raises
+  `java.lang.StringIndexOutOfBoundsException: Index 2 out of bounds for length 2`
+  from `divide`, which escapes every arm. Frevo reads only ASCII digits and
+  refuses any other character as `'<value>' is not a valid decimal`, so `/`
+  and `div` are empty and `mod` fails with it wrapped as `path.math.007`
+  states. The two agree on
   every value a FHIR `integer` or `decimal` can hold, because both types'
   lexical forms are ASCII (`-?(0|[1-9][0-9]*)(\.[0-9]+)?([eE][+-]?[0-9]+)?`)
   and FHIRPath number literals are ASCII; a non-ASCII digit can arrive only
