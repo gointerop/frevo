@@ -266,7 +266,8 @@ pub fn write_merged(
     std::fs::write(path, s).unwrap_or_else(|e| panic!("write {}: {e}", path.display()));
 }
 
-/// One row per workload from [`RUNS`] runs of the same rows: each workload's
+/// One row per workload from [`RUNS`] runs of the same rows (each its own
+/// cold process, [`cold_runs`]): each workload's
 /// row is the run whose `median_us` is the middle of the five, with every
 /// run's `median_us` recorded under [`RUN_MEDIANS`], in run order. A row that
 /// already records its own run medians (one that times several cold runs
@@ -293,4 +294,80 @@ pub fn median_of_runs(runs: &[Vec<Row>]) -> Vec<Row> {
             runs[middle][i].clone().nums(RUN_MEDIANS, &medians, 3)
         })
         .collect()
+}
+
+/// The argument a bench passes to itself to run its workloads once in a
+/// fresh process (`model.perf.006`): each of the [`RUNS`] per-run medians
+/// comes from its own cold process, so nothing one run leaves behind in the
+/// process (allocator state, caches, counters) can slow the next.
+pub const COLD_RUN_FLAG: &str = "--cold-run";
+
+const CHILD_ROW: &str = "bench-row";
+const CHILD_NOTE: &str = "bench-note";
+
+/// What a cold child prints for its parent: one line per row, the row's
+/// members as `key=<JSON literal>` fields, tab-separated (a JSON literal this
+/// module writes never holds a raw tab), and one line per note.
+pub fn print_cold_run(rows: &[Row], notes: &[String]) {
+    for row in rows {
+        let mut line = format!("{CHILD_ROW}\t{}", row.name);
+        for (key, value) in &row.members {
+            let _ = write!(line, "\t{key}={value}");
+        }
+        println!("{line}");
+    }
+    for note in notes {
+        println!("{CHILD_NOTE}\t{note}");
+    }
+}
+
+/// Run this bench binary [`RUNS`] times, each a fresh process given
+/// [`COLD_RUN_FLAG`] and `args`, and read back each run's rows and notes.
+pub fn cold_runs(args: &[String]) -> (Vec<Vec<Row>>, Vec<String>) {
+    let exe = std::env::current_exe().expect("this bench's own path");
+    let mut runs = Vec::with_capacity(RUNS);
+    let mut notes = Vec::new();
+    for _ in 0..RUNS {
+        let out = std::process::Command::new(&exe)
+            .arg(COLD_RUN_FLAG)
+            .args(args)
+            .output()
+            .expect("start a cold bench run");
+        assert!(
+            out.status.success(),
+            "a cold bench run failed:\n{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        let mut rows = Vec::new();
+        for line in stdout.lines() {
+            let mut fields = line.split('\t');
+            match fields.next() {
+                Some(CHILD_ROW) => {
+                    let name = fields.next().expect("a cold row names its workload");
+                    let mut row = Row::new(name);
+                    for field in fields {
+                        let (key, value) = field
+                            .split_once('=')
+                            .expect("a cold row field is key=value");
+                        // The keys are this bench's own static member names;
+                        // a bench process reads back a handful, once.
+                        let key: &'static str = Box::leak(key.to_string().into_boxed_str());
+                        row.members.push((key, value.to_string()));
+                    }
+                    rows.push(row);
+                }
+                Some(CHILD_NOTE) => notes.push(fields.collect::<Vec<_>>().join("\t")),
+                _ => {}
+            }
+        }
+        assert!(
+            !rows.is_empty(),
+            "a cold bench run printed no rows:\n{stdout}"
+        );
+        runs.push(rows);
+    }
+    notes.sort();
+    notes.dedup();
+    (runs, notes)
 }

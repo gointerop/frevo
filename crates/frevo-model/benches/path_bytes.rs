@@ -438,6 +438,7 @@ fn main() {
     let mut out = repo.join("bench/micro/results.json");
     let mut samples = SAMPLES;
     let mut write = true;
+    let mut cold = false;
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -450,6 +451,7 @@ fn main() {
                     .expect("--samples takes a count")
             }
             "--no-write" => write = false,
+            record::COLD_RUN_FLAG => cold = true,
             other => panic!("unknown argument {other:?}"),
         }
     }
@@ -467,16 +469,15 @@ fn main() {
         .expect("patient-example canonicalises");
     let bytes: Arc<[u8]> = Arc::from(canonical);
 
-    // `record::RUNS` runs; each row is the median run, with every run's
-    // median recorded (`model.perf.006`).
-    let mut all = Vec::new();
-    let mut notes = Vec::new();
-    for _ in 0..record::RUNS {
-        let (rows, run_notes) = run_workloads(samples, &bytes);
-        all.push(rows);
-        notes.extend(run_notes);
+    if cold {
+        // One run in this fresh process, printed for the parent.
+        let (rows, notes) = run_workloads(samples, &bytes);
+        record::print_cold_run(&rows, &notes);
+        return;
     }
-    notes.dedup();
+    // `record::RUNS` runs, each its own cold process; each row is the median
+    // run, with every run's median recorded (`model.perf.006`).
+    let (all, notes) = record::cold_runs(&["--samples".to_string(), samples.to_string()]);
     let rows = record::median_of_runs(&all);
     println!(
         "{:<22} {:>8} {:>10} {:>10} {:>10}  budget",

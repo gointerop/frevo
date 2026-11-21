@@ -250,6 +250,7 @@ fn main() {
     let mut out = repo.join("bench/micro/results.json");
     let mut samples = SAMPLES;
     let mut write = true;
+    let mut cold = false;
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -266,6 +267,7 @@ fn main() {
                     .expect("--samples takes a count")
             }
             "--no-write" => write = false,
+            record::COLD_RUN_FLAG => cold = true,
             other => panic!("unknown argument {other:?}"),
         }
     }
@@ -275,12 +277,16 @@ fn main() {
         );
     }
 
-    // `record::RUNS` runs of `path-compile`, each row the median run with every
-    // run's median recorded; `path-suite-wallclock` times its own
-    // `SUITE_RUNS` cold runs and records each (`model.perf.006`).
-    let compile_runs: Vec<Vec<Row>> = (0..record::RUNS)
-        .map(|_| vec![path_compile(samples)])
-        .collect();
+    if cold {
+        // One `path-compile` run in this fresh process, printed for the parent.
+        record::print_cold_run(&[path_compile(samples)], &[]);
+        return;
+    }
+    // `record::RUNS` runs of `path-compile`, each its own cold process, each
+    // row the median run with every run's median recorded;
+    // `path-suite-wallclock` times its own `SUITE_RUNS` cold runs and records
+    // each (`model.perf.006`).
+    let (compile_runs, _) = record::cold_runs(&["--samples".to_string(), samples.to_string()]);
     let mut rows = record::median_of_runs(&compile_runs);
     rows.push(path_suite_wallclock());
     for r in &rows {

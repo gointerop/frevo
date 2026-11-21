@@ -489,6 +489,7 @@ fn main() {
     let mut write = true;
     let mut diagnose_too = false;
     let mut diagnose_only = false;
+    let mut cold = false;
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -502,6 +503,7 @@ fn main() {
                     .expect("--samples takes a count")
             }
             "--no-write" => write = false,
+            record::COLD_RUN_FLAG => cold = true,
             "--diagnose" => diagnose_too = true,
             "--diagnose-only" => diagnose_only = true,
             "--write-fixtures" => {
@@ -521,31 +523,23 @@ fn main() {
         return;
     }
 
-    // `record::RUNS` runs; each row is the median run, with every run's
-    // median recorded (`model.perf.006`).
-    let runs: Vec<Vec<Row>> = (0..record::RUNS)
-        .map(|_| run_workloads(samples, &small, &large))
-        .collect();
-    let records = record::median_of_runs(&runs.iter().map(|r| to_records(r)).collect::<Vec<_>>());
-    let rows = runs.into_iter().next().unwrap_or_default();
-    println!(
-        "{:<26} {:>8} {:>10} {:>10} {:>10} {:>8}  budget",
-        "workload", "bytes", "median us", "p10 us", "p90 us", "tokens"
-    );
-    for row in &rows {
-        println!(
-            "{:<26} {:>8} {:>10.3} {:>10.3} {:>10.3} {:>8}  {} ({})",
-            row.name,
-            row.fixture_bytes,
-            row.stats.median_us,
-            row.stats.p10_us,
-            row.stats.p90_us,
-            row.tokens_scanned
-                .map(|t| t.to_string())
-                .unwrap_or_else(|| "-".to_string()),
-            row.budget,
-            row.scenario
-        );
+    if cold {
+        // One run in this fresh process, printed for the parent.
+        record::print_cold_run(&to_records(&run_workloads(samples, &small, &large)), &[]);
+        return;
+    }
+    // `record::RUNS` runs, each its own cold process; each row is the median
+    // run, with every run's median recorded (`model.perf.006`).
+    let (runs, _) = record::cold_runs(&["--samples".to_string(), samples.to_string()]);
+    let records = record::median_of_runs(&runs);
+    for r in &records {
+        let members: Vec<String> = r
+            .members
+            .iter()
+            .filter(|(k, _)| !matches!(*k, "method" | "budget"))
+            .map(|(k, v)| format!("{k}={v}"))
+            .collect();
+        println!("{:<26} {}", r.name, members.join(" "));
     }
     if write {
         record::write_merged(
