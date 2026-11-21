@@ -172,6 +172,7 @@ The engine SHALL recognise the literal forms `FHIRPathEngine` recognises, and SH
 - **WHEN** `1 'cm'` is evaluated
 - **THEN** the result is a single `Quantity` with value `1`, code `cm` and
   system `http://unitsofmeasure.org`
+- **AND** those are its elements, which navigate (`path.quantity.025`)
 
 #### Scenario: [path.literal.013] calendar-duration keywords are quantity literals
 
@@ -190,6 +191,57 @@ The engine SHALL recognise the literal forms `FHIRPathEngine` recognises, and SH
 - **WHEN** an integer literal larger than `2147483647` is evaluated
 - **THEN** the engine behaves as `FHIRPathEngine` at the pinned SHA does for
   that literal, and the harness records which behaviour that is
+
+#### Scenario: [path.literal.016] a quantity literal's unit is decoded by the lexer's `processConstant`, which appends an escaped character a second time
+
+- **WHEN** the quoted unit of a quantity literal contains an escape
+- **THEN** the unit is read by `FHIRLexer.readConstant("units")`
+  (`FHIRPathEngine.java:1129-1130`, `FHIRLexer.java:411-416`), which decodes it
+  with `FHIRLexer.processConstant` (`FHIRLexer.java:425-474`), not with the
+  `processConstantString` that decodes a string literal
+  (`FHIRPathEngine.java:1324`, `:1789`; `path.lexer.011`)
+- **AND** every escape arm of `processConstant` except `\u` appends the decoded
+  character without advancing past the escaped character, which the next
+  iteration then appends again as itself (only the plain-character arm
+  advances, `FHIRLexer.java:469-472`). So `1 '[hp\'_X]'` has the code
+  `[hp''_X]`, which is not a unit of the pinned file:
+  `(1 '[hp\'_X]').code` is `code:[hp''_X]`, and `1 '[hp\'_X]' * 1 'm'` fails
+  with
+  `Error processing unit '[hp''_X].m': The unit '[hp''_X]' is unknown' at position 0 (@char 16)`
+  (likewise `[hp\'_C]`, `[hp\'_M]` and `[hp\'_Q]`). `1 'a\tb'` has the code
+  `a`, a tab, `t`, `b`
+- **AND** `\u` advances past its four hexadecimal digits (`:460-465`), so a
+  unicode escape is decoded once
+- **AND** `\\` appends `\` and leaves the second `\` to be read as a new
+  escape, so `1 'a\\b'` fails to parse with
+  `Unknown FHIRPath character escape \b` (`:466-467`), the syntax error of
+  `path.lexer.012`
+- **AND** the code read from a resource is not decoded:
+  `Parameters.parameter.where(name = 'hx').value.code` over a quantity whose
+  `code` is `[hp'_X]` is `code:[hp'_X]` (`path.quantity.023`)
+- **AND** the decoder is reproduced as HAPI's; `docs/deviations.md`,
+  "Considered and not recorded as deviations" ("The two escape decoders
+  disagree with each other, and with the engine's"), already records it as
+  needing no entry
+- **AND** no live case grades it, so it is differential-only, graded
+  in-process against the values stated (`path.quantity.023#04`-`#07`, `#25`,
+  `#26`; the `\t`, `\u` and `\\` cases are owed probes)
+
+#### Scenario: [path.literal.017] a decimal literal is carried at any number of significant digits
+
+- **WHEN** a decimal literal with more than 38 significant digits is parsed,
+  such as `0.12345678901234567890123456789012345678901234567890`
+- **THEN** it parses: `Utilities.isDecimal` accepts it
+  (`FHIRPathEngine.java:1328-1329`) and `new DecimalType(String)` holds it as a
+  `BigDecimal` with its text, as `DEV-0011` records
+- **AND** `0.12345678901234567890123456789012345678901234567890.toString()` is
+  `string:0.12345678901234567890123456789012345678901234567890` (the primitive
+  value, `convertToString`, `:887-891`), and the literal `=` itself is `true`
+- **AND** no literal, and no arithmetic or comparison over its value, fails
+  with a limit on significant digits; Frevo's earlier refusal of such a
+  literal is `DEBT-0011`, which this scenario closes
+- **AND** no live case grades it, so it is differential-only, graded
+  in-process against the values stated (owed probes)
 
 ### Requirement: Parsing and operator precedence
 
@@ -1273,7 +1325,17 @@ The engine SHALL implement the four ordered comparison operators as `FHIRPathEng
 - **THEN** evaluation fails: `opLessOrEqual` evaluates `lunit.equals(runit)`
   with a null `lunit` (`FHIRPathEngine.java:2537`), a `NullPointerException` in
   HAPI and an execution error in Frevo (`path.errors.003`)
-- **AND** no live case grades it, so it is differential-only
+- **AND** the message is exactly
+  `Cannot invoke "String.equals(Object)" because "lunit" is null`, with no
+  offset (`path.errors.002`): the JVM's helpful `NullPointerException` text,
+  which names the local variable because the published jar keeps its
+  local-variable table, as observed on HAPI 8.12.0 under JDK 25 (Eclipse
+  Adoptium 25.0.1, the differential's JVM) under both workers. The same text
+  is the answer wherever `<=` meets a quantity with no `unit` on the left and
+  one on the right (`path.compare.002`, `path.quantity.019`)
+- **AND** no live case grades it, so it is differential-only, graded
+  in-process against the message stated (`path.compare.014#01`,
+  `path.quantity.019#17`, `#18`)
 
 #### Scenario: [path.compare.010] a Period invariant written with raw comparison and one written with boundaries differ
 
@@ -1765,12 +1827,19 @@ identical, so every value stated here holds for both; only
   as for `path.quantity.018`, confirmed by compiling the pinned source with
   `-g`. Frevo returns an execution error with that message and no offset
 - **AND** the `integer` arms of `div` and `mod` instead call
-  `Integer.parseInt(null)` on the divisor first (`FHIRPathEngine.java:3051`,
-  `:3091`), a `NumberFormatException` the engine does not catch. Its message
-  is the JDK's and varies by release (`Cannot parse null string` on JDK 25,
-  `null` on JDK 8), so it depends on the JVM live HAPI runs, which the source does not fix; the differential records
-  which; until then the text of this one case is not graded, only that
-  evaluation fails
+  `Integer.parseInt` on the divisor first (`FHIRPathEngine.java:3051`,
+  `:3091`) and then, when it is not `0`, on the dividend (`:3052-3053`,
+  `:3092-3093`), so a null divisor, or a null dividend over a non-zero
+  divisor, reaches `Integer.parseInt(null)` (a null dividend over a zero
+  divisor is empty). That is a `NumberFormatException` the engine does not
+  catch. Its message is the JDK's and varies by release (`null` on
+  JDK 8). The differential ran HAPI 8.12.0 on JDK 25 (Eclipse Adoptium
+  25.0.1) and recorded `Cannot parse null string` under both workers for
+  `Parameters.parameter.where(name = 'i').value div 2` and `... mod 2` over
+  `parameters-novalue-numbers.xml` (`path.math.017#61`, `#62`), so that is the
+  text: Frevo returns an execution error with the message exactly
+  `Cannot parse null string` and no offset (`path.errors.002`), and the text
+  is graded
 - **AND** `Decimal` tests a digit with `Character.isDigit`
   (`Decimal.java:130`, `:202`), which accepts every Unicode decimal digit, so
   the constructor succeeds and the arithmetic then indexes past its digit
@@ -2860,8 +2929,10 @@ The engine SHALL compare, add, subtract, multiply and divide quantities by conve
   for `1 'kg' <= 1 year`. So
   `Parameters.parameter[0].value <= Parameters.parameter[2].value` over
   `parameters-example-quantities.xml` (`1` with no unit, `1 'tablets'`) raises
-  the `NullPointerException` there too, not `HAPI-0274: `, and Frevo returns an
-  execution error (`path.errors.003`). `>` and `>=` compare the unit lists with
+  the `NullPointerException` there too, not `HAPI-0274: `, with the message
+  `Cannot invoke "String.equals(Object)" because "lunit" is null` that
+  `path.compare.014` states, and Frevo returns an execution error with that
+  message and no offset (`path.errors.003`). `>` and `>=` compare the unit lists with
   `compareDeep` and do not fail this way (`:2485-2487`, `:2583-2585`)
 - **AND** the exception is not a `FHIRException`, so `FhirPathR4` does not wrap
   it as `HAPI-0255: ` (it catches only `FHIRException`, `FhirPathR4.java:66-70`),
@@ -2978,6 +3049,21 @@ worker each of these operations raises `HAPI-0274: ` (`path.quantity.019`,
   leaving the decimal point where it was. So `60 '/min'` canonicalises to
   `1 s-1`, while `60.0 '/min'`, whose value is not whole, is
   `1.0000000000000000000000000000002 s-1`
+- **AND** a canonical value keeps every digit `Decimal.multiply` produces, with
+  no limit on significant digits, and so does the result of `*` built from it
+  (`path.quantity.021`): `(1 '[pi]' * 1 '1').toString()` is
+  `3.1415926535897932384626433832795028841971693993751058209749445923 'null'`,
+  `(1 '[pi]' * 1 '1').value` is
+  `decimal:3.1415926535897932384626433832795028841971693993751058209749445923`,
+  `1 '[pi]' * 1 'm'` is one `Quantity` with value
+  `3.1415926535897932384626433832795028841971693993751058209749445923`, the UCUM
+  system and code `m`, and `2 '[pi]' * 1 '1'` is one `Quantity` with value
+  `6.2831853071795864769252867665590057683943387987502116419498891846`, the
+  UCUM system and no code. `/` divides to `path.math.015`'s digits:
+  `1 '[pi]' / 1 '1'` is `3.14159265358979323846264` with no code.
+  `1 '[pi]' = 1 '1'` is `false` and `1 '[pi]' < 4 '1'` is `true`. None of these
+  fails with a limit on significant digits (`DEBT-0011`, which `path.literal.017`
+  and this bullet close)
 - **AND** a code is observable through the result of `*` and `/`
   (`path.quantity.021`), and its value through equality and ordering
   (`path.quantity.022`)
@@ -2986,7 +3072,8 @@ worker each of these operations raises `HAPI-0274: ` (`path.quantity.019`,
   `DEV-0030`
 - **AND** no live case grades the canonical strings directly; the suite's
   `testQuantity` and `Comparable` cases grade them indirectly. The rest is
-  differential-only, graded in-process against the values stated
+  differential-only, graded in-process against the values stated (the `[pi]`
+  values by `path.quantity.020#27`, `#42`-`#47`)
 
 #### Scenario: [path.quantity.021] quantity `*` and `/` answer in canonical units
 
@@ -3005,7 +3092,8 @@ worker each of these operations raises `HAPI-0274: ` (`path.quantity.019`,
   plain string, a space and the code in single quotes (`convertToString`,
   `FHIRPathEngine.java:887-906`, the quantity text at `:898-900`, reached
   through `funcToString`, `:4914-4919`), so a
-  dimensionless result prints `'null'`
+  dimensionless result prints `'null'`. Its elements navigate
+  (`path.quantity.025`)
 - **AND** the results are: `2.0 'cm' * 2.0 'm'` is `0.040 'm2'`,
   `2 'cm' * 2 'm'` is `0.04 'm2'`, `2 'm' * 3 'm'` is `6 'm2'`,
   `2 'm/s' * 3 's'` is `6 'm'` (the joined code `m/s.s` applies `/` to `s`
@@ -3218,6 +3306,81 @@ worker each of these operations raises `HAPI-0274: ` (`path.quantity.019`,
   (`Comparable1`; `isComparable`, `UcumEssenceService.java:333-343`)
 - **AND** `Comparable1` to `3` grade the comparable part in the suite; the
   messages are differential-only
+
+#### Scenario: [path.quantity.025] a quantity the engine builds is a FHIR `Quantity` whose elements navigate
+
+- **WHEN** a member is navigated on a quantity literal, or on the result of
+  quantity `*` or `/`
+- **THEN** the quantity is the FHIR `Quantity` the engine built
+  (`FHIRPathEngine.java:1132` for a literal, `pairToQty` `:2314-2316` for a
+  `*` or `/` result), and its elements `value`, `unit`, `system` and `code`
+  navigate as on a `Quantity` read from a resource, an element the engine
+  did not set being empty
+- **AND** for a literal with a quoted UCUM code (`:1130-1132`), under the
+  suite's worker:
+  - `(1 'cm').value` is `decimal:1`
+  - `(1 'cm').code` is `code:cm`
+  - `(1 'cm').system` is `uri:http://unitsofmeasure.org`
+  - `(1 'cm').unit` is empty, because only a calendar keyword sets `unit`
+    (`:1109-1110`), as `path.compare.002` and `path.quantity.017` state
+- **AND** for a calendar-duration literal, `unit` is the keyword as written
+  and `code` and `system` are set only for the keywords with a UCUM code
+  (`:1109-1132`): `(1 year).unit` is `string:year`, while `(1 year).code` and
+  `(1 year).system` are empty; `(1 week).unit` is `string:week`,
+  `(1 week).code` is `code:wk` and `(1 week).system` is
+  `uri:http://unitsofmeasure.org`
+- **AND** for a `*` or `/` result, `value`, `system` and the canonical `code`
+  of `path.quantity.021` are set and `unit` never is: `(2 'cm' * 1 'm').code`
+  is `code:m2`, `(2 'cm' * 1 'm').unit` is empty, and
+  `(1 '%' * 1 '1').code` is empty (a dimensionless result has no code,
+  `path.quantity.021`)
+- **AND** the code of a literal is the unit text as `path.literal.016` decodes
+  it: `(1 '[hp\'_X]').code` is `code:[hp''_X]`
+- **AND** navigation consults no worker, so HAPI's server-facing worker
+  answers the same for a literal; a `*` or `/` result raises `HAPI-0274: ` there
+  before any member is navigated (`path.quantity.019`, `DEV-0029`)
+- **AND** no live case grades it, so it is differential-only, graded
+  in-process against the values stated (`path.quantity.021#41`-`#46`,
+  `path.quantity.023#25`; the `1 week`, `(1 year).code`, `(1 year).system`,
+  `(2 'cm' * 1 'm').unit` and `(1 '%' * 1 '1').code` cases are owed probes)
+
+#### Scenario: [path.quantity.026] an empty quoted unit makes a UCUM quantity with no code
+
+- **WHEN** a quantity literal with an empty quoted unit, `1 ''`, is evaluated
+- **THEN** it is one `Quantity` with value `1` and the UCUM system and **no**
+  `code`: the literal passes the empty string to `setCode`
+  (`FHIRPathEngine.java:1130-1132`; the system is set because the unit text
+  is not `null`), and `Quantity.setCode` leaves the code absent for an empty
+  string (`Quantity.java:620-629`, `Utilities.noString`)
+- **AND** it therefore behaves in every operation as the UCUM quantity with no
+  `code` that `path.quantity.021` describes, under the suite's worker:
+  - `1 ''.toString()` is `string:1 'null'` (`convertToString`, `:898-900`)
+  - `1 '' = 1 '1'` is `true`, the missing code being read as `1` (`:2293`)
+  - `1 ''.comparable(1 '1')` is `false`: a quantity with no code is not
+    comparable (`funcComparable`, `:4622-4627`)
+  - `1 '' * 1 'm'` fails with
+    `Error processing unit 'null.m': The unit 'null' is unknown' at position 0 (@char 8)`
+    and `1 'm' * 1 ''` with
+    `Error processing unit 'm.null': The unit 'null' is unknown' at position 2 (@char 9)`
+    (the joined string spells the missing code `null`,
+    `UcumEssenceService.java:316`)
+  - `1 '' / 1 'm'` fails with
+    `Cannot invoke "String.contains(java.lang.CharSequence)" because the return value of "org.fhir.ucum.Pair.getCode()" is null`
+    and no offset (`path.errors.002`), the `NullPointerException` the `/` arm
+    does not catch (`UcumEssenceService.java:322-323`)
+  - `(1 '').code` is empty and `(1 '').system` is
+    `uri:http://unitsofmeasure.org` (`path.quantity.025`)
+- **AND** under HAPI's server-facing worker every one of these that consults
+  the UCUM service raises `HAPI-0274: ` instead (`path.quantity.019`,
+  `DEV-0029`)
+- **AND** these are consequences of the no-code rule that `path.quantity.021`
+  states and `DEV-0030` records (the `'null'` string and the failures of a
+  UCUM quantity with no `code`); this scenario states them for a literal and
+  adds no deviation
+- **AND** no live case grades it, so it is differential-only, graded
+  in-process against the values stated (`path.quantity.021#37`-`#40`,
+  `path.quantity.024#33`, `#34`; the `.code` and `.system` cases are owed
+  probes)
 
 ### Requirement: Boundary functions
 

@@ -173,6 +173,38 @@ checkpoint because it changes what a gate measures.
   **Ticked 2026-11-20 (verified at `a5301eb`):** `path_check_warnings` is 5
   of 5, one test per ID `path.check.015`-`019`, each tagged `covers:`.
 
+- [ ] **4b. Write the failing tests for the scenarios the in-process HAPI
+  differential added or changed.** Owner ruling, 2026-11-21: on the 18
+  undocumented diffs of `harness/fhirpath-compare/differential-results.json`
+  (`tasks/blockers.md`, 2026-11-21, "the in-process HAPI differential"),
+  HAPI's behaviour wins and no deviation is added. The spec delta now has four
+  new scenarios, `path.literal.016`, `path.literal.017`, `path.quantity.025`
+  and `path.quantity.026`, and five amended ones: `path.compare.014` (the
+  exact `lunit` text), `path.quantity.019` (the same text under the
+  server-facing worker), `path.quantity.020` (the `[pi]` values through `*`),
+  `path.quantity.021` and `path.literal.012` (a cross-reference to
+  `path.quantity.025` only), and `path.math.017` (the integer arm's text is
+  now graded). `oracle-builder` work, before tasks 44a to 44c:
+  - one test per new ID, tagged `// covers:`, asserting the values each
+    scenario states, and the amended assertions in the existing
+    `path.compare.014`, `path.quantity.019`, `.020` and `path.math.017` tests;
+  - in `harness/fhirpath-compare/differential/probes.py`, drop the
+    `"grade": "error"` relaxation of `path.math.017#61` and `#62`, whose text
+    is now graded, and add the probes the new scenarios name as owed: the
+    `\t`, `\u` and `\\` units of `path.literal.016`, the wide literal of
+    `path.literal.017`, `(1 week).unit`/`.code`/`.system`, `(1 year).code`,
+    `(1 year).system`, `(2 'cm' * 1 'm').unit` and `(1 '%' * 1 '1').code`
+    of `path.quantity.025`, and `(1 '').code` and `(1 '').system` of
+    `path.quantity.026`; then re-run the HAPI side and the differential. A
+    stated value the run contradicts goes back to the proposer, not into
+    the test.
+  Until this lands, `harness/scripts/scenario-coverage.sh --change
+  add-fhirpath-and-codegen-r4` reports the four new IDs as uncovered.
+  Satisfies the tests for `path.literal.016`, `path.literal.017`,
+  `path.quantity.025` and `path.quantity.026`, and the amended
+  `path.compare.014`, `path.quantity.019`, `path.quantity.020` and
+  `path.math.017`.
+
 - [x] **5. Write the failing tests for every `codegen.*` and `model.*`
   scenario.** Same discipline: one test per scenario ID with a `covers:`
   comment, 49 plus 83 of them, including the `bench/micro/` workloads as
@@ -1128,6 +1160,56 @@ checkpoint because it changes what a gate measures.
   `.023` and `.024` included. `path_compare_equality` is 27 of 27,
   `path_math` 28 of 28 and `path_convert` 14 of 14, and lib is 136 of 136.
   The UCUM data source is ADR 0006 (proposed).
+
+- [ ] **44a. Make an engine-built quantity a navigable `Quantity`, and read an
+  empty quoted unit as no code.** From the in-process HAPI differential
+  (owner ruling 2026-11-21, HAPI wins). A quantity literal, and the result of
+  quantity `*` and `/`, expose `value`, `unit`, `system` and `code` to member
+  navigation exactly as a `Quantity` read from a resource does, typed
+  `decimal`, `string`, `uri` and `code`, an element the engine did not set
+  being empty (`path.quantity.025`; `(1 'cm').code` is `code:cm` where Frevo
+  answers empty today). `1 ''` holds no code, as `Quantity.setCode("")`
+  leaves it, so it takes every no-code answer of `path.quantity.021`:
+  `1 ''.toString()` is `1 'null'`, `1 '' / 1 'm'` fails with the
+  `Pair.getCode()` `NullPointerException` text, `1 ''.comparable(1 '1')` is
+  `false`, and `*` spells the code `null` (`path.quantity.026`; Frevo keeps
+  `""` today and answers `1 ''`, `1.00 'm-1'`, `true` and the parse errors of
+  `'.m'` and `'m.'`). The unit escapes of `path.literal.016` already match
+  HAPI and must stay so. Depends on task 4b.
+  Satisfies `path.quantity.025`, `path.quantity.026` and `path.literal.016`.
+
+- [ ] **44b. Close `DEBT-0011`: carry decimals at any number of significant
+  digits.** From the in-process HAPI differential: `1 '[pi]' * 1 '1'` and its
+  siblings (`path.quantity.020#27`, `#42`, `#43`, `#46`) fail on Frevo with
+  `Unsupported("decimal arithmetic beyond 38 significant digits")` where HAPI
+  answers the 65-digit value, which fires `DEBT-0011`'s trigger. Replace the
+  128-bit mantissa of the `Decimal` port (task 37) and of the literal path
+  with the arbitrary-precision representation `design.md` section 6 names, so
+  that no literal, arithmetic operator, comparison or canonical value fails on
+  a limit of significant digits, and every digit `Decimal.multiply` and
+  `Decimal.divide` produce is kept. Fold in `DEBT-0014` (the negative scale)
+  if the new type makes it free; otherwise leave it open. When this is
+  ticked, set `DEBT-0011`'s `Status` to `paid` with the commit, and correct
+  `DEV-0011`'s residual sentence, which says Frevo refuses such a literal.
+  This touches the evaluation path, so report `path_perf` before and after:
+  the `path.perf.*` budgets still hold and neither `path-eval-compiled` nor
+  `path-suite-wallclock` regresses more than 10% against task 55's `c11ac47`
+  figures. Depends on task 4b.
+  Satisfies `path.literal.017` and the `[pi]` bullet of `path.quantity.020`.
+
+- [ ] **44c. Match the `NullPointerException` and `NumberFormatException`
+  texts the differential recorded.** `<=` with no `unit` on the left and one
+  on the right fails with exactly
+  `Cannot invoke "String.equals(Object)" because "lunit" is null`, not the
+  `Cannot invoke "java.lang.String.equals(Object)" because the value is null`
+  of `crates/frevo-path/src/eval/compare.rs` (`path.compare.014`,
+  `path.quantity.019`; probes `path.compare.014#01`, `path.quantity.019#17`,
+  `#18`). The `integer` arms of `div` and `mod` over a no-value operand fail
+  with exactly `Cannot parse null string`, not `For input string: ""`
+  (`path.math.017`; probes `#61`, `#62`). Both with no offset. Depends on
+  task 4b.
+  Satisfies the amended `path.compare.014`, `path.quantity.019` and
+  `path.math.017`.
 
 - [x] **45. Implement the boundary functions.** `lowBoundary`, `highBoundary` and
   `precision` as the pinned engine computes them: decimal boundaries edited as

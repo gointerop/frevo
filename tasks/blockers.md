@@ -3701,3 +3701,44 @@ implementer fixes the literal path, unless the owner records it. For 3, the
 owner either schedules `DEBT-0011` or records `path.quantity.020`'s `[pi]`
 value as a known gap. For 4, the owner decides whether to match the text or
 record the difference.
+
+## 2026-11-21 — `add-fhirpath-and-codegen-r4` — resolved by the owner: the differential's 18 diffs are specified as HAPI's; owed `design.md` text
+
+**Ruling (owner, 2026-11-21).** On the four decisions of the entry above, HAPI's
+behaviour wins and no deviation is added. The proposer amended the spec delta
+and `tasks.md` accordingly:
+
+1. **Quantity navigation:** new `path.quantity.025`. A literal, and a `*` or
+   `/` result, is a FHIR `Quantity` whose `value`, `unit`, `system` and `code`
+   navigate (`path.quantity.021#41`-`#46`, `path.quantity.023#25`). Its
+   `[hp''_X]` code comes from `FHIRLexer.processConstant`'s doubled escape,
+   now stated as `path.literal.016`, which Frevo already matches. Task 44a.
+2. **`1 ''`:** new `path.quantity.026`, a UCUM quantity with no code
+   (`path.quantity.021#37`-`#40`, `path.quantity.024#33`, `#34`). Task 44a.
+3. **`[pi]` through `*`:** `path.quantity.020` amended with the 65-digit
+   values, and new `path.literal.017` for a literal above 38 significant
+   digits. `DEBT-0011` is now `blocking` and task 44b pays it.
+4. **`<=` with no left unit:** `path.compare.014` and `path.quantity.019` now
+   state `Cannot invoke "String.equals(Object)" because "lunit" is null`.
+   Task 44c.
+5. **`path.math.017`'s integer arm:** the JDK 25 text `Cannot parse null string`
+   the differential recorded is now graded. Task 44c.
+
+Task 4b (oracle-builder) writes the tests. Until it lands,
+`scenario-coverage.sh --change add-fhirpath-and-codegen-r4` reports
+`path.literal.016`, `path.literal.017`, `path.quantity.025` and
+`path.quantity.026` as uncovered.
+
+**Owed to `design.md` (protected, so not written by the proposer).**
+1. Section 4.1, after the paragraph that follows the `Value` enum, add:
+
+   > A `Quantity` value is navigable as the FHIR `Quantity` HAPI builds for a
+   > literal or for a `*` or `/` result: `value` (`decimal`), `unit`
+   > (`string`), `system` (`uri`) and `code` (`code`), each empty when the
+   > engine did not set it (`path.quantity.025`). An empty quoted unit sets no
+   > code (`path.quantity.026`).
+
+2. Section 6, the arbitrary-precision decimal row (`design.md:562`): after
+   "which `f64` cannot.", add "It is unbounded in significant digits: a literal,
+   operator or UCUM canonical value never fails on its width
+   (`path.literal.017`, `path.quantity.020`; `DEBT-0011`, paid by task 44b)."

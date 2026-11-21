@@ -311,7 +311,14 @@ them is the whole reason that decision is safe to make.
   arithmetic operators and the comparison operators all have to take it, and
   `path.literal.004`'s precision-preservation requirement means the presented
   form has to survive alongside the value.
-- **Status:** open
+- **Status:** blocking — the trigger fired on 2026-11-21: the in-process HAPI
+  differential found `1 '[pi]' * 1 '1'` (`path.quantity.020#27`, `#42`, `#43`,
+  `#46`) answering HAPI's 65-digit value while Frevo refuses it as decimal
+  arithmetic beyond 38 significant digits. The owner ruled that HAPI's
+  behaviour wins, so this is now work in the way of
+  `add-fhirpath-and-codegen-r4`: its task 44b pays it, against
+  `path.literal.017` and `path.quantity.020`, and sets this entry to `paid`
+  with the commit.
 - **Reviewed:** not yet. Raised 2026-11-12 with `DEV-0011`, which is itself
   awaiting the owner at the next phase boundary. Recorded now rather than at
   sign-off because the obligation exists the moment the fallback ships.
