@@ -1,3 +1,61 @@
+CHANGES_REQUESTED
+
+Fifty-first review (commit `23fbf60`, 2026-11-21, diff against `f2bb275`).
+`UCUM` is `reference/Ucum-java/src/main/java/org/fhir/ucum/` at `db9d22ad`,
+and `ENGINE` is the R4 `FHIRPathEngine.java` at `73c432b5`.
+
+I re-ran every stated value against the `javac -g` build of the 1.0.10
+source and against the published 1.0.10 and 1.0.9 jars. All three outputs
+are identical. Every value in the `path.math.016` additions reproduces:
+- `0.5 div 0.03` is `17`;
+- `0.5 mod 0.03` and `0.15 mod 0.04` are `-0.01`;
+- all twelve `Unhandled` cases and all six non-failing counter-examples.
+
+A 300,000-pair fuzz of `modulo` found no `Error` outside the two stated
+triggers. `divide` and `divInt` raised no `Error` at all.
+
+Every message and outcome in `path.math.017` reproduces, except the one in
+the finding below. The checked points are:
+- the `(numeric)` and `(exponent)` messages;
+- the quote-less `1e+3' ...` text;
+- the `toLowerCase()` NPE text, with the parameter name kept in the
+  published jar;
+- `Integer.parseInt(null)`, which gives `Cannot parse null string` on JDK 25;
+- `1.6777216e7 / 3` = `5592405.3`.
+
+`ENGINE` has no `catch` of `Error` or `Throwable`. The counts are right:
+- path 390, total 522, `path.math.*` 17;
+- the "Thirty-five" list;
+- no duplicates;
+- `openspec validate --strict` passes, and the registers agree.
+
+`DEV-0030`, `DEBT-0020`, task 37 and the blocker entry match the spec. One
+finding remains. The detail is in the dated section at the end. The earlier
+record follows.
+
+1. **The mantissa rule of `path.math.017` is wrong for negative values.**
+   The scenario says "a **positive** mantissa of `16777216` (2^24) or more is
+   refused", and gives `-16777216e0` as accepted. That implies every negative
+   mantissa is read. It is not:
+   - `Utilities.isDecimal` (`UCUM/Utilities.java:45-54`) rounds the mantissa
+     to a `float`, `f`, and refuses it when `f + 1`, rounded to `float`,
+     equals `f`. That holds for negative values too.
+   - On the pinned build these are **refused** with
+     `'<value>' is not a valid decimal (numeric)`: `-16777220e0`,
+     `-33554432e0`, `-1234567890.5e0` and `1234567890.5e0`.
+   - These are **accepted**: `-16777217e0` and `-16777218e0` (between 2^24
+     and 2^25, `f + 1` is a tie that rounds to even), and `16777215.4e0`.
+   - So under HAPI, `-33554432e0 / 2` is empty and `-33554432e0 mod 2`
+     fails. An implementation of the rule as written returns a value for
+     both.
+
+   `DEV-0030`'s "whose `float` mantissa is 2^24 or more" has the same gap.
+   Fix: state the rule as the `float` test itself (round half to even to a
+   binary32, then refuse when adding one leaves it unchanged), and add the
+   negative and non-integer cases above.
+
+## Fiftieth review header as issued (commit `09f69fb`)
+
 APPROVED
 
 Fiftieth review (commit `09f69fb`, 2026-11-21, diff against `936bee5`). All
@@ -4414,3 +4472,84 @@ right.
    `false`" for an out-of-range number holds when the two codes differ. With
    equal codes, `funcComparable` answers `true` before any UCUM call
    (`ENGINE:4628-4630`), under both workers.
+
+## Fifty-first review - commit `23fbf60` (2026-11-21)
+
+Scope:
+- `path.math.015`, the pointer to `.017`;
+- `path.math.016`, its additions;
+- new `path.math.017`;
+- `DEV-0030`, `DEBT-0020`, task 37, `spec.md` and the `tasks/blockers.md`
+  entry.
+
+**Method.** The probe drivers were run on three builds of `Decimal`: the
+`javac -g` build of `reference/Ucum-java` and the published 1.0.10 and 1.0.9
+jars. The three outputs are identical. The drivers covered:
+- `new Decimal(String)`;
+- `divide`, `divInt` and `modulo`;
+- a 300,000-pair random fuzz of all three operations, over sign, integer and
+  fractional digits, and exponent forms;
+- for each `modulo` `Error`, a reflection check of the larger point position
+  of the dividend and of the product `trunc(q) * other`.
+
+**Confirmed.**
+- Round-up before truncation: `0.5 / 0.03` is `17` and `0.5 div 0.03` is
+  `17`. `0.5 mod 0.03` and `0.15 mod 0.04` are `-0.01`.
+- `java.lang.Error: Unhandled` is raised for:
+  - `0.05 mod 0.03`, `0.08 mod 0.03`, `0.05 mod 0.05`, `0.099 mod 0.04`,
+    `-0.05 mod 0.03` and `0.05 mod -0.03`;
+  - `1e3 mod 7`, `1e3 mod 3`, `1e3 mod 1`, `2e3 mod 7`, `-1e3 mod 7` and
+    `3.5e38 mod 1`.
+- The counter-examples give: `0.1 mod 0.03` = `0.01`, `0.05 mod 0.3` =
+  `0.05`, `1e2 mod 30` = `10`, `1e3 mod 400` = `200`, `3.5e1 mod 1` = `0`.
+- Fuzz: every `Error` (1,221 in all) was `mod`, with message `Unhandled`. 213
+  were below-`0.1` operands with a negative point position. 1,008 had an
+  exponent-form dividend. None fell outside the two triggers, and there was
+  no negative point position without an `Error`. `/` and `div` raised none.
+- `Decimal.java:405-411`, `:462-468`, `:368-386` are right. So are
+  `FHIRPathEngine.java:3101`, `:3007-3008`, `:3051`, `:3058-3059`, `:3091`
+  and `:3098-3099`, `FhirPathR4.java:66-70`, and `FHIRLexer.java:160-170`.
+  No `catch (Error` or `catch (Throwable` exists in `ENGINE`.
+- Refusal messages:
+  - `'16777216e0' ... (numeric)` and `'16777215.5e0' ... (numeric)`;
+  - `'e3'` and `'-e3' ... (numeric)`;
+  - `'1e' ... (exponent)`, and also `'1e-'` and `'1e99999999999'`;
+  - `1e+3' is not a valid decimal`, which `1E+3` also gives;
+  - digit-check texts after stripping the sign and leading zeros
+    (`'1d'`, `'1.'`, `'+1'`, `'a1'` for `00a1`, `'x'` for `-00x`).
+- `Utilities.java:45-54`, `:56-63` and `Decimal.java:187-205` are right.
+- Accepted values: `16777215e0`, `-16777216e0` and `1.6777216e7`.
+- `16777216e0 mod 2` and `1e+3 mod 2` throw the stated `UcumException`s.
+- `new Decimal(null)` throws
+  `Cannot invoke "String.toLowerCase()" because "value" is null` on all three
+  builds.
+- `Integer.parseInt(null)` throws `Cannot parse null string` on JDK 25, the
+  only JDK on this machine.
+
+**Finding 1, probes.** These are refused as `(numeric)`: `-16777220e0`,
+`-33554432e0`, `-1234567890.5e0` and `1234567890.5e0`. These are accepted:
+`-16777217e0`, `-16777218e0` and `16777215.4e0`. The spec's rule says "a
+positive mantissa of 2^24 or more", so it would accept the refused negative
+values.
+
+**Registers and counts.**
+- Path has 390 headings, codegen 49 and model 83: 522 in total, with no
+  duplicate.
+- The "Thirty-five" list includes `path.math.017`.
+- `check-registries.sh` reports "registers agree".
+- `openspec validate --strict` reports the change is valid.
+- `DEV-0030` lists `path.math.017`. Task 37 satisfies it.
+
+**Non-blocking notes.**
+1. `path.math.017` gives the `Integer.parseInt(null)` text as
+   `Cannot parse null string: null` "on earlier releases". JDK 8 gives
+   `null`. The text is ungraded, so this does not matter now. It matters only
+   when the differential records the live JVM's text.
+2. For a non-ASCII digit, `path.math.017` says `Decimal` "then computes with
+   `c - '0'`". The observable result, for example Arabic-Indic one-two over
+   `1` (U+0661 U+0662), is
+   `java.lang.StringIndexOutOfBoundsException: Index 2 out of bounds for length 2`
+   from `divide`. That escapes every arm, where Frevo's refusal leaves `/`
+   empty. The scenario already says this input is unreachable from a valid
+   resource, and `DEV-0030` records the difference. Naming the actual HAPI
+   outcome would make the deviation entry exact.
