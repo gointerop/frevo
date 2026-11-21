@@ -1,5 +1,32 @@
 APPROVED
 
+Fifty-third review (commit `c505b89`, 2026-11-21, diff against `214526c`).
+I re-derived every new `path.quantity.016` and `.024` fact from three builds:
+the `javac -g` build of `Ucum-java` 1.0.10 and the published 1.0.10 and 1.0.9
+jars. All three agree on everything except the short `revision-date` form,
+which exists only in 1.0.10; the spec says so.
+
+What I checked:
+- the `dim` failure;
+- the 26-to-31-character `substring(7, 32)` failure;
+- every graded accept and refuse entry for `revision-date`;
+- the sign-without-digit message, with NUL at the end of input;
+- the `Nested [` and `] without [` messages, with their positions.
+
+The graded `revision-date` results do not change across the default locales
+I tried (en-US, fr-FR, de-DE with UTC, ja-JP, ja-JP-JP, th-TH, ar-SA, zh-CN,
+hi-IN). The one input that does change, `-2024-06-17`, is not graded.
+
+The task 43/44 split leaves every quantity ID with an owner. Counts hold
+(path 390). `openspec validate --strict` passes, and the registers agree.
+
+Two non-blocking notes are in the dated section at the end. The earlier
+record follows.
+
+## Fifty-second review header as issued (commit `e0cc795`)
+
+APPROVED
+
 Fifty-second review (commit `e0cc795`, 2026-11-21, diff against `bd3c207`).
 It resolves the fifty-first review's one finding: `path.math.017` now states
 the mantissa rule as the `float` test itself, for either sign. I re-ran every
@@ -4614,3 +4641,73 @@ the reason for `-16777216e0` and `-16777217e0`. Both of those round to
 `f = -16777216`, and `f + 1 = -16777215` is exactly representable, so no tie
 arises. The listed values and the stated test are right. Only the
 explanation of two of them is loose.
+
+## Fifty-third review - commit `c505b89` (2026-11-21)
+
+Scope:
+- the `path.quantity.016` loader additions;
+- the `path.quantity.024` lexer messages;
+- the re-scoping of tasks 43 and 44;
+- the blocker resolution note.
+
+**Method.** I loaded copies of the pinned `ucum-essence.xml`, each with one
+change (a different `revision-date`, or a `base-unit` with its `dim`
+removed or emptied), through `new UcumEssenceService(file)`. I parsed each
+code through `getCanonicalForm`. I ran this on three builds: the `javac -g`
+build of `reference/Ucum-java` 1.0.10 and the published 1.0.10 and 1.0.9
+jars, on JDK 25. I repeated the date set under nine default locales.
+
+**Confirmed.**
+- **No `dim`:** a missing or empty `dim` fails with `UcumException` wrapping
+  `StringIndexOutOfBoundsException: Index 0 out of bounds for length 0`.
+  `XmlDefinitionsParser.java:141` and `:103-105` are right.
+- **Length window:**
+  - A 26-character `revision-date` fails with `Range [7, 32) out of bounds
+    for length 26`.
+  - 32-, 33-, 34- and 39-character values load, and the text after
+    character 31 is ignored.
+  - The pinned 53-character value loads.
+- **Long form:**
+  - `-0500`, `+0000`, `GMT` and `UTC` load.
+  - `GMT-05:00` fails (`Unparseable date: "2015-11-13 15:13:19 GMT-0"`), and
+    `Z` fails.
+  - `EST` and `PST` load on JDK 25, as the spec says. They are ungraded.
+- **Short form, 1.0.10:**
+  - `2024-6-7`, ` 2024-06-17`, `2024-06-17x` and `2024-13-45` load. The last
+    rolls over to 2025-02-14.
+  - `2024/06/17`, `+2024-06-17` and the empty string fail.
+  - On 1.0.9, every short value fails at `substring(7, 32)`, as the spec
+    says.
+- **Locales:** every graded result is the same under en-US, fr-FR, de-DE
+  (with UTC), ja-JP, ja-JP-JP (Japanese calendar), th-TH (Buddhist
+  calendar), ar-SA, zh-CN and hi-IN.
+- **Sign without a digit:** the text is
+  `Error processing unit'<code>': unexpected character '<c>' at position <n>: a + or - must be followed by at least one digit`,
+  with no space before the first quote. It gives:
+  - `+` and `-`: NUL at position 0;
+  - `m+` and `m-`: NUL at position 1;
+  - `m-x`: `x` at position 1;
+  - `m+.`: `.` at position 1;
+  - `10*+`: NUL at position 3.
+
+  `Lexer.java:39`, `:87-89` and `:176-178` are right.
+- **Brackets:**
+  - `[[m]]`, `[m[` and `m[[g]]` give `Nested [' at position 0`.
+  - `m]` gives `] without [' at position 0`, and `g.m]` gives it at
+    position 2. That is the start of the symbol token, as stated.
+- **Tasks:** task 43 owns `.016`, `.020` and the library halves of `.023`
+  and `.024`. Task 44 owns `.001`-`.015`, `.017`-`.019`, `.021`, `.022` and
+  the engine halves. No quantity ID is left without an owner, and each split
+  scenario requires both halves green.
+- **Citations:** `UcumModel.java:66-71` is the constructor that stores the
+  date. It is right.
+
+**Non-blocking notes.**
+1. `-2024-06-17` (a leading `-` in the short form) loads under every locale
+   I tried except ar-SA, where it fails. The spec says nothing about it, so
+   it is ungraded in effect. It could be listed with `EST` and `PST` as not
+   determinable, so that an oracle test does not pick it up.
+2. `UTC` is graded as accepted. Like `EST`, it is matched through the JDK's
+   zone-name data, not by the `GMT` code path. It held in all nine locales
+   on JDK 25, and the pinned file does not use it, so grading it carries
+   little risk.
