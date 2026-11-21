@@ -464,11 +464,16 @@ impl<'a> Parser<'a> {
                 at,
             )
         })?;
+        // `setSystem` runs whenever the unit text is not null, but
+        // `Quantity.setCode("")` leaves the code absent (`Quantity.java:620-629`,
+        // `Utilities.noString`), so `1 ''` is a UCUM quantity with no code
+        // (`path.quantity.026`).
+        let system = code.as_ref().map(|_| UCUM_SYSTEM.to_string());
         Ok(Constant::Value(Value::Quantity(Quantity {
             value,
             unit,
-            system: code.as_ref().map(|_| UCUM_SYSTEM.to_string()),
-            code,
+            system,
+            code: code.filter(|c| !c.is_empty()),
         })))
     }
 

@@ -173,7 +173,7 @@ checkpoint because it changes what a gate measures.
   **Ticked 2026-11-20 (verified at `a5301eb`):** `path_check_warnings` is 5
   of 5, one test per ID `path.check.015`-`019`, each tagged `covers:`.
 
-- [ ] **4b. Write the failing tests for the scenarios the in-process HAPI
+- [x] **4b. Write the failing tests for the scenarios the in-process HAPI
   differential added or changed.** Owner ruling, 2026-11-21: on the 18
   undocumented diffs of `harness/fhirpath-compare/differential-results.json`
   (`tasks/blockers.md`, 2026-11-21, "the in-process HAPI differential"),
@@ -210,6 +210,8 @@ checkpoint because it changes what a gate measures.
   `path.quantity.025` and `path.quantity.026`, and the amended
   `path.compare.014`, `path.quantity.019`, `path.quantity.020` and
   `path.math.017`.
+  **Ticked 2026-11-21 (verified at `761a9e7`):** the tests and the owed probes
+  landed there, tagged `covers:`; they failed until tasks 44a to 44c.
 
 - [x] **5. Write the failing tests for every `codegen.*` and `model.*`
   scenario.** Same discipline: one test per scenario ID with a `covers:`
@@ -1167,7 +1169,7 @@ checkpoint because it changes what a gate measures.
   `path_math` 28 of 28 and `path_convert` 14 of 14, and lib is 136 of 136.
   The UCUM data source is ADR 0006 (proposed).
 
-- [ ] **44a. Make an engine-built quantity a navigable `Quantity`, and read an
+- [x] **44a. Make an engine-built quantity a navigable `Quantity`, and read an
   empty quoted unit as no code.** From the in-process HAPI differential
   (owner ruling 2026-11-21, HAPI wins). A quantity literal, and the result of
   quantity `*` and `/`, expose `value`, `unit`, `system` and `code` to member
@@ -1188,6 +1190,11 @@ checkpoint because it changes what a gate measures.
   not give these elements a type in the checker; that would make it accept
   an invariant HAPI rejects. Depends on task 4b.
   Satisfies `path.quantity.025`, `path.quantity.026` and `path.literal.016`.
+  **Ticked 2026-11-21:** a named member step on a `Value::Quantity` yields
+  `decimal`, `string`, `uri` and `code` elements (`eval/navigate.rs`,
+  `quantity_element`), and the parser drops an empty quoted code
+  (`syntax/parser.rs`). The check pass is unchanged: both check-rejection
+  tests still pass.
 
 - [ ] **44b. Close `DEBT-0011`: carry decimals at any number of significant
   digits.** From the in-process HAPI differential: `1 '[pi]' * 1 '1'` and its
@@ -1208,7 +1215,7 @@ checkpoint because it changes what a gate measures.
   figures. Depends on task 4b.
   Satisfies `path.literal.017` and the `[pi]` bullet of `path.quantity.020`.
 
-- [ ] **44c. Match the `NullPointerException` and `NumberFormatException`
+- [x] **44c. Match the `NullPointerException` and `NumberFormatException`
   texts the differential recorded.** `<=` with no `unit` on the left and one
   on the right fails with exactly
   `Cannot invoke "String.equals(Object)" because "lunit" is null`, not the
@@ -1221,6 +1228,9 @@ checkpoint because it changes what a gate measures.
   task 4b.
   Satisfies the amended `path.compare.014`, `path.quantity.019` and
   `path.math.017`.
+  **Ticked 2026-11-21:** `eval/compare.rs` raises the `"lunit" is null` text
+  and `eval/arith.rs` (`parse_int`) the `Cannot parse null string` text for
+  the integer arms of `div` and `mod`, divisor first, both with no offset.
 
 - [x] **45. Implement the boundary functions.** `lowBoundary`, `highBoundary` and
   `precision` as the pinned engine computes them: decimal boundaries edited as

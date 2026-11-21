@@ -23,7 +23,7 @@ use std::sync::{Arc, OnceLock};
 
 use crate::seam::model::Model;
 use crate::seam::node::{Node, NodeError};
-use crate::seam::value::{Primitive, Value};
+use crate::seam::value::{Primitive, Quantity, Value};
 
 /// The FHIR type name `FHIRPathEngine` sees for a value: `Base.fhirType()`.
 ///
@@ -104,8 +104,13 @@ pub(crate) fn children_by_name(
     name: &str,
     out: &mut Vec<Value>,
 ) -> Result<(), NodeError> {
-    let Value::Node(node) = item else {
-        return Ok(());
+    let node = match item {
+        Value::Node(node) => node,
+        Value::Quantity(q) => {
+            quantity_element(q, name, out);
+            return Ok(());
+        }
+        _ => return Ok(()),
     };
     let parent_is_resource = node.is_resource();
     let before = out.len();
@@ -159,8 +164,14 @@ pub(crate) fn polymorphic_children_by_name(
     name: &str,
     out: &mut Vec<Value>,
 ) -> Result<Option<()>, NodeError> {
-    let Value::Node(node) = item else {
-        return Ok(Some(()));
+    let node = match item {
+        Value::Node(node) => node,
+        // A quantity the engine built has no choice element.
+        Value::Quantity(_) => {
+            children_by_name(item, name, out)?;
+            return Ok(Some(()));
+        }
+        _ => return Ok(Some(())),
     };
     let Some(elements) = model.elements(node.type_name()) else {
         return Ok(None);
@@ -182,6 +193,68 @@ pub(crate) fn polymorphic_children_by_name(
         }
     }
     Ok(Some(()))
+}
+
+/// A member of a quantity the engine built (`path.quantity.025`): the literal
+/// is the FHIR `Quantity` of `FHIRPathEngine.java:1132`, and a `*` or `/`
+/// result the one `pairToQty` builds (`:2314-2316`), so `value`, `unit`,
+/// `system` and `code` navigate as on a `Quantity` read from a resource, typed
+/// `decimal`, `string`, `uri` and `code`, and an element the engine did not set
+/// is empty. Every other name, `comparator` included, is never set on such a
+/// quantity and is empty too.
+///
+/// Only a named step reaches here: `*` (`children()`, `descendants()`) is not
+/// a member navigation and keeps answering nothing for a value that is not a
+/// node.
+fn quantity_element(q: &Quantity, name: &str, out: &mut Vec<Value>) {
+    let (type_name, lexical) = match name {
+        "value" => ("decimal", Some(q.value.lexical())),
+        "unit" => ("string", q.unit.as_deref()),
+        "system" => ("uri", q.system.as_deref()),
+        "code" => ("code", q.code.as_deref()),
+        _ => return,
+    };
+    if let Some(lexical) = lexical {
+        out.push(Value::Node(Arc::new(QuantityElement {
+            type_name,
+            lexical: lexical.to_owned(),
+        })));
+    }
+}
+
+/// One element of a quantity the engine built: a primitive with no `id`, no
+/// extensions and no children of its own.
+#[derive(Debug)]
+struct QuantityElement {
+    type_name: &'static str,
+    lexical: String,
+}
+
+impl Node for QuantityElement {
+    fn type_name(&self) -> &str {
+        self.type_name
+    }
+
+    fn is_resource(&self) -> bool {
+        false
+    }
+
+    fn children(&self, _name: &str) -> Result<Vec<Value>, NodeError> {
+        Ok(Vec::new())
+    }
+
+    fn all_children(&self) -> Result<Vec<(String, Value)>, NodeError> {
+        Ok(Vec::new())
+    }
+
+    fn primitive(&self) -> Option<Primitive> {
+        Some(Primitive {
+            type_name: self.type_name.to_string(),
+            lexical: self.lexical.clone(),
+            id: None,
+            extensions: Vec::new(),
+        })
+    }
 }
 
 /// The `_field` sibling's `id` and `extension`, for a primitive node whose

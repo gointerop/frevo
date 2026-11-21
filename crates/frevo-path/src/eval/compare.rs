@@ -188,11 +188,15 @@ fn quantities(
         // `Base.compareDeep(lUnit, rUnit, true)`.
         Ordered::Greater | Ordered::GreaterOrEqual => lq.unit == rq.unit,
         // `(lunit == null && runit == null) || lunit.equals(runit)`, which
-        // dereferences a null `lunit` when only `runit` is present.
+        // dereferences a null `lunit` when only `runit` is present. The JVM's
+        // helpful message names the local variable, as HAPI's differential
+        // recorded it (`path.compare.014`, `path.quantity.019`).
         Ordered::LessOrEqual => match (&lq.unit, &rq.unit) {
             (None, None) => true,
             (None, Some(_)) => {
-                return Err(null_pointer("java.lang.String.equals(Object)"));
+                return Err(EvalError::plain(
+                    "Cannot invoke \"String.equals(Object)\" because \"lunit\" is null",
+                ));
             }
             (Some(a), Some(b)) => a == b,
             (Some(_), None) => false,

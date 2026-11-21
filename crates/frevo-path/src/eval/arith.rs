@@ -142,6 +142,18 @@ fn ucum_pair(
     Ok(UcumDecimal::new(&lt).and_then(|a| UcumDecimal::new(&rt).map(|b| (a, b))))
 }
 
+/// `Integer.parseInt(v.primitiveValue())` in the `integer` arms of `div` and
+/// `mod` (`FHIRPathEngine.java:3051-3053`, `:3091-3093`). A primitive with no
+/// value is `Integer.parseInt(null)`, whose `NumberFormatException` the engine
+/// does not catch; its text is the JDK 21 and 25 one HAPI recorded, with no
+/// position (`path.math.017`, `path.errors.002`).
+fn parse_int(model: &dyn Model, v: &Value) -> Result<i32, EvalError> {
+    if !matches!(v, Value::Integer(_)) && text_of(model, v).is_none() {
+        return Err(EvalError::plain("Cannot parse null string"));
+    }
+    int_of(model, v)
+}
+
 /// A `java.lang.Error` out of `Decimal`, which no arm catches: its message,
 /// with no position (`path.errors.002`).
 fn java_error(message: &str) -> EvalError {
@@ -376,11 +388,11 @@ pub(super) fn op_arith(
         }
         Arith::Div => {
             if both(&["integer"]) {
-                let divisor = int_of(model, r)?;
+                let divisor = parse_int(model, r)?;
                 if divisor == 0 {
                     return Ok(Vec::new());
                 }
-                return Ok(int_value(int_of(model, l)?.wrapping_div(divisor)));
+                return Ok(int_value(parse_int(model, l)?.wrapping_div(divisor)));
             }
             if both(&numeric) {
                 let q = match ucum_pair(model, l, r)?.and_then(|(a, b)| a.div_int(&b)) {
@@ -405,11 +417,11 @@ pub(super) fn op_arith(
         }
         Arith::Mod => {
             if both(&["integer"]) {
-                let modulus = int_of(model, r)?;
+                let modulus = parse_int(model, r)?;
                 if modulus == 0 {
                     return Ok(Vec::new());
                 }
-                return Ok(int_value(int_of(model, l)?.wrapping_rem(modulus)));
+                return Ok(int_value(parse_int(model, l)?.wrapping_rem(modulus)));
             }
             if both(&numeric) {
                 return match ucum_pair(model, l, r)?.and_then(|(a, b)| a.modulo(&b)) {
