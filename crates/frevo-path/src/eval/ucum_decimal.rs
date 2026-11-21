@@ -187,8 +187,12 @@ fn is_integer(s: &[u8]) -> bool {
 }
 
 /// `Utilities.isDecimal`: `Float.parseFloat` succeeds and the `float` `r`
-/// satisfies `r != r + 1`, which is false for an infinity and for every
-/// `float` at or above `2^24` whose successor rounds back to it.
+/// satisfies `r != r + 1`. `r` is the mantissa rounded half to even to a
+/// binary32 value, and `r + 1` is rounded the same way, so the test is on the
+/// rounded `float`, for either sign, not on a magnitude threshold: it is false
+/// for an infinity and for any `r` whose `r + 1` rounds back to `r`
+/// (`16777216` and `-16777220` are refused, `16777218` and `-16777216`
+/// accepted, `path.math.017`).
 fn is_decimal(s: &[u8]) -> bool {
     if s.is_empty() {
         return false;

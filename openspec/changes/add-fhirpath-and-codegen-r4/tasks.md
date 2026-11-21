@@ -877,7 +877,7 @@ checkpoint because it changes what a gate measures.
   `iif` check, which now reports a `NULL_POINTER` diagnostic where HAPI's
   `checkSingleton` dereferences a null focus.
 
-- [ ] **37. Implement arithmetic.** The operators over integers, decimals,
+- [x] **37. Implement arithmetic.** The operators over integers, decimals,
   strings and quantities using decimal arithmetic; concatenation's empty-as-empty
   string rule; `div` and `mod`; division by zero as the pinned engine answers it
   (empty for the integer arms and for `/` and `div` with a non-zero dividend,
@@ -894,6 +894,15 @@ checkpoint because it changes what a gate measures.
   goes to `NOTICE`.
   Satisfies `path.math.001` through `path.math.011`, `path.math.015`,
   `path.math.016` and `path.math.017`.
+  **Ticked 2026-11-21:** `org.fhir.ucum.Decimal` is ported in
+  `crates/frevo-path/src/eval/ucum_decimal.rs`. `path_math` is 26 of 28: every
+  test tagged `path.math.001`, `.002` and `.004` through `.017` passes, and the
+  two red tests are `path.math.003`'s, whose `(0 - 5 'mg') = 5 'mg'` stops on
+  quantity equality, and `path.mathfn.001`'s `(-5.5 'mg').abs()`. Both are
+  `EvalError::Unsupported` on the UCUM quantity rules of task 43, not on
+  arithmetic. `path_compare_equality`'s `path.compare.012` test passes; its
+  eight red tests are all UCUM quantity cases. Lib is 136 of 136, and the
+  scenario-coverage check is 524 of 524.
 
 - [x] **38. Implement date and dateTime arithmetic.** Calendar-duration addition
   and subtraction with the engine's month-end behaviour, precision preservation,

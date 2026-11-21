@@ -121,7 +121,8 @@ fn int_value(i: i32) -> Vec<Value> {
 
 /// `new Decimal(l.primitiveValue())` for both operands. A primitive with no
 /// value is `null`, on which the constructor's `toLowerCase()` raises a
-/// `NullPointerException` the engine does not catch.
+/// `NullPointerException` the engine does not catch, whose JVM message names
+/// the constructor's parameter (`path.math.017`).
 fn ucum_pair(
     model: &dyn Model,
     l: &Value,
@@ -130,7 +131,7 @@ fn ucum_pair(
     let read = |v: &Value| {
         text_of(model, v).ok_or_else(|| {
             EvalError::plain(
-                "Cannot invoke \"String.toLowerCase()\" because the value is null".to_string(),
+                "Cannot invoke \"String.toLowerCase()\" because \"value\" is null".to_string(),
             )
         })
     };
