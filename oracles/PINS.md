@@ -82,6 +82,35 @@ pin is **SHA-256**, computed from the downloaded artifact:
 as corroboration, not as the pin. A suite that defines correctness should not
 rest on SHA-1.
 
+**`ucum/ucum-essence.xml` inside `fhir-test-cases` carries its own licence.**
+`FHIR/fhir-test-cases` is Apache-2.0 as a repository, but the UCUM definition
+file at `ucum/ucum-essence.xml` (82,332 bytes at the pinned commit `c95adbee`,
+SHA-256 `3e4ba7b0ce2c7f83c9a6afe36c07d8cd8cfd7c0d22b6a2a790d4fec4efa89624`) is
+Regenstrief Institute's work, not the repository's. The file has no licence
+header of its own (it opens with the XML declaration and a `version="2.0.1"`
+root), so the terms are those published at `https://ucum.org/license`: the UCUM
+Copyright Notice and License, Version 1.1, June 2024, copyright 1999-2024
+Regenstrief Institute, Inc. It permits royalty-free redistribution of the Work
+unmodified, on condition of a copyright notice, a reference to the licence, a
+reference to its disclaimer of warranties and the licence text or URL
+(Section 3(b)), and forbids modifying the Work's content (Section 3(a)(iv)).
+That decides how it is handled here:
+
+- It is **fetched, never committed**. It sits only inside the git-ignored
+  `oracles/fhir-test-cases/fetched/` tree. The FHIRPath result-generation
+  procedure (`oracles/fhirpath/hapi-8.12.0-results.README.md`) separately
+  downloads a copy from `org.hl7.fhir.core` at a pinned commit, to a git-ignored
+  `target/` directory; that copy is under the same UCUM terms. Nothing in this
+  repository redistributes either.
+- It is **never edited**, which is the oracle rule anyway.
+- Regenstrief's notice is carried in [`NOTICE`](../NOTICE), so a distribution
+  of Frevo that bundles the file, or a binary that embeds UCUM data derived from
+  it, already has the notice and the licence URL the licence asks for.
+- The Apache-2.0 determination above for `fhir-test-cases` therefore covers the
+  repository, **not** this one file. The licence text was read from
+  `https://ucum.org/license` on 2026-11-21; the page, not a registry field, is
+  the evidence.
+
 **GitHub's licence detection is not evidence.**
 `inferno-framework/smart-app-launch-test-kit` reports no SPDX licence through
 the API, but it contains a full Apache-2.0 `LICENSE` plus a `NOTICE.md`. The
