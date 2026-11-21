@@ -584,7 +584,8 @@ them is the whole reason that decision is safe to make.
   quantities with the same canonical unit compare their canonical magnitudes
   numerically, and special units convert as UCUM defines them
   (`path.math.015`, `path.math.016`, `path.quantity.022`, `path.quantity.023`). Also
-  owed: an upstream report to `FHIR/Ucum-java` for the rounding carry in
+  owed: an upstream report to `FHIR/Ucum-java` (present in both 1.0.9 and
+  1.0.10) for the rounding carry in
   `Decimal.divide` (`Decimal.java:751-754`, the decimal point moves one place
   too far, so `1.9 / 0.2` is `1.0`) and the negative zero of `subtract`
   (`:381-384` with `asDecimal`'s all-zeros test, `:305-306`).
@@ -601,7 +602,9 @@ them is the whole reason that decision is safe to make.
   them passes or fails on the wrong number.
 - **Trigger:** a differential diff or consumer report involving decimal `/`,
   `div`, `mod` or quantity equality across units; an IG invariant dividing
-  decimals; or a re-pin of `org.fhir:ucum` or `org.hl7.fhir.core` that changes
+  decimals; or a change of the `org.fhir:ucum` that live HAPI resolves
+  (1.0.9, `reference/hapi-fhir/pom.xml:1148`) or that `org.hl7.fhir.core`
+  declares (1.0.10, the suite run's), or of `org.hl7.fhir.core`, that touches
   `Decimal.divide`, `Decimal.subtract` or `decEqual`.
 - **Size:** small; an exact-arithmetic arm in `crates/frevo-path/src/eval/arith.rs`,
   a numeric comparison in the quantity equality rule, and the flag plumbing.

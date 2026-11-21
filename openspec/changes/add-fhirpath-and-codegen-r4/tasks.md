@@ -885,9 +885,10 @@ checkpoint because it changes what a gate measures.
   incompatible types; and the overflow and date-difference behaviours recorded
   as the pinned engine's. `/` over numbers, and `div` and `mod` with a decimal
   operand, are a port of `org.fhir.ucum.Decimal` (`reference/Ucum-java`,
-  `1.0.10`, `db9d22ad`: `Decimal(String)`, `divide`, `divInt`, `trunc`,
+  `1.0.10`, `db9d22ad`, the suite run's version; live HAPI 8.12.0 runs 1.0.9,
+  whose `Decimal` is bytecode-identical: `Decimal(String)`, `divide`, `divInt`, `trunc`,
   `modulo`, `multiply`, `subtract`, `asDecimal`), with its significant-digit
-  rounding, its rounding-carry defect and its `-0.0` remainder
+  rounding, its rounding-carry defect and its negative-zero remainder
   (`path.math.015`, `.016`, `DEV-0030`); the ported file carries the
   section 10 header and a `docs/provenance.md` row, and the BSD-3-Clause notice
   goes to `NOTICE`.
@@ -968,10 +969,13 @@ checkpoint because it changes what a gate measures.
   Satisfies `path.convert.001` through `path.convert.014`.
 
 - [ ] **43. Implement the UCUM unit algebra.** A port of the parts of
-  `org.fhir.ucum` 1.0.10 the engine calls (`reference/Ucum-java`, `db9d22ad`):
+  `org.fhir.ucum` the engine calls (`reference/Ucum-java`, 1.0.10, `db9d22ad`;
+  live HAPI 8.12.0 runs 1.0.9, identical in every ported class except
+  `XmlDefinitionsParser`'s short `revision-date` branch, `path.quantity.016`):
   loading the essence file as `XmlDefinitionsParser` does, with every load
   failure of `path.quantity.016`; `Lexer` and `ExpressionParser`, with their
-  error messages (`path.quantity.024`); `Converter` and `ExpressionComposer`
+  error messages and the `NumberFormatException` that escapes every operator
+  but `comparable()` (`path.quantity.024`); `Converter` and `ExpressionComposer`
   for canonical form (`path.quantity.020`); the special-unit `Registry` and its
   handlers (`path.quantity.023`); and `UcumEssenceService.getCanonicalForm`,
   `multiply`, `divideBy`, `getCanonicalUnits` and `isComparable`, over the

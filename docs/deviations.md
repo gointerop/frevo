@@ -578,7 +578,8 @@ file, so its prose is not redistributable here (see `oracles/PINS.md`).
 - **Normalizer impact:** none on stored bytes.
 - **Reviewed:** pending owner.
 - **Update 2026-11-21:** `org.fhir.ucum.Decimal` is now pinned under
-  `reference/Ucum-java` (`1.0.10`, `db9d22ad`). The zero-dividend items are
+  `reference/Ucum-java` (`1.0.10`, `db9d22ad`; live HAPI runs 1.0.9, whose
+  `Decimal` is identical, see `DEV-0030`). The zero-dividend items are
   `0.0 / 0` = the decimal `0`, `0 div 0.0` = the integer `0` and
   `0.0 mod 0` = the decimal `-0.0` (`Decimal.java:631-632`, `:381-384`,
   `:305-306`), and the two `mod` errors read
@@ -941,20 +942,26 @@ file, so its prose is not redistributable here (see `oracles/PINS.md`).
 ### DEV-0030 — decimal `/`, `div` and `mod` and UCUM canonical values follow `org.fhir.ucum.Decimal`'s precision rules and defects
 
 - **Area:** path
-- **Scenario IDs:** path.math.015, path.math.016, path.quantity.017, path.quantity.018, path.quantity.021, path.quantity.022, path.quantity.023
+- **Scenario IDs:** path.math.015, path.math.016, path.quantity.017, path.quantity.018, path.quantity.020, path.quantity.021, path.quantity.022, path.quantity.023, path.quantity.024
 - **HAPI 8.12.0 behaviour:** `opDivideBy`, and `opDiv` and `opMod` with a
   decimal operand, compute through `org.fhir.ucum.Decimal`
   (`ENGINE:3004-3012`, `3055-3063`, `3095-3103`; `UCUM` =
   `reference/Ucum-java/src/main/java/org/fhir/ucum/` at
-  `db9d22ade3f0f4a667b45817b85a9ac4534e4224`, `org.fhir:ucum` 1.0.10). A
+  `db9d22ade3f0f4a667b45817b85a9ac4534e4224`, `org.fhir:ucum` 1.0.10, which the
+  suite run and the recorded results use; live HAPI 8.12.0 resolves 1.0.9,
+  `reference/hapi-fhir/pom.xml:1148`, `:1985-1989`, whose `Decimal`, `Lexer`,
+  `ExpressionParser`, `Converter`, `ExpressionComposer`,
+  `UcumEssenceService`, `UcumModel`, `Pair`, `Registry` and `HoldingHandler`
+  are bytecode-identical to 1.0.10's, so every value here holds for both). A
   quotient that does not terminate, or that has a non-whole operand, is
   rounded to the significant digits its operands carry
   (`UCUM/Decimal.java:713-760`): `1 / 3` is `0.3`, `1.0 / 8` is `0.13`,
   `1.25 / 0.5` is `3`. A rounding that carries out of the leading digit yields
   a tenth of the rounded value (`:751-754`): `1.9 / 0.2` is `1.0`,
   `1.9 div 0.2` is `1`, `1.9 mod 0.2` is `1.7`. A zero remainder of a decimal
-  `mod` is `-0.0` (`:381-384`, `:305-306`, `:157-164`), so `4.0 mod 2 = 0` is
-  `false`. Quantity equality compares canonical value strings with the
+  `mod` is a negative zero, written with its `-` whenever its text has a
+  fractional part (`-0.0`, `-0.00`; `:368-386`, `:305-306`, `:157-164`), so
+  `4.0 mod 2 = 0` and `4 mod 2.0 = 0` are `false`, while `10 mod 2.5` is `0`. Quantity equality compares canonical value strings with the
   trailing-zero rule of `DEV-0017` (`ENGINE:2270`, `2161-2184`), so
   `1 'mg/dL' = 10 'mg/L'` is `false`, and the whole-number correction applies
   only to whole values (`UCUM/UcumEssenceService.java:279-282`,
@@ -966,10 +973,16 @@ file, so its prose is not redistributable here (see `oracles/PINS.md`).
   is `true`. A unit the library cannot canonicalise (unknown, special, or a
   non-UCUM system) falls back to comparing codes: equal codes compare values,
   different codes are empty under `=` and raise a `NullPointerException` under
-  `~` and `<` (`ENGINE:2276-2285`, `2204-2206`, `2414`); quantity `*` raises
+  `~` and `<` (`ENGINE:2276-2285`, `2204-2206`, `2413`); quantity `*` raises
   the library's parse error and `/` is empty (`ENGINE:2800-2801`,
-  `3020-3022`); and `*` or `/` with an operand outside the UCUM system raises
-  a `NullPointerException` (`UCUM/UcumEssenceService.java:314-325`).
+  `3020-3022`); `*` or `/` with an operand outside the UCUM system raises a
+  `NullPointerException` (`UCUM/UcumEssenceService.java:314-325`), and so does
+  `/` with a UCUM operand that has no `code`, on either side, unless the
+  divisor's value is zero (`:322-323`). A number in a code outside the Java
+  `int` range raises `NumberFormatException` from `Lexer.getTokenAsInt`
+  (`UCUM/Lexer.java:199-201`), which is not a `UcumException`, so `=`, `~`,
+  the ordered operators, `*` and `/` fail and only `comparable()` answers
+  `false` (`UCUM/UcumEssenceService.java:237-239`).
   Quantity `*` and `/` answer in canonical units with no `unit` element
   (`ENGINE:2314-2316`), so `(1.0 'm' / 1.0 'm').toString()` is `1.0 'null'`.
 - **Specification requirement:** FHIRPath 2.0.0 — `/` is decimal division,

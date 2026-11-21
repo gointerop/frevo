@@ -3066,3 +3066,25 @@ parameters (`o1`, `dividend`, ...), which assumes the published 1.0.10 jar was
 built with debug information (`maven-compiler-plugin` 3.5.1's default,
 `pom.xml:121-129`); if the live run shows `<parameter1>`, the scenario text is
 wrong, not the implementation.
+
+## 2026-11-21 — `add-fhirpath-and-codegen-r4` — the differential's HAPI runs `org.fhir:ucum` 1.0.9, not the pinned 1.0.10
+
+**Raised by** the proposer, from finding 6 of the forty-ninth review.
+`reference/PINS.md` step 5 resolves `org.fhir:ucum` from `org.hl7.fhir.core`
+6.9.12's `pom.xml` (1.0.10), and `reference/Ucum-java` is cloned at `1.0.10`.
+But `hapi-fhir` `v8.12.0` sets `<ucum_version>1.0.9</ucum_version>`
+(`reference/hapi-fhir/pom.xml:1148`) and manages `org.fhir:ucum` to it
+(`:1985-1989`), and the starter's parent is `hapi-fhir:8.12.0` with no
+override, so the live HAPI the differential runs against has **1.0.9**. Only
+the suite's own build and `harness/hapi-fhirpath-results/pom.xml:18` use
+1.0.10. The reviewer compared the two published jars by normalised bytecode:
+every class the engine calls is identical except `XmlDefinitionsParser.parse`,
+whose short `yyyy-MM-dd` `revision-date` branch exists only in 1.0.10. No
+value in the spec changes; the spec, `DEV-0030`, `DEBT-0020` and tasks 37/43
+now say which oracle runs which version.
+
+**Decision needed from the owner.** Either annotate `reference/PINS.md` step 5
+and `reference/clone.sh` (a `chore/` re-pin, since `reference/**` is read-only
+here) so 1.0.9 is pinned as what the differential runs, alongside or instead
+of 1.0.10; or record that 1.0.10 stays the pin because it is the suite run's
+and the classes are identical. Not edited by the proposer.

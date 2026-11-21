@@ -232,6 +232,17 @@ with a decimal operand), `path.quantity.020` (canonical form),
 specification differences they expose are `DEV-0030` and `DEBT-0020`. None was
 removed, renumbered, reused or repurposed.
 
+After the forty-ninth review, those scenarios were corrected in place: the
+Arithmetic requirement and `path.compare.012` no longer call `/`, `div` and
+`mod` exact; `path.quantity.021` states the `NullPointerException` of `/` with
+a code-less UCUM operand; `path.quantity.023` moves `[m/s2/Hz^(1/2)]` to a
+parse failure; `path.quantity.024` adds three parse messages and the
+`NumberFormatException` outcome; `path.math.016` states the negative-zero
+rule by the zero's text; the spec names 1.0.9 as the version live HAPI runs
+(identical bytecode for every cited class but `XmlDefinitionsParser`); and
+citations were corrected (`convertToString`, `:2413`, the ordered-operator
+branches). No ID was added.
+
 | Area | IDs allocated | Range |
 |---|---:|---|
 | `codegen.inputs.*` | 6 | `001`-`006` |
