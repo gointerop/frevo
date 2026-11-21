@@ -3366,13 +3366,15 @@ worker each of these operations raises `HAPI-0274: ` (`path.quantity.019`,
   `canBeNone` false (`:1617-1618`), so `executeType` raises
   `FHIRPATH_UNKNOWN_NAME` (`:1590-1593`, `Messages.properties:369`):
   `(1 'cm').code` fails the check with
-  `Error evaluating FHIRPath expression: The name 'code' is not valid for any of the possible types: [http://hl7.org/fhirpath/System.Quantity] (@char 10)`.
+  `Error evaluating FHIRPath expression: The name 'code' is not valid for any of the possible types: [http://hl7.org/fhirpath/System.Quantity] (@char 11)`.
   A `*` or `/` result has **no** type (`operateTypes`, `case Times` and
   `case DivideBy`, `:2028-2045`, add a type only for `integer` and `decimal`
   operands), so `(2 'cm' * 1 'm').code` fails the check with
-  `Error evaluating FHIRPath expression: The name 'code' is not valid for any of the possible types: [] (@char 17)`.
-  Both messages and both positions are derived from the source, not
-  observed; the owed probes with a `contextType` (task 4b) confirm them. A
+  `Error evaluating FHIRPath expression: The name 'code' is not valid for any of the possible types: [] (@char 22)`.
+  The positions are HAPI's lexer columns of the member name, each
+  whitespace character counting 2 (`FHIRLexer.java:321-324`, as
+  `path.errors.*` states). Both messages and both positions are derived from
+  the source, not observed; the owed probes with a `contextType` (task 4b) confirm them. A
   `Quantity` read from a resource is typed as the FHIR `Quantity` and passes
   the check
 - **AND** Frevo's check pass rejects exactly what HAPI's rejects here: making
@@ -3414,9 +3416,10 @@ worker each of these operations raises `HAPI-0274: ` (`path.quantity.019`,
     skipped. When the check runs (with a context type), both fail it as
     `path.quantity.025` states for a literal typed `System.Quantity`:
     `Error evaluating FHIRPath expression: The name 'code' is not valid for any of the possible types: [http://hl7.org/fhirpath/System.Quantity]`,
-    and the same text naming `system`, each followed by the ` (@char N)` of
-    the member name. The messages are derived from the source; they and the
-    positions are owed probes (task 4b)
+    followed by ` (@char 9)`, and the same text naming `system`, also
+    ` (@char 9)` (the member name's lexer column, whitespace counting 2,
+    `FHIRLexer.java:321-324`). The messages and positions are derived from
+    the source, not observed; they are owed probes (task 4b)
 - **AND** under HAPI's server-facing worker every one of these that consults
   the UCUM service raises `HAPI-0274: ` instead (`path.quantity.019`,
   `DEV-0029`)

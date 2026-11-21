@@ -199,9 +199,9 @@ checkpoint because it changes what a gate measures.
     `path.quantity.026`. Add check-time probes **with a `contextType`**
     (for example `Patient`), so the harness runs HAPI's check, for
     `(1 'cm').code` and `(2 'cm' * 1 'm').code` (`path.quantity.025`, the
-    expected `FHIRPATH_UNKNOWN_NAME` texts at `(@char 10)` and
-    `(@char 17)`) and for `(1 '').code` and `(1 '').system`
-    (`path.quantity.026`). Then re-run the HAPI side and the differential. A
+    expected `FHIRPATH_UNKNOWN_NAME` texts at `(@char 11)` and
+    `(@char 22)`, derived) and for `(1 '').code` and `(1 '').system`
+    (`path.quantity.026`, both at `(@char 9)`, derived). Then re-run the HAPI side and the differential. A
     stated value the run contradicts goes back to the proposer, not into
     the test.
   Until this lands, `harness/scripts/scenario-coverage.sh --change
