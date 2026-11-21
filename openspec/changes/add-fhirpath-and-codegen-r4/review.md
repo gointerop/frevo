@@ -1,5 +1,41 @@
 APPROVED
 
+Fifty-sixth review (commit `d66b902`, 2026-11-21, diff against `3bbc474`).
+It answers the three non-blocking notes of the fifty-fifth review.
+
+- **`xhtml.id`.** I rescanned every snapshot and differential element of every
+  StructureDefinition in `hl7.fhir.r4.core#4.0.1`. `xhtml.id` is the only
+  `System.*` type without `structuredefinition-fhir-type`. The new rule maps
+  it to `StringType` and refuses any other such element. That matches HAPI:
+  `XhtmlType` extends `PrimitiveType`, which extends `Type`, which extends
+  `Element`, whose `id` is a `StringType`. All four citations are right
+  (`XhtmlType.java:41`, `PrimitiveType.java:46`, `Type.java:40`,
+  `Element.java:56`).
+- **Narrowed `DEBT-0021`.** It now says only the choice-typed elements are
+  unchecked by path. I confirmed that by closing the gap my own earlier pass
+  had. The fifty-fourth and fifty-fifth passes compared only elements
+  declared in each type's own Java class. This pass resolved the other 2,313
+  single-typed elements through the Java superclass chain, found no mismatch,
+  and left 5 unresolved. Those fields are declared on `Element`,
+  `BackboneElement`, `Resource`, `DomainResource`, `MetadataResource` and
+  `Quantity`. The 5 unresolved are two `extension`, two `modifierExtension`
+  and `Narrative.div`, which already has an exception entry.
+- **`model.perf.006` recorder format.** The text matches
+  `model_bytes_lazy_perf.rs:1489-1530`:
+  - `workloads[]` is found by `name`;
+  - `run_medians_us` holds exactly five numbers, and the median is computed
+    by the test;
+  - a missing array, a non-number or a wrong count panics, so the gate fails
+    rather than skipping.
+
+`openspec validate --strict` passes, and the registers agree. There are no
+findings. The detail is in the dated section at the end. The earlier record
+follows.
+
+## Fifty-fifth review header as issued (commit `702d582`)
+
+APPROVED
+
 Fifty-fifth review (commit `702d582`, 2026-11-21, diff against `505399b`).
 It resolves all three findings and both notes of the fifty-fourth review.
 
@@ -5004,3 +5040,52 @@ field's class. Result: 716 elements checked, 0 mismatches.
    element, `System.*`-typed element and `contentReference`. Only
    choice-typed elements, whose Java field is `Type`, stay unchecked by path.
    The debt could be narrowed to that.
+
+## Fifty-sixth review - commit `d66b902` (2026-11-21)
+
+**Scope.** This review covers three changes:
+- the `codegen.ancestry.002` rule for a `System.*` element with no
+  `structuredefinition-fhir-type`;
+- `DEBT-0021` as narrowed;
+- the `model.perf.006` recorder format, with the matching `tasks/blockers.md`
+  note.
+
+**Probes.**
+1. A rescan of every `snapshot` and `differential` element of every
+   StructureDefinition in the 4.0.1 package, whatever its `derivation`.
+   Exactly one element carries a `http://hl7.org/fhirpath/System.*` type with
+   no `structuredefinition-fhir-type` extension: `xhtml.id` (`System.String`).
+2. `anc4.py`, a scratch script. It takes the single-typed, non-choice,
+   non-`System.*`, non-`contentReference` elements that have no `@Child`
+   field in their own Java class: 2,318 elements, all inherited. It resolves
+   each one through the Java `extends` chain and compares the class found
+   with the class the `codegen.ancestry.002`/`.003` rules predict.
+   - 2,313 matched and 0 mismatched.
+   - 5 were unresolved: two `extension` and two `modifierExtension` whose
+     field the scan did not capture, and `Narrative.div`, covered by its
+     `runtime-class` entry.
+   - The inherited fields come from `Element`, `BackboneElement`,
+     `Resource`, `DomainResource`, `MetadataResource` (canonical `url`,
+     `version`, `name`, `date`, `publisher`, `contact`, `description`,
+     `useContext` and so on) and `Quantity`.
+
+   So, together with the fifty-fourth and fifty-fifth passes, every
+   single-typed element's value class has been compared by path. That is
+   what `DEBT-0021` now states, and its remaining scope, choice-typed
+   elements held in a `Type` field, is accurate.
+3. A reading of `model_bytes_lazy_perf.rs:1489-1530`. `recorded_run_medians`
+   finds `workloads[]` by `name`. It requires `run_medians_us` and refuses
+   any entry that is not a number. `median_of_five` asserts exactly five and
+   takes the middle value. Each failure panics, as the new `model.perf.006`
+   clause says.
+
+**Citations.**
+- `XhtmlType.java:41`: `extends PrimitiveType<String>`.
+- `PrimitiveType.java:46`: `extends Type`.
+- `Type.java:40`: `extends Element`.
+- `Element.java:56`: `protected StringType id`.
+
+**Validation.** `openspec validate --strict` reports the change valid.
+`check-registries.sh` reports "registers agree".
+
+No findings and no notes.
