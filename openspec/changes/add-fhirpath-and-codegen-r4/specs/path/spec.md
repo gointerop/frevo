@@ -1901,15 +1901,19 @@ identical, so every value stated here holds for both; only
   `NullPointerException`, which no arm catches. Its message on JDK 25 is
   exactly `Cannot invoke "String.toCharArray()" because "val" is null` (the
   JDK's own text for `new BigDecimal((String) null)`, observed by running that
-  constructor directly on Temurin 25.0.1, not yet through HAPI). So
+  constructor directly on Temurin 25.0.1, not yet through HAPI). JDK 21's
+  constructor body is the same, `this(val.toCharArray(), 0, val.length())`
+  (`openjdk/jdk21u` `java/math/BigDecimal.java:902-903`), so the live
+  image's JVM gives the same text. So
   `Parameters.parameter.where(name = 'd').value + 1`,
   `Parameters.parameter.where(name = 'i').value + 1.5` and
   `1.5 * Parameters.parameter.where(name = 'd').value` fail with an execution
   error carrying that message and no offset
 - **AND** the static check cannot see the missing value, because it types the
   operand from the model, so the failure is at evaluation, with the check
-  run or skipped. HAPI's server-facing worker answers the same, because no
-  worker is consulted
+  run (with the context type `Parameters`) or skipped. The check-run half is
+  derived from the source and is owed a probe (task 4c). HAPI's
+  server-facing worker answers the same, because no worker is consulted
 - **AND** these are the same class of failure `path.math.017` states and
   `DEV-0030` records for the `div` and `mod` arms; this scenario states them
   for `+`, `-` and `*` and adds no deviation
@@ -3506,10 +3510,17 @@ worker each of these operations raises `HAPI-0274: ` (`path.quantity.019`,
   `"**"` (`:3512-3515`, `:3902-3908`), which for `System.Quantity`, or for the
   untyped `*` and `/` result, collects no type and raises nothing. So
   `(1 'cm').children().count()` passes the check and is `integer:3`. The
-  result is unordered under the check, so `(1 'cm').children().first()` fails
-  it as `path.navigation.022` states, and a named step after it, such as
-  `(1 'cm').children().code`, fails with `FHIRPATH_UNKNOWN_NAME` over no types,
-  as `path.quantity.025` states for a `*` result
+  result is unordered under the check (`childTypes` builds it `UNORDERED`,
+  `:3902-3903`), so `(1 'cm').children().first()` fails the check, as
+  `path.navigation.022` states (`checkOrdered`, `:3407-3408`, `:3845-3847`),
+  with
+  `Error evaluating FHIRPath expression: The function first can only be used on ordered collections (@char 22)`.
+  A named step after it has no types to resolve against (`:1591-1593`), so
+  `(1 'cm').children().code` fails the check with
+  `Error evaluating FHIRPath expression: The name 'code' is not valid for any of the possible types: [] (@char 22)`.
+  Both tokens start at byte offset 20, and the one space before them counts
+  2, so the column is 22. The texts and positions are derived from the
+  source, not observed, and are owed probes (task 4c)
 - **AND** HAPI's server-facing worker answers the same for a literal, since no
   worker is consulted; a `*` or `/` result raises `HAPI-0274: ` there first
   (`path.quantity.019`, `DEV-0029`)

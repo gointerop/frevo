@@ -223,14 +223,18 @@ checkpoint because it changes what a gate measures.
     `parameters-novalue-numbers.xml`:
     - for `path.math.018`: `+`, `-` and `*` with the no-value `integer` `i`
       on the left and on the right of `1`; the no-value `decimal` `d` with
-      `1`; `i` with `1.5`; and `1.5 * d`;
+      `1`; `i` with `1.5`; and `1.5 * d`. Also check-time probes **with**
+      the `contextType` `Parameters`, so the harness runs HAPI's check:
+      `Parameters.parameter.where(name = 'i').value + 1` and
+      `Parameters.parameter.where(name = 'd').value + 1` (the check passes,
+      and evaluation fails with the scenario's texts);
     - for `path.quantity.027`, with no `contextType`: `children()` and
       `descendants()` on `1 'cm'`, `1 year`, `1 week`, `1 ''` and
       `2 'cm' * 1 'm'`, and their `count()`;
     - also for `path.quantity.027`, check-time probes **with** a
       `contextType`: `(1 'cm').children().count()` (passes),
       `(1 'cm').children().first()` and `(1 'cm').children().code` (both
-      rejected);
+      rejected at `(@char 22)` with the scenario's texts);
   - then re-run the HAPI side and the differential. A stated value the run
     contradicts goes back to the proposer, not into the test. That includes
     the decimal arm's `"val" is null` text, which has so far been seen only
