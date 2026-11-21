@@ -844,6 +844,11 @@ fn a_fhir_type_name_stands_for_its_r4_model_class_and_its_java_ancestry() {
     assert_accepted(&mut *fp, &patient, "Patient.name.family", "string");
     assert_accepted(&mut *fp, &patient, "Patient.id", "uri");
     assert_accepted(&mut *fp, &observation, "Observation.value", "Quantity");
+    // `Patient.birthDate` is a `DateType`: accepted as its own type and as
+    // `Element`, and rejected as `string` below (path.api.005, over the
+    // generated class table, codegen.ancestry.005).
+    assert_accepted(&mut *fp, &patient, "Patient.birthDate", "date");
+    assert_accepted(&mut *fp, &patient, "Patient.birthDate", "Element");
 
     // The abstract classes: a resource extends `DomainResource` and
     // `Resource` (Patient.java:53, DomainResource.java:48, Resource.java:45);

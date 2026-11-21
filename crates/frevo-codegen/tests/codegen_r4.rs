@@ -70,7 +70,8 @@
 //! `HAPI-<code>: <message>`, which is how `Msg.code` renders it, so the
 //! approved delta's message texts are asserted exactly.
 //!
-//! Scenario coverage: all 49 `codegen.*` scenarios.
+//! Scenario coverage: all 54 `codegen.*` scenarios, the five `codegen.ancestry.*`
+//! ones through their own seam, [`class_table_under_test`].
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -5301,5 +5302,1137 @@ fn the_element_order_table_is_generated() {
     assert!(
         !canonical.contains('\n') && !canonical.contains("  "),
         "JsonCreatorCanonical refuses to pretty-print: {canonical}"
+    );
+}
+
+// ===========================================================================
+// The R4 model class table (`codegen.ancestry.001` to `.005`)
+// ===========================================================================
+//
+// The class table is a second generator output with its own seam, because
+// `frevo_codegen::bind_oracle!` (src/bind.rs) binds only the `Codegen` trait
+// and an oracle file must not reach into the implementation. Task 14b ports
+// the generator and binds [`class_table_under_test`]; until then it answers
+// [`CodegenError::NotImplemented`], which every test below turns into a
+// failure naming the unbound seam, never a pass.
+//
+// The expected rows are derived independently of the class table: from the
+// pinned `generate` run (bound today), which lists every type, every nested
+// component and every element of the package, and from the facts the
+// approved spec states. Exact class names, ancestry sets and the 323 count
+// are the spec's (`specs/codegen/spec.md`, `codegen.ancestry.002` to `.005`).
+
+/// The reviewed exception file the generator reads (`codegen.ancestry.004`).
+pub const CLASS_TABLE_EXCEPTIONS: &str = "crates/frevo-codegen/data/r4-class-table-exceptions.toml";
+/// The Java package every model class lives in.
+pub const MODEL_PACKAGE: &str = "org.hl7.fhir.r4.model";
+/// Where the exception file's citations point (`codegen.ancestry.004`).
+pub const MODEL_SOURCE_DIR: &str =
+    "reference/org.hl7.fhir.core/org.hl7.fhir.r4/src/main/java/org/hl7/fhir/r4/model";
+
+/// The four interface kinds a row records (`codegen.ancestry.001`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum InterfaceKind {
+    IBase,
+    IPrimitiveType,
+    ICompositeType,
+    IBaseReference,
+}
+
+/// What a row stands for.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub enum ClassRowOf {
+    /// A FHIR type of kind `primitive-type`, `complex-type` or `resource`,
+    /// abstract ones included, by its FHIR name.
+    Type(String),
+    /// A nested component, by its element path (`Patient.contact`).
+    Component(String),
+    /// HAPI's `Enumeration` class.
+    Enumeration,
+}
+
+/// One row of the generated table.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ClassRow {
+    pub of: ClassRowOf,
+    /// The Java simple name, `ContactComponent`.
+    pub simple_name: String,
+    /// The Java fully qualified name, `org.hl7.fhir.r4.model.Patient$ContactComponent`.
+    pub qualified_name: String,
+    /// The FHIR type names the class is assignable to.
+    pub assignable_to: BTreeSet<String>,
+    pub interfaces: BTreeSet<InterfaceKind>,
+}
+
+/// The class an element's value is held in, by the qualified name of its row.
+/// `through_star` differs from `by_name` only for a `runtime-class` exception
+/// (`Narrative.div`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ElementClass {
+    pub by_name: String,
+    pub through_star: String,
+}
+
+/// One class-table run.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ClassTable {
+    /// The `@generated` table file, as written.
+    pub file: GeneratedFile,
+    /// Every path the run opened.
+    pub inputs_read: Vec<PathBuf>,
+    pub rows: Vec<ClassRow>,
+    /// Keyed by element path; a choice element by `<owner>.<json property>`,
+    /// one key per chosen type (`Observation.valueQuantity`).
+    pub elements: BTreeMap<String, ElementClass>,
+}
+
+impl ClassTable {
+    pub fn type_row(&self, fhir_name: &str) -> &ClassRow {
+        self.row_of(&ClassRowOf::Type(fhir_name.to_string()))
+    }
+
+    pub fn component_row(&self, path: &str) -> &ClassRow {
+        self.row_of(&ClassRowOf::Component(path.to_string()))
+    }
+
+    pub fn enumeration_row(&self) -> &ClassRow {
+        self.row_of(&ClassRowOf::Enumeration)
+    }
+
+    fn row_of(&self, of: &ClassRowOf) -> &ClassRow {
+        let found: Vec<&ClassRow> = self.rows.iter().filter(|r| &r.of == of).collect();
+        assert_eq!(
+            found.len(),
+            1,
+            "the table must have exactly one row for {of:?}"
+        );
+        found[0]
+    }
+
+    pub fn row_by_qualified(&self, qualified: &str) -> &ClassRow {
+        self.rows
+            .iter()
+            .find(|r| r.qualified_name == qualified)
+            .unwrap_or_else(|| panic!("the table must have a row named {qualified}"))
+    }
+
+    /// The row of the class an element's value is held in, by name.
+    pub fn element_row(&self, path: &str) -> &ClassRow {
+        let class = self
+            .elements
+            .get(path)
+            .unwrap_or_else(|| panic!("the table must give {path} a value class"));
+        self.row_by_qualified(&class.by_name)
+    }
+
+    /// The same, navigating with `*`.
+    pub fn element_row_through_star(&self, path: &str) -> &ClassRow {
+        let class = self
+            .elements
+            .get(path)
+            .unwrap_or_else(|| panic!("the table must give {path} a value class"));
+        self.row_by_qualified(&class.through_star)
+    }
+}
+
+/// One class-table run's inputs.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ClassTableRequest {
+    pub exceptions: PathBuf,
+    pub out_dir: PathBuf,
+    /// Where `reference/` would be; the generator must never read it.
+    pub reference_dir: Option<PathBuf>,
+}
+
+impl ClassTableRequest {
+    pub fn pinned(out_dir: &Path) -> Self {
+        ClassTableRequest {
+            exceptions: repo_path(CLASS_TABLE_EXCEPTIONS),
+            out_dir: out_dir.to_path_buf(),
+            reference_dir: None,
+        }
+    }
+}
+
+pub trait ClassTableGenerator {
+    /// One run over the pinned package and an exception file. A refused
+    /// exception file is [`CodegenError::Failed`].
+    fn class_table(&self, request: &ClassTableRequest) -> Result<ClassTable, CodegenError>;
+}
+
+/// The class-table generator this oracle grades. Unbound until task 14b.
+fn class_table_under_test() -> Box<dyn ClassTableGenerator> {
+    Box::new(UnboundClassTable)
+}
+
+struct UnboundClassTable;
+
+impl ClassTableGenerator for UnboundClassTable {
+    fn class_table(&self, _request: &ClassTableRequest) -> Result<ClassTable, CodegenError> {
+        Err(CodegenError::NotImplemented)
+    }
+}
+
+/// One pinned class-table run, which must succeed.
+fn pinned_class_table(label: &str) -> ClassTable {
+    let out = scratch_dir(label);
+    class_table_under_test()
+        .class_table(&ClassTableRequest::pinned(&out))
+        .unwrap_or_else(|e| match e {
+            CodegenError::NotImplemented => panic!(
+                "the class-table run must succeed for {label}, but no class-table generator \
+                 is bound yet (codegen_r4.rs::class_table_under_test; task 14b)"
+            ),
+            e => panic!("the class-table run must succeed for {label}: {e}"),
+        })
+}
+
+fn model_class(simple: &str) -> String {
+    format!("{MODEL_PACKAGE}.{simple}")
+}
+
+fn set(names: &[&str]) -> BTreeSet<String> {
+    names.iter().map(|n| n.to_string()).collect()
+}
+
+/// The element keys a generated element contributes to the table: its path,
+/// or for a choice one key per JSON property name, under its owner's path.
+fn element_keys(element: &GeneratedElement) -> Vec<String> {
+    if element.is_choice {
+        let owner = element
+            .path
+            .rsplit_once('.')
+            .map(|(owner, _)| owner)
+            .unwrap_or(&element.path);
+        element
+            .json_property_names
+            .iter()
+            .map(|p| format!("{owner}.{p}"))
+            .collect()
+    } else {
+        vec![element.path.clone()]
+    }
+}
+
+// ---------------------------------------------------------------------------
+// The exception file, read as data
+// ---------------------------------------------------------------------------
+
+/// One entry of the exception file: its `key = "value"` pairs.
+///
+/// The file is TOML; the oracle reads only what `codegen.ancestry.004` fixes:
+/// an array of tables (`[[...]]`), each with string `kind`, `target` and
+/// `source` keys and at least one further key carrying the effect. The
+/// effect's key names are the generator's to choose. The crate has no TOML
+/// dependency, so this is the smallest reader that can do it, and it refuses
+/// any line it does not understand rather than skipping it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExceptionEntry {
+    pub pairs: BTreeMap<String, String>,
+}
+
+impl ExceptionEntry {
+    pub fn get(&self, key: &str) -> Option<&str> {
+        self.pairs.get(key).map(String::as_str)
+    }
+}
+
+fn read_exception_entries(text: &str) -> Vec<ExceptionEntry> {
+    let mut entries = Vec::new();
+    let mut current: Option<BTreeMap<String, String>> = None;
+    for (n, raw) in text.lines().enumerate() {
+        let line = raw.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        if line.starts_with("[[") && line.ends_with("]]") {
+            if let Some(pairs) = current.take() {
+                entries.push(ExceptionEntry { pairs });
+            }
+            current = Some(BTreeMap::new());
+            continue;
+        }
+        let (key, value) = line.split_once('=').unwrap_or_else(|| {
+            panic!(
+                "{CLASS_TABLE_EXCEPTIONS}:{}: not `key = value`: {raw}",
+                n + 1
+            )
+        });
+        let value = value.trim();
+        let value = value
+            .strip_prefix('"')
+            .and_then(|v| v.strip_suffix('"'))
+            .unwrap_or_else(|| {
+                panic!(
+                    "{CLASS_TABLE_EXCEPTIONS}:{}: the oracle reads string values only: {raw}",
+                    n + 1
+                )
+            });
+        let pairs = current.as_mut().unwrap_or_else(|| {
+            panic!(
+                "{CLASS_TABLE_EXCEPTIONS}:{}: a key outside any [[...]] entry: {raw}",
+                n + 1
+            )
+        });
+        pairs.insert(key.trim().to_string(), value.to_string());
+    }
+    if let Some(pairs) = current.take() {
+        entries.push(ExceptionEntry { pairs });
+    }
+    entries
+}
+
+fn exception_file_text() -> String {
+    let path = repo_path(CLASS_TABLE_EXCEPTIONS);
+    std::fs::read_to_string(&path).unwrap_or_else(|e| {
+        panic!("{CLASS_TABLE_EXCEPTIONS} must exist and be readable (codegen.ancestry.004): {e}")
+    })
+}
+
+/// The 13 `class-name` entries: component path, HAPI's class name.
+pub const CLASS_NAME_EXCEPTIONS: [(&str, &str); 13] = [
+    (
+        "CodeSystem.concept.designation",
+        "ConceptDefinitionDesignationComponent",
+    ),
+    ("Consent.provision.actor", "provisionActorComponent"),
+    ("Consent.provision.data", "provisionDataComponent"),
+    (
+        "InsurancePlan.coverage.benefit.limit",
+        "CoverageBenefitLimitComponent",
+    ),
+    (
+        "InsurancePlan.plan.specificCost.benefit.cost",
+        "PlanBenefitCostComponent",
+    ),
+    (
+        "MeasureReport.group.stratifier.stratum.component",
+        "StratifierGroupComponentComponent",
+    ),
+    (
+        "TestReport.setup.action.operation",
+        "SetupActionOperationComponent",
+    ),
+    (
+        "TestReport.setup.action.assert",
+        "SetupActionAssertComponent",
+    ),
+    (
+        "TestScript.setup.action.operation",
+        "SetupActionOperationComponent",
+    ),
+    (
+        "TestScript.setup.action.operation.requestHeader",
+        "SetupActionOperationRequestHeaderComponent",
+    ),
+    (
+        "TestScript.setup.action.assert",
+        "SetupActionAssertComponent",
+    ),
+    (
+        "ValueSet.compose.include.concept.designation",
+        "ConceptReferenceDesignationComponent",
+    ),
+    (
+        "ValueSet.compose.include.filter",
+        "ConceptSetFilterComponent",
+    ),
+];
+
+/// The `constraint` profiles on `Quantity` the pinned run reports as complex
+/// types. No row: the model has no field of either class.
+pub const QUANTITY_PROFILES: [&str; 2] = ["SimpleQuantity", "MoneyQuantity"];
+
+/// The nine `superclass` entries: `id`, and the eight `BackboneType`
+/// datatypes.
+pub const SUPERCLASS_EXCEPTIONS: [&str; 9] = [
+    "id",
+    "Dosage",
+    "ElementDefinition",
+    "MarketingStatus",
+    "Population",
+    "ProdCharacteristic",
+    "ProductShelfLife",
+    "SubstanceAmount",
+    "Timing",
+];
+
+/// The eight datatypes HAPI bases on `BackboneType`.
+pub const BACKBONE_TYPE_DATATYPES: [&str; 8] = [
+    "Dosage",
+    "ElementDefinition",
+    "MarketingStatus",
+    "Population",
+    "ProdCharacteristic",
+    "ProductShelfLife",
+    "SubstanceAmount",
+    "Timing",
+];
+
+// ---------------------------------------------------------------------------
+// codegen.ancestry.001
+// ---------------------------------------------------------------------------
+
+// covers: codegen.ancestry.001
+#[test]
+fn the_class_table_is_generated_from_the_structure_definitions_and_the_exception_file_only() {
+    // The expected rows first, from the pinned generate run (bound today), so
+    // this part of the fixture is checked even while the table is unbound:
+    // one row per type of kind primitive-type, complex-type and resource
+    // defined by specialization (abstract ones included), one per nested
+    // component, and one for `Enumeration`.
+    let report = pinned_run(generator_under_test().as_ref(), "ancestry-001-report");
+    let expected_types: BTreeSet<String> = report
+        .types
+        .iter()
+        .filter(|t| {
+            matches!(
+                t.kind,
+                TypeKind::Primitive
+                    | TypeKind::Complex
+                    | TypeKind::Resource
+                    | TypeKind::AbstractElementSet
+            )
+        })
+        // The pinned run also reports the two `constraint` profiles on
+        // `Quantity` as complex types; they are not defined by specialization,
+        // and the model holds their elements as `Quantity`
+        // (`codegen.ancestry.002`), so they are not rows.
+        .filter(|t| !QUANTITY_PROFILES.contains(&t.fhir_name.as_str()))
+        .map(|t| t.fhir_name.clone())
+        .collect();
+    let expected_components: BTreeSet<String> = report
+        .types_of_kind(TypeKind::Backbone)
+        .iter()
+        .map(|t| t.fhir_name.clone())
+        .collect();
+    for name in ["Element", "BackboneElement", "Resource", "DomainResource"] {
+        assert!(expected_types.contains(name), "{name} is a type row");
+    }
+    // 20 primitives, 40 complex specializations plus `Element`, 146 concrete
+    // and 2 abstract resources (the inventory constants above); the logical
+    // `MetadataResource` and the `SimpleQuantity`/`MoneyQuantity` profiles are
+    // not rows.
+    assert_eq!(
+        expected_types.len(),
+        R4_PRIMITIVES.len()
+            + EXPECTED_COMPLEX_SPECIALIZATIONS
+            + 1
+            + EXPECTED_CONCRETE_RESOURCES
+            + EXPECTED_ABSTRACT_RESOURCES,
+        "the pinned run's type list: {:?}",
+        report
+            .types
+            .iter()
+            .filter(|t| expected_types.contains(&t.fhir_name))
+            .map(|t| format!("{}:{:?}:{}", t.fhir_name, t.kind, t.instantiable))
+            .collect::<Vec<_>>()
+    );
+    for path in ["Patient.contact", "Timing.repeat", "Questionnaire.item"] {
+        assert!(
+            expected_components.contains(path),
+            "{path} is a component row"
+        );
+    }
+
+    // The exception file is an input of the run, so it must exist.
+    exception_file_text();
+
+    let first = pinned_class_table("ancestry-001-a");
+    let second = pinned_class_table("ancestry-001-b");
+    assert!(
+        first.file.text().contains("@generated"),
+        "the class table {} must carry an @generated marker",
+        first.file.path
+    );
+    assert_eq!(
+        first.file.bytes, second.file.bytes,
+        "the class table must regenerate byte-identically from the same inputs"
+    );
+
+    // It reads no `.java` file: a run with `reference/` present gets the same
+    // bytes as one without, and no input it opened is Java source.
+    let out = scratch_dir("ancestry-001-ref");
+    let with_reference = class_table_under_test()
+        .class_table(&ClassTableRequest {
+            reference_dir: Some(repo_path("reference")),
+            ..ClassTableRequest::pinned(&out)
+        })
+        .unwrap_or_else(|e| panic!("the class-table run with reference/ must succeed: {e}"));
+    assert_eq!(
+        with_reference.file.bytes, first.file.bytes,
+        "the class table must not depend on reference/"
+    );
+    for run in [&first, &with_reference] {
+        let java: Vec<&PathBuf> = run
+            .inputs_read
+            .iter()
+            .filter(|p| p.extension().is_some_and(|x| x == "java"))
+            .collect();
+        assert!(
+            java.is_empty(),
+            "the generator must read no .java file: {java:?}"
+        );
+        assert!(
+            run.inputs_read
+                .iter()
+                .any(|p| p.ends_with("r4-class-table-exceptions.toml")),
+            "the exception file must be one of the run's inputs: {:?}",
+            run.inputs_read
+        );
+    }
+
+    // The table's rows against the expected sets.
+    let table = first;
+    let got_types: BTreeSet<String> = table
+        .rows
+        .iter()
+        .filter_map(|r| match &r.of {
+            ClassRowOf::Type(n) => Some(n.clone()),
+            _ => None,
+        })
+        .collect();
+    let got_components: BTreeSet<String> = table
+        .rows
+        .iter()
+        .filter_map(|r| match &r.of {
+            ClassRowOf::Component(p) => Some(p.clone()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(got_types, expected_types, "one row per FHIR type");
+    assert_eq!(
+        got_components, expected_components,
+        "one row per nested component"
+    );
+    assert_eq!(
+        table
+            .rows
+            .iter()
+            .filter(|r| r.of == ClassRowOf::Enumeration)
+            .count(),
+        1,
+        "one row for Enumeration"
+    );
+    assert_eq!(
+        table.rows.len(),
+        expected_types.len() + expected_components.len() + 1,
+        "and no other row"
+    );
+
+    // Each row: simple and qualified name, with `$` before a nested class's
+    // name; IBase for every row.
+    for row in &table.rows {
+        assert!(
+            row.interfaces.contains(&InterfaceKind::IBase),
+            "{:?} must be IBase",
+            row.of
+        );
+        let want = match &row.of {
+            ClassRowOf::Component(path) => {
+                let outer = path.split('.').next().expect("a component path has a root");
+                format!(
+                    "{}${}",
+                    table.type_row(outer).qualified_name,
+                    row.simple_name
+                )
+            }
+            _ => model_class(&row.simple_name),
+        };
+        assert_eq!(row.qualified_name, want, "{:?}", row.of);
+    }
+    assert_eq!(table.enumeration_row().simple_name, "Enumeration");
+
+    // Each element of a generated type carries a value class. A primitive's
+    // `value` is held in a Java value, not a model class. `xhtml.id` is a gap
+    // in the spec (no rule fixes it) and is deliberately not asserted.
+    let mut missing = Vec::new();
+    for ty in report.types.iter().filter(|t| {
+        expected_types.contains(&t.fhir_name) || expected_components.contains(&t.fhir_name)
+    }) {
+        for element in &ty.elements {
+            if ty.kind == TypeKind::Primitive && element.fhir_name == "value" {
+                continue;
+            }
+            if element.path == "xhtml.id" {
+                continue;
+            }
+            for key in element_keys(element) {
+                match table.elements.get(&key) {
+                    Some(class) => {
+                        // Both classes are rows of the table.
+                        table.row_by_qualified(&class.by_name);
+                        table.row_by_qualified(&class.through_star);
+                    }
+                    None => missing.push(key),
+                }
+            }
+        }
+    }
+    assert!(
+        missing.is_empty(),
+        "{} elements have no value class; the first few: {:?}",
+        missing.len(),
+        &missing[..missing.len().min(10)]
+    );
+}
+
+// ---------------------------------------------------------------------------
+// codegen.ancestry.002
+// ---------------------------------------------------------------------------
+
+// covers: codegen.ancestry.002
+#[test]
+fn class_names_and_the_fhir_type_hierarchy_follow_fixed_rules() {
+    let table = pinned_class_table("ancestry-002");
+
+    // Class names.
+    for (fhir, class) in [
+        ("string", "StringType"),
+        ("dateTime", "DateTimeType"),
+        ("positiveInt", "PositiveIntType"),
+        ("Patient", "Patient"),
+        ("HumanName", "HumanName"),
+        ("List", "ListResource"),
+    ] {
+        assert_eq!(table.type_row(fhir).simple_name, class, "{fhir}");
+    }
+    for (path, class) in [
+        ("Patient.contact", "ContactComponent"),
+        ("Consent.provision", "ProvisionComponent"),
+        ("Patient.communication", "PatientCommunicationComponent"),
+        ("Observation.component", "ObservationComponentComponent"),
+    ] {
+        assert_eq!(table.component_row(path).simple_name, class, "{path}");
+    }
+    // A `contentReference` element takes the class of the element it
+    // references: `Questionnaire.item.item` is `#Questionnaire.item`.
+    assert_eq!(
+        table.element_row("Questionnaire.item.item").qualified_name,
+        table.component_row("Questionnaire.item").qualified_name
+    );
+
+    // Ancestry: its own type and the baseDefinition chain.
+    for (fhir, want) in [
+        ("string", &["string", "Element"][..]),
+        ("Patient", &["Patient", "DomainResource", "Resource"][..]),
+        ("code", &["code", "string", "Element"][..]),
+    ] {
+        assert_eq!(table.type_row(fhir).assignable_to, set(want), "{fhir}");
+    }
+    assert_eq!(
+        table.component_row("Patient.contact").assignable_to,
+        set(&["BackboneElement", "Element"])
+    );
+    // A component inside a datatype is an `Element`: `Timing.repeat`.
+    assert_eq!(
+        table.component_row("Timing.repeat").assignable_to,
+        set(&["Element"])
+    );
+
+    // The classes HAPI adds that have no FHIR type are not rows, and no FHIR
+    // type name stands for them.
+    for hapi_only in [
+        "Base",
+        "Type",
+        "PrimitiveType",
+        "BaseDateTimeType",
+        "BackboneType",
+        "MetadataResource",
+        "BaseReference",
+        "BaseNarrative",
+        "BaseExtension",
+        "BaseResource",
+        "BaseBinary",
+    ] {
+        assert!(
+            table.rows.iter().all(|r| r.simple_name != hapi_only),
+            "{hapi_only} must not be a row"
+        );
+        assert!(
+            table
+                .rows
+                .iter()
+                .all(|r| !r.assignable_to.contains(hapi_only)),
+            "{hapi_only} must not appear in any ancestry set"
+        );
+    }
+
+    // Interface kinds, against the pinned run's own type kinds.
+    let report = pinned_run(generator_under_test().as_ref(), "ancestry-002-report");
+    for ty in &report.types {
+        if QUANTITY_PROFILES.contains(&ty.fhir_name.as_str()) {
+            continue;
+        }
+        let kinds = match ty.kind {
+            TypeKind::Primitive | TypeKind::Complex | TypeKind::Resource => {
+                &table.type_row(&ty.fhir_name).interfaces
+            }
+            TypeKind::Backbone => &table.component_row(&ty.fhir_name).interfaces,
+            _ => continue,
+        };
+        match ty.kind {
+            TypeKind::Primitive => {
+                assert!(
+                    kinds.contains(&InterfaceKind::IPrimitiveType),
+                    "{}",
+                    ty.fhir_name
+                );
+                assert!(
+                    !kinds.contains(&InterfaceKind::ICompositeType),
+                    "{}",
+                    ty.fhir_name
+                );
+            }
+            TypeKind::Complex => assert_eq!(
+                kinds.contains(&InterfaceKind::ICompositeType),
+                ty.instantiable,
+                "{}: every concrete complex-type row is ICompositeType, and the abstract \
+                 Element and BackboneElement are not",
+                ty.fhir_name
+            ),
+            TypeKind::Backbone => assert!(
+                !kinds.contains(&InterfaceKind::ICompositeType),
+                "{}: a nested component is not ICompositeType",
+                ty.fhir_name
+            ),
+            _ => {}
+        }
+    }
+    for name in ["Element", "BackboneElement"] {
+        assert!(
+            !table
+                .type_row(name)
+                .interfaces
+                .contains(&InterfaceKind::ICompositeType),
+            "{name} is not ICompositeType"
+        );
+    }
+    for name in ["Reference", "Meta", "Narrative", "Extension"] {
+        assert!(
+            table
+                .type_row(name)
+                .interfaces
+                .contains(&InterfaceKind::ICompositeType),
+            "{name} is ICompositeType"
+        );
+    }
+    assert!(
+        table
+            .enumeration_row()
+            .interfaces
+            .contains(&InterfaceKind::IPrimitiveType)
+    );
+    assert!(
+        table
+            .type_row("Reference")
+            .interfaces
+            .contains(&InterfaceKind::IBaseReference)
+    );
+
+    // Element value classes: a `System.*` type is read through its
+    // `structuredefinition-fhir-type` extension.
+    assert_eq!(table.element_row("Element.id").simple_name, "StringType");
+    assert_eq!(table.element_row("Extension.url").simple_name, "UriType");
+    // A `Quantity` element profiled `SimpleQuantity` is still a `Quantity`.
+    assert_eq!(
+        table
+            .element_row("Observation.referenceRange.low")
+            .simple_name,
+        "Quantity"
+    );
+    // A choice element's value class is that of the chosen type.
+    assert_eq!(
+        table.element_row("Observation.valueQuantity").simple_name,
+        "Quantity"
+    );
+    assert_eq!(
+        table.element_row("Observation.valueString").simple_name,
+        "StringType"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// codegen.ancestry.003
+// ---------------------------------------------------------------------------
+
+// covers: codegen.ancestry.003
+#[test]
+fn a_code_element_is_an_enumeration_exactly_when_its_required_binding_is_closed_and_not_a_type_list()
+ {
+    let table = pinned_class_table("ancestry-003");
+    let enumeration = table.enumeration_row().qualified_name.clone();
+
+    for path in ["Patient.gender", "Observation.status", "Address.use"] {
+        assert_eq!(
+            table.element_row(path).qualified_name,
+            enumeration,
+            "{path}"
+        );
+    }
+    for path in [
+        // A value set over `urn:ietf:bcp:13`, not in the package.
+        "Attachment.contentType",
+        // The `ResourceType` binding.
+        "Questionnaire.subjectType",
+        // The resource-type and data-type lists HAPI holds as `CodeType`.
+        "SearchParameter.base",
+        "DataRequirement.type",
+    ] {
+        assert_eq!(table.element_row(path).simple_name, "CodeType", "{path}");
+    }
+
+    // Inherited fields follow the same rule: a canonical resource's `status`
+    // (declared on `MetadataResource`) and the `Quantity` specialisations'
+    // `comparator`.
+    for path in [
+        "ValueSet.status",
+        "CodeSystem.status",
+        "Age.comparator",
+        "Count.comparator",
+        "Distance.comparator",
+        "Duration.comparator",
+    ] {
+        assert_eq!(
+            table.element_row(path).qualified_name,
+            enumeration,
+            "{path}"
+        );
+    }
+
+    // The rule predicts 324; the model holds 323 of them as `Enumeration` and
+    // no other element. The one exception is
+    // `ImplementationGuide.definition.parameter.code` (`codegen.ancestry.004`).
+    let held: Vec<&String> = table
+        .elements
+        .iter()
+        .filter(|(_, c)| c.by_name == enumeration)
+        .map(|(path, _)| path)
+        .collect();
+    assert_eq!(
+        held.len(),
+        323,
+        "the table must hold exactly 323 Enumeration elements, not {}",
+        held.len()
+    );
+    assert_eq!(
+        table
+            .element_row("ImplementationGuide.definition.parameter.code")
+            .simple_name,
+        "StringType",
+        "the one element the rule predicts that the model does not hold as Enumeration"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// codegen.ancestry.004
+// ---------------------------------------------------------------------------
+
+// covers: codegen.ancestry.004
+#[test]
+fn the_exception_file_lists_every_place_hapis_class_tree_differs_each_with_its_citation() {
+    let entries = read_exception_entries(&exception_file_text());
+
+    // Every entry names its kind, target and source, and carries an effect.
+    for entry in &entries {
+        for key in ["kind", "target", "source"] {
+            assert!(
+                entry.get(key).is_some(),
+                "an entry must have `{key}`: {entry:?}"
+            );
+        }
+        assert!(
+            entry.pairs.len() > 3,
+            "an entry must state its effect, not only kind, target and source: {entry:?}"
+        );
+        let kind = entry.get("kind").unwrap_or_default();
+        assert!(
+            ["superclass", "element-class", "runtime-class", "class-name"].contains(&kind),
+            "an entry's kind must be one of the four: {entry:?}"
+        );
+        let source = entry.get("source").unwrap_or_default();
+        assert!(
+            source.contains(".java:"),
+            "an entry's source must cite <file>.java:<line>: {entry:?}"
+        );
+        // Where `reference/` is cloned (never in CI), the cited file exists.
+        if repo_path(MODEL_SOURCE_DIR).is_dir() {
+            for cited in source.split(|c: char| c == ';' || c == ',' || c.is_whitespace()) {
+                if let Some((file, _line)) = cited.split_once(".java:") {
+                    let file = file.trim_start_matches(['(', '`']);
+                    assert!(
+                        repo_path(MODEL_SOURCE_DIR)
+                            .join(format!("{file}.java"))
+                            .is_file(),
+                        "{source}: {file}.java must exist under {MODEL_SOURCE_DIR}"
+                    );
+                }
+            }
+        }
+    }
+
+    // Its entries at this change are exactly these.
+    let got: BTreeSet<(String, String)> = entries
+        .iter()
+        .map(|e| {
+            (
+                e.get("kind").unwrap_or_default().to_string(),
+                e.get("target").unwrap_or_default().to_string(),
+            )
+        })
+        .collect();
+    assert_eq!(got.len(), entries.len(), "no entry is listed twice");
+    let mut want: BTreeSet<(String, String)> = BTreeSet::new();
+    for target in SUPERCLASS_EXCEPTIONS {
+        want.insert(("superclass".to_string(), target.to_string()));
+    }
+    for target in [
+        "Resource.id",
+        "ImplementationGuide.definition.parameter.code",
+    ] {
+        want.insert(("element-class".to_string(), target.to_string()));
+    }
+    want.insert(("runtime-class".to_string(), "Narrative.div".to_string()));
+    for (target, _) in CLASS_NAME_EXCEPTIONS {
+        want.insert(("class-name".to_string(), target.to_string()));
+    }
+    assert_eq!(got, want, "the exception file's entries");
+    assert_eq!(entries.len(), 9 + 2 + 1 + 13);
+
+    // The table applies them.
+    let table = pinned_class_table("ancestry-004");
+    assert_eq!(
+        table.type_row("id").assignable_to,
+        set(&["id", "uri", "Element"]),
+        "IdType extends UriType, so id is not assignable to string"
+    );
+    for name in BACKBONE_TYPE_DATATYPES {
+        let row = table.type_row(name);
+        assert_eq!(
+            row.assignable_to,
+            set(&[name, "Element"]),
+            "{name} extends BackboneType, not BackboneElement"
+        );
+        assert!(
+            row.interfaces.contains(&InterfaceKind::ICompositeType),
+            "{name} still implements ICompositeType"
+        );
+    }
+    assert_eq!(table.element_row("Resource.id").simple_name, "IdType");
+    assert_eq!(table.element_row("Patient.id").simple_name, "IdType");
+    assert_eq!(table.element_row("Element.id").simple_name, "StringType");
+    let parameter_code = table.element_row("ImplementationGuide.definition.parameter.code");
+    assert_eq!(parameter_code.simple_name, "StringType");
+    assert!(parameter_code.assignable_to.contains("string"));
+    assert!(!parameter_code.assignable_to.contains("code"));
+    assert_eq!(table.element_row("Narrative.div").simple_name, "StringType");
+    assert_eq!(
+        table.element_row_through_star("Narrative.div").simple_name,
+        "XhtmlType"
+    );
+    for (path, class) in CLASS_NAME_EXCEPTIONS {
+        assert_eq!(table.component_row(path).simple_name, class, "{path}");
+    }
+    assert_eq!(
+        table
+            .component_row("CodeSystem.concept.designation")
+            .qualified_name,
+        "org.hl7.fhir.r4.model.CodeSystem$ConceptDefinitionDesignationComponent"
+    );
+
+    // The generator refuses an entry without a source, an entry whose target
+    // is not in the package, and an entry that changes nothing. Each refused
+    // file is the reviewed file with one entry mutated.
+    let text = exception_file_text();
+    let actor = entries
+        .iter()
+        .find(|e| e.get("target") == Some("Consent.provision.actor"))
+        .expect("the Consent.provision.actor entry");
+    let actor_source = format!("\"{}\"", actor.get("source").unwrap_or_default());
+    let mut refused: Vec<(&str, String)> = Vec::new();
+    // No source: drop the entry's `source` line.
+    let no_source: String = text
+        .lines()
+        .filter(|l| !(l.trim_start().starts_with("source") && l.contains(&actor_source)))
+        .map(|l| format!("{l}\n"))
+        .collect();
+    assert_ne!(no_source, text, "the fixture must drop a source line");
+    refused.push(("an entry without a source", no_source));
+    // A target not in the package.
+    let unknown = text.replacen(
+        "\"Consent.provision.actor\"",
+        "\"Consent.provision.noSuchElement\"",
+        1,
+    );
+    assert_ne!(unknown, text);
+    refused.push(("an entry whose target is not in the package", unknown));
+    // No effect: the entry renames `Patient.contact` to the name the rule
+    // already gives it.
+    let no_effect = text
+        .replacen("\"Consent.provision.actor\"", "\"Patient.contact\"", 1)
+        .replacen("\"provisionActorComponent\"", "\"ContactComponent\"", 1);
+    assert!(
+        no_effect.contains("\"ContactComponent\""),
+        "the fixture must restate the rule's own name"
+    );
+    refused.push(("an entry that changes nothing", no_effect));
+    for (what, body) in refused {
+        let dir = scratch_dir("ancestry-004-refused");
+        let file = dir.join("r4-class-table-exceptions.toml");
+        std::fs::write(&file, body).expect("the fixture can be written");
+        let result = class_table_under_test().class_table(&ClassTableRequest {
+            exceptions: file,
+            ..ClassTableRequest::pinned(&dir.join("out"))
+        });
+        match result {
+            Ok(_) => panic!("{what} must be refused, but the run succeeded"),
+            Err(e) => {
+                let (exit_code, _kind, message) = e.refusal(what);
+                assert_ne!(exit_code, 0, "{what}: a refusal exits non-zero");
+                assert!(!message.is_empty(), "{what}: the refusal says why");
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// codegen.ancestry.005
+// ---------------------------------------------------------------------------
+
+// covers: codegen.ancestry.005
+#[test]
+fn the_generated_table_gives_path_api_005s_answers() {
+    let table = pinned_class_table("ancestry-005");
+
+    for fhir in [
+        "string",
+        "code",
+        "markdown",
+        "uri",
+        "url",
+        "canonical",
+        "oid",
+        "uuid",
+        "integer",
+        "positiveInt",
+        "unsignedInt",
+        "date",
+        "dateTime",
+        "instant",
+        "boolean",
+        "decimal",
+        "base64Binary",
+        "time",
+        "xhtml",
+        "id",
+    ] {
+        assert!(
+            table
+                .type_row(fhir)
+                .interfaces
+                .contains(&InterfaceKind::IPrimitiveType),
+            "{fhir} is IPrimitiveType"
+        );
+    }
+    for (fhir, class) in [
+        ("string", "StringType"),
+        ("code", "CodeType"),
+        ("markdown", "MarkdownType"),
+        ("uri", "UriType"),
+        ("url", "UrlType"),
+        ("canonical", "CanonicalType"),
+        ("oid", "OidType"),
+        ("uuid", "UuidType"),
+        ("integer", "IntegerType"),
+        ("positiveInt", "PositiveIntType"),
+        ("unsignedInt", "UnsignedIntType"),
+        ("date", "DateType"),
+        ("dateTime", "DateTimeType"),
+        ("instant", "InstantType"),
+        ("boolean", "BooleanType"),
+        ("decimal", "DecimalType"),
+        ("base64Binary", "Base64BinaryType"),
+        ("time", "TimeType"),
+        ("xhtml", "XhtmlType"),
+        ("id", "IdType"),
+    ] {
+        assert_eq!(table.type_row(fhir).simple_name, class, "{fhir}");
+    }
+    let enumeration = table.enumeration_row();
+    assert!(
+        enumeration
+            .interfaces
+            .contains(&InterfaceKind::IPrimitiveType)
+    );
+    assert_eq!(enumeration.assignable_to, set(&["Element"]));
+    let id = table.type_row("id");
+    assert!(id.assignable_to.contains("uri"));
+    assert!(!id.assignable_to.contains("string"));
+
+    for name in [
+        "HumanName",
+        "CodeableConcept",
+        "Reference",
+        "Meta",
+        "Narrative",
+        "Extension",
+    ] {
+        assert!(
+            table
+                .type_row(name)
+                .interfaces
+                .contains(&InterfaceKind::ICompositeType),
+            "{name} is ICompositeType"
+        );
+    }
+    assert!(
+        table
+            .type_row("Reference")
+            .interfaces
+            .contains(&InterfaceKind::IBaseReference)
+    );
+    for name in ["Age", "Count", "Distance", "Duration"] {
+        assert!(
+            table.type_row(name).assignable_to.contains("Quantity"),
+            "{name} is assignable to Quantity"
+        );
+    }
+    let contact = table.component_row("Patient.contact");
+    assert_eq!(contact.simple_name, "ContactComponent");
+    assert_eq!(
+        contact.qualified_name,
+        "org.hl7.fhir.r4.model.Patient$ContactComponent"
+    );
+    assert!(contact.assignable_to.contains("BackboneElement"));
+    assert!(contact.assignable_to.contains("Element"));
+    assert!(!contact.interfaces.contains(&InterfaceKind::ICompositeType));
+    assert_eq!(
+        table.type_row("Patient").assignable_to,
+        set(&["Patient", "DomainResource", "Resource"])
+    );
+    assert!(
+        !table
+            .type_row("Dosage")
+            .assignable_to
+            .contains("BackboneElement")
+    );
+
+    for (path, class) in [
+        ("Patient.gender", "Enumeration"),
+        ("Observation.status", "Enumeration"),
+        ("Patient.active", "BooleanType"),
+        ("Patient.birthDate", "DateType"),
+        ("Patient.name", "HumanName"),
+        ("Patient.contact", "ContactComponent"),
+        ("Observation.code", "CodeableConcept"),
+        ("Observation.subject", "Reference"),
+        ("Patient.id", "IdType"),
+        ("Narrative.div", "StringType"),
+    ] {
+        assert_eq!(table.element_row(path).simple_name, class, "{path}");
+    }
+    assert_eq!(
+        table.element_row_through_star("Narrative.div").simple_name,
+        "XhtmlType"
     );
 }

@@ -46,8 +46,9 @@
 //!    an *invariant* rather than an absolute time is measured here and asserted
 //!    unconditionally, because a ratio survives the change of build profile:
 //!    zero tokens scanned for a pass-through (`model.perf.001`), a lazy read at
-//!    most a tenth of a full parse (`model.perf.002`), the 4 KiB and 64 KiB
-//!    metadata updates within 25% of each other (`model.perf.004`).
+//!    most a tenth of a full parse (`model.perf.002`), a metadata update that
+//!    scans the same tokens and materialises nothing outside `meta` at 4 KiB
+//!    and at 64 KiB (`model.perf.004`).
 //!
 //! The file format the recorded half expects is documented on
 //! [`MICRO_RESULTS`]. It mirrors `bench/baseline-hapi-8.12.json`, which is the
@@ -1241,21 +1242,20 @@ fn a_metadata_update_is_proportional_to_meta_not_to_the_document() {
     let input_4k = patient_4kib();
     let input_64k = patient_64kib();
 
-    // The in-process half: the 4 KiB and 64 KiB medians within 25% of each
-    // other. This is a ratio between two measurements taken the same way, so it
-    // holds whatever the build profile.
-    //
-    // The stored buffers are made owned once, outside the timed region: in the
-    // server the buffer arrives owned from the database driver, and copying it
-    // per iteration would time this adapter's copies, which grow with the
-    // document, instead of the update. Each timed iteration still loads a fresh,
-    // unmodified resource from its own `Arc` clone of the same bytes.
+    // The owned input documents are prepared here, OUTSIDE every timed
+    // region: in the server the buffer arrives owned from the database
+    // driver, and the scenario times only the two `set`s and the
+    // serialisation. No `FrevoCodec::owned` copy (`to_vec`, then
+    // `Arc::from(Box<[u8]>)`) runs inside a timed closure; each timed
+    // iteration loads a fresh, unmodified resource from an `Arc` clone of the
+    // same bytes through `run_owned`, which copies nothing.
     let owned_4k: std::sync::Arc<[u8]> = std::sync::Arc::from(input_4k.as_slice());
     let owned_64k: std::sync::Arc<[u8]> = std::sync::Arc::from(input_64k.as_slice());
     let codec = codec_under_test();
 
     // What is timed is the real update: the untimed call produces exactly what
     // the fully reported run does, a modified resource carrying the new meta.
+    let mut tokens = Vec::new();
     for (owned, input, size) in [
         (&owned_4k, &input_4k, "4 KiB"),
         (&owned_64k, &input_64k, "64 KiB"),
@@ -1287,8 +1287,39 @@ fn a_metadata_update_is_proportional_to_meta_not_to_the_document() {
             owned.as_ref() == input.as_slice(),
             "the stored buffer at {size} must be unchanged by the update"
         );
+        // The edit stays proportional to `meta`: nothing outside it is
+        // materialised. Build-profile independent, so asserted here.
+        let outside: Vec<&String> = reported
+            .materialised
+            .iter()
+            .filter(|p| {
+                !(p.as_str() == "Patient.meta"
+                    || p.starts_with("Patient.meta.")
+                    || p.starts_with("Patient.meta["))
+            })
+            .collect();
+        assert!(
+            outside.is_empty(),
+            "the model-meta-update workload at {size} must materialise nothing \
+             outside Patient.meta, but materialised {outside:?}"
+        );
+        tokens.push(reported.tokens_scanned);
     }
+    // And it scans no element outside `meta` beyond what locating it costs:
+    // the 64 KiB document is the 4 KiB one with more content after `meta`, so
+    // both scan the same tokens. A re-parse would scan many times more.
+    assert_eq!(
+        tokens[0], tokens[1],
+        "the model-meta-update workload must scan the same tokens at 4 KiB and \
+         64 KiB: a scan that grows with the document is not proportional to meta"
+    );
 
+    // The in-process medians, timing only `run_owned` (the two sets and the
+    // serialisation). The absolute budgets are release-profile numbers: an
+    // unoptimised `cargo test` build cannot be held to them without a false
+    // red, so they are asserted here only in an optimised build. That is not
+    // a false green in a debug build, because the recorded half below grades
+    // the same budgets unconditionally.
     let small = median_of(|| {
         codec
             .run_owned(&owned_4k, &meta_update)
@@ -1305,18 +1336,19 @@ fn a_metadata_update_is_proportional_to_meta_not_to_the_document() {
         micros(small) > 0.0 && micros(large) > 0.0,
         "both cases must take measurable time"
     );
-    let spread = (micros(large) - micros(small)).abs() / micros(small).min(micros(large));
-    assert!(
-        spread <= 0.25,
-        "the median times must differ by at most 25%, but 4 KiB took {:.3} us \
-         and 64 KiB took {:.3} us -- a spread of {:.1}%. A metadata update is \
-         proportional to meta, not to the document.",
-        micros(small),
-        micros(large),
-        spread * 100.0
-    );
+    if !cfg!(debug_assertions) {
+        assert!(
+            micros(small) <= 5.0 && micros(large) <= 12.0,
+            "in an optimised build the in-process medians must be at most 5 us \
+             at 4 KiB and 12 us at 64 KiB, but were {:.3} us and {:.3} us",
+            micros(small),
+            micros(large)
+        );
+    }
 
-    // The recorded half, over the two recorded medians.
+    // The recorded half: the absolute budgets (owner decision 2026-11-21),
+    // graded on the bench/micro/ medians. A local recording is advisory; the
+    // authoritative grade is the CI or reference-environment run.
     let small_us = require_recorded(
         MICRO_RESULTS,
         "model-meta-update-4kib",
@@ -1329,11 +1361,31 @@ fn a_metadata_update_is_proportional_to_meta_not_to_the_document() {
         "median_us",
         "model.perf.004",
     );
-    let recorded_spread = (large_us - small_us).abs() / small_us.min(large_us);
     assert!(
-        recorded_spread <= 0.25,
-        "the recorded medians must differ by at most 25%: {small_us} us at \
-         4 KiB against {large_us} us at 64 KiB"
+        small_us <= 5.0,
+        "model-meta-update-4kib: the median time must be at most 5 us, but \
+         {MICRO_RESULTS} records {small_us} us"
+    );
+    assert!(
+        large_us <= 12.0,
+        "model-meta-update-64kib: the median time must be at most 12 us, but \
+         {MICRO_RESULTS} records {large_us} us"
+    );
+    let small_tokens = require_recorded(
+        MICRO_RESULTS,
+        "model-meta-update-4kib",
+        "tokens_scanned",
+        "model.perf.004",
+    );
+    let large_tokens = require_recorded(
+        MICRO_RESULTS,
+        "model-meta-update-64kib",
+        "tokens_scanned",
+        "model.perf.004",
+    );
+    assert_eq!(
+        small_tokens, large_tokens,
+        "the recorded runs must scan the same tokens at 4 KiB and 64 KiB"
     );
 }
 
@@ -1434,23 +1486,74 @@ fn canonical_serialisation_of_a_constructed_resource_stays_within_budget() {
     );
 }
 
+/// The five per-run medians a workload records under `run_medians_us`
+/// (`model.perf.006`): each `bench/micro/` run's per-workload median, five
+/// runs. The compared statistic is their median, which this test computes
+/// itself rather than trusting a precomputed figure.
+fn recorded_run_medians(file: &str, workload: &str) -> Result<Vec<f64>, String> {
+    let path = repo_root().join(file);
+    let text =
+        std::fs::read_to_string(&path).map_err(|e| format!("{file} does not exist ({e})"))?;
+    let doc = json_parse(&text).map_err(|e| format!("{file} is not JSON: {e}"))?;
+    let Some(Json::Array(entries)) = json_get(&doc, "workloads") else {
+        return Err(format!("{file} has no \"workloads\" array"));
+    };
+    let entry = entries
+        .iter()
+        .find(|e| matches!(json_get(e, "name"), Some(Json::Str(n)) if n == workload))
+        .ok_or_else(|| format!("{file} records no workload named {workload:?}"))?;
+    let Some(Json::Array(runs)) = json_get(entry, "run_medians_us") else {
+        return Err(format!(
+            "{file}: {workload} records no \"run_medians_us\" array; the compared \
+             statistic is the median of five bench runs, so each side must record \
+             the five per-run medians"
+        ));
+    };
+    runs.iter()
+        .map(|r| match r {
+            Json::Number(n) => n
+                .parse::<f64>()
+                .map_err(|_| format!("{file}: {workload}.run_medians_us holds {n}")),
+            other => Err(format!(
+                "{file}: {workload}.run_medians_us holds a non-number {other:?}"
+            )),
+        })
+        .collect()
+}
+
+/// The median of five run medians, refusing any other count.
+fn median_of_five(file: &str, workload: &str) -> f64 {
+    let mut runs = recorded_run_medians(file, workload)
+        .unwrap_or_else(|why| panic!("model.perf.006 is graded on recorded medians: {why}"));
+    assert_eq!(
+        runs.len(),
+        5,
+        "{file}: {workload} must record exactly five run medians, not {runs:?}"
+    );
+    runs.sort_by(|a, b| a.partial_cmp(b).expect("a recorded median is a number"));
+    runs[2]
+}
+
 // covers: model.perf.006
 #[test]
 fn no_regression_against_the_recorded_baseline() {
-    // The regression policy of bench/targets.md, applied unchanged: a
-    // regression of more than 10% on any workload fails the performance gate.
-    // The baseline is the one recorded for the previous commit on main.
+    // The compared statistic is the median of five bench runs on both sides,
+    // and a workload more than 15% slower is a regression (owner decision
+    // 2026-11-21, superseding bench/targets.md's single-run 10% rule for these
+    // workloads). The baseline is the one recorded for the previous commit on
+    // `main`, on CI or the reference environment of bench/targets.md; a local
+    // recording is advisory and never updates it.
     let mut regressions = Vec::new();
     for workload in MODEL_WORKLOADS {
-        let now = require_recorded(MICRO_RESULTS, workload, "median_us", "model.perf.006");
-        let baseline = require_recorded(MICRO_BASELINE, workload, "median_us", "model.perf.006");
+        let now = median_of_five(MICRO_RESULTS, workload);
+        let baseline = median_of_five(MICRO_BASELINE, workload);
         assert!(
             baseline > 0.0,
             "{workload}: a baseline median of {baseline} us cannot be compared \
              against"
         );
         let ratio = now / baseline;
-        if ratio > 1.10 {
+        if ratio > 1.15 {
             regressions.push(format!(
                 "{workload}: {now} us against a baseline of {baseline} us, \
                  {:.1}% slower",
@@ -1460,8 +1563,8 @@ fn no_regression_against_the_recorded_baseline() {
     }
     assert!(
         regressions.is_empty(),
-        "no bench/micro/ model workload may be more than 10% slower than the \
-         baseline recorded for the previous commit on main, per the regression \
-         policy in bench/targets.md: {regressions:?}"
+        "no bench/micro/ model workload may be more than 15% slower, median of \
+         five runs against median of five runs, than the baseline recorded for \
+         the previous commit on main: {regressions:?}"
     );
 }
