@@ -638,15 +638,24 @@ fn every_binary_operator_is_unsupported_and_never_empty() {
     let text = "Patient.gender memberOf 'http://x'";
     let feature = unsupported(text, Some(&p));
     assert!(feature.contains("value sets"), "{text}: {feature}");
-    for text in ["1 / 3", "1 'mg' < 2 'g'", "1 'mg' ~ 1 'mg'"] {
+    // `/` over numbers is built (task 37, path.math.015: `1 / 3` is `0.3`);
+    // `/` and `*` over two quantities need the UCUM unit algebra (task 43).
+    for text in [
+        "1 'mg' / 2 'g'",
+        "1 'mg' * 2 'g'",
+        "1 'mg' < 2 'g'",
+        "1 'mg' ~ 1 'mg'",
+    ] {
         unsupported(text, Some(&p));
     }
 }
 
 #[test]
 fn a_unary_sign_over_an_unbuilt_operation_is_unsupported() {
-    unsupported("-1.0 / 3", None);
-    unsupported("-(1 / 3)", None);
+    // A sign over an operation that is still Unsupported (quantity `/` and
+    // `*`, task 43) surfaces it rather than negating an empty result.
+    unsupported("-(1 'mg' / 2 'g')", None);
+    unsupported("-(1 'mg' * 2 'g')", None);
 }
 
 #[test]

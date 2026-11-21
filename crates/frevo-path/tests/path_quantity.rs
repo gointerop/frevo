@@ -890,23 +890,6 @@ fn comparable_reports_whether_two_quantities_are_commensurable() {
 // path.quantity.015 -- incommensurable units (DEV-0005)
 // ---------------------------------------------------------------------------
 
-/// Which UCUM data the engine has.
-///
-/// The shared harness's `EngineConfig` does not carry this, because the suite
-/// is always run with the pinned file. Upstream models the absence as
-/// `worker.getUcumService() == null`, and every quantity comparison takes a
-/// different branch for it (FHIRPathEngine.java:2443-2444, :2486-2487,
-/// :2518-2519, :2578-2579), so "no UCUM" is observable behaviour and not a
-/// degradation. `path.quantity.015` grades both states, so it needs a seam that
-/// can express both.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum UcumData {
-    /// The pinned `ucum-essence.xml` is loaded. What the server runs with.
-    Pinned,
-    /// No UCUM service at all.
-    Absent,
-}
-
 /// The UCUM-dependent surface.
 pub trait UcumOracle {
     /// The `version` attribute of the UCUM data in force, reported beside the
@@ -914,14 +897,8 @@ pub trait UcumOracle {
     fn ucum_version(&mut self) -> Result<String, EngineError>;
 
     /// Load UCUM data from a file. An absent or unparseable file is an error,
-    /// never a silent fall back to [`UcumData::Absent`].
+    /// never a silent fall back to treating units as incomparable.
     fn load_ucum(&mut self, path: &Path) -> Result<String, EngineError>;
-
-    fn evaluate_with_ucum(
-        &mut self,
-        expression: &str,
-        ucum: UcumData,
-    ) -> Result<Vec<ResultItem>, EngineError>;
 
     /// `UcumEssenceService.getCanonicalForm(new Pair(new Decimal(value), code))`
     /// over the pinned file (UcumEssenceService.java:266-285): the canonical
@@ -939,11 +916,9 @@ fn ucum_oracle_under_test() -> Box<dyn UcumOracle> {
 }
 
 /// Bound over `frevo_path::UcumEssence` for loading and reporting the data
-/// (task 43's loader). Evaluation with a chosen UCUM state stays
-/// `NotImplemented` until the unit algebra (task 43) and quantity semantics
-/// (task 44) exist: the crate has no surface that evaluates with or without a
-/// UCUM service (`tasks/blockers.md`, 2026-11-20, "task 43: the UCUM unit
-/// algebra cannot be ported").
+/// (task 43's loader). Canonical form stays `NotImplemented` until task 43
+/// ports the unit algebra. There is no way to evaluate without UCUM data:
+/// Frevo has no such configuration (`path.quantity.015`, `.016`).
 struct BoundUcum;
 
 /// A load failure is a graded diagnostic carrying the crate's own text, which
@@ -966,14 +941,6 @@ impl UcumOracle for BoundUcum {
 
     fn load_ucum(&mut self, path: &Path) -> Result<String, EngineError> {
         ucum_load(path)
-    }
-
-    fn evaluate_with_ucum(
-        &mut self,
-        _expression: &str,
-        _ucum: UcumData,
-    ) -> Result<Vec<ResultItem>, EngineError> {
-        Err(EngineError::NotImplemented)
     }
 
     /// Unbound: the crate has no canonical-form API yet. Task 43 ports
@@ -1019,44 +986,28 @@ fn comparing_incommensurable_units_returns_a_boolean_and_not_an_error() {
     // the canonical *value* and throws the canonical *unit* away
     // (FHIRPathEngine.java:2301-2313), and the comparison that follows is
     // between two bare decimals with no dimension check. So `1 'cm'` becomes
-    // 0.01 metres, `1 's'` stays 1 second, and `0.01 < 1` is true.
-    let mut oracle = ucum_oracle_under_test();
-
-    let with_data = oracle
-        .evaluate_with_ucum("1 'cm' < 1 's'", UcumData::Pinned)
-        .unwrap_or_else(|e| panic!("with UCUM data loaded the comparison must answer: {e}"));
+    // 0.01 metres, `1 's'` stays 1 second, and `0.01 < 1` is true. The shared
+    // engine is configured with the pinned data, which is the only UCUM state
+    // Frevo has.
     assert_eq!(
-        with_data,
+        eval("1 'cm' < 1 's'"),
         boolean(true),
-        "0.01 metres compared against 1 second is true, because only the \
-         magnitudes are compared"
+        "0.01 metres compared against 1 second is true, because only the          magnitudes are compared"
     );
+    // A boolean, not an error and not empty.
+    assert_eq!(eval("(1 'cm' < 1 's').empty()"), boolean(false));
 
-    // The same at the shared seam, which is configured with the pinned data.
-    assert_eq!(eval("1 'cm' < 1 's'"), boolean(true));
-
-    // With no UCUM service the comparison never reaches the canonicalisation:
-    // each operator returns `makeBoolean(false)` outright when the unit
-    // children differ (FHIRPathEngine.java:2443-2444). That is a different
-    // answer, not the same answer by another route, which is why both states
-    // are graded.
-    let without_data = oracle
-        .evaluate_with_ucum("1 'cm' < 1 's'", UcumData::Absent)
-        .unwrap_or_else(|e| panic!("with no UCUM data the comparison must still answer: {e}"));
-    assert_eq!(
-        without_data,
-        boolean(false),
-        "with no UCUM service two quantities whose unit codes differ compare false"
-    );
-
-    // And where the unit codes agree the two states agree, because the
-    // canonicalisation is not reached in either.
-    for ucum in [UcumData::Pinned, UcumData::Absent] {
-        let same_unit = oracle
-            .evaluate_with_ucum("1 'cm' < 2 'cm'", ucum)
-            .unwrap_or_else(|e| panic!("{ucum:?}: {e}"));
-        assert_eq!(same_unit, boolean(true), "{ucum:?}");
-    }
+    // The engine's other branch, for a worker whose `getUcumService()` is
+    // null (`makeBoolean(false)` when the code or unit lists differ,
+    // FHIRPathEngine.java:2443-2445, :2490-2492, :2540-2542, :2588-2590), is
+    // reached by neither HAPI configuration and is not reachable in Frevo,
+    // which has no configuration without UCUM data, so the spec does not
+    // grade it. What is graded is that Frevo cannot silently fall into it:
+    // UCUM data that cannot be loaded is a failure, never an engine that
+    // treats units as incomparable (path.quantity.016).
+    let mut oracle = ucum_oracle_under_test();
+    let absent = input::repo_path("oracles/fhir-test-cases/fetched/ucum/does-not-exist.xml");
+    expect_load_failure(&mut *oracle, "an absent UCUM file", &absent);
 }
 
 // ---------------------------------------------------------------------------
@@ -1407,8 +1358,8 @@ fn a_quantity_whose_system_is_not_ucum_is_not_canonicalised() {
         eval("1 year = 1 'cm'"),
         empty(),
         "with one side uncanonicalisable and the codes differing, equality is \
-         undecidable -- which is a different answer from the no-UCUM-data case \
-         in path.quantity.015, where the comparison answers false"
+         undecidable; this is not path.quantity.015's no-UCUM-data branch, \
+         which Frevo cannot reach"
     );
 
     // The ordered comparison is where the missing canonical value is not
