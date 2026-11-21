@@ -213,9 +213,13 @@ The engine SHALL recognise the literal forms `FHIRPathEngine` recognises, and SH
 - **AND** `\u` advances past its four hexadecimal digits (`:460-465`), so a
   unicode escape is decoded once
 - **AND** `\\` appends `\` and leaves the second `\` to be read as a new
-  escape, so `1 'a\\b'` fails to parse with
+  escape, so `1 'a\\b'` fails to parse with exactly
   `Unknown FHIRPath character escape \b` (`:466-467`), the syntax error of
-  `path.lexer.012`
+  `path.lexer.012`. It has **no** `Error @l, c: ` prefix, because it is
+  built by the two-argument `FHIRLexerException` constructor (`:467`,
+  `:28-31`). An unknown escape in a string literal is built by `lexer.error`
+  (`FHIRPathEngine.java:1831`, `FHIRLexer.java:139-141`) and does carry the
+  prefix, so the two are not built the same way
 - **AND** the code read from a resource is not decoded:
   `Parameters.parameter.where(name = 'hx').value.code` over a quantity whose
   `code` is `[hp'_X]` is `code:[hp'_X]` (`path.quantity.023`)
@@ -237,6 +241,12 @@ The engine SHALL recognise the literal forms `FHIRPathEngine` recognises, and SH
 - **AND** `0.12345678901234567890123456789012345678901234567890.toString()` is
   `string:0.12345678901234567890123456789012345678901234567890` (the primitive
   value, `convertToString`, `:887-891`), and the literal `=` itself is `true`
+- **AND** an integer-shaped literal of more than ten digits fails
+  `Utilities.isInteger` (`Utilities.java:97-98`) and is held as a
+  `DecimalType` by the same `isDecimal` arm (`FHIRPathEngine.java:1326-1329`),
+  so it is carried the same way: the 40-digit
+  `1234567890123456789012345678901234567890.toString()` is
+  `string:1234567890123456789012345678901234567890`
 - **AND** no literal, and no arithmetic or comparison over its value, fails
   with a limit on significant digits; Frevo's earlier refusal of such a
   literal is `DEBT-0011`, which this scenario closes
@@ -1330,7 +1340,11 @@ The engine SHALL implement the four ordered comparison operators as `FHIRPathEng
   offset (`path.errors.002`): the JVM's helpful `NullPointerException` text,
   which names the local variable because the published jar keeps its
   local-variable table, as observed on HAPI 8.12.0 under JDK 25 (Eclipse
-  Adoptium 25.0.1, the differential's JVM) under both workers. The same text
+  Adoptium 25.0.1, the differential's JVM) under both workers. The live
+  starter image runs JDK 21 (`hapi-fhir-jpaserver-starter/Dockerfile:41`,
+  `gcr.io/distroless/java21-debian13`), whose helpful `NullPointerException`
+  text (JDK 14 onward) has the same form, so the JDK 25 text is the one
+  graded. The same text
   is the answer wherever `<=` meets a quantity with no `unit` on the left and
   one on the right (`path.compare.002`, `path.quantity.019`)
 - **AND** no live case grades it, so it is differential-only, graded
@@ -1836,8 +1850,11 @@ identical, so every value stated here holds for both; only
   JDK 8). The differential ran HAPI 8.12.0 on JDK 25 (Eclipse Adoptium
   25.0.1) and recorded `Cannot parse null string` under both workers for
   `Parameters.parameter.where(name = 'i').value div 2` and `... mod 2` over
-  `parameters-novalue-numbers.xml` (`path.math.017#61`, `#62`), so that is the
-  text: Frevo returns an execution error with the message exactly
+  `parameters-novalue-numbers.xml` (`path.math.017#61`, `#62`). The live
+  starter image runs JDK 21 (`hapi-fhir-jpaserver-starter/Dockerfile:41`,
+  `gcr.io/distroless/java21-debian13`), whose `Integer.parseInt`
+  (`java/lang/Integer.java:624` in `openjdk/jdk21u`) throws the same
+  `Cannot parse null string`, so that is the text: Frevo returns an execution error with the message exactly
   `Cannot parse null string` and no offset (`path.errors.002`), and the text
   is graded
 - **AND** `Decimal` tests a digit with `Character.isDigit`
@@ -3339,10 +3356,34 @@ worker each of these operations raises `HAPI-0274: ` (`path.quantity.019`,
 - **AND** navigation consults no worker, so HAPI's server-facing worker
   answers the same for a literal; a `*` or `/` result raises `HAPI-0274: ` there
   before any member is navigated (`path.quantity.019`, `DEV-0029`)
+- **AND** every value above is the **evaluation** answer, with the static
+  check skipped, as in `path.navigation.019`. When the check runs (with a
+  context type), it **rejects** the same navigation. It types a quantity
+  literal as `System.Quantity` (`resolveConstantType`,
+  `FHIRPathEngine.java:3118-3119`; `TypeDetails.FP_Quantity`,
+  `TypeDetails.java:69`). `getChildTypesByName` returns no child type for a
+  `System.` type (`:6335-6336`), and the member name is typed with
+  `canBeNone` false (`:1617-1618`), so `executeType` raises
+  `FHIRPATH_UNKNOWN_NAME` (`:1590-1593`, `Messages.properties:369`):
+  `(1 'cm').code` fails the check with
+  `Error evaluating FHIRPath expression: The name 'code' is not valid for any of the possible types: [http://hl7.org/fhirpath/System.Quantity] (@char 10)`.
+  A `*` or `/` result has **no** type (`operateTypes`, `case Times` and
+  `case DivideBy`, `:2028-2045`, add a type only for `integer` and `decimal`
+  operands), so `(2 'cm' * 1 'm').code` fails the check with
+  `Error evaluating FHIRPath expression: The name 'code' is not valid for any of the possible types: [] (@char 17)`.
+  Both messages and both positions are derived from the source, not
+  observed; the owed probes with a `contextType` (task 4b) confirm them. A
+  `Quantity` read from a resource is typed as the FHIR `Quantity` and passes
+  the check
+- **AND** Frevo's check pass rejects exactly what HAPI's rejects here: making
+  these elements navigable at evaluation does **not** make the check accept
+  them
 - **AND** no live case grades it, so it is differential-only, graded
-  in-process against the values stated (`path.quantity.021#41`-`#46`,
-  `path.quantity.023#25`; the `1 week`, `(1 year).code`, `(1 year).system`,
-  `(2 'cm' * 1 'm').unit` and `(1 '%' * 1 '1').code` cases are owed probes)
+  in-process against the values stated (`path.quantity.021#41`-`#46` and
+  `path.quantity.023#25`, all run with no `contextType`, so with the check
+  skipped; the `1 week`, `(1 year).code`, `(1 year).system`,
+  `(2 'cm' * 1 'm').unit` and `(1 '%' * 1 '1').code` cases and the two check
+  rejections are owed probes)
 
 #### Scenario: [path.quantity.026] an empty quoted unit makes a UCUM quantity with no code
 
@@ -3369,7 +3410,13 @@ worker each of these operations raises `HAPI-0274: ` (`path.quantity.019`,
     and no offset (`path.errors.002`), the `NullPointerException` the `/` arm
     does not catch (`UcumEssenceService.java:322-323`)
   - `(1 '').code` is empty and `(1 '').system` is
-    `uri:http://unitsofmeasure.org` (`path.quantity.025`)
+    `uri:http://unitsofmeasure.org` (`path.quantity.025`), with the check
+    skipped. When the check runs (with a context type), both fail it as
+    `path.quantity.025` states for a literal typed `System.Quantity`:
+    `Error evaluating FHIRPath expression: The name 'code' is not valid for any of the possible types: [http://hl7.org/fhirpath/System.Quantity]`,
+    and the same text naming `system`, each followed by the ` (@char N)` of
+    the member name. The messages are derived from the source; they and the
+    positions are owed probes (task 4b)
 - **AND** under HAPI's server-facing worker every one of these that consults
   the UCUM service raises `HAPI-0274: ` instead (`path.quantity.019`,
   `DEV-0029`)

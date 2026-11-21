@@ -192,10 +192,16 @@ checkpoint because it changes what a gate measures.
     `"grade": "error"` relaxation of `path.math.017#61` and `#62`, whose text
     is now graded, and add the probes the new scenarios name as owed: the
     `\t`, `\u` and `\\` units of `path.literal.016`, the wide literal of
-    `path.literal.017`, `(1 week).unit`/`.code`/`.system`, `(1 year).code`,
+    `path.literal.017` (fractional and the 40-digit integer-shaped one),
+    `(1 week).unit`/`.code`/`.system`, `(1 year).code`,
     `(1 year).system`, `(2 'cm' * 1 'm').unit` and `(1 '%' * 1 '1').code`
     of `path.quantity.025`, and `(1 '').code` and `(1 '').system` of
-    `path.quantity.026`; then re-run the HAPI side and the differential. A
+    `path.quantity.026`. Add check-time probes **with a `contextType`**
+    (for example `Patient`), so the harness runs HAPI's check, for
+    `(1 'cm').code` and `(2 'cm' * 1 'm').code` (`path.quantity.025`, the
+    expected `FHIRPATH_UNKNOWN_NAME` texts at `(@char 10)` and
+    `(@char 17)`) and for `(1 '').code` and `(1 '').system`
+    (`path.quantity.026`). Then re-run the HAPI side and the differential. A
     stated value the run contradicts goes back to the proposer, not into
     the test.
   Until this lands, `harness/scripts/scenario-coverage.sh --change
@@ -1175,7 +1181,12 @@ checkpoint because it changes what a gate measures.
   `false`, and `*` spells the code `null` (`path.quantity.026`; Frevo keeps
   `""` today and answers `1 ''`, `1.00 'm-1'`, `true` and the parse errors of
   `'.m'` and `'m.'`). The unit escapes of `path.literal.016` already match
-  HAPI and must stay so. Depends on task 4b.
+  HAPI and must stay so. This is an **evaluation** change only. The static
+  check pass must keep rejecting member navigation on a quantity literal
+  (typed `System.Quantity`) and on a `*` or `/` result (no type), with
+  HAPI's `FHIRPATH_UNKNOWN_NAME` texts (`path.quantity.025`, `.026`). Do
+  not give these elements a type in the checker; that would make it accept
+  an invariant HAPI rejects. Depends on task 4b.
   Satisfies `path.quantity.025`, `path.quantity.026` and `path.literal.016`.
 
 - [ ] **44b. Close `DEBT-0011`: carry decimals at any number of significant
