@@ -49,7 +49,18 @@ dependency for it. Windows' `Instant` resolves to about 100 ns, coarser than the
 of operations sized to run for at least 500 us, and the per-operation figure is
 the batch time over its length. The recorded figure is the median of 201
 samples after 300 ms of discarded warm-up; p10, p90 and min are recorded
-beside it. Workloads run in a fixed order in one process.
+beside it. Within one run, workloads run in a fixed order in one process.
+
+Each bench does five such runs (`model.perf.006`), and each run is its own cold
+process: the bench re-executes itself with `--cold-run` and reads the rows
+back (`bench/micro/record.rs`, `cold_runs`). Every row records the five
+per-run medians in run order as `run_medians_us`, and its other figures come
+from the run whose median is the middle one. Runs share no process because a
+probe on 2026-11-21 found in-process runs 2 to 5 about 1.6 times slower than
+run 1, while cold runs agreed within a few percent. The gate compares the
+median of five on both sides. A recording on a development host is advisory:
+the authoritative baseline is recorded on CI or the reference environment of
+`bench/targets.md`.
 
 `path-suite-wallclock` is the exception: a wall-clock figure in seconds
 (`median_s`), the median of five cold runs, each a fresh child process of

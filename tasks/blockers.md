@@ -3622,3 +3622,11 @@ copy of the pinned package with the fhir-type extension removed from
 exit code that names `Extension.url` and `xhtml.id`. Its positive control is
 that an exact copy reproduces the checked-in `r4_classes.tsv` byte for byte.
 Neither decision is needed any more.
+
+## 2026-11-21 — resolved: task 27's recording
+
+The recorder now takes each of the five per-run medians from its own cold
+process (`ccfb14c`). In-process repetition, not only host load, had made runs
+2 to 5 about 1.6x slower. Both files were recorded at `ccfb14c`:
+`model_bytes_lazy_perf` is 18 of 18 and `path_perf` 6 of 6. The recording is
+advisory; the authoritative baseline is CI's or the reference environment's.

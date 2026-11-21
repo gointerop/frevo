@@ -762,7 +762,7 @@ checkpoint because it changes what a gate measures.
   Satisfies `model.errors.001`, `model.errors.002`, `model.errors.004`,
   `model.errors.005`.
 
-- [ ] **27. Land the model benchmarks and record the baseline.** The five
+- [x] **27. Land the model benchmarks and record the baseline.** The five
   `bench/micro/` model workloads with their budgets and the first baseline for
   the regression policy. Budgets as amended by the owner on 2026-11-21:
   `model-meta-update` at most 5 µs (4 KiB) and 12 µs (64 KiB), and the
@@ -803,6 +803,22 @@ checkpoint because it changes what a gate measures.
 ---
 
 ## Phase D — `frevo-path`
+
+  **Ticked 2026-11-21.** `bench/micro/baseline.json` and `results.json` were
+  recorded in two sessions at `ccfb14c`, on a clean tree. Every row records
+  `run_medians_us`, five per-run medians each from its own cold process.
+  Median of five (results / baseline, µs):
+  - `model-passthrough` 0.178 / 0.185
+  - `model-lazy-read` 0.838 / 0.843
+  - `model-full-parse` 13.798 / 14.228
+  - `model-meta-update-4kib` 1.694 / 1.697
+  - `model-meta-update-64kib` 5.601 / 5.624
+  - `model-canonical-encode` 11.405 / 12.153
+
+  `model_bytes_lazy_perf` is 18 of 18 (`model.perf.001` to `.006`) and
+  `path_perf` 6 of 6. These recordings were made on the Windows development
+  host and are advisory. Per `model.perf.006` the authoritative baseline is
+  recorded on CI or the reference environment.
 
 - [x] **28. Implement the lexer.** Both comment forms and their interaction with
   operators, backtick-delimited identifiers, the string escape set, and the
