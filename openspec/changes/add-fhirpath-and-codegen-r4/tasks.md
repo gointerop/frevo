@@ -439,6 +439,23 @@ checkpoint because it changes what a gate measures.
   `Patient.contact` is its 10 — and it then fails at `decode`, which is tasks
   19 to 23.
 
+- [ ] **14b. Generate the R4 model class table.** Owner decision 2026-11-21,
+  option (c) (`tasks/blockers.md`, "the R4 Java class ancestry table"). In
+  `frevo-codegen`: derive, from the pinned R4 StructureDefinitions only, one
+  `@generated` table of every R4 model class row (primitive, complex and
+  resource types, nested components, `Enumeration`) with its Java simple and
+  qualified names, the FHIR type names it is assignable to and its interface
+  kinds, plus each element's value class, by the rules of
+  `codegen.ancestry.002` and `.003`; then apply the exception file. The
+  implementer creates `crates/frevo-codegen/data/r4-class-table-exceptions.toml`
+  with exactly the entries `codegen.ancestry.004` lists, each with its
+  `source` citation, and makes the generator refuse an entry with no source,
+  an unknown target or no effect. The generator reads no `.java` file and no
+  entry is invented: a difference found later is a new reviewed entry. The
+  table carries the R4 package's notice as the other generated tables do; no
+  Java-derived text is emitted, so no HL7 Java licence notice is owed.
+  Satisfies `codegen.ancestry.001` through `codegen.ancestry.005`.
+
 - [ ] **15. Check the compile-time budget and decide.** Measure a cold
   `cargo build -p frevo-model --release` on the reference environment against
   the 120 s and 40 MB budgets in `design.md` section 8. If either is missed,
@@ -1289,10 +1306,12 @@ checkpoint because it changes what a gate measures.
   from inside a transaction. The return-type check is HAPI's (`path.api.005`,
   rewritten after the forty-first review): `Base`, the primitive, composite and
   reference kinds or a FHIR type name standing for its R4 model class, accepted
-  by the R4 Java class ancestry from a generated table, with HAPI's exact
-  `HAPI-0256: ` message and Java class names. The table's generator is blocked
-  on the owner (`tasks/blockers.md`, 2026-11-20, "the R4 Java class ancestry
-  table"); the FHIR-type check already implemented must be replaced.
+  by the R4 Java class ancestry from the table task 14b generates
+  (`codegen.ancestry.*`), with HAPI's exact `HAPI-0256: ` message and Java
+  class names. The implementer replaces the FHIR-type check with a lookup of
+  each item's row (by its element, or by the class the engine built) and of
+  the requested type's row or kind, and takes the message's names from the
+  rows. Depends on task 14b; the owner chose option (c) on 2026-11-21.
   Satisfies `path.api.001` through `path.api.006`.
   **Implemented, not ticked.** `src/eval/api.rs`: `Evaluator::{parse,
   evaluate_text, evaluate_text_as, evaluate_first_text, evaluate_first,

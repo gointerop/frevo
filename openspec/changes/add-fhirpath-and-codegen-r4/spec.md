@@ -7,10 +7,10 @@ capability, because that is the layout `openspec validate` parses and
 
 | Capability | Delta file | Scenarios |
 |---|---|---:|
-| `codegen` | [`specs/codegen/spec.md`](specs/codegen/spec.md) | 49 |
+| `codegen` | [`specs/codegen/spec.md`](specs/codegen/spec.md) | 54 |
 | `model` | [`specs/model/spec.md`](specs/model/spec.md) | 83 |
 | `path` | [`specs/path/spec.md`](specs/path/spec.md) | 390 |
-| **Total** | | **522** |
+| **Total** | | **527** |
 
 This file carries no normative text of its own. It carries the ID registry,
 which is the thing a later change must not collide with.
@@ -243,6 +243,14 @@ rule by the zero's text; the spec names 1.0.9 as the version live HAPI runs
 citations were corrected (`convertToString`, `:2413`, the ordered-operator
 branches). No ID was added.
 
+After the owner chose option (c) for the R4 Java class ancestry table
+(2026-11-21), **5 IDs were added**, `codegen.ancestry.001` to `.005`: the
+class table generated from the StructureDefinitions plus a reviewed exception
+file, its naming, hierarchy and `Enumeration` rules, the exception entries
+with their citations, and the answers `path.api.005` needs. `path.api.005`
+and `codegen.binding.002` were amended in place to point at it. None was
+removed, renumbered, reused or repurposed.
+
 After the task-37 port, four `Decimal` behaviours it met were specified from
 the pinned source: `path.math.016` gained the `java.lang.Error("Unhandled")`
 of `doSubtract` and the round-up-before-truncation results, and **1 ID was
@@ -261,6 +269,7 @@ or repurposed.
 | `codegen.searchparam.*` | 6 | `001`-`006` |
 | `codegen.output.*` | 6 | `001`-`006` |
 | `codegen.roundtrip.*` | 4 | `001`-`004` |
+| `codegen.ancestry.*` | 5 | `001`-`005` |
 | `model.bytes.*` | 6 | `001`-`006` |
 | `model.lazy.*` | 6 | `001`-`006` |
 | `model.json.*` | 25 | `001`-`025` |
@@ -444,6 +453,14 @@ Every allocated ID, grouped as it is grouped in the delta files.
 - `codegen.roundtrip.002` — the round-trip covers every resource type that has an example
 - `codegen.roundtrip.003` — round-tripping an XML example through the JSON codec is not claimed
 - `codegen.roundtrip.004` — the element-order table is generated
+
+**Requirement: R4 model class table**
+
+- `codegen.ancestry.001` — the class table is generated from the StructureDefinitions and the exception file only
+- `codegen.ancestry.002` — class names and the FHIR type hierarchy follow fixed rules
+- `codegen.ancestry.003` — a `code` element is an `Enumeration` exactly when its required binding is closed and not a type list
+- `codegen.ancestry.004` — the exception file lists every place HAPI's class tree differs, each with its citation
+- `codegen.ancestry.005` — the generated table gives `path.api.005`'s answers
 
 ### `model.*` — [`specs/model/spec.md`](specs/model/spec.md)
 

@@ -611,3 +611,37 @@ them is the whole reason that decision is safe to make.
   a numeric comparison in the quantity equality rule, and the flag plumbing.
 - **Status:** open
 - **Reviewed:** 2026-11-21, owner: accepted as written (with DEV-0030). Raised 2026-11-21.
+
+### DEBT-0021 — the R4 model class table's exception list is checked only where the proposer compared it
+
+- **Area:** codegen
+- **Origin:** change `add-fhirpath-and-codegen-r4`, the owner's choice of
+  option (c) for the R4 Java class ancestry table (2026-11-21),
+  `codegen.ancestry.004`
+- **Owed:** a full comparison of the generated class table with HAPI's runtime
+  classes, element by element, so that every place HAPI's R4 Java model
+  differs from the FHIR type hierarchy is an entry in
+  `crates/frevo-codegen/data/r4-class-table-exceptions.toml`. The proposer's
+  comparison (2026-11-21, against the pinned Java model, outside the
+  repository) covered the `Enumeration` set (320 of 320 elements, one
+  exception), every nested component class name (eleven exceptions), and the
+  superclass of every datatype; it matched other element classes by element
+  name within a type, not by path, so a differing class inside a component
+  that shares a name with another element may be missed (it found
+  `ImplementationGuide.definition.parameter.code` that way, and may not have
+  found every such case).
+- **Why deferred:** the owner ruled out reading the Java sources in the
+  generator; the remaining check is what the live differential does for free
+  once `path.api.005`-style typed evaluation is exercised over every element.
+- **Cost if unpaid:** a typed evaluation (`IFhirPath.evaluate` with a FHIR
+  type name, or the `Enumeration` decode check of `codegen.binding.002`)
+  accepts or rejects an element differently from HAPI where an exception is
+  missing: a wrong `HAPI-0256: ` answer, or a code accepted or refused on
+  decode that HAPI refuses or accepts.
+- **Trigger:** a differential diff on a typed evaluation or on a coded
+  element's decode; a consumer report; or a re-pin of `hl7.fhir.r4.core` or
+  of `org.hl7.fhir.core`'s R4 model.
+- **Size:** small per entry; medium for the full element-by-element
+  comparison, which needs the differential harness's typed-evaluation probe.
+- **Status:** open
+- **Reviewed:** not yet. Raised 2026-11-21.
