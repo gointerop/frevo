@@ -3159,3 +3159,7 @@ outcome for a non-ASCII digit (`StringIndexOutOfBoundsException` from
 `Integer.parseInt(null)` text is attributed to JDK 25 and JDK 8 (`null`),
 still ungraded. The implementer's port should be checked against the
 negative-mantissa cases.
+
+**Resolved 2026-11-21** by `45e6b43`: the two lib tests no longer use a
+quotient as their unbuilt sample, lib is 136 of 136, and task 37 is ticked
+(`ffe839b`).
