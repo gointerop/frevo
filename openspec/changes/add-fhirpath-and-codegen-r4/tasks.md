@@ -76,7 +76,7 @@ checkpoint because it changes what a gate measures.
   three tests for this task (its two red ones are `path.oracle.012`, task 3,
   and `.013`, task 2).
 
-- [ ] **2. Measure `helios-fhirpath` and `haste-fhirpath` through the harness and
+- [x] **2. Measure `helios-fhirpath` and `haste-fhirpath` through the harness and
   record the numbers in ADR 0004.** Create `harness/fhirpath-compare/`, listed
   in `[workspace] exclude` so `haste-fhirpath`'s wildcard dependencies never
   enter the product graph or the `cargo deny` gate. Run all 1,191 cases through
@@ -89,6 +89,17 @@ checkpoint because it changes what a gate measures.
   here** — this is the checkpoint the ADR asks for, and reversing it changes the
   scope of every task below.
   Satisfies `path.oracle.013`.
+  **Ticked 2026-11-21, owner decision.** Measured through
+  `harness/fhirpath-compare/` (`results.json`, `README.md`). Over 1,191 cases:
+  - HAPI passes 968.
+  - Frevo passes 984, with 0 cases behind HAPI, in 0.28 s.
+  - `helios-fhirpath` 0.2.7 passes 1,047, with 27 behind HAPI, in 0.38 s.
+  - `haste-fhirpath` 0.129.2 (0.129.3 failed the 14-day rule) passes 878, with
+    177 behind HAPI, in 1.08 s.
+
+  `IntoEvaluationResult` cannot be implemented lazily. The owner's verdict,
+  recorded in ADR 0004's "Outcome of task 2", is to keep Frevo's own engine.
+  `path.oracle.013` passes.
 
 - [x] **3. Measure HAPI 8.12.0's own pass rate on the same 1,191 cases and wire
   it into the gate.** Run `org.hl7.fhir.r4.test.FHIRPathTests` at pin
@@ -1326,7 +1337,7 @@ checkpoint because it changes what a gate measures.
   `path.errors.*` tests in the other binaries). The suite run has 0
   `did-not-run` cases and no panic.
 
-- [ ] **54. Implement the public evaluation surface.** Evaluate from text,
+- [x] **54. Implement the public evaluation surface.** Evaluate from text,
   evaluate a parsed expression repeatedly, evaluate-first with its no-match
   case, the unexpected-return-type error, and synchronous evaluation callable
   from inside a transaction. The return-type check is HAPI's (`path.api.005`,
@@ -1344,6 +1355,9 @@ checkpoint because it changes what a gate measures.
   evaluate_first_as, evaluate_as}` and `PathError`. `path_api` is still 5 of
   8: `.003`-`.005` need the test seam rebound (`tasks/blockers.md`,
   2026-11-20, "tasks 52 and 54").
+  **Ticked 2026-11-21 (verified at `8023ed2`).** `evaluate_as` answers from
+  the generated R4 class table (task 14b), and every test tagged
+  `path.api.001` to `.006` passes: `path_api` 15 of 15, lib 136 of 136.
 
 - [x] **55. Land the path benchmarks and record the baseline.** The four
   `bench/micro/` path workloads plus the suite wall-clock, with their budgets

@@ -1,6 +1,6 @@
 # 4. FHIRPath and models: reuse, fork, or rewrite
 
-- **Status:** accepted, provisional — see "What would change this"
+- **Status:** accepted (final, owner decision 2026-11-21; see "Outcome of task 2")
 - **Date:** 2026-11-08
 - **Context phase:** Phase 0, deciding the scope of `add-fhirpath-and-codegen-r4`
 
@@ -187,3 +187,56 @@ Reverse this decision if **either** holds:
 
 Either outcome is recorded here, with the measured numbers, before the change
 is archived.
+
+## Outcome of task 2 (2026-11-21)
+
+Task 2 of `add-fhirpath-and-codegen-r4` ran the 1,191-case vendored suite
+(`oracles/fhirpath/tests-fhir-r4.xml`) through both candidate engines beside
+Frevo. Every engine went through the oracle harness Frevo's gate uses, so all
+of them load and grade cases the same way. HAPI's figure is its recorded run.
+The per-case outcomes are in
+[`harness/fhirpath-compare/results.json`](../../harness/fhirpath-compare/results.json),
+and the method and pins in
+[`harness/fhirpath-compare/README.md`](../../harness/fhirpath-compare/README.md).
+
+| Engine | Passed | Passed by HAPI but not by this engine | Full run |
+|---|---|---|---|
+| HAPI 8.12.0 (recorded) | 968 | — | — |
+| Frevo (`frevo-path`) | 984 | 0 | 0.28 s |
+| `helios-fhirpath` 0.2.7 | 1,047 | 27 | 0.38 s |
+| `haste-fhirpath` 0.129.2 | 878 | 177 | 1.08 s |
+
+`haste-fhirpath` is measured at 0.129.2, not the 0.129.3 the table above
+names. On the day of the pin, 0.129.3 was 13.5 days old, so it failed the
+owner's 14-day rule.
+
+**The reversal conditions, against the measurement:**
+
+- *Reuse `helios-fhirpath`* needed both of these. The first holds only on raw
+  count, and the second does not hold:
+  - It must pass at or above HAPI's rate. It does on raw suite count (1,047
+    against 968), but case by case it fails 27 cases HAPI passes, where Frevo
+    fails none. Many of its extra passes are cases where it diverges from the
+    pinned engine's behaviour, which Frevo must match (CLAUDE.md section 1).
+  - Its `IntoEvaluationResult` must be implementable over the lazy model
+    without materialising whole resources. It is not:
+    - `to_evaluation_result(&self) -> EvaluationResult` returns an owned tree,
+      and `EvaluationResult::Object` is a map of every member, with no lazy
+      variant.
+    - `EvaluationContext::new` takes concrete `helios_fhir` resources and
+      converts the whole first resource up front
+      (`helios-fhirpath/src/evaluator.rs:301`, `:2134-2137`).
+- *Fork `helios-fhirpath`* would apply only if Frevo's engine were below
+  HAPI's rate after a bounded effort. It is not: 984 against 968, and 0 cases
+  behind.
+- `haste-fhirpath` passes fewer cases than HAPI and is 177 behind, so it meets
+  neither condition.
+
+**Verdict (owner, 2026-11-21): keep Frevo's own engine. Decision 1 stands, and
+reuse of both `helios-fhirpath` and `haste-fhirpath` is rejected.**
+`helios-fhirpath` stays a development-time differential reference only
+(decision 3), in `harness/fhirpath-compare/`, outside the product workspace.
+
+**What would re-open this:** search-parameter extraction failing to meet its
+budget (`path.perf.003`, `design.md` section 8) with the current engine, after
+the engine itself has been profiled and tuned.

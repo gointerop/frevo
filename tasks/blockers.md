@@ -3548,3 +3548,13 @@ environment, or on this host while it is quiet:
     (then the same three with `-- --out bench/micro/baseline.json`)
 
 Then re-run `model_bytes_lazy_perf` and `path_perf`.
+
+## 2026-11-21 — resolved: task 2's ADR 0004 verdict, and task 54's stale test
+
+- **Task 2's measurement:** the owner decided on 2026-11-21 to keep Frevo's own
+  engine and reject reuse of `helios-fhirpath` and `haste-fhirpath`. The
+  verdict and the numbers are in ADR 0004's "Outcome of task 2", which is now
+  `accepted` (final). Task 2 is ticked.
+- **Task 54's stale lib test:** `8023ed2` re-aligned it to `path.api.005`'s
+  `HAPI-0256` text. Lib is 136 of 136 and `path_api` 15 of 15. Task 54 is
+  ticked.
