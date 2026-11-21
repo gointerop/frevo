@@ -6004,17 +6004,15 @@ fn the_class_table_is_generated_from_the_structure_definitions_and_the_exception
     assert_eq!(table.enumeration_row().simple_name, "Enumeration");
 
     // Each element of a generated type carries a value class. A primitive's
-    // `value` is held in a Java value, not a model class. `xhtml.id` is a gap
-    // in the spec (no rule fixes it) and is deliberately not asserted.
+    // `value` is held in a Java value, not a model class. `xhtml.id`, the one
+    // `System.*` element with no fhir-type extension, is included: the spec
+    // now fixes it as `StringType` (codegen.ancestry.002).
     let mut missing = Vec::new();
     for ty in report.types.iter().filter(|t| {
         expected_types.contains(&t.fhir_name) || expected_components.contains(&t.fhir_name)
     }) {
         for element in &ty.elements {
             if ty.kind == TypeKind::Primitive && element.fhir_name == "value" {
-                continue;
-            }
-            if element.path == "xhtml.id" {
                 continue;
             }
             for key in element_keys(element) {
@@ -6194,6 +6192,14 @@ fn class_names_and_the_fhir_type_hierarchy_follow_fixed_rules() {
     // `structuredefinition-fhir-type` extension.
     assert_eq!(table.element_row("Element.id").simple_name, "StringType");
     assert_eq!(table.element_row("Extension.url").simple_name, "UriType");
+    // A `System.*` element with no fhir-type extension takes the class of the
+    // field HAPI inherits for it: `xhtml.id`, the only one in the 4.0.1
+    // package, is `Element`'s `StringType` field (Element.java:56).
+    assert_eq!(table.element_row("xhtml.id").simple_name, "StringType");
+    // The refusal of any OTHER such element is not driven here: the
+    // class-table generator loads only the pinned package and verifies its
+    // digest (`classtable::generate`), so no mutated package can reach the
+    // check; see tasks/blockers.md.
     // A `Quantity` element profiled `SimpleQuantity` is still a `Quantity`.
     assert_eq!(
         table

@@ -3582,3 +3582,32 @@ hook-protected, so the text is recorded here for whoever may edit it.
 
    after the `crates/frevo-model/src/r4/       @generated output` line, so
    both generated outputs are listed.
+
+## 2026-11-21 — `add-fhirpath-and-codegen-r4` — `codegen.ancestry.002`'s System-type refusal cannot be driven by a test
+
+**Raised by** the oracle-builder, asked to cover the refusal `1fdbfd5`
+added: the class-table generator maps `xhtml.id` to `StringType` and
+refuses any other `System.*` element without the
+`structuredefinition-fhir-type` extension.
+
+**Why it cannot be tested today.** `classtable::generate`
+(`crates/frevo-codegen/src/classtable.rs:306-310`) always loads
+`pin::default_package_dir()` and calls `package::verify_digest` against
+`PACKAGE_CONTENT_SHA256`. `classtable::Request` has no package-directory
+field, so a mutated copy of the R4 input cannot be supplied. Even if one
+could be, the digest check would refuse it with `DigestMismatch` before the
+System-type check runs. The synthetic seam (`run::generate_synthetic`)
+drives the model generator, not the class table. A test that asserted the
+refusal through any of these would be asserting something else.
+
+**Done.** `codegen_r4.rs` now asserts the mapped half of the rule
+(`xhtml.id` is `StringType`, in `class_names_and_the_fhir_type_hierarchy_follow_fixed_rules`).
+`xhtml.id` is also included in `codegen.ancestry.001`'s every-element check,
+which used to skip it as a spec gap.
+
+**Decision needed (implementer).** Either give the class-table generator an
+input seam the refusal can be reached through, for example a synthetic or
+package-directory request that skips the pin digest the way
+`generate_synthetic` does, or record the untested refusal in
+`docs/known-gaps.md` with the owner's approval. The oracle-builder adds the
+test once a seam exists.
