@@ -213,7 +213,7 @@ checkpoint because it changes what a gate measures.
   **Ticked 2026-11-21 (verified at `761a9e7`):** the tests and the owed probes
   landed there, tagged `covers:`; they failed until tasks 44a to 44c.
 
-- [ ] **4c. Write the failing tests for `path.math.018` and
+- [x] **4c. Write the failing tests for `path.math.018` and
   `path.quantity.027`.** These are two HAPI behaviours the implementer of
   tasks 44a to 44c found unspecified. `oracle-builder` work, before task
   44d:
@@ -1268,7 +1268,7 @@ checkpoint because it changes what a gate measures.
   and `eval/arith.rs` (`parse_int`) the `Cannot parse null string` text for
   the integer arms of `div` and `mod`, divisor first, both with no offset.
 
-- [ ] **44d. Fail `+`, `-` and `*` over a no-value operand as HAPI does, and
+- [x] **44d. Fail `+`, `-` and `*` over a no-value operand as HAPI does, and
   list an engine-built quantity's children.** Found by the implementer of
   tasks 44a to 44c (owner's standing ruling: HAPI wins, no new deviation).
   The integer arms of `+`, `-` and `*` read the left operand and then the
@@ -1285,6 +1285,9 @@ checkpoint because it changes what a gate measures.
   `children()` and `descendants()` here with no type, and keep rejecting a
   named step after them. Depends on task 4c.
   Satisfies `path.math.018` and `path.quantity.027`.
+  **Ticked 2026-11-21:** `eval/arith.rs` reads the `+`, `-` and `*` operands
+  with `parse_int` and `big_decimal`, left first; `eval/navigate.rs` lists a
+  `Value::Quantity`'s set elements for `*`. The check pass is unchanged.
 
 - [x] **45. Implement the boundary functions.** `lowBoundary`, `highBoundary` and
   `precision` as the pinned engine computes them: decimal boundaries edited as

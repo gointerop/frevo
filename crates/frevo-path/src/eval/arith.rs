@@ -155,16 +155,31 @@ fn ucum_pair(
     Ok(UcumDecimal::new(&lt).and_then(|a| UcumDecimal::new(&rt).map(|b| (a, b))))
 }
 
-/// `Integer.parseInt(v.primitiveValue())` in the `integer` arms of `div` and
-/// `mod` (`FHIRPathEngine.java:3051-3053`, `:3091-3093`). A primitive with no
-/// value is `Integer.parseInt(null)`, whose `NumberFormatException` the engine
-/// does not catch; its text is the JDK 21 and 25 one HAPI recorded, with no
-/// position (`path.math.017`, `path.errors.002`).
+/// `Integer.parseInt(v.primitiveValue())` in the `integer` arms of `+`, `-`,
+/// `*` (`FHIRPathEngine.java:2699-2700`, `:2789-2790`, `:2961-2962`), `div`
+/// and `mod` (`:3051-3053`, `:3091-3093`). A primitive with no value is
+/// `Integer.parseInt(null)`, whose `NumberFormatException` the engine does not
+/// catch; its text is the JDK 21 and 25 one HAPI recorded, with no position
+/// (`path.math.017`, `path.math.018`, `path.errors.002`).
 fn parse_int(model: &dyn Model, v: &Value) -> Result<i32, EvalError> {
     if !matches!(v, Value::Integer(_)) && text_of(model, v).is_none() {
         return Err(EvalError::plain("Cannot parse null string"));
     }
     int_of(model, v)
+}
+
+/// `new BigDecimal(v.primitiveValue())` in the decimal arms of `+`, `-` and
+/// `*` (`FHIRPathEngine.java:2701-2702`, `:2791-2792`, `:2963-2964`). A
+/// primitive with no value is `new BigDecimal((String) null)`, whose
+/// `NullPointerException` no arm catches: the JDK's text, with no position
+/// (`path.math.018`, `path.errors.002`).
+fn big_decimal(model: &dyn Model, v: &Value) -> Result<Decimal, EvalError> {
+    if !matches!(v, Value::Decimal(_) | Value::Integer(_)) && text_of(model, v).is_none() {
+        return Err(EvalError::plain(
+            "Cannot invoke \"String.toCharArray()\" because \"val\" is null",
+        ));
+    }
+    operand::decimal_of(model, v)
 }
 
 /// A `java.lang.Error` out of `Decimal`, which no arm catches: its message,
@@ -286,14 +301,11 @@ pub(super) fn op_arith(
                 return Ok(vec![Value::String(format!("{}{}", text(l), text(r)))]);
             }
             if both(&["integer"]) {
-                let sum = int_of(model, l)?.wrapping_add(int_of(model, r)?);
+                let sum = parse_int(model, l)?.wrapping_add(parse_int(model, r)?);
                 return Ok(int_value(sum));
             }
             if both(&numeric) {
-                let (a, b) = (
-                    operand::decimal_of(model, l)?,
-                    operand::decimal_of(model, r)?,
-                );
+                let (a, b) = (big_decimal(model, l)?, big_decimal(model, r)?);
                 let (x, y, scale) = align(&a, &b, at.offset)?;
                 return Ok(dec_value(make_decimal(&x.add(&y), scale, at.offset)?));
             }
@@ -305,14 +317,11 @@ pub(super) fn op_arith(
         }
         Arith::Minus => {
             if both(&["integer"]) {
-                let diff = int_of(model, l)?.wrapping_sub(int_of(model, r)?);
+                let diff = parse_int(model, l)?.wrapping_sub(parse_int(model, r)?);
                 return Ok(int_value(diff));
             }
             if both(&numeric) {
-                let (a, b) = (
-                    operand::decimal_of(model, l)?,
-                    operand::decimal_of(model, r)?,
-                );
+                let (a, b) = (big_decimal(model, l)?, big_decimal(model, r)?);
                 let (x, y, scale) = align(&a, &b, at.offset)?;
                 return Ok(dec_value(make_decimal(&x.sub(&y), scale, at.offset)?));
             }
@@ -335,14 +344,11 @@ pub(super) fn op_arith(
         }
         Arith::Times => {
             if both(&["integer"]) {
-                let product = int_of(model, l)?.wrapping_mul(int_of(model, r)?);
+                let product = parse_int(model, l)?.wrapping_mul(parse_int(model, r)?);
                 return Ok(int_value(product));
             }
             if both(&numeric) {
-                let (a, b) = (
-                    operand::decimal_of(model, l)?,
-                    operand::decimal_of(model, r)?,
-                );
+                let (a, b) = (big_decimal(model, l)?, big_decimal(model, r)?);
                 let scale = a
                     .scale()
                     .checked_add(b.scale())

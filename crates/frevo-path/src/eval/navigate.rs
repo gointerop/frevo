@@ -203,22 +203,27 @@ pub(crate) fn polymorphic_children_by_name(
 /// is empty. Every other name, `comparator` included, is never set on such a
 /// quantity and is empty too.
 ///
-/// Only a named step reaches here: `*` (`children()`, `descendants()`) is not
-/// a member navigation and keeps answering nothing for a value that is not a
-/// node.
+/// `*` (`children()`, `descendants()`) is `Base.listChildrenByName("*")`:
+/// every set element in `Quantity.listChildren` order -- value, unit, system,
+/// code, `id`, `extension` and `comparator` never being set on such a quantity
+/// (`Quantity.java:631-643`, `path.quantity.027`).
 fn quantity_element(q: &Quantity, name: &str, out: &mut Vec<Value>) {
-    let (type_name, lexical) = match name {
-        "value" => ("decimal", Some(q.value.lexical())),
-        "unit" => ("string", q.unit.as_deref()),
-        "system" => ("uri", q.system.as_deref()),
-        "code" => ("code", q.code.as_deref()),
-        _ => return,
-    };
-    if let Some(lexical) = lexical {
-        out.push(Value::Node(Arc::new(QuantityElement {
-            type_name,
-            lexical: lexical.to_owned(),
-        })));
+    let elements = [
+        ("value", "decimal", Some(q.value.lexical())),
+        ("unit", "string", q.unit.as_deref()),
+        ("system", "uri", q.system.as_deref()),
+        ("code", "code", q.code.as_deref()),
+    ];
+    for (element, type_name, lexical) in elements {
+        if name != ALL_CHILDREN && name != element {
+            continue;
+        }
+        if let Some(lexical) = lexical {
+            out.push(Value::Node(Arc::new(QuantityElement {
+                type_name,
+                lexical: lexical.to_owned(),
+            })));
+        }
     }
 }
 

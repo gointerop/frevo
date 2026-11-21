@@ -8362,15 +8362,15 @@
       "verdict": "disagree-documented"
     },
     "path.math.018": {
-      "agree": 0,
-      "disagree": 13,
+      "agree": 13,
+      "disagree": 0,
       "disagree_documented": 0,
       "hapi_unreachable": 0,
       "probes": [
         {
           "expr": "Parameters.parameter.where(name = 'i').value + 1",
           "frevo": {
-            "error": "For input string: \"\"",
+            "error": "Cannot parse null string",
             "stage": "eval"
           },
           "hapi": {
@@ -8381,13 +8381,13 @@
           "id": "path.math.018#01",
           "input": "local:parameters-novalue-numbers.xml",
           "note": "integer arm: Integer.parseInt(null)",
-          "verdict": "disagree",
+          "verdict": "agree",
           "worker": "suite"
         },
         {
           "expr": "1 + Parameters.parameter.where(name = 'i').value",
           "frevo": {
-            "error": "For input string: \"\"",
+            "error": "Cannot parse null string",
             "stage": "eval"
           },
           "hapi": {
@@ -8398,13 +8398,13 @@
           "id": "path.math.018#02",
           "input": "local:parameters-novalue-numbers.xml",
           "note": "integer arm: Integer.parseInt(null)",
-          "verdict": "disagree",
+          "verdict": "agree",
           "worker": "suite"
         },
         {
           "expr": "Parameters.parameter.where(name = 'd').value + 1",
           "frevo": {
-            "error": "Character array is missing \"exponent\" mark 'e' or 'E': ",
+            "error": "Cannot invoke \"String.toCharArray()\" because \"val\" is null",
             "stage": "eval"
           },
           "hapi": {
@@ -8415,13 +8415,13 @@
           "id": "path.math.018#03",
           "input": "local:parameters-novalue-numbers.xml",
           "note": "decimal arm: new BigDecimal(null)",
-          "verdict": "disagree",
+          "verdict": "agree",
           "worker": "suite"
         },
         {
           "expr": "Parameters.parameter.where(name = 'i').value - 1",
           "frevo": {
-            "error": "For input string: \"\"",
+            "error": "Cannot parse null string",
             "stage": "eval"
           },
           "hapi": {
@@ -8432,13 +8432,13 @@
           "id": "path.math.018#04",
           "input": "local:parameters-novalue-numbers.xml",
           "note": "integer arm: Integer.parseInt(null)",
-          "verdict": "disagree",
+          "verdict": "agree",
           "worker": "suite"
         },
         {
           "expr": "1 - Parameters.parameter.where(name = 'i').value",
           "frevo": {
-            "error": "For input string: \"\"",
+            "error": "Cannot parse null string",
             "stage": "eval"
           },
           "hapi": {
@@ -8449,13 +8449,13 @@
           "id": "path.math.018#05",
           "input": "local:parameters-novalue-numbers.xml",
           "note": "integer arm: Integer.parseInt(null)",
-          "verdict": "disagree",
+          "verdict": "agree",
           "worker": "suite"
         },
         {
           "expr": "Parameters.parameter.where(name = 'd').value - 1",
           "frevo": {
-            "error": "Character array is missing \"exponent\" mark 'e' or 'E': ",
+            "error": "Cannot invoke \"String.toCharArray()\" because \"val\" is null",
             "stage": "eval"
           },
           "hapi": {
@@ -8466,13 +8466,13 @@
           "id": "path.math.018#06",
           "input": "local:parameters-novalue-numbers.xml",
           "note": "decimal arm: new BigDecimal(null)",
-          "verdict": "disagree",
+          "verdict": "agree",
           "worker": "suite"
         },
         {
           "expr": "Parameters.parameter.where(name = 'i').value * 1",
           "frevo": {
-            "error": "For input string: \"\"",
+            "error": "Cannot parse null string",
             "stage": "eval"
           },
           "hapi": {
@@ -8483,13 +8483,13 @@
           "id": "path.math.018#07",
           "input": "local:parameters-novalue-numbers.xml",
           "note": "integer arm: Integer.parseInt(null)",
-          "verdict": "disagree",
+          "verdict": "agree",
           "worker": "suite"
         },
         {
           "expr": "1 * Parameters.parameter.where(name = 'i').value",
           "frevo": {
-            "error": "For input string: \"\"",
+            "error": "Cannot parse null string",
             "stage": "eval"
           },
           "hapi": {
@@ -8500,13 +8500,13 @@
           "id": "path.math.018#08",
           "input": "local:parameters-novalue-numbers.xml",
           "note": "integer arm: Integer.parseInt(null)",
-          "verdict": "disagree",
+          "verdict": "agree",
           "worker": "suite"
         },
         {
           "expr": "Parameters.parameter.where(name = 'd').value * 1",
           "frevo": {
-            "error": "Character array is missing \"exponent\" mark 'e' or 'E': ",
+            "error": "Cannot invoke \"String.toCharArray()\" because \"val\" is null",
             "stage": "eval"
           },
           "hapi": {
@@ -8517,13 +8517,13 @@
           "id": "path.math.018#09",
           "input": "local:parameters-novalue-numbers.xml",
           "note": "decimal arm: new BigDecimal(null)",
-          "verdict": "disagree",
+          "verdict": "agree",
           "worker": "suite"
         },
         {
           "expr": "Parameters.parameter.where(name = 'i').value + 1.5",
           "frevo": {
-            "error": "Character array is missing \"exponent\" mark 'e' or 'E': ",
+            "error": "Cannot invoke \"String.toCharArray()\" because \"val\" is null",
             "stage": "eval"
           },
           "hapi": {
@@ -8534,13 +8534,13 @@
           "id": "path.math.018#10",
           "input": "local:parameters-novalue-numbers.xml",
           "note": "decimal arm: new BigDecimal(null)",
-          "verdict": "disagree",
+          "verdict": "agree",
           "worker": "suite"
         },
         {
           "expr": "1.5 * Parameters.parameter.where(name = 'd').value",
           "frevo": {
-            "error": "Character array is missing \"exponent\" mark 'e' or 'E': ",
+            "error": "Cannot invoke \"String.toCharArray()\" because \"val\" is null",
             "stage": "eval"
           },
           "hapi": {
@@ -8551,14 +8551,14 @@
           "id": "path.math.018#11",
           "input": "local:parameters-novalue-numbers.xml",
           "note": "decimal arm: new BigDecimal(null)",
-          "verdict": "disagree",
+          "verdict": "agree",
           "worker": "suite"
         },
         {
           "check": "run",
           "expr": "Parameters.parameter.where(name = 'i').value + 1",
           "frevo": {
-            "error": "For input string: \"\"",
+            "error": "Cannot parse null string",
             "stage": "eval"
           },
           "hapi": {
@@ -8569,14 +8569,14 @@
           "id": "path.math.018#12",
           "input": "local:parameters-novalue-numbers.xml",
           "note": "the check cannot see the missing value",
-          "verdict": "disagree",
+          "verdict": "agree",
           "worker": "suite"
         },
         {
           "check": "run",
           "expr": "Parameters.parameter.where(name = 'd').value + 1",
           "frevo": {
-            "error": "Character array is missing \"exponent\" mark 'e' or 'E': ",
+            "error": "Cannot invoke \"String.toCharArray()\" because \"val\" is null",
             "stage": "eval"
           },
           "hapi": {
@@ -8587,11 +8587,11 @@
           "id": "path.math.018#13",
           "input": "local:parameters-novalue-numbers.xml",
           "note": "the check cannot see the missing value",
-          "verdict": "disagree",
+          "verdict": "agree",
           "worker": "suite"
         }
       ],
-      "verdict": "disagree"
+      "verdict": "agree"
     },
     "path.mathfn.004": {
       "agree": 6,
@@ -16273,8 +16273,8 @@
       "verdict": "agree"
     },
     "path.quantity.027": {
-      "agree": 2,
-      "disagree": 21,
+      "agree": 23,
+      "disagree": 0,
       "disagree_documented": 0,
       "hapi_unreachable": 0,
       "probes": [
@@ -16282,7 +16282,11 @@
           "expr": "(1 'cm').children()",
           "frevo": {
             "hasLog": false,
-            "items": [],
+            "items": [
+              "decimal:1",
+              "uri:http://unitsofmeasure.org",
+              "code:cm"
+            ],
             "log": "",
             "stage": "ok"
           },
@@ -16298,14 +16302,18 @@
           },
           "id": "path.quantity.027#01",
           "note": "Quantity.listChildren order: value, comparator, unit, system, code",
-          "verdict": "disagree",
+          "verdict": "agree",
           "worker": "suite"
         },
         {
           "expr": "(1 'cm').descendants()",
           "frevo": {
             "hasLog": false,
-            "items": [],
+            "items": [
+              "decimal:1",
+              "uri:http://unitsofmeasure.org",
+              "code:cm"
+            ],
             "log": "",
             "stage": "ok"
           },
@@ -16321,7 +16329,7 @@
           },
           "id": "path.quantity.027#02",
           "note": "Quantity.listChildren order: value, comparator, unit, system, code",
-          "verdict": "disagree",
+          "verdict": "agree",
           "worker": "suite"
         },
         {
@@ -16329,7 +16337,7 @@
           "frevo": {
             "hasLog": false,
             "items": [
-              "integer:0"
+              "integer:3"
             ],
             "log": "",
             "stage": "ok"
@@ -16344,7 +16352,7 @@
           },
           "id": "path.quantity.027#03",
           "note": "Quantity.listChildren order: value, comparator, unit, system, code",
-          "verdict": "disagree",
+          "verdict": "agree",
           "worker": "suite"
         },
         {
@@ -16352,7 +16360,7 @@
           "frevo": {
             "hasLog": false,
             "items": [
-              "integer:0"
+              "integer:3"
             ],
             "log": "",
             "stage": "ok"
@@ -16367,14 +16375,17 @@
           },
           "id": "path.quantity.027#04",
           "note": "Quantity.listChildren order: value, comparator, unit, system, code",
-          "verdict": "disagree",
+          "verdict": "agree",
           "worker": "suite"
         },
         {
           "expr": "(1 year).children()",
           "frevo": {
             "hasLog": false,
-            "items": [],
+            "items": [
+              "decimal:1",
+              "string:year"
+            ],
             "log": "",
             "stage": "ok"
           },
@@ -16389,14 +16400,17 @@
           },
           "id": "path.quantity.027#05",
           "note": "Quantity.listChildren order: value, comparator, unit, system, code",
-          "verdict": "disagree",
+          "verdict": "agree",
           "worker": "suite"
         },
         {
           "expr": "(1 year).descendants()",
           "frevo": {
             "hasLog": false,
-            "items": [],
+            "items": [
+              "decimal:1",
+              "string:year"
+            ],
             "log": "",
             "stage": "ok"
           },
@@ -16411,7 +16425,7 @@
           },
           "id": "path.quantity.027#06",
           "note": "Quantity.listChildren order: value, comparator, unit, system, code",
-          "verdict": "disagree",
+          "verdict": "agree",
           "worker": "suite"
         },
         {
@@ -16419,7 +16433,7 @@
           "frevo": {
             "hasLog": false,
             "items": [
-              "integer:0"
+              "integer:2"
             ],
             "log": "",
             "stage": "ok"
@@ -16434,7 +16448,7 @@
           },
           "id": "path.quantity.027#07",
           "note": "Quantity.listChildren order: value, comparator, unit, system, code",
-          "verdict": "disagree",
+          "verdict": "agree",
           "worker": "suite"
         },
         {
@@ -16442,7 +16456,7 @@
           "frevo": {
             "hasLog": false,
             "items": [
-              "integer:0"
+              "integer:2"
             ],
             "log": "",
             "stage": "ok"
@@ -16457,14 +16471,19 @@
           },
           "id": "path.quantity.027#08",
           "note": "Quantity.listChildren order: value, comparator, unit, system, code",
-          "verdict": "disagree",
+          "verdict": "agree",
           "worker": "suite"
         },
         {
           "expr": "(1 week).children()",
           "frevo": {
             "hasLog": false,
-            "items": [],
+            "items": [
+              "decimal:1",
+              "string:week",
+              "uri:http://unitsofmeasure.org",
+              "code:wk"
+            ],
             "log": "",
             "stage": "ok"
           },
@@ -16481,14 +16500,19 @@
           },
           "id": "path.quantity.027#09",
           "note": "Quantity.listChildren order: value, comparator, unit, system, code",
-          "verdict": "disagree",
+          "verdict": "agree",
           "worker": "suite"
         },
         {
           "expr": "(1 week).descendants()",
           "frevo": {
             "hasLog": false,
-            "items": [],
+            "items": [
+              "decimal:1",
+              "string:week",
+              "uri:http://unitsofmeasure.org",
+              "code:wk"
+            ],
             "log": "",
             "stage": "ok"
           },
@@ -16505,7 +16529,7 @@
           },
           "id": "path.quantity.027#10",
           "note": "Quantity.listChildren order: value, comparator, unit, system, code",
-          "verdict": "disagree",
+          "verdict": "agree",
           "worker": "suite"
         },
         {
@@ -16513,7 +16537,7 @@
           "frevo": {
             "hasLog": false,
             "items": [
-              "integer:0"
+              "integer:4"
             ],
             "log": "",
             "stage": "ok"
@@ -16528,7 +16552,7 @@
           },
           "id": "path.quantity.027#11",
           "note": "Quantity.listChildren order: value, comparator, unit, system, code",
-          "verdict": "disagree",
+          "verdict": "agree",
           "worker": "suite"
         },
         {
@@ -16536,7 +16560,7 @@
           "frevo": {
             "hasLog": false,
             "items": [
-              "integer:0"
+              "integer:4"
             ],
             "log": "",
             "stage": "ok"
@@ -16551,14 +16575,17 @@
           },
           "id": "path.quantity.027#12",
           "note": "Quantity.listChildren order: value, comparator, unit, system, code",
-          "verdict": "disagree",
+          "verdict": "agree",
           "worker": "suite"
         },
         {
           "expr": "(1 '').children()",
           "frevo": {
             "hasLog": false,
-            "items": [],
+            "items": [
+              "decimal:1",
+              "uri:http://unitsofmeasure.org"
+            ],
             "log": "",
             "stage": "ok"
           },
@@ -16573,14 +16600,17 @@
           },
           "id": "path.quantity.027#13",
           "note": "Quantity.listChildren order: value, comparator, unit, system, code",
-          "verdict": "disagree",
+          "verdict": "agree",
           "worker": "suite"
         },
         {
           "expr": "(1 '').descendants()",
           "frevo": {
             "hasLog": false,
-            "items": [],
+            "items": [
+              "decimal:1",
+              "uri:http://unitsofmeasure.org"
+            ],
             "log": "",
             "stage": "ok"
           },
@@ -16595,7 +16625,7 @@
           },
           "id": "path.quantity.027#14",
           "note": "Quantity.listChildren order: value, comparator, unit, system, code",
-          "verdict": "disagree",
+          "verdict": "agree",
           "worker": "suite"
         },
         {
@@ -16603,7 +16633,7 @@
           "frevo": {
             "hasLog": false,
             "items": [
-              "integer:0"
+              "integer:2"
             ],
             "log": "",
             "stage": "ok"
@@ -16618,7 +16648,7 @@
           },
           "id": "path.quantity.027#15",
           "note": "Quantity.listChildren order: value, comparator, unit, system, code",
-          "verdict": "disagree",
+          "verdict": "agree",
           "worker": "suite"
         },
         {
@@ -16626,7 +16656,7 @@
           "frevo": {
             "hasLog": false,
             "items": [
-              "integer:0"
+              "integer:2"
             ],
             "log": "",
             "stage": "ok"
@@ -16641,14 +16671,18 @@
           },
           "id": "path.quantity.027#16",
           "note": "Quantity.listChildren order: value, comparator, unit, system, code",
-          "verdict": "disagree",
+          "verdict": "agree",
           "worker": "suite"
         },
         {
           "expr": "(2 'cm' * 1 'm').children()",
           "frevo": {
             "hasLog": false,
-            "items": [],
+            "items": [
+              "decimal:0.02",
+              "uri:http://unitsofmeasure.org",
+              "code:m2"
+            ],
             "log": "",
             "stage": "ok"
           },
@@ -16669,14 +16703,18 @@
           },
           "id": "path.quantity.027#17",
           "note": "Quantity.listChildren order: value, comparator, unit, system, code",
-          "verdict": "disagree",
+          "verdict": "agree",
           "worker": "suite"
         },
         {
           "expr": "(2 'cm' * 1 'm').descendants()",
           "frevo": {
             "hasLog": false,
-            "items": [],
+            "items": [
+              "decimal:0.02",
+              "uri:http://unitsofmeasure.org",
+              "code:m2"
+            ],
             "log": "",
             "stage": "ok"
           },
@@ -16697,7 +16735,7 @@
           },
           "id": "path.quantity.027#18",
           "note": "Quantity.listChildren order: value, comparator, unit, system, code",
-          "verdict": "disagree",
+          "verdict": "agree",
           "worker": "suite"
         },
         {
@@ -16705,7 +16743,7 @@
           "frevo": {
             "hasLog": false,
             "items": [
-              "integer:0"
+              "integer:3"
             ],
             "log": "",
             "stage": "ok"
@@ -16725,7 +16763,7 @@
           },
           "id": "path.quantity.027#19",
           "note": "Quantity.listChildren order: value, comparator, unit, system, code",
-          "verdict": "disagree",
+          "verdict": "agree",
           "worker": "suite"
         },
         {
@@ -16733,7 +16771,7 @@
           "frevo": {
             "hasLog": false,
             "items": [
-              "integer:0"
+              "integer:3"
             ],
             "log": "",
             "stage": "ok"
@@ -16753,7 +16791,7 @@
           },
           "id": "path.quantity.027#20",
           "note": "Quantity.listChildren order: value, comparator, unit, system, code",
-          "verdict": "disagree",
+          "verdict": "agree",
           "worker": "suite"
         },
         {
@@ -16762,7 +16800,7 @@
           "frevo": {
             "hasLog": false,
             "items": [
-              "integer:0"
+              "integer:3"
             ],
             "log": "",
             "stage": "ok"
@@ -16778,7 +16816,7 @@
           "id": "path.quantity.027#21",
           "input": "suite:patient-example.xml",
           "note": "the check passes children() untyped",
-          "verdict": "disagree",
+          "verdict": "agree",
           "worker": "suite"
         },
         {
@@ -16820,7 +16858,7 @@
           "worker": "suite"
         }
       ],
-      "verdict": "disagree"
+      "verdict": "agree"
     },
     "path.strictness.005": {
       "agree": 10,
@@ -20040,14 +20078,12 @@
   },
   "totals": {
     "probes": {
-      "agree": 775,
-      "disagree": 34,
+      "agree": 809,
       "disagree-documented": 51,
       "hapi-unreachable": 8
     },
     "scenarios": {
-      "agree": 55,
-      "disagree": 2,
+      "agree": 57,
       "disagree-documented": 5
     }
   }
