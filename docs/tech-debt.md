@@ -572,3 +572,38 @@ them is the whole reason that decision is safe to make.
   `crates/frevo-path/src/eval/equality.rs` and the flag plumbing.
 - **Status:** open
 - **Reviewed:** not yet. Raised 2026-11-20.
+
+### DEBT-0020 — decimal division, `div`, `mod` and canonical quantity values give HAPI's wrong answers
+
+- **Area:** path
+- **Origin:** `DEV-0030`, change `add-fhirpath-and-codegen-r4`, raised by the
+  proposer on reading the pinned `org.fhir.ucum.Decimal` (2026-11-21)
+- **Owed:** a configuration flag, defaulting to HAPI's behaviour, under which
+  `/` over numbers is exact decimal division, `div` and `mod` with a decimal
+  operand are exact truncated division and remainder (no `-0.0`), and two
+  quantities with the same canonical unit compare their canonical magnitudes
+  numerically, and special units convert as UCUM defines them
+  (`path.math.015`, `path.math.016`, `path.quantity.022`, `path.quantity.023`). Also
+  owed: an upstream report to `FHIR/Ucum-java` for the rounding carry in
+  `Decimal.divide` (`Decimal.java:751-754`, the decimal point moves one place
+  too far, so `1.9 / 0.2` is `1.0`) and the negative zero of `subtract`
+  (`:381-384` with `asDecimal`'s all-zeros test, `:305-306`).
+- **Why deferred:** constitution section 1 and the owner's decision of
+  2026-11-08: no flag is added speculatively. HAPI passes every suite case
+  these mechanisms touch, so parity is exact; no consumer is known to divide
+  decimals in an invariant or a search expression.
+- **Cost if unpaid:** silently wrong numbers for anyone evaluating FHIRPath
+  through Frevo, as through HAPI: `1.9 / 0.2` is `1.0` (a factor of ten),
+  `1.25 / 0.5` is `3`, `1.0 / 8` is `0.13`, `1.9 div 0.2` is `1`,
+  `4.0 mod 2 = 0` is `false`, and `1 'mg/dL' = 10 'mg/L'` and
+  `60.0 '/min' = 1 '/s'` are `false`, while `1 'B' = 1 '1'` is `true` (a
+  logarithmic unit read as a ratio unit, `path.quantity.023`). An invariant or calculated value using
+  them passes or fails on the wrong number.
+- **Trigger:** a differential diff or consumer report involving decimal `/`,
+  `div`, `mod` or quantity equality across units; an IG invariant dividing
+  decimals; or a re-pin of `org.fhir:ucum` or `org.hl7.fhir.core` that changes
+  `Decimal.divide`, `Decimal.subtract` or `decEqual`.
+- **Size:** small; an exact-arithmetic arm in `crates/frevo-path/src/eval/arith.rs`,
+  a numeric comparison in the quantity equality rule, and the flag plumbing.
+- **Status:** open
+- **Reviewed:** not yet. Raised 2026-11-21.

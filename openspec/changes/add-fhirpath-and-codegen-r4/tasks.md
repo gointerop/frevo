@@ -879,10 +879,20 @@ checkpoint because it changes what a gate measures.
 
 - [ ] **37. Implement arithmetic.** The operators over integers, decimals,
   strings and quantities using decimal arithmetic; concatenation's empty-as-empty
-  string rule; `div` and `mod`; division by zero as empty; empty operands;
+  string rule; `div` and `mod`; division by zero as the pinned engine answers it
+  (empty for the integer arms and for `/` and `div` with a non-zero dividend,
+  one item for a zero dividend, an error for `mod`); empty operands;
   incompatible types; and the overflow and date-difference behaviours recorded
-  as the pinned engine's.
-  Satisfies `path.math.001` through `path.math.011`.
+  as the pinned engine's. `/` over numbers, and `div` and `mod` with a decimal
+  operand, are a port of `org.fhir.ucum.Decimal` (`reference/Ucum-java`,
+  `1.0.10`, `db9d22ad`: `Decimal(String)`, `divide`, `divInt`, `trunc`,
+  `modulo`, `multiply`, `subtract`, `asDecimal`), with its significant-digit
+  rounding, its rounding-carry defect and its `-0.0` remainder
+  (`path.math.015`, `.016`, `DEV-0030`); the ported file carries the
+  section 10 header and a `docs/provenance.md` row, and the BSD-3-Clause notice
+  goes to `NOTICE`.
+  Satisfies `path.math.001` through `path.math.011`, `path.math.015` and
+  `path.math.016`.
 
 - [x] **38. Implement date and dateTime arithmetic.** Calendar-duration addition
   and subtraction with the engine's month-end behaviour, precision preservation,
@@ -957,15 +967,30 @@ checkpoint because it changes what a gate measures.
   HAPI rejects.
   Satisfies `path.convert.001` through `path.convert.014`.
 
-- [ ] **43. Implement the UCUM unit algebra.** Canonical-form conversion from the
-  pinned `ucum-essence.xml`, commensurability, multiplication and division of
-  units, and the reported-version and missing-file failure paths.
-  Satisfies `path.quantity.016`.
+- [ ] **43. Implement the UCUM unit algebra.** A port of the parts of
+  `org.fhir.ucum` 1.0.10 the engine calls (`reference/Ucum-java`, `db9d22ad`):
+  loading the essence file as `XmlDefinitionsParser` does, with every load
+  failure of `path.quantity.016`; `Lexer` and `ExpressionParser`, with their
+  error messages (`path.quantity.024`); `Converter` and `ExpressionComposer`
+  for canonical form (`path.quantity.020`); the special-unit `Registry` and its
+  handlers (`path.quantity.023`); and `UcumEssenceService.getCanonicalForm`,
+  `multiply`, `divideBy`, `getCanonicalUnits` and `isComparable`, over the
+  `Decimal` of task 37. The essence file is the suite worker's
+  (`org.hl7.fhir.r4/src/test/resources/ucum/ucum-essence.xml`, version
+  `2.0.1`), not the `2.2` file `Ucum-java` bundles. Ported files carry the
+  section 10 header and `docs/provenance.md` rows; the BSD-3-Clause notice goes
+  to `NOTICE` with task 60's.
+  Satisfies `path.quantity.016`, `path.quantity.020`, `path.quantity.023` and
+  `path.quantity.024`.
 
 - [ ] **44. Implement quantity semantics on top of it.** Note before starting:
-  canonicalisation performs **no** dimension check, so incommensurable units
-  compare by magnitude and return a boolean, and with no UCUM data two
-  quantities with differing unit codes compare `false`. Neither is an error.
+  the ordered operators perform **no** dimension check, so incommensurable
+  units compare by magnitude and return a boolean, while `=` with different
+  canonical units is `false`, not empty (`path.quantity.022`); the engine's
+  no-UCUM-data branch is unreachable in Frevo (`path.quantity.015`). A unit
+  that cannot be canonicalised falls back to comparing codes, and `*` and `/`
+  answer in canonical units with no `unit` (`path.quantity.017`, `.018`,
+  `.021`).
  Equality after
   conversion, equivalence rounding to the lower precision, calendar-duration
   commensurability, magnitude comparison, unit arithmetic, the dimensionless
@@ -978,7 +1003,9 @@ checkpoint because it changes what a gate measures.
   server-facing worker raises `HAPI-0274: ` (`path.quantity.019`,
   `DEV-0029`), `comparable()`, the incommensurable-comparison result, and the unknown-unit
   and non-UCUM-system behaviours.
-  Satisfies `path.quantity.001` through `path.quantity.019`.
+  Satisfies `path.quantity.001` through `path.quantity.015`,
+  `path.quantity.017` through `path.quantity.019`, `path.quantity.021` and
+  `path.quantity.022`.
 
 - [x] **45. Implement the boundary functions.** `lowBoundary`, `highBoundary` and
   `precision` as the pinned engine computes them: decimal boundaries edited as

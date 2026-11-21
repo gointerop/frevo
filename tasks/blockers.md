@@ -1712,6 +1712,9 @@ Decision needed from the oracle-builder or owner for each.
    library's digit count for a non-terminating quotient (`1 / 3`) cannot be
    ported without its source. Needed: vendor `fhir-ucum` at the version the pin
    resolves, or accept the gap in `docs/known-gaps.md`.
+   **Resolved 2026-11-21 (proposer):** `org.fhir:ucum` 1.0.10 is pinned at
+   `reference/Ucum-java` (`db9d22ad`); `path.math.015` now states the digits
+   (`1 / 3` is `0.3`), see the 2026-11-21 entry at the end of this file.
 5. **Frevo reads a missing UTC offset as UTC** where the pinned engine reads
    the JVM default zone (`couldBeTheSameTime`, `setTimeZoneZulu`). Identical on a
    UTC JVM; recorded here rather than silently chosen.
@@ -1727,6 +1730,16 @@ and `path.math.008` say so) and were not invented. Decision needed from the
 owner: vendor `fhir-ucum` at the version the pin resolves under `reference/`
 (or `oracles/`), after which the spec states the rule; or accept the gap in
 `docs/known-gaps.md`.
+
+**Resolved in the spec, 2026-11-21 (proposer).** The owner approved the pin
+(`reference/PINS.md` row 6, `FHIR/Ucum-java` `1.0.10`,
+`db9d22ade3f0f4a667b45817b85a9ac4534e4224`). Read from `Decimal.java`:
+`0.0 / 0` is the decimal `0`, `0 div 0.0` the integer `0`, `0.0 mod 0` the
+decimal `-0.0`, and `5.5 mod 0` raises
+`org.fhir.ucum.UcumException: Attempt to divide 5.5 by zero` (`path.math.005`
+to `.008`); the digit rule of `/` is `path.math.015` and of decimal `div`/`mod`
+`path.math.016`. No gap is needed. The rule exposes HAPI-versus-specification
+differences, recorded as `DEV-0030` (pending the owner) and `DEBT-0020`.
 
 ## 2026-11-17 — `add-fhirpath-and-codegen-r4` — test re-alignment to 9fea32e is blocked: review.md is `CHANGES_REQUESTED`
 
@@ -2772,6 +2785,15 @@ numbers; they are kept as text.
    Regenstrief's UCUM copyright (a `chore/oracles-*` change). The fetched file
    carries no licence text itself; it is git-ignored and was not committed.
 
+**Resolved in the spec, 2026-11-21 (proposer).** Item 1 is done: the source is
+pinned (`reference/Ucum-java`, `1.0.10`, `db9d22ad`). The spec now states the
+algebra from it: load and failure paths (`path.quantity.016`), canonical form
+(`.020`), `*` and `/` results (`.021`), canonical comparison (`.022`), special
+units (`.023`), parsing and its messages (`.024`), and the unknown-unit and
+non-UCUM cases (`.017`, `.018`). Task 43 is re-worded as a port with provenance.
+Items 2 and 3 stay open for the oracle-builder and the `NOTICE` chore; the
+`NOTICE` entry now also owes `Ucum-java`'s BSD-3-Clause text.
+
 ## 2026-11-20 — `add-fhirpath-and-codegen-r4` — four `path.quantity` scenarios still state the suite's answer, not HAPI's
 
 **Raised by** the oracle-builder, classifying the remaining red tests. Under the
@@ -2985,3 +3007,62 @@ this repository has allow.
 is read-only on every branch, so this needs the owner's approval as a re-pin
 (`chore/oracles-*`-style branch). Ported files would need the §10 header and a
 NOTICE entry for the BSD text.
+
+**Resolved 2026-11-21.** Pinned on `main` by `86d03ef` (`chore(reference): pin
+Ucum-java 1.0.10 (#25)`); the spec was updated from it the same day (entry
+below).
+
+## 2026-11-21 — `add-fhirpath-and-codegen-r4` — decimal and UCUM rules specified from the pinned `Ucum-java`; one new deviation for the owner
+
+**Raised by** the proposer. Resolves the 2026-11-17 `org.fhir.ucum.Decimal`
+entry, item 4 of the earlier implementer list, the task-43 entry and the pin
+note above, all on the same root cause. Every rule cites
+`reference/Ucum-java/src/main/java/org/fhir/ucum/*.java` by line, and every
+stated value was confirmed by compiling that source (outside the repository)
+against the suite's `ucum-essence.xml`.
+
+Spec changes (`specs/path/spec.md`): `path.math.005` to `.008` and
+`path.quantity.016` to `.019` rewritten in place; 7 IDs added:
+`path.math.015`, `path.math.016`, `path.quantity.020` to `.024`. Tasks 37, 43
+and 44 re-worded (port of `org.fhir.ucum` with provenance; satisfied IDs).
+
+**Decision needed from the owner: `DEV-0030`** (new, pending), with
+`DEBT-0020`. HAPI's decimal division rounds to the operands' significant
+digits (`1.25 / 0.5` is `3`, `1.0 / 8` is `0.13`) and, when the rounding
+carries out of the leading digit, answers a tenth of the value
+(`1.9 / 0.2` is `1.0`; `Decimal.java:751-754`); a decimal zero remainder is
+`-0.0`; canonical quantity values are compared with `removeTrailingZeros`, so
+`1 'mg/dL' = 10 'mg/L'` is `false`. The spec follows HAPI with no flag, per
+the 2026-11-08 rule; the debt entry records the wrong answers and the
+upstream report owed to `FHIR/Ucum-java`. `DEV-0029` is unchanged.
+
+**Owed to `design.md` section 5 (protected, so not written by the proposer).**
+Replace the decision paragraph and its first bullet with:
+
+> Decision: port the parts of `org.fhir:ucum` 1.0.10 that `FHIRPathEngine`
+> calls (`reference/Ucum-java`, `db9d22ad`, BSD-3-Clause) into `frevo-path` as
+> a private module: `Decimal` (also used by `/`, `div` and `mod` over
+> numbers), `Lexer`, `ExpressionParser`, `Converter`, `ExpressionComposer`, the
+> special-unit `Registry` and handlers, `XmlDefinitionsParser` and the
+> `UcumEssenceService` operations `getCanonicalForm`, `multiply`, `divideBy`,
+> `getCanonicalUnits` and `isComparable`. It is a port, not original work:
+> each file carries the section 10 header naming the upstream path and SHA,
+> `docs/provenance.md` records it, and `NOTICE` carries the BSD-3-Clause text.
+> No crate is added.
+>
+> - The data file is the one the suite worker loads,
+>   `org.hl7.fhir.r4/src/test/resources/ucum/ucum-essence.xml` at `73c432b5`
+>   (version `2.0.1`; byte-identical to the fetched copy), not the `2.2` file
+>   `Ucum-java` bundles.
+
+and add to the `path.quantity.016` sentence: "The load-failure conditions and
+the reported version are stated there; the failure text is not graded."
+
+**Not settled, for the oracle-builder and gatekeeper.** The forward coverage
+check fails until tests tag the 7 new IDs. No value was confirmed against a
+live HAPI; the differential run is still the final judge. The JVM text of the
+`NullPointerException`s in `path.quantity.018` names `UcumEssenceService`'s
+parameters (`o1`, `dividend`, ...), which assumes the published 1.0.10 jar was
+built with debug information (`maven-compiler-plugin` 3.5.1's default,
+`pom.xml:121-129`); if the live run shows `<parameter1>`, the scenario text is
+wrong, not the implementation.

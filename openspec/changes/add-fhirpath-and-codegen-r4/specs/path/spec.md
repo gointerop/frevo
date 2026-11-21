@@ -1410,12 +1410,18 @@ The engine SHALL implement the arithmetic operators over integers, decimals, str
 - **AND** Frevo's required status per case follows HAPI's own recorded run (`oracles/fhirpath/hapi-8.12.0-results.json`): `passed` for every case HAPI passes, and `failed` (parity under `path.oracle.012`) for the cases named below, which HAPI fails. A Frevo pass on one of them would be listed as `ahead-of-hapi`, not accepted as a pass of this scenario
 - **AND** the failed case is `testDivide7` (`0.0 / 0`): `opDivideBy` swallows the
   `UcumException` the decimal division raises (`FHIRPathEngine.java:3005-3011`),
-  but `org.fhir.ucum.Decimal.divide` returns zero for a zero dividend before it
-  checks the divisor, so HAPI answers one item where the suite expects none
-- **AND** the digits `/` yields where the quotient does not terminate (`1 / 3`)
-  are those of `org.fhir.ucum.Decimal.divide`, whose source is not in
-  `reference/`; the required precision is therefore not stated here and is
-  listed in `tasks/blockers.md`
+  but `org.fhir.ucum.Decimal.divide` returns `Decimal.zero()` for a zero
+  dividend before it looks at the divisor
+  (`reference/Ucum-java/src/main/java/org/fhir/ucum/Decimal.java:631-632`, the
+  divisor check is `:634-635`), so HAPI answers one item where the suite
+  expects none. That item is a `decimal` whose string value is exactly `0`:
+  `Decimal.zero()` is `new Decimal("0")` (`:236-242`), whose `asDecimal()` is
+  `0` (`:293-308`), and the engine wraps it as `new DecimalType("0")`
+  (`FHIRPathEngine.java:3009`)
+- **AND** every operand pair `/` accepts as numbers (`integer`, `decimal`,
+  `unsignedInt`, `positiveInt`, `:3004`) goes through `Decimal.divide`, integers
+  included, so `1 / 2` is the `decimal` `0.5`; the digits of every quotient,
+  terminating or not, are `path.math.015`'s
 
 #### Scenario: [path.math.006] `div` truncates toward zero
 
@@ -1424,7 +1430,10 @@ The engine SHALL implement the arithmetic operators over integers, decimals, str
 - **AND** Frevo's required status per case follows HAPI's own recorded run (`oracles/fhirpath/hapi-8.12.0-results.json`): `passed` for every case HAPI passes, and `failed` (parity under `path.oracle.012`) for the cases named below, which HAPI fails. A Frevo pass on one of them would be listed as `ahead-of-hapi`, not accepted as a pass of this scenario
 - **AND** the failed case is `testDiv6` (`0 div 0.0`), for the zero-dividend
   reason in `path.math.005`; `opDiv` (`FHIRPathEngine.java:3050-3064`) answers
-  one item
+  one item, the `integer` `0`: `Decimal.divInt` truncates the quotient
+  `Decimal.zero()` (`Decimal.java:785-790`, `trunc` `:338-351`) to `0`, and
+  the engine wraps that string as `new IntegerType("0")` (`:3060`)
+- **AND** `div` with a decimal operand is `path.math.016`'s
 
 #### Scenario: [path.math.007] `mod` returns the remainder
 
@@ -1436,6 +1445,27 @@ The engine SHALL implement the arithmetic operators over integers, decimals, str
   `opMod` rethrows the `UcumException` as a `PathEngineException`
   (`FHIRPathEngine.java:3098-3105`); and `testMod8` (`0.0 mod 0`), which answers
   one item where the suite expects none
+- **AND** the two errors' messages are exactly
+  `org.fhir.ucum.UcumException: Attempt to divide 5.5 by zero` and
+  `org.fhir.ucum.UcumException: Attempt to divide 5 by zero`, as HAPI's run
+  records them (`hapi-8.12.0-results.json:857-858`): `Decimal.modulo` calls
+  `divInt`, which calls `divide` (`Decimal.java:785-798`), which throws
+  `"Attempt to divide "+toString()+" by zero"` for a non-zero dividend and a
+  zero divisor (`:634-635`; `toString()` is `asDecimal()`, `:221-224`), and
+  `new PathEngineException(e)` takes the cause's `toString()` as its message
+  (`PathEngineException.java:95-97`) with no location suffix (`path.errors.002`)
+- **AND** the `testMod8` item is the `decimal` whose string value is exactly
+  `-0.0`, not `0`: `modulo` is `this - trunc(this / other) * other`
+  (`Decimal.java:792-798`); the quotient is `Decimal.zero()` (`:631-632`), the
+  product is `Decimal.zero()` (`multiply`, `:539-540`), and `subtract` of two
+  non-negative operands computes `other.doSubtract(this)` and flips its sign
+  (`:381-384`), giving a negative `0.0`; `asDecimal` writes the `-` because
+  its all-zeros test counts the `.` as a non-zero character (`:157-164`,
+  `:305-306`), and `new DecimalType("-0.0")` keeps that text as its string
+  value (`DecimalType.java:153-161`, `setRepresentation` `:199-202`). Under the
+  equality rule of `path.equality.001`, `(0.0 mod 0) = 0` is therefore `false`
+  (`-0` against `0` after `removeTrailingZeros`)
+- **AND** `mod` with a decimal operand is `path.math.016`'s
 
 #### Scenario: [path.math.008] division by zero yields empty only where the pinned engine says so
 
@@ -1445,12 +1475,24 @@ The engine SHALL implement the arithmetic operators over integers, decimals, str
   `UcumException` (`:3009-3011`)
 - **WHEN** `0.0 / 0`, `0 div 0.0` and `0.0 mod 0` are evaluated
 - **THEN** each yields one item, not an empty collection (the suite cases
-  `testDivide7`, `testDiv6`, `testMod8`, recorded `failed` by HAPI); the value
-  is `org.fhir.ucum.Decimal`'s, whose source is not in `reference/`, so it is
-  not stated here
+  `testDivide7`, `testDiv6`, `testMod8`, recorded `failed` by HAPI), because
+  `Decimal.divide` answers `Decimal.zero()` for a zero dividend before it
+  checks the divisor (`Decimal.java:631-635`): `0.0 / 0` is the `decimal` `0`,
+  `0 div 0.0` is the `integer` `0`, and `0.0 mod 0` is the `decimal` whose
+  string value is `-0.0` (the derivations are in `path.math.005`, `.006` and
+  `.007`)
+- **AND** the same zero-dividend rule makes `0 / 5`, `0.00 / 5` and
+  `0 / 0.0` the `decimal` `0` (the dividend's scale is not kept), `0 div 0` is
+  empty (the integer arm, `FHIRPathEngine.java:3051-3054`), `0 mod 2.5` and
+  `0 mod 0.0` are the `decimal` `0`, and `0.0 mod 2` is `-0.0`
+  (`path.math.016`)
 - **WHEN** `5.5 mod 0` and `5 mod 0.0` are evaluated
 - **THEN** evaluation fails with an execution error (`testMod6`, `testMod7`,
-  recorded `failed` by HAPI)
+  recorded `failed` by HAPI), with the messages `path.math.007` states
+- **AND** a non-zero decimal or mixed dividend over a zero divisor is **empty**
+  under `/` and `div` (`5 / 0.0`, `5.5 / 0`, `5 div 0.0`, `5.5 div 0`): both
+  arms catch the `UcumException` and add nothing
+  (`FHIRPathEngine.java:3009-3011`, `:3060-3063`)
 - **AND** the FHIRPath specification makes every division by zero empty; recorded
   as `DEV-0017` and resolved as HAPI's behaviour
 
@@ -1493,6 +1535,125 @@ The engine SHALL implement the arithmetic operators over integers, decimals, str
 - **WHEN** `@2014-01-02 - @2014-01-01` is evaluated
 - **THEN** the engine behaves as it does at the pinned SHA, and the harness
   records whether that is a quantity or an error
+
+#### Scenario: [path.math.015] `/` over numbers rounds the quotient to the significant digits its operands carry
+
+Source: `reference/Ucum-java/src/main/java/org/fhir/ucum/Decimal.java` at
+`db9d22ade3f0f4a667b45817b85a9ac4534e4224` (`org.fhir:ucum` 1.0.10, the version
+`org.hl7.fhir.core` 6.9.12 declares), called from `FHIRPathEngine.java:3004-3012`
+as `new DecimalType(new Decimal(l.primitiveValue()).divide(new Decimal(r.primitiveValue())).asDecimal())`.
+The values below were derived from that source and confirmed by compiling it.
+
+- **WHEN** `/` is evaluated over two numbers, neither zero
+- **THEN** the result is one `decimal` whose string value is the digit string
+  `Decimal.divide` produces (`Decimal.java:627-769`), which is:
+  - the **exact** quotient, with trailing fractional zeros dropped, when both
+    operands are whole numbers (their text has no `.`, `isWholeNumber`,
+    `:289-291`) and the long division ends within
+    `max(digit count of either operand) + 40` digits (`:638`, `:670`,
+    `:715-722`): `1 / 2` is `0.5`, `1 / 8` is `0.125`, `3 / 8` is `0.375`,
+    `1 / 64` is `0.015625`, `1 / 1024` is `0.0009765625`, `7 / 2` is `3.5`,
+    `19 / 20` is `0.95`, `123456789 / 1000` is `123456.789`, `4 / 2` is `2`
+  - otherwise the long-division digits cut to **P significant digits**,
+    rounding half up on the first dropped digit (`:732-759`), where
+    (`:724-731`):
+    - both operands whole: P is the larger operand digit count — `1 / 3` is
+      `0.3`, `2 / 3` is `0.7`, `5 / 6` is `0.8`, `1 / 7` is `0.1`, `1 / 9`
+      is `0.1`, `5 / 9` is `0.6`, `1 / 6` is `0.2`, `10 / 3` is `3.3`,
+      `20 / 3` is `6.7`, `22 / 7` is `3.1`, `100 / 3` is `33.3`, `200 / 3` is
+      `66.7`, `1000 / 3` is `333.3`, `1 / 11` is `0.091`, `1 / 30` is
+      `0.033`, `1 / 300` is `0.00333`
+    - only the dividend whole: P is the larger of the divisor's precision and
+      the quotient's count of integer digits (zero below 1) — `1 / 3.0` is
+      `0.33`, `2 / 3.0` is `0.67`, `2 / 3.00` is `0.667`, `10 / 3.0` is
+      `3.3`, `1 / 8.0` is `0.13`, `1 / 0.3` is `3`, `1 / 0.9` is `1`,
+      `8 / 0.9` is `9`, `2 / 0.6` is `3`, `3 / 1.5` is `2.0`, `1 / 0.125` is
+      `8.0`
+    - only the divisor whole: P is the larger of the dividend's precision and
+      the quotient's integer-digit count — `1.0 / 3` is `0.33`, `1.00 / 3` is
+      `0.333`, `10.0 / 3` is `3.33`, `10.00 / 3` is `3.333`, `0.1 / 3` is
+      `0.03`, `0.10 / 3` is `0.033`, `1.000 / 7` is `0.1429`, `1.0 / 8` is
+      `0.13`, `1.0 / 16` is `0.063`, `1.5 / 3` is `0.50`, `1.9 / 2` is
+      `0.95`, `10.0 / 4` is `2.5`, `9.99 / 3` is `3.33`
+    - neither whole: P is the larger of the two precisions' minimum and the
+      quotient's integer-digit count — `1.2 / 1.8` is `0.67`, `4.0 / 2.0` is
+      `2.0`, `10.00 / 3.0` is `3.3`, `0.5 / 0.3` is `2`, `1.5 / 0.5` is `3`,
+      `7.5 / 2.5` is `3.0`, `1.25 / 0.5` is `3`
+- **AND** an operand's **digit count** and **precision** are those
+  `setValueDecimal` assigns (`Decimal.java:114-155`, `countSignificants`
+  `:166-173`): for a whole number, the count of its digits once leading zeros
+  are removed (`30` is 2, `1000` is 4); for a number with a `.`, the count of
+  its digits once the `.` and the leading zeros are removed, trailing zeros
+  included (`1.0` is 2, `0.10` is 2, `0.5` is 1, `1.25` is 3, `10.00` is 4)
+- **AND** where the long division stops with fewer than P digits they are
+  kept as the digit loop (`:670-711`) produced them, which is why `4.0 / 2.0`
+  is `2.0` and `1.5 / 3` is `0.50` but `1.5 / 0.5` is `3`; Frevo reproduces
+  that loop, and the values listed here are its acceptance table
+- **AND** when rounding carries out of the leading digit, the result is **one
+  tenth** of the correctly rounded value: `Decimal.divide` prepends the carried
+  `1` and also increments the exponent counter, so the decimal point moves one
+  place left (`:751-754`, `:764`). So `1.9 / 0.2` is `1.0` (not `10`),
+  `0.95 / 0.1` is `1.0`, `3.8 / 0.4` is `1.0`, `9.99 / 1.0` is `1.00`,
+  `99.9 / 1.0` is `10.0` and `1.99 / 2.0` is `0.100`; `19 / 2.0`,
+  `1.9 / 0.20` and `95 / 10.0` are `9.5`, because nothing is rounded there
+- **AND** the sign is negative exactly when one operand is negative, applied
+  after rounding (`:765`): `(0 - 1) / 3` is `-0.3`, `(0 - 2) / 3` is `-0.7`
+- **AND** an operand read from data in exponent form (`1e3`, `1.5e-1`) is read
+  lower-cased through `setValueScientific` (`:76-83`, `:182-208`), and its
+  precision is its mantissa's: `1e3 / 3` is `300`, `1.5e-1 / 3` is `0.050`
+- **AND** the string value is observable as `(1 / 3).toString()`, which is
+  `'0.3'`, and through equality: `1 / 3 = 0.3` is `true` and
+  `1 / 3 = 0.333` is `false` (`path.equality.001`'s string rule)
+- **AND** no worker is consulted, so HAPI's server-facing engine answers the
+  same (`path.quantity.019` does not apply)
+- **AND** the FHIRPath specification computes `/` as an exact decimal
+  division (`1.25 / 0.5` is `2.5`, `1.9 / 0.2` is `9.5`); the rounding and the
+  carry defect are recorded as `DEV-0030` and the wrong answers as
+  `DEBT-0020`, resolved as HAPI's behaviour
+- **AND** no live case grades the rounding — the suite's `testDivide` cases
+  all terminate except `testDivide5`, whose `round(2)` hides the digits — so it
+  is differential-only, and the table above is graded in-process against the
+  values stated
+
+#### Scenario: [path.math.016] `div` and `mod` with a decimal operand truncate the rounded quotient
+
+- **WHEN** `div` or `mod` is evaluated with at least one `decimal` operand
+  (both `integer` is the Java `int` arm, `FHIRPathEngine.java:3050-3054`,
+  `:3090-3094`)
+- **THEN** `div` yields one `integer` built from the string of
+  `Decimal.divInt`, which is `trunc` of `path.math.015`'s rounded quotient
+  (`Decimal.java:785-790`, `trunc` `:338-351`; `FHIRPathEngine.java:3060`):
+  `2.2 div 1.8` is `1`, `7.5 div 2` is `3`, `(0 - 7.5) div 2` is `-3`,
+  `5.5 div 2` is `2`, `6.0 div 2` is `3`, `10 div 3.0` is `3`, `1 div 0.3`
+  is `3`, `10 div 0.3` is `33`, `0.5 div 1` is `0`, `1 div 3.0` is `0`
+- **AND** because the quotient is rounded before it is truncated, the carry
+  defect of `path.math.015` reaches `div`: `1.9 div 0.2` and `0.95 div 0.1`
+  are `1`
+- **AND** a truncated quotient outside the Java `int` range fails:
+  `3000000000.0 div 1` raises an execution error with the message
+  `java.lang.NumberFormatException: For input string: "3000000000"`, because
+  `new IntegerType(String)` parses with `Integer.parseInt` and rethrows as
+  `IllegalArgumentException(e)` (`IntegerType.java:65-67`, `:86-92`), which
+  the engine does not catch (`:3061` catches only `UcumException`)
+- **THEN** `mod` yields one `decimal` whose string value is
+  `this - trunc(this / other) * other` computed by `Decimal.subtract` and
+  `Decimal.multiply` (`Decimal.java:792-798`, `:368-386`, `:535-625`):
+  `2.2 mod 1.8` is `0.4`, `5.5 mod 2` is `1.5`, `(0 - 5.5) mod 2` is `-1.5`,
+  `5.5 mod (0 - 2)` is `1.5`, `7 mod 2.5` is `2.0`, `10 mod 3.0` is `1.0`,
+  `1 mod 0.3` is `0.1`, `1.9 mod 0.2` is `1.7` (the carry defect), and
+  `0 mod 2.5` is `0`
+- **AND** a zero remainder from a non-negative decimal dividend is `-0.0`, for
+  the reason `path.math.007` gives for `testMod8`: `4.0 mod 2`, `6.0 mod 2`,
+  `0.0 mod 2` and `3000000000.0 mod 1` are `-0.0`
+- **AND** a zero divisor is `path.math.008`'s: empty under `div`, an execution
+  error under `mod`
+- **AND** no worker is consulted, so HAPI's server-facing engine answers the
+  same
+- **AND** the specification makes `1.9 div 0.2` `9`, `1.9 mod 0.2` `0.1` and
+  `4.0 mod 2` `0.0`; recorded as `DEV-0030` and `DEBT-0020`
+- **AND** only `testDiv4` and `testMod4` grade this in the suite (both passed
+  by HAPI); the rest is differential-only, graded in-process against the
+  values stated
 
 ### Requirement: Math functions
 
@@ -2398,21 +2559,89 @@ The engine SHALL compare, add, subtract, multiply and divide quantities by conve
 #### Scenario: [path.quantity.016] UCUM data comes from the pinned `ucum-essence.xml`
 
 - **WHEN** the engine canonicalises any unit
-- **THEN** it does so from the `ucum-essence.xml` the repository pins, and the
-  file's version is reported with the suite result
-- **AND** an absent or unparseable UCUM file fails the run rather than silently
-  treating units as incomparable
+- **THEN** it does so from the `ucum-essence.xml` the suite's worker loads:
+  `TestingUtilities.context()` constructs
+  `new UcumEssenceService(TestingUtilities.resourceNameToFile("ucum", "ucum-essence.xml"))`
+  (`org.hl7.fhir.r4/src/main/java/org/hl7/fhir/r4/test/utils/TestingUtilities.java:89`,
+  `:481-492`), the class-path resource
+  `org.hl7.fhir.r4/src/test/resources/ucum/ucum-essence.xml` at `73c432b5`,
+  whose root carries `version="2.0.1"`, `revision="$Revision: 439 $"` and
+  `revision-date="$Date: 2015-11-13 15:13:19 -0500 (Fri, 13 Nov 2015) $"`. The
+  fetched copy `oracles/fhir-test-cases/fetched/ucum/ucum-essence.xml` is
+  byte-identical. The `ucum-essence.xml` bundled in `Ucum-java`
+  (`src/main/resources/ucum-essence.xml`, `version="2.2"`) sits at the
+  class-path root, not under `ucum/`, and is **not** the file the suite loads
+- **AND** the version reported with the suite result is the root element's
+  `version` attribute, `2.0.1` (`XmlDefinitionsParser.java:89`,
+  `UcumEssenceService.ucumIdentification`, `UcumEssenceService.java:106-109`)
+- **AND** the file is read as `XmlDefinitionsParser.parse` reads it
+  (`XmlDefinitionsParser.java:64-106`): document type declarations are refused
+  (`XmlUtils.java:19-27`); the root element's name must be `root` (`:77-78`);
+  `revision-date` must parse, as `yyyy-MM-dd HH:mm:ss Z` from characters 7-31
+  when it is longer than 25 characters and as `yyyy-MM-dd` otherwise
+  (`:79-88`); every child element of the root must be `prefix`, `base-unit` or
+  `unit` (`:91-101`); a prefix's `value/@value` is a decimal read with
+  precision 24 (`:150-159`), and a unit's `value/@value` a decimal read with
+  precision 24 when it contains a `.` and with its own precision otherwise
+  (`:123-137`); a unit is metric or special only when the attribute is exactly
+  `yes` (`:109-121`); and units are looked up by `Code`, base units before
+  defined units, in file order (`UcumModel.java:127-137`). The pinned file
+  yields 24 prefixes, 7 base units (`m`, `s`, `g`, `rad`, `K`, `C`, `cd`) and
+  303 defined units
+- **AND** an absent or unreadable file, a file that is not well-formed XML or
+  carries a DOCTYPE, a root element other than `root`, a missing or
+  unparseable `revision-date`, an unknown child element or a malformed prefix
+  or unit value fails the run rather than silently treating units as incomparable:
+  each raises a `UcumException` from the constructor
+  (`UcumEssenceService.java:91-99`, `XmlDefinitionsParser.java:64-70`,
+  `:103-105`), and `TestingUtilities.context()` turns it into an `Error`
+  (`TestingUtilities.java:91-93`), so no case of the suite is evaluated. Frevo's failure names the
+  file and the cause; its message text is not graded, because no HAPI surface
+  shows it (the server-facing worker never loads UCUM, `path.quantity.019`)
+- **AND** this scenario is graded in-process by loading the pinned file, the
+  fetched copy and one malformed file per failure condition above
 
 #### Scenario: [path.quantity.018] a quantity whose system is not UCUM is not canonicalised
 
 - **WHEN** two quantities whose unit codes differ are compared and at least one
   carries a `system` other than `http://unitsofmeasure.org`
 - **THEN** canonicalisation yields nothing for that operand, because the engine
-  returns no canonical decimal unless the system is exactly
-  `http://unitsofmeasure.org`
-- **AND** the engine's observed behaviour at the pinned SHA for that case is
-  recorded by the harness and matched, rather than assumed; it is not the same
-  as the no-UCUM-data case in `path.quantity.015`
+  returns no canonical pair or decimal unless the system is exactly
+  `http://unitsofmeasure.org` (`qtyToCanonicalPair`, `qtyToCanonicalDecimal`,
+  `qtyToPair`, `FHIRPathEngine.java:2288-2328`). A calendar-keyword literal for
+  `year` or `month` (`1 year`, `2 months`) has **no** system
+  (`:1104-1132`), so it is such an operand; the other keywords carry the UCUM
+  system and codes `wk`, `d`, `h`, `min`, `s`, `ms`
+- **AND** under `=` and `~` the operand falls back to the `code` and `unit`
+  rules of `qtyEqual` and `qtyEquivalent` (`:2276-2285`, `:2349-2358`), as in
+  `path.quantity.017`: two quantities of the same non-UCUM system with equal
+  codes compare their values, and differing codes are empty under `=` and fail
+  under `~`
+- **AND** under `<` with differing `code` lists, and under `>`, `>=` and `<=`
+  with differing `unit` lists, the `null` canonical decimal is dereferenced and
+  evaluation fails with `path.quantity.013`'s message: `1 year < 2 'a'` and
+  `1 year > 1 'a'` fail, while `1 year < 2 years` is `true` (equal, empty code
+  lists). `<=` with no `unit` on the left and one on the right fails earlier,
+  on `lunit.equals`, as `path.quantity.019` states
+- **AND** under `*` and `/` the `null` pair is passed to the UCUM service,
+  which dereferences it; the `NullPointerException` is not a `UcumException`,
+  so neither arm catches it (`:2797-2802`, `:3017-3022`) and evaluation fails
+  even under `/`, which otherwise answers empty. The messages are the JVM's,
+  naming the `UcumEssenceService` parameter (`UcumEssenceService.java:314-325`;
+  the published jar keeps parameter names, as `maven-compiler-plugin` 3.5.1
+  compiles with debug information by default, `pom.xml:121-129`):
+  `1 year * 1 'm'` fails with
+  `Cannot invoke "org.fhir.ucum.Pair.getValue()" because "o1" is null`,
+  `1 'm' * 1 year` with `... because "o2" is null`, `1 year / 1 'm'` with
+  `... because "dividend" is null` and `1 'm' / 1 year` with
+  `... because "divisor" is null`; Frevo returns an execution error with
+  that message and no offset (`path.errors.002`, `path.errors.003`)
+- **AND** under `comparable()` two different systems, or a missing system, are
+  `false`, and two quantities of the same non-UCUM system are `true` only when
+  their codes are equal (`funcComparable`, `:4609-4641`)
+- **AND** this is not the no-UCUM-data case in `path.quantity.015`
+- **AND** the `NullPointerException` failures differ from the specification;
+  recorded as `DEV-0030`
 - **AND** no live case grades it, so it is differential-only
 
 #### Scenario: [path.quantity.019] under HAPI's server-facing worker every UCUM-consulting quantity operation raises `HAPI-0274: `
@@ -2447,6 +2676,11 @@ The engine SHALL compare, add, subtract, multiply and divide quantities by conve
     `1 'cm'.comparable(2 'cm')` is `true` (equal codes, `:4628-4630`) and a
     quantity with no system or no code, or two different systems, is `false`
     (`:4622-4627`) under both workers
+  - and therefore in every operation of `path.quantity.017`, `.018` and
+    `.020` to `.024` that reaches one of the calls above, including the
+    fallbacks for an unknown, special or non-UCUM unit, which are taken only
+    after the worker has been asked (`:2265`, `:2338`, `:2443`, `:2793`,
+    `:3013`)
 - **AND** an ordered comparison whose `code` (for `<`) or `unit` (for the other
   three) lists are equal never consults the worker and answers by value:
   `testLessOrEqual30` and `testGreaterThan30` (`path.quantity.013`) are `true`
@@ -2481,8 +2715,279 @@ The engine SHALL compare, add, subtract, multiply and divide quantities by conve
 #### Scenario: [path.quantity.017] a quantity with an unknown unit code does not crash
 
 - **WHEN** `1 'zzz' = 1 'zzz'` and `1 'zzz' = 1 'cm'` are evaluated
-- **THEN** the engine behaves as it does at the pinned SHA, and the harness
-  records which behaviour that is
+- **THEN** the first is `true` and the second is an **empty** collection, not
+  an error: `zzz` is not a unit of the pinned file, so parsing it raises
+  `UcumException` (`ExpressionParser.java:130-134`), which
+  `qtyToCanonicalPair` turns into `null` (`FHIRPathEngine.java:2292-2298`);
+  `qtyEqual` then falls back to the `code` rule (`:2276-2285`), under which
+  equal codes compare the values and different codes return `null`, which
+  `opEquals` makes empty (`:2114-2127`). `1 'zzz' = 2 'zzz'` is `false`,
+  `1 'zzz' != 1 'cm'` is empty and `1 'cm' = 1 'zzz'` is empty
+- **AND** `1 'zzz' ~ 1 'zzz'` is `true`, while `1 'zzz' ~ 1 'cm'` **fails**:
+  `qtyEquivalent` returns `null` by the same fallback (`:2349-2352`) and
+  `doEquivalent` unboxes it (`:2204-2206`), with the message
+  `path.quantity.009` states for that `NullPointerException`
+- **AND** `1 'zzz' < 2 'zzz'` is `true` (equal `code` lists compare the
+  values, `:2438-2441`), while `1 'zzz' < 1 'cm'` and `1 'cm' < 1 'zzz'`
+  **fail**: the code lists differ, `qtyToCanonicalDecimal` returns `null` for
+  the unknown unit (`:2305-2311`), and the recursive `opLessThan` calls
+  `isPrimitive()` on it (`:2414`), with the message `path.quantity.013` states
+- **AND** `>`, `>=` and `<=` compare the `unit` lists, which two quoted-code
+  literals do not have (`:1132` sets `unit` only for a calendar keyword), so
+  they compare the values with no UCUM step: `2 'zzz' > 1 'cm'` is `true`,
+  `1 'zzz' >= 1 'cm'` is `true` and `1 'zzz' <= 2 'cm'` is `true`
+  (`:2485-2488`, `:2533-2539`, `:2583-2586`)
+- **AND** `1 'zzz'.comparable(1 'cm')` is `false`: `isComparable` raises for
+  the unknown unit (`UcumEssenceService.java:232-240`, `:333-343`) and
+  `funcComparable` answers `false` (`FHIRPathEngine.java:4632-4636`)
+- **AND** `1 'zzz' * 1 'm'` and `1 'm' * 1 'zzz'` fail with the parse error of
+  `path.quantity.024`, and `1 'zzz' / 1 'm'` is empty (`:3020-3022`)
+- **AND** the failures and the code-only fallback differ from the
+  specification; recorded as `DEV-0030`
+- **AND** no live case grades it, so it is differential-only
+
+#### Scenario: [path.quantity.020] a canonical form is a value over base units, sorted by base-unit code
+
+Source for `path.quantity.020` to `.024`: `reference/Ucum-java/src/main/java/org/fhir/ucum/`
+at `db9d22ade3f0f4a667b45817b85a9ac4534e4224` (`org.fhir:ucum` 1.0.10), files
+cited by name, over the `ucum-essence.xml` of `path.quantity.016`. Every value
+below was derived from that source and confirmed by compiling it against the
+pinned file. They state the suite worker's answers; under HAPI's server-facing
+worker each of these operations raises `HAPI-0274: ` (`path.quantity.019`,
+`DEV-0029`).
+
+- **WHEN** a UCUM code is canonicalised — by `getCanonicalForm` for `=`, `~`
+  and the ordered operators (`FHIRPathEngine.java:2293-2294`, `:2306-2308`),
+  and for the result of `*` and `/` (`UcumEssenceService.java:314-325`)
+- **THEN** the code is parsed (`path.quantity.024`) and converted by
+  `Converter.normalise` (`Converter.java:57-127`): the value starts as
+  `1.000000000000000000000000000000` (`:62`, `:130`); a base unit contributes
+  itself with its exponent (`:132-133`); a defined unit is replaced by its
+  `value/@Unit` expression, recursively, and the value is multiplied by its
+  `value/@value` once per positive exponent and divided by it once per
+  negative one (`:135-146`, `:158-180`); a prefix multiplies or divides the
+  value the same way (`:147-154`); a factor multiplies, or divides after a
+  `/` (`:78-82`); each operator applies only to the one component that
+  follows it, left to right, so `m/s.s` is `m`, not `m.s-2`; and a
+  parenthesised term is normalised on its own and its exponents negated after
+  a `/` (`:65-97`), so `m/(s.s)` is `m.s-2`
+- **AND** base units with the same code are merged by adding their exponents
+  (`:101-111`), units whose exponent is `0` are removed (`:112-116`), and the
+  rest are sorted by base-unit code with Java `String.compareTo`, upper case
+  before lower case: `C`, `K`, `cd`, `g`, `m`, `rad`, `s` (`:119-124`)
+- **AND** the canonical unit string is the units joined by `.`, each written as
+  its code followed by its exponent when the exponent is not `1`
+  (`ExpressionComposer.java:97-109`), and a dimensionless code canonicalises
+  to the **empty** string: `g/m` is `g.m-1`, `kg.m/s2` is `g.m.s-2`,
+  `mm[Hg]` is `g.m-1.s-2`, `mg/dL` is `g.m-3`, `L` and `l` are `m3`,
+  `/min` is `s-1`, `10*3/uL` is `m-3`, `mol/L` is `m-3`, and `1`, `%`,
+  `[ppth]`, `10*-3`, `{tablets}`, `[iU]` and `[pi]` are empty
+- **AND** the canonical value of a quantity is its value times the code's
+  canonical factor, by `Decimal.multiply` (`UcumEssenceService.java:268-285`,
+  `Decimal.java:535-625`), the quantity's value entering as
+  `new Decimal(value.toPlainString())` with a missing `code` read as `1`
+  (`FHIRPathEngine.java:2293`): `4.0000 'g'` and `4000.0 'mg'` are `4.0000 g`,
+  `4 'g'` and `4000 'mg'` are `4 g`, `4040 'mg'` is `4.04 g`, `1 'kg'` is
+  `1000 g`, `1 '[lb_av]'` is `453.59237 g`, `185 '[lb_av]'` is
+  `83914.58845 g`, `1 '[in_i]'` and `2.54 'cm'` are `0.0254 m`,
+  `1 '[ft_i]'` and `12 '[in_i]'` are `0.3048 m`, `1.5 'km'` is `1500 m`,
+  `7 'd'` and `1 'wk'` are `604800 s`, `1 'h'` is `3600 s`, `1 'a'` is
+  `31557600 s`, `1 'mo'` is `2629800 s`, `1 'mo_s'` is `2551442.976 s`,
+  `1 'L'` is `0.001 m3`, `1 'mL'` is `0.000001 m3`, `1 'mg/dL'` is `10 g.m-3`,
+  `1 'mm[Hg]'` is `133322 g.m-1.s-2`, `1 '/min'` is
+  `0.01666666666666666666666666666667 s-1`, `1 '%'` is `0.01`, `1 '[pi]'` is
+  `3.1415926535897932384626433832795028841971693993751058209749445923`,
+  `1 'mol/L'` is `602213670000000000000000000 m-3`, `-5.5 'mg'` is
+  `-0.0055 g`
+- **AND** when the quantity's value is a whole number, the canonical value is
+  then passed through `checkForCouldBeWholeNumber` (`UcumEssenceService.java:279-282`,
+  `Decimal.java:831-855`): when its precision is above 17, it has more than
+  three digits and its second-to-last digit is `0` (or `9`), the run of `0`s
+  (or `9`s) that ends at that digit is found, and if the run starts after the
+  first digit and more than three digits from the end, the digits are cut just
+  before the run (for `9`s, the digit before the run is also incremented),
+  leaving the decimal point where it was. So `60 '/min'` canonicalises to
+  `1 s-1`, while `60.0 '/min'`, whose value is not whole, is
+  `1.0000000000000000000000000000002 s-1`
+- **AND** a code is observable through the result of `*` and `/`
+  (`path.quantity.021`), and its value through equality and ordering
+  (`path.quantity.022`)
+- **AND** no live case grades the canonical strings directly; the suite's
+  `testQuantity` and `Comparable` cases grade them indirectly. The rest is
+  differential-only, graded in-process against the values stated
+
+#### Scenario: [path.quantity.021] quantity `*` and `/` answer in canonical units
+
+- **WHEN** `*` or `/` is evaluated over two quantities that both have the UCUM
+  system (`FHIRPathEngine.java:2793-2802`, `:3013-3022`)
+- **THEN** the values are combined by `Decimal.multiply` or `Decimal.divide`
+  (`path.math.015`'s digits), the codes are joined as `<left>.<right>` for `*`
+  and as `<left>/<right>` for `/`, a side containing `/` or `*` being
+  parenthesised for `/` only (`UcumEssenceService.java:314-325`), and the
+  result is canonicalised (`path.quantity.020`)
+- **AND** the result is one `Quantity` with that value
+  (`new BigDecimal(value.toString())`), the system
+  `http://unitsofmeasure.org`, the canonical code, and **no** `unit`; an empty
+  canonical code leaves `code` absent (`pairToQty`, `:2314-2316`;
+  `Quantity.setCode`, `Quantity.java:620-629`). Its `toString()` is the value's
+  plain string, a space and the code in single quotes (`:895-904`), so a
+  dimensionless result prints `'null'`
+- **AND** the results are: `2.0 'cm' * 2.0 'm'` is `0.040 'm2'`,
+  `2 'cm' * 2 'm'` is `0.04 'm2'`, `2 'm' * 3 'm'` is `6 'm2'`,
+  `2 'm/s' * 3 's'` is `6 'm'` (the joined code `m/s.s` applies `/` to `s`
+  and then `.` to `s`), `2 'g' * 3 '1'` is `6 'g'`,
+  `2 'm' * 3 '{tablets}'` is `6 'm'`, `2 'kg' * 3 '[lb_av]'` is
+  `2721554.22 'g2'`, `2 'mm[Hg]' * 3 'm2'` is `799932 'g.m.s-2'`,
+  `2 '%' * 3 '%'` is `0.0006` with no code; `4.0 'g' / 2.0 'm'` is
+  `2.0 'g.m-1'`, `1.0 'm' / 1.0 'm'` is `1.0` with no code (its `toString()`
+  is `1.0 'null'`), `2 'g' / 4 'g'` is `0.50` with no code, `1 'm' / 3 's'`
+  is `0.3 'm.s-1'`, `6 'km' / 2 'h'` is
+  `0.8333333333333333333333333333334 'm.s-1'`, `6 'kg.m' / 2 's'` is
+  `3000 'g.m.s-1'`, `6 'g/m' / 2 'm/s'` is `3 'g.m-2.s'`,
+  `6 'g/m' / 3 's'` is `2.00 'g.m-1.s-1'`, `6 'm' / 3 's/m'` is
+  `2 'm2.s-1'`, `6 'm.s' / 3 'g'` is `2.00 'g-1.m.s'`, `6 '1' / 3 'm'` is
+  `2.00 'm-1'`, `6 '10*3' / 3 '1'` is `2000` with no code
+- **AND** these are why the suite's `2.0 'cm' * 2.0 'm' = 0.040 'm2'`,
+  `4.0 'g' / 2.0 'm' = 2 'g/m'` and `1.0 'm' / 1.0 'm' = 1 '1'` are `true`
+  (`path.quantity.006` to `.008`)
+- **AND** a zero divisor value is empty under `/` (`1 'm' / 0 's'`), and a
+  zero dividend is `0` (`0 'm' / 0 's'` is `0 'm.s-1'`), by
+  `path.math.008`'s rule
+- **AND** a code the service cannot canonicalise (`path.quantity.017`, `.023`,
+  `.024`) makes `*` fail with an execution error whose message is the
+  `UcumException`'s, followed by the ` (@char C)` suffix that names the `*`
+  token (`:2800-2801`, `path.errors.002`), and makes `/` **empty**
+  (`:3020-3022`)
+- **AND** a quantity with the UCUM system and no `code` enters `*` and `/`
+  with the code `null`, which the joined string spells `null`
+  (`qtyToPair`, `:2319-2328`; `UcumEssenceService.java:316`): a `*` fails with
+  `Error processing unit 'null.m': The unit 'null' is unknown' at position 0`
+  and the suffix, and a `/` is empty. Under `=` the same quantity is read as
+  the code `1` (`:2293`)
+- **AND** a quantity without the UCUM system fails `*` and `/` as
+  `path.quantity.018` states
+- **AND** `*` and `/` between a quantity and a number are the incompatible-type
+  error (`:2803-2804`, `:3023-3024`)
+- **AND** the canonical-unit result, the absent `unit` and the `'null'` string
+  are HAPI's, not the specification's; recorded as `DEV-0030`
+- **AND** only `path.quantity.006` to `.008` are graded by the suite; the rest
+  is differential-only
+
+#### Scenario: [path.quantity.022] canonical values are compared as strings for `=` and as doubles for ordering, with no dimension check for ordering
+
+- **WHEN** two quantities that both canonicalise are compared
+- **THEN** `=` and `!=` with **different** canonical unit strings are `false`
+  and `true`, not empty, and `~` is `false` (`FHIRPathEngine.java:2268-2273`,
+  `:2341-2346`): `1 'cm' = 1 's'` is `false`, `1 'g' != 1 'm'` is `true`,
+  `1 'cm' ~ 1 's'` is `false`
+- **AND** with **equal** canonical unit strings, `=` compares the two canonical
+  values' strings with `path.equality.001`'s trailing-zero rule (`:2270`,
+  `removeTrailingZeros` and `decEqual`, `:2161-2184`), and `~` compares them as `path.quantity.002`
+  states (`:2343`). So `4.0000 'g' = 4000.0 'mg'`, `4 'g' = 4000 'mg'`,
+  `1 '[in_i]' = 2.54 'cm'`, `1 'L' = 1000 'mL'`, `1 'h' = 60 'min'`,
+  `1 'a' = 365.25 'd'`, `1 'kg' = 1000 'g'`, `1 'g/L' = 1000 'mg/L'`,
+  `185 '[lb_av]' = 83914.58845 'g'`, `100 '%' = 1 '1'`, `1 '10*3' = 1000 '1'`
+  and `60 '/min' = 1 '/s'` are `true`, and `4 'g' = 4040 'mg'` and
+  `1 'mo' = 30 'd'` are `false`
+- **AND** the trailing-zero rule makes two equal magnitudes unequal when one
+  canonical string has no `.`: `1 'mg/dL' = 10 'mg/L'` is **`false`**
+  (`10` against `10.00`, read as `1` against `10`), and so is
+  `10 'mg/L' = 1 'mg/dL'`; and the whole-number step of `path.quantity.020`
+  makes `60.0 '/min' = 1 '/s'` **`false`** while `60 '/min' = 1 '/s'` is
+  `true`
+- **AND** `<` with differing `code` lists, and `>`, `>=` and `<=` with differing
+  `unit` lists, convert each canonical value string with `Double.valueOf` and
+  compare, with **no** check that the canonical units agree (`:2414-2418`,
+  `:2440-2450`): `1 'kg' < 2000 'g'` is `true`, `4 'g' < 4040 'mg'` is
+  `true`, `1 'mo' < 30 'd'` is `false`, `6 days < 1 week` is `true`, and
+  `1 'cm' < 1 's'` is `true` (`path.quantity.015`)
+- **AND** the specification makes `1 'mg/dL' = 10 'mg/L'` and
+  `60.0 '/min' = 1 '/s'` `true`; recorded as `DEV-0030` and `DEBT-0020`
+- **AND** the suite grades `testQuantity1` to `8`, `testLessThan31` and the
+  `Observation.value` `[lb_av]` cases of `testEquality28`, `testNEquality24`,
+  `testEquivalent22`, `testNotEquivalent22`, `testLessThan22`,
+  `testLessOrEqual22`, `testGreatorOrEqual22` and `testGreaterThan22`; the rest
+  is differential-only
+
+#### Scenario: [path.quantity.023] special units are not canonicalised unless a handler maps them to a ratio unit
+
+- **WHEN** a code names a unit the pinned file marks `isSpecial="yes"`
+- **THEN** `Converter.expandDefinedUnit` consults the handler registry
+  (`Converter.java:158-180`; `special/Registry.java`, `init`): `Cel` and
+  `[degF]` have handlers with an offset and raise
+  `UcumException("Not handled yet (special unit with offset from 0 at intersect)")`
+  (`Converter.java:168-171`; `CelsiusHandler.java`, `FahrenheitHandler.java`);
+  a special unit with no handler raises
+  `UcumException("Not handled yet (special unit)")` (`:163-164`), which is the
+  case for `[degRe]`, `[hp'_X]`, `[hp'_C]`, `[hp'_M]`, `[hp'_Q]`,
+  `B[10.nV]` and `[m/s2/Hz^(1/2)]` — the registry's keys `[hp_X]` and `[hp_C]`
+  do not match the file's `[hp'_X]` and `[hp'_C]`
+- **AND** the other special units are canonicalised as the handler's unit
+  times the handler's value, not as a logarithm or a ratio scale
+  (`HoldingHandler.java`; `Registry.java`, `init`): `[p'diop]` and
+  `%[slope]` as `deg`, `[pH]` as `mol/l`, `Np`, `B` and `bit_s` as `1`,
+  `B[SPL]` as `2` times `10*-5.Pa`, `B[V]`, `B[mV]`, `B[uV]`, `B[W]` and
+  `B[kW]` as `V`, `mV`, `uV`, `W` and `kW`. So `1 '[pH]' = 1 'mol/L'`,
+  `1 'B' = 1 '1'`, `1 'Np' = 1 '1'`, `1 'B[SPL]' = 2 '10*-5.Pa'` and
+  `1 '%[slope]' = 1 'deg'` are `true`
+- **AND** an operand that raises falls back as `path.quantity.017` states:
+  `1 'Cel' = 1 'Cel'` is `true`, `1 'Cel' = 274.15 'K'` is empty,
+  `1 'Cel' ~ 274.15 'K'` fails with `path.quantity.009`'s message,
+  `1 'Cel' < 2 'K'` fails with `path.quantity.013`'s message,
+  `1 'Cel'.comparable(1 'K')` is `false`, `1 'Cel' * 1 'm'` fails with
+  `Not handled yet (special unit with offset from 0 at intersect)` and the
+  ` (@char C)` suffix, and `1 'Cel' / 1 'm'` is empty
+- **AND** the specification treats `Cel` as convertible to `K` and the
+  logarithmic units as non-ratio; the HAPI behaviour is chosen and recorded in
+  `DEV-0030`
+- **AND** no live case grades it, so it is differential-only
+
+#### Scenario: [path.quantity.024] UCUM codes are parsed by the pinned library's grammar, and its errors are the messages `*` shows
+
+- **WHEN** a code is parsed by `ExpressionParser.parse` (`ExpressionParser.java:48-146`,
+  `Lexer.java:52-206`)
+- **THEN** the lexer reads `/`, `.`, `(`, `)`, an annotation `{...}`, a signed
+  integer, and a run of symbol characters (letters, `[`, `]`, `%`, `*`, `^`,
+  `'`, `"`, `_`; digits only before the first non-digit or inside brackets;
+  `.` only inside brackets) as one token, a run of digits alone being a number
+  (`Lexer.java:61-140`), so `m2` is `m` with exponent `2` and `10*3` is the
+  unit `10*` with exponent `3`; an annotation alone is the
+  factor `1`, and an annotation after a term multiplies implicitly
+  (`ExpressionParser.java:65-78`); a number is a factor; a symbol takes the
+  **first** prefix in file order whose code starts it and leaves a base unit
+  or a metric unit, and otherwise is looked up whole (`:109-135`); a number
+  after a symbol is its exponent (`:137-142`); an empty code is the factor
+  `1` (`:58-59`)
+- **AND** a code that does not parse raises `UcumException` with these
+  messages, where `<code>` is the whole code and the position is the 0-based
+  start of the token being read (`Lexer.java:64`, `:194-196`): an unknown
+  symbol `Error processing unit '<code>': The unit '<sym>' is unknown' at position <n>`
+  (`ExpressionParser.java:133-134`), so `1 'm' * 1 'zzz'` gives
+  `Error processing unit 'm.zzz': The unit 'zzz' is unknown' at position 2`;
+  a missing term `Error processing unit '<code>': unexpected end of expression looking for a symbol or a number' at position <n>`
+  (`:94-95`); an unclosed `(`
+  `Error processing unit '<code>': Unexpected Token Type 'NONE' looking for a close bracket' at position <n>`
+  (`:96-102`); an unterminated annotation
+  `Error processing unit'<code>': Annotation contains non-ascii characters`
+  (the end-of-input character is not ASCII, `Lexer.java:142-150`); an
+  unexpected character
+  `Error processing unit '<code>': unexpected character '<c>' at position <n>`
+  (`:74`); a `+` or `-` with no digit after it (`:87-89`); a nested `[` or a
+  `]` without `[` (`Error processing unit 'm]': ] without [' at position 0`,
+  `:122-133`); and input left after a stray `)`
+  `Expression was not parsed completely. Syntax Error?` (`ExpressionParser.java:51-52`,
+  `m)m`), while a final stray `)` is accepted (`m)` canonicalises as `m`,
+  because the lexer has consumed it when `finished()` is asked, `:203-205`).
+  The quote before ` at position` is in the library's text
+- **AND** only `*` shows these messages (`path.quantity.021`); `=`, `~`,
+  `comparable()` and `/` swallow them and the ordered operators turn them into
+  `path.quantity.013`'s failure
+- **AND** `1 'cm'.comparable(1 '[s]')` is `false` because `[s]` is not a unit
+  of the pinned file (`Comparable/Comparable2`), and
+  `1 'cm'.comparable(1 '[in_i]')` is `true` because both canonicalise to `m`
+  (`Comparable1`; `isComparable`, `UcumEssenceService.java:333-343`)
+- **AND** `Comparable1` to `3` grade the comparable part in the suite; the
+  messages are differential-only
 
 ### Requirement: Boundary functions
 

@@ -45,8 +45,8 @@ decision.
 
 ## Entries
 
-All twenty-six entries below come from `add-fhirpath-and-codegen-r4`;
-`DEV-0013`, `DEV-0015`, `DEV-0017`, `DEV-0018`, `DEV-0019`, `DEV-0021`, `DEV-0022`, `DEV-0023`, `DEV-0024`, `DEV-0025`, `DEV-0026`, `DEV-0028` and `DEV-0029` are pending the owner's review (see their entries);
+All twenty-seven entries below come from `add-fhirpath-and-codegen-r4`;
+`DEV-0013`, `DEV-0015`, `DEV-0017`, `DEV-0018`, `DEV-0019`, `DEV-0021`, `DEV-0022`, `DEV-0023`, `DEV-0024`, `DEV-0025`, `DEV-0026`, `DEV-0028`, `DEV-0029` and `DEV-0030` are pending the owner's review (see their entries);
 `DEV-0012` and `DEV-0014` were ruled for HAPI (2026-11-17 and 2026-11-14).
 `DEV-0001` through `DEV-0010` are the same kind of case: the pinned R4
 `FHIRPathEngine` does something the FHIRPath specification does not describe. In
@@ -577,6 +577,14 @@ file, so its prose is not redistributable here (see `oracles/PINS.md`).
   `org.fhir.ucum.Decimal`, which is not in `reference/` (see `tasks/blockers.md`).
 - **Normalizer impact:** none on stored bytes.
 - **Reviewed:** pending owner.
+- **Update 2026-11-21:** `org.fhir.ucum.Decimal` is now pinned under
+  `reference/Ucum-java` (`1.0.10`, `db9d22ad`). The zero-dividend items are
+  `0.0 / 0` = the decimal `0`, `0 div 0.0` = the integer `0` and
+  `0.0 mod 0` = the decimal `-0.0` (`Decimal.java:631-632`, `:381-384`,
+  `:305-306`), and the two `mod` errors read
+  `org.fhir.ucum.UcumException: Attempt to divide 5.5 by zero` and `... 5 by
+  zero` (`path.math.005`, `.007`, `.008`). The remaining digit rules of
+  decimal division are `DEV-0030`'s.
 
 ### DEV-0018 — a dateTime with no UTC offset is placed in the evaluation zone
 
@@ -929,6 +937,60 @@ file, so its prose is not redistributable here (see `oracles/PINS.md`).
   the pinned source; not confirmed against a live HAPI.
 - **Normalizer impact:** none on stored bytes.
 - **Reviewed:** pending owner.
+
+### DEV-0030 — decimal `/`, `div` and `mod` and UCUM canonical values follow `org.fhir.ucum.Decimal`'s precision rules and defects
+
+- **Area:** path
+- **Scenario IDs:** path.math.015, path.math.016, path.quantity.017, path.quantity.018, path.quantity.021, path.quantity.022, path.quantity.023
+- **HAPI 8.12.0 behaviour:** `opDivideBy`, and `opDiv` and `opMod` with a
+  decimal operand, compute through `org.fhir.ucum.Decimal`
+  (`ENGINE:3004-3012`, `3055-3063`, `3095-3103`; `UCUM` =
+  `reference/Ucum-java/src/main/java/org/fhir/ucum/` at
+  `db9d22ade3f0f4a667b45817b85a9ac4534e4224`, `org.fhir:ucum` 1.0.10). A
+  quotient that does not terminate, or that has a non-whole operand, is
+  rounded to the significant digits its operands carry
+  (`UCUM/Decimal.java:713-760`): `1 / 3` is `0.3`, `1.0 / 8` is `0.13`,
+  `1.25 / 0.5` is `3`. A rounding that carries out of the leading digit yields
+  a tenth of the rounded value (`:751-754`): `1.9 / 0.2` is `1.0`,
+  `1.9 div 0.2` is `1`, `1.9 mod 0.2` is `1.7`. A zero remainder of a decimal
+  `mod` is `-0.0` (`:381-384`, `:305-306`, `:157-164`), so `4.0 mod 2 = 0` is
+  `false`. Quantity equality compares canonical value strings with the
+  trailing-zero rule of `DEV-0017` (`ENGINE:2270`, `2161-2184`), so
+  `1 'mg/dL' = 10 'mg/L'` is `false`, and the whole-number correction applies
+  only to whole values (`UCUM/UcumEssenceService.java:279-282`,
+  `UCUM/Decimal.java:831-855`), so `60.0 '/min' = 1 '/s'` is `false` while
+  `60 '/min' = 1 '/s'` is `true`. `Cel` and `[degF]` are not canonicalised
+  (`UCUM/Converter.java:162-172`), so `1 'Cel' = 274.15 'K'` is empty, and the
+  logarithmic special units canonicalise as their reference unit
+  (`UCUM/special/Registry.java`, `HoldingHandler.java`), so `1 'B' = 1 '1'`
+  is `true`. A unit the library cannot canonicalise (unknown, special, or a
+  non-UCUM system) falls back to comparing codes: equal codes compare values,
+  different codes are empty under `=` and raise a `NullPointerException` under
+  `~` and `<` (`ENGINE:2276-2285`, `2204-2206`, `2414`); quantity `*` raises
+  the library's parse error and `/` is empty (`ENGINE:2800-2801`,
+  `3020-3022`); and `*` or `/` with an operand outside the UCUM system raises
+  a `NullPointerException` (`UCUM/UcumEssenceService.java:314-325`).
+  Quantity `*` and `/` answer in canonical units with no `unit` element
+  (`ENGINE:2314-2316`), so `(1.0 'm' / 1.0 'm').toString()` is `1.0 'null'`.
+- **Specification requirement:** FHIRPath 2.0.0 — `/` is decimal division,
+  `div` and `mod` are truncated division and its remainder, and quantity
+  equality compares after conversion to common units, and comparing
+  incommensurable or invalid quantities is empty or an error, never a crash;
+  UCUM defines `Cel` as convertible to `K` and the logarithmic units as
+  non-ratio units.
+- **Chosen behaviour:** HAPI, value for value, as the suite worker computes it.
+- **Configuration flag:** none
+- **Debt:** DEBT-0020
+- **Rationale:** constitution section 1 and the owner's decision of
+  2026-11-08. HAPI passes every suite case these mechanisms touch
+  (`testDivide1`-`6`, `testDiv1`-`5`, `testMod1`-`5`, `testQuantity1`-`11`),
+  so parity with the suite is unaffected; the differences are visible only in
+  expressions the suite does not contain. Several are wrong answers, not
+  errors, which is what `DEBT-0020` records. Established by reading the pinned
+  `Ucum-java` source and confirmed by compiling it; not confirmed against a
+  live HAPI.
+- **Normalizer impact:** none on stored bytes.
+- **Reviewed:** pending owner. Raised 2026-11-21.
 
 ## Considered and not recorded as deviations
 

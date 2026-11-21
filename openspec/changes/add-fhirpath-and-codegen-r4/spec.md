@@ -9,8 +9,8 @@ capability, because that is the layout `openspec validate` parses and
 |---|---|---:|
 | `codegen` | [`specs/codegen/spec.md`](specs/codegen/spec.md) | 49 |
 | `model` | [`specs/model/spec.md`](specs/model/spec.md) | 83 |
-| `path` | [`specs/path/spec.md`](specs/path/spec.md) | 382 |
-| **Total** | | **514** |
+| `path` | [`specs/path/spec.md`](specs/path/spec.md) | 389 |
+| **Total** | | **521** |
 
 This file carries no normative text of its own. It carries the ID registry,
 which is the thing a later change must not collide with.
@@ -216,6 +216,22 @@ minimum-cardinality check on decode, in either mode), `codegen.cardinality.005`
 and `model.json.023` and `model.json.025` (a blank value, a blank `reference`
 included, is `1821` in strict mode). No ID was added.
 
+After `org.fhir:ucum` 1.0.10 was pinned under `reference/Ucum-java`
+(`db9d22ad`; `tasks/blockers.md`, 2026-11-17 and 2026-11-20 entries on
+`org.fhir.ucum`), the caveats that the decimal and UCUM rules "cannot be
+specified" were replaced by the rules read from that source:
+`path.math.005` to `.008` now state the zero-dividend values (`0`, `0`,
+`-0.0`) and the `mod` error texts; `path.quantity.016` states the essence file
+the suite loads, its version and every load failure; `path.quantity.017` and
+`.018` state the unknown-unit and non-UCUM-system outcomes. **7 IDs were
+added**: `path.math.015` (the digits of `/`), `path.math.016` (`div` and `mod`
+with a decimal operand), `path.quantity.020` (canonical form),
+`path.quantity.021` (quantity `*` and `/` results), `path.quantity.022`
+(canonical comparison), `path.quantity.023` (special units) and
+`path.quantity.024` (unit parsing and its error messages). The HAPI-versus-
+specification differences they expose are `DEV-0030` and `DEBT-0020`. None was
+removed, renumbered, reused or repurposed.
+
 | Area | IDs allocated | Range |
 |---|---:|---|
 | `codegen.inputs.*` | 6 | `001`-`006` |
@@ -247,12 +263,12 @@ included, is `1821` in strict mode). No ID was added.
 | `path.equality.*` | 12 | `001`-`012` |
 | `path.compare.*` | 15 | `001`-`015` |
 | `path.logic.*` | 10 | `001`-`010` |
-| `path.math.*` | 14 | `001`-`014` |
+| `path.math.*` | 16 | `001`-`016` |
 | `path.mathfn.*` | 11 | `001`-`011` |
 | `path.string.*` | 29 | `001`-`029` |
 | `path.convert.*` | 14 | `001`-`014` |
 | `path.datetime.*` | 7 | `001`-`007` |
-| `path.quantity.*` | 19 | `001`-`019` |
+| `path.quantity.*` | 24 | `001`-`024` |
 | `path.boundary.*` | 19 | `001`-`019` |
 | `path.types.*` | 13 | `001`-`013` |
 | `path.env.*` | 17 | `001`-`017` |
@@ -285,11 +301,12 @@ contain `<test ...>` text — and are leftover Java, not well-formed test
 elements. `documentFunctions` is 115 cases, not 114. The `invalid` counts are
 unaffected: 7 syntax, 29 semantic, 27 execution.
 
-**Thirty-two scenarios have no live case in the pinned suite to grade them and
+**Thirty-four scenarios have no live case in the pinned suite to grade them and
 say so in their own text**: `path.subset.003`, `path.subset.013`,
 `path.compare.007`, `path.compare.011`, `path.compare.015`, `path.errors.006`,
 `path.errors.007`, `path.navigation.025`, `path.quantity.019`, `path.convert.012`,
-`path.datetime.003`, `path.quantity.015`, `path.quantity.018`,
+`path.datetime.003`, `path.quantity.015`, `path.quantity.017`,
+`path.quantity.018`, `path.quantity.023`,
 `path.boundary.012` through `path.boundary.019`, `path.env.015`,
 `path.env.016`, `path.env.017`, `path.utility.017`, `path.utility.022`,
 `path.utility.023`, `path.utility.024`, `path.utility.027`,
@@ -302,6 +319,14 @@ service and passes no application context, and no case sets
 harness against live HAPI 8.12.0. A scenario that names no oracle at all would
 be ungradeable; "differential-only" is an oracle, and naming it is what stops a
 behaviour from quietly going unchecked.
+
+Six more — `path.math.015`, `path.math.016`, `path.quantity.020`,
+`path.quantity.021`, `path.quantity.022` and `path.quantity.024` — are graded
+by the suite for a few cases (named in each) and are otherwise differential-only,
+with the values they state, which were derived from the pinned `Ucum-java`
+source, asserted in-process as well. `path.quantity.016` is graded in-process
+by loading the pinned essence file and one malformed file per load failure; no
+HAPI surface shows the failure text.
 
 Five further scenarios — `path.check.015` through `path.check.019` — are graded
 by neither the suite nor the differential harness but by the in-process
@@ -709,6 +734,8 @@ Every allocated ID, grouped as it is grouped in the delta files.
 - `path.math.012` — date arithmetic adds and subtracts calendar durations
 - `path.math.013` — date arithmetic preserves the operand's precision
 - `path.math.014` — subtracting two dateTimes is not addition of a duration
+- `path.math.015` — `/` over numbers rounds the quotient to the significant digits its operands carry
+- `path.math.016` — `div` and `mod` with a decimal operand truncate the rounded quotient
 
 **Requirement: Math functions**
 
@@ -804,6 +831,11 @@ Every allocated ID, grouped as it is grouped in the delta files.
 - `path.quantity.018` — a quantity whose system is not UCUM is not canonicalised
 - `path.quantity.017` — a quantity with an unknown unit code does not crash
 - `path.quantity.019` — under HAPI's server-facing worker every UCUM-consulting quantity operation raises `HAPI-0274: `
+- `path.quantity.020` — a canonical form is a value over base units, sorted by base-unit code
+- `path.quantity.021` — quantity `*` and `/` answer in canonical units
+- `path.quantity.022` — canonical values are compared as strings for `=` and as doubles for ordering, with no dimension check for ordering
+- `path.quantity.023` — special units are not canonicalised unless a handler maps them to a ratio unit
+- `path.quantity.024` — UCUM codes are parsed by the pinned library's grammar, and its errors are the messages `*` shows
 
 **Requirement: Boundary functions**
 
