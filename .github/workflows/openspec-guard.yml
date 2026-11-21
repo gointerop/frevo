@@ -223,8 +223,7 @@ jobs:
         run: |
           set -euo pipefail
           rc=0
-          if grep -qE '^reference/(?!PINS\.md|clone\.sh|README\.md)' /tmp/changed.txt 2>/dev/null \
-             || grep -E '^reference/' /tmp/changed.txt | grep -vE '^reference/(PINS\.md|clone\.sh|README\.md)$' ; then
+          if grep -E '^reference/' /tmp/changed.txt | grep -vE '^reference/(PINS\.md|clone\.sh|README\.md)$' ; then
             echo "::error::upstream reference sources must never be committed."
             rc=1
           fi
