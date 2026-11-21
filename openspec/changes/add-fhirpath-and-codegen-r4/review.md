@@ -1,3 +1,164 @@
+CHANGES_REQUESTED
+
+Forty-ninth review (commit `bdfe0ed`, 2026-11-21, diff against `36abd5f`).
+`UCUM` is `reference/Ucum-java/src/main/java/org/fhir/ucum/` at `db9d22ad`,
+and `ENGINE` is the R4 `FHIRPathEngine.java` at `73c432b5`.
+
+I compiled `UCUM` with `javac -g` outside the repository. I then ran every
+value the commit states through it, over the suite's `ucum-essence.xml`. I
+repeated the run against the published `org.fhir:ucum` 1.0.10 and 1.0.9 jars,
+with and without `-ea`. The following all match, value for value:
+- every value in `path.math.005` to `.008`, `.015` and `.016`;
+- every canonical value and unit string in `path.quantity.020`;
+- every `*` and `/` result in `.021`;
+- every `=` and `<` result in `.022` and `.023`;
+- the parse messages listed in `.024`;
+- the four NPE texts in `.018`;
+- the two `mod` error texts, and the carry defect at `Decimal.java:751-754`.
+
+I also checked the following, and they are right:
+- the essence file facts in `.016` (24 prefixes, 7 base units, 303 units,
+  `2.0.1`, and the fetched copy is byte-identical);
+- the scenario counts (math 16, quantity 24, path 389, total 521; no
+  duplicates);
+- the "Thirty-four" list;
+- `check-registries.sh` ("registers agree", 27/20);
+- `openspec validate --strict`.
+
+Seven findings remain. Each names a behaviour that is stated wrongly, left
+out, or contradicted elsewhere in the spec. The detail is in the dated section
+at the end. The earlier record follows.
+
+1. **Two normative statements still say `/`, `div` and `mod` are exact.** They
+   contradict `path.math.015` and `.016`.
+   - The Arithmetic requirement body (`specs/path/spec.md:1358`) says "The
+     operators here use exact decimal arithmetic".
+   - `path.compare.012` (`:1123-1124`) says `+`, `-`, `*`, `/`, `div`, `mod`,
+     `round` and `truncate` "use exact decimal arithmetic".
+
+   An implementer reading either SHALL would build exact division. Fix: say
+   that `+`, `-` and `*` are exact, and that `/`, and `div`/`mod` with a
+   decimal operand, follow `org.fhir.ucum.Decimal` (`path.math.015`, `.016`,
+   `DEV-0030`).
+
+2. **A UCUM quantity with no `code` under `/` fails. It is not empty.**
+   `path.quantity.021` says "a `/` is empty".
+   - `qtyToPair` passes the `null` code through (`ENGINE:2324`).
+   - `divideBy` evaluates `dividend.getValue().divide(divisor.getValue())`
+     first, then `dividend.getCode().contains("/")`, then
+     `divisor.getCode().contains("/")` (`UCUM/UcumEssenceService.java:322-323`).
+   - So with a non-zero divisor value, a missing code on **either** side
+     raises a `NullPointerException`, which the `/` arm does not catch
+     (`ENGINE:3020`).
+   - On every build I ran, the message is `Cannot invoke "String.contains(java.lang.CharSequence)" because the return value of "org.fhir.ucum.Pair.getCode()" is null`.
+   - Only a zero divisor value stays empty, because `divide` throws its
+     `UcumException` first.
+
+   Fix: correct the clause, state both sides and the zero-divisor exception,
+   and add it to `DEV-0030`.
+
+3. **`[m/s2/Hz^(1/2)]` never reaches the special-unit check.**
+   `path.quantity.023` lists it among the units that raise
+   `Not handled yet (special unit)`. They do not:
+   - The lexer does not admit `/` as a symbol character, even inside brackets
+     (`UCUM/Lexer.java:136-140`). So the first token is `[m`, and parsing
+     fails with
+     `Error processing unit '[m/s2/Hz^(1/2)]': The unit '[m' is unknown' at position 0`.
+   - Under `*` the message names the joined code, for example
+     `'[m/s2/Hz^(1/2)].m'`.
+
+   Fix: drop it from the "no handler" list and give it as a
+   `path.quantity.024` example. The other six units in that list are right.
+
+4. **`path.quantity.024` leaves out three parse failures. One of them breaks
+   the scenario's "swallow" claim.**
+   - `Expected '/' or '.'` (`UCUM/ExpressionParser.java:80`). For example,
+     `m(s` gives `Error processing unit 'm(s': Expected '/' or '.'' at position 1`.
+   - `unexpected token looking for a symbol or a number` (`:105`). For
+     example, `.m` gives `... at position 0`, and `m.)` gives `... at position 2`.
+   - **A number token outside the Java `int` range**, such as `10000000000`
+     or `m10000000000`. `Lexer.getTokenAsInt` (`UCUM/Lexer.java:199-201`,
+     called at `ExpressionParser.java:89` and `:139`) throws
+     `java.lang.NumberFormatException: For input string: "10000000000"`.
+     That is not a `UcumException`:
+     - `qtyToCanonicalPair` and `qtyToCanonicalDecimal` catch only
+       `UcumException` (`ENGINE:2296`, `:2309`), and so do the `*` and `/`
+       arms (`:2800`, `:3020`).
+     - So `=`, `~`, the ordered operators, `*` **and** `/` all fail with that
+       message.
+     - Only `comparable()` answers `false`, because `getCanonicalUnits`
+       re-wraps every `Exception` (`UCUM/UcumEssenceService.java:237-239`).
+
+   The scenario says a code that does not parse "raises `UcumException`", and
+   that `=`, `~`, `comparable()` and `/` swallow it. Both are false for this
+   input. Fix: add the three messages and the NFE outcome per operator.
+
+5. **The `-0.0` rule in `path.math.016` is stated wrongly.** The scenario says
+   "a zero remainder from a non-negative decimal dividend is `-0.0`". The
+   sign of a zero difference is negative on every sign path of
+   `Decimal.subtract` (`UCUM/Decimal.java:368-386`, with `modulo` `:792-798`).
+   `asDecimal` writes the `-` whenever the zero's text contains a `.`
+   (`:305-306`, `:157-164`). So:
+   - `(0 - 4.0) mod 2`, `4.0 mod (0 - 2)`, `4 mod 2.0`, `6 mod 3.0`,
+     `5 mod 2.5` and `7.5 mod 2.5` are all `-0.0`;
+   - `10 mod 2.5` is `0`, because `multiply` trims the product to `10`, so the
+     difference has no fraction.
+
+   A test writer following the stated rule would expect `(0 - 4.0) mod 2` and
+   `4 mod 2.0` not to be `-0.0`. Fix: state the rule as the text of the zero
+   difference, and add the cases above to the table.
+
+6. **The live oracle runs `org.fhir:ucum` 1.0.9, not 1.0.10.**
+   - `hapi-fhir` `v8.12.0` sets `<ucum_version>1.0.9</ucum_version>`
+     (`reference/hapi-fhir/pom.xml:1148`) and manages `org.fhir:ucum` to it
+     (`:1985-1989`).
+   - The starter's parent is `hapi-fhir:8.12.0` and it has no override
+     (`reference/hapi-fhir-jpaserver-starter/pom.xml:36-40`).
+   - So the HAPI the differential harness runs against has 1.0.9.
+   - Only `org.hl7.fhir.core`'s own build, and
+     `harness/hapi-fhirpath-results/pom.xml:18`, use 1.0.10.
+
+   The spec, `DEV-0030`, `DEBT-0020` and tasks 37/43 all name 1.0.10 as
+   "the version" behind HAPI's answers. `path.math.015` and `.016` also rest
+   "HAPI's server-facing engine answers the same" on it.
+
+   I compared the two published jars by normalised bytecode:
+   - These classes are identical: `Decimal`, `Lexer`, `ExpressionParser`,
+     `Converter`, `ExpressionComposer`, `UcumEssenceService`, `UcumModel`,
+     `Pair`, `Registry` and `HoldingHandler`. Every stated value reproduces on
+     1.0.9.
+   - `XmlDefinitionsParser` differs: the short `yyyy-MM-dd` `revision-date`
+     branch `path.quantity.016` states (`:79-88`) exists only in 1.0.10.
+
+   No value changes, but the record is wrong about what the oracle executes,
+   and `DEBT-0020`'s re-pin trigger watches the wrong artifact. Fix:
+   - say which version each oracle runs (suite run and recorded results 1.0.10;
+     live HAPI 1.0.9);
+   - record the equivalence evidence;
+   - mark the short-date branch as 1.0.10-only;
+   - add a `tasks/blockers.md` note so the owner can annotate `PINS.md`
+     step 5.
+
+7. **Wrong citations and register scope.**
+   - Quantity `toString()` is cited `Quantity.java:895-904`
+     (`path.quantity.021`). `Quantity.java` has 897 lines and no `toString`.
+     The text comes from `ENGINE` `convertToString`, `:887-906` (the quoted
+     code is at `:898-900`), through `funcToString` `:4914-4919`.
+   - The `NullPointerException` in the recursive `opLessThan` is the
+     `isPrimitive()` call at `ENGINE:2413`. `path.quantity.017` and
+     `DEV-0030` cite `:2414`, which is `Base l = left.get(0);`.
+     `path.quantity.013` carries the same off-by-one.
+   - `path.quantity.022` cites `:2414-2418`, `:2440-2450` for "the ordered
+     operators". `<` compares at `:2419`. `>`, `>=` and `<=` take their
+     canonical branches at `:2489-2498`, `:2587-2596` and `:2539-2548`, and
+     compare at `:2466`, `:2564` and `:2514`. None of those is cited.
+   - `DEV-0030`'s Scenario IDs omit `path.quantity.020` and `.024`.
+     `path.quantity.022` cites `DEV-0030` for `60.0 '/min' = 1 '/s'`, which is
+     `.020`'s whole-number step. The NFE and parse-failure outcomes (finding 4)
+     are `.024`'s.
+
+## Forty-eighth review header as issued (commits `30e32a3`, `f675156`)
+
 APPROVED
 
 Forty-eighth review (commits `30e32a3` and `f675156`, 2026-11-20).
@@ -4028,3 +4189,129 @@ Non-blocking notes:
   is valid.
 - The headings number codegen 49, model 83 and path 382, 514 in total. No ID
   is duplicated, added, removed or renumbered.
+
+## Forty-ninth review - commit `bdfe0ed` (2026-11-21)
+
+Scope:
+- `path.math.005` to `.008`, `.015` and `.016`;
+- `path.quantity.016` to `.024`;
+- tasks 37, 43 and 44;
+- `DEV-0030`, `DEBT-0020` and the `DEV-0017` update;
+- the `spec.md` registry and counts.
+
+`UCUM` and `ENGINE` are as defined in the header.
+
+**Method.**
+1. I compiled `reference/Ucum-java/src/main/java` with `javac -g` (JDK 25)
+   outside the repository.
+2. A driver reproduced `ENGINE`'s wrappers:
+   - `opDivideBy` `:3004-3012`;
+   - the `opDiv` and `opMod` decimal arms `:3055-3063` and `:3095-3103`,
+     with `IntegerType` parsing;
+   - `qtyEqual` with `removeTrailingZeros`/`decEqual` `:2161-2184`,
+     `:2258-2286`;
+   - `opLessThan`'s canonical branch;
+   - `pairToQty`, and `convertToString`'s quantity text.
+3. The driver ran against
+   `org.hl7.fhir.r4/src/test/resources/ucum/ucum-essence.xml`.
+4. I repeated the run against the published `ucum-1.0.10.jar` and
+   `ucum-1.0.9.jar`, and with `-ea`. All four outputs are identical.
+
+**Confirmed.**
+
+Numbers:
+- Every quotient in the `path.math.015` table, the carry cases
+  (`1.9 / 0.2` = `1.0`, `99.9 / 1.0` = `10.0`, `1.99 / 2.0` = `0.100`), the
+  sign cases, and `1e3 / 3` = `300`, `1.5e-1 / 3` = `0.050`.
+- Every `div` and `mod` value in `path.math.016`, including `3000000000.0 div 1`
+  → `java.lang.NumberFormatException: For input string: "3000000000"`
+  (`IntegerType.java:65-67`, `:86-92`).
+- Every zero-dividend and zero-divisor value in `.005` to `.008`. `0.0 mod 0`
+  is `-0.0`, derived through `subtract` `:381-384` and `asDecimal` `:305-306`,
+  as stated.
+- The `mod` error texts, which match `hapi-8.12.0-results.json:857-858`.
+
+Canonical forms and quantity arithmetic:
+- Every canonical value and unit string in `path.quantity.020`, including
+  `60 '/min'` → `1 s-1` and `60.0 '/min'` →
+  `1.0000000000000000000000000000002 s-1`.
+- Every `*` and `/` result in `.021`, including `'null'` for a dimensionless
+  result (`ENGINE:898-900`).
+- Every equality and ordering result in `.022`, `.017` and `.023`.
+- The handler mapping in `.023`, with `[hp_X]`/`[hp_C]` keys not matching the
+  file's codes (`special/Registry.java:59-60`).
+
+Parsing and the unknown-unit and non-UCUM cases:
+- The `.024` messages for an unknown unit, `]` without `[`, an unterminated
+  annotation (NO_CHAR is `\0`, not ASCII), and a stray `)`.
+- The four `NullPointerException` texts of `.018`. The published 1.0.10 jar
+  keeps the parameter names.
+- The `.017` and `.018` fallbacks against `ENGINE:2258-2360`, `:2409-2600` and
+  `:4609-4641`. `Base.compareDeep` of two empty lists with `allowNull` is
+  `true` (`Base.java:263-265`), so `1 year < 2 years` takes the value branch.
+
+`.016`:
+- The 24/7/303 counts and the base-unit list.
+- `version="2.0.1"`, and the fetched copy is byte-identical (`cmp`).
+- `TestingUtilities.java:82-93`, `:481-492`.
+- `XmlDefinitionsParser.java:64-159`, `XmlUtils.java:19-27`,
+  `UcumModel.java:127-137`.
+
+Every `Decimal.java`, `Converter.java`, `ExpressionParser.java`,
+`Lexer.java`, `ExpressionComposer.java`, `UcumEssenceService.java`,
+`DecimalType.java`, `IntegerType.java`, `PathEngineException.java` and
+`pom.xml:121-129` citation in the diff is right. The exceptions are those in
+finding 7.
+
+**The findings, with the probes.**
+- Finding 2. `svc.divideBy(new Pair(1, null), new Pair(1, "m"))` and the
+  reverse both throw the `String.contains` NPE on 1.0.9, 1.0.10 source and
+  1.0.10 jar. `divideBy(m, new Pair(0, null))` throws
+  `UcumException: Attempt to divide 1 by zero`, which the arm turns into
+  empty.
+- Finding 3. `getCanonicalForm(1, "[m/s2/Hz^(1/2)]")` throws
+  `Error processing unit '[m/s2/Hz^(1/2)]': The unit '[m' is unknown' at position 0`.
+  `B[10.nV]` does reach the special-unit check (`.` is admitted inside
+  brackets) and throws `Not handled yet (special unit)`, as stated.
+- Finding 4. `m(s`, `.m`, `m.)`, `10000000000` and `m10000000000` give the
+  messages quoted in the header. `isComparable("cm", "10000000000")` is
+  wrapped by `getCanonicalUnits`, so `comparable()` is `false`.
+- Finding 5. `modulo` results:
+  - `-4.0 mod 2`, `-4.0 mod -2`, `4.0 mod -2`, `4 mod 2.0`, `6 mod 3.0`,
+    `-6 mod 3.0`, `-0.0 mod 2`, `7.5 mod 2.5` and `5 mod 2.5` are `-0.0`;
+  - `10 mod 2.5` is `0`.
+- Finding 6. I compared `javap -c -p` output, normalised:
+  - constant-pool indices removed;
+  - `ldc_w` folded to `ldc`;
+  - branch targets removed;
+  - whitespace collapsed.
+
+  Results:
+  - The classes named in the header are identical between the two jars.
+  - Enum classes differ only by the compiler's synthetic `$values()`.
+  - `XmlDefinitionsParser.parse` differs in the `revision-date` length branch.
+
+**Interplay checked, no finding.**
+- `DEV-0029` is consistent with the new text.
+  - `path.quantity.019`'s new bullet sends every UCUM-reaching operation of
+    `.017`, `.018` and `.020`-`.024` to `HAPI-0274: ` on the server-facing
+    worker. That is right, because each fallback comes after
+    `getUcumService()` (`:2265`, `:2338`, `:2443`, `:2490`, `:2540`, `:2588`,
+    `:2793`, `:3013`, `:4631`).
+  - `path.math.015`/`.016` correctly say no worker is consulted.
+- Task 43 satisfies `.016`, `.020`, `.023` and `.024`. Task 44 satisfies
+  `.001`-`.015`, `.017`-`.019`, `.021` and `.022`. All 24 quantity IDs are
+  owned, and task 37 owns `path.math.015` and `.016`.
+- The suite grading claims hold (`testDivide1`-`7`, `testDiv1`-`6`,
+  `testMod1`-`8` in `tests-fhir-r4.xml`). Only `testDiv4` and `testMod4`
+  have a decimal operand with a non-zero result.
+
+**Non-blocking notes.**
+1. `path.quantity.016` says an absent file "raises a `UcumException` from the
+   constructor". In the suite worker an absent resource fails earlier:
+   `getResource(...)` is `null`, and `.getPath()` raises an NPE
+   (`TestingUtilities.java:484`). `TestingUtilities.context()` still turns
+   that into an `Error`, so the outcome (the run fails) is as stated, and the
+   text is not graded.
+2. `path.math.008` cites the integer `mod` guard as `3092-3095`. It is
+   `:3091-3094`. This line predates the commit.
