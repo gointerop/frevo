@@ -53,7 +53,8 @@ jobs:
           path: |
             oracles/fhir-test-cases/fetched
             crates/frevo-codegen/packages/fetched
-          key: oracles-${{ runner.os }}-${{ hashFiles('oracles/fetch.sh', 'oracles/PINS.md', 'crates/frevo-codegen/packages/fetch.sh', 'crates/frevo-codegen/packages/PINS.md') }}
+            reference/hapi-fhir
+          key: oracles-${{ runner.os }}-${{ hashFiles('reference/PINS.md', 'reference/clone.sh', 'oracles/fetch.sh', 'oracles/PINS.md', 'crates/frevo-codegen/packages/fetch.sh', 'crates/frevo-codegen/packages/PINS.md') }}
       - name: Fetch oracle data (digest- and commit-verified by the fetch scripts)
         # Only what the tests read: the fhir-test-cases tree (R4 examples, the
         # FHIRPath input files and ucum-essence.xml) and, where the checkout has
@@ -63,6 +64,12 @@ jobs:
           bash oracles/fetch.sh --only fhir-test-cases
           if [ -f crates/frevo-codegen/packages/fetch.sh ]; then
             bash crates/frevo-codegen/packages/fetch.sh
+            # The codegen cross-check reads HAPI's copy of the R4 definitions
+            # (crates/frevo-codegen/tests/codegen_r4.rs, HAPI_PROFILE_DIR).
+            # reference/ is gigabytes, so take one directory of one pin, blobless
+            # and sparse; clone.sh still checks the commit against the pin.
+            bash reference/clone.sh --sparse hapi-fhir \
+              hapi-fhir-validation-resources-r4/src/main/resources/org/hl7/fhir/r4/model/profile
           fi
       - name: Save fetched oracle data
         if: steps.oracle-cache.outputs.cache-hit != 'true'
@@ -73,6 +80,7 @@ jobs:
           path: |
             oracles/fhir-test-cases/fetched
             crates/frevo-codegen/packages/fetched
+            reference/hapi-fhir
           key: ${{ steps.oracle-cache.outputs.cache-primary-key }}
       - name: cargo nextest
         run: cargo nextest run --workspace --locked --no-fail-fast
