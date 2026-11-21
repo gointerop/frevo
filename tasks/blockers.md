@@ -3302,3 +3302,26 @@ The tick of task 44 does not depend on it.
 
 The two task-44 items above (`path.quantity.018`'s argument, and the four
 lib tests) are **resolved** by `0ffc970`.
+
+## 2026-11-21 — `add-fhirpath-and-codegen-r4` — status of the 2026-11-20 "tasks 52 and 54" entry
+
+**Re-checked by** the implementer at `c11ac47`. The entry above is kept as
+history; this is its current status.
+
+- **Item 1, seam rebind: done for task 52.** `tests/path_strictness.rs`
+  binds `EngineSettings` and the evaluator builders, and `path_strictness` is
+  10 of 10. **Task 52 is ticked.** In `tests/path_api.rs` the rebind for
+  `.003` and `.004` holds: every test tagged `path.api.001`-`.004` and
+  `path.api.006` passes.
+- **Item 2, the `path.strictness.005` defect: resolved.** The spec now states
+  `as(quantity)` raising `The type FHIR.quantity is not valid` (`DEV-0026`),
+  and the test agrees.
+- **Item 3, `path.strictness.002`: resolved.** The whole suite now has 0
+  `did-not-run` cases (984 passed, 207 failed, `bench/micro/results.json` at
+  `c11ac47`).
+- **Still open, task 54.** `path.api.005` is red: all eight tests in
+  `tests/path_api.rs` tagged with it fail. HAPI's `isAssignableFrom` check
+  needs the R4 Java class ancestry table, whose generator waits on the owner's
+  choice among options (a), (b) and (c) in "the R4 Java class ancestry table"
+  above. Until then the table must not be hand-written. Task 54 stays unticked
+  on this alone.

@@ -90,7 +90,7 @@ checkpoint because it changes what a gate measures.
   scope of every task below.
   Satisfies `path.oracle.013`.
 
-- [ ] **3. Measure HAPI 8.12.0's own pass rate on the same 1,191 cases and wire
+- [x] **3. Measure HAPI 8.12.0's own pass rate on the same 1,191 cases and wire
   it into the gate.** Run `org.hl7.fhir.r4.test.FHIRPathTests` at pin
   `73c432b5` against the same suite file, record each case's status, and load
   that record into the harness so every case reports Frevo's status beside
@@ -120,6 +120,11 @@ checkpoint because it changes what a gate measures.
   (`path.oracle.016`).
   Satisfies `path.oracle.011`, `path.oracle.012`, `path.oracle.014`,
   `path.oracle.016`.
+  **Ticked 2026-11-21 (verified at `c11ac47`):** every test tagged
+  `path.oracle.011`, `.012`, `.014` and `.016` passes (`path_oracle`,
+  `fhirpath_oracle`). The gate test passes with 16 cases ahead of HAPI and none
+  behind, and the suite run has 0 `did-not-run` cases (984 passed, 207 failed,
+  `bench/micro/results.json`).
 
 - [x] **4. Write the failing tests for every `path.*` scenario.** One test per
   scenario ID, each carrying a `// covers: path.<area>.<nnn>` comment, with the
@@ -849,7 +854,7 @@ checkpoint because it changes what a gate measures.
   `combine`, `in`, `contains`, and the empty-operand rule.
   Satisfies `path.combine.001` through `path.combine.006`.
 
-- [ ] **35. Implement equality, equivalence and ordered comparison.** Equality
+- [x] **35. Implement equality, equivalence and ordered comparison.** Equality
   and inequality with their empty-collection result; equivalence and
   non-equivalence always returning a boolean; collection comparison in order;
   decimal comparison by value; deep comparison of complex elements; the
@@ -867,6 +872,9 @@ checkpoint because it changes what a gate measures.
   and then compares (`path.compare.015`).
   Satisfies `path.equality.001` through `path.equality.012`, `path.compare.001`
   through `path.compare.015`.
+  **Ticked 2026-11-21 (verified at `c11ac47`):** every test tagged
+  `path.equality.001`-`.012` and `path.compare.001`-`.015` passes;
+  `path_compare_equality` is 27 of 27.
 
 - [x] **36. Implement boolean logic.** The four operators' three-valued truth
   tables, the singleton-evaluation rule for a non-boolean operand, both
@@ -918,12 +926,14 @@ checkpoint because it changes what a gate measures.
   tagged `path.math.012`-`014` (that binary's three red tests are `.003`,
   `.005` and `path.mathfn.001`, tasks 37 and 39).
 
-- [ ] **39. Implement math functions.** `abs`, `ceiling`, `floor`, `round`,
+- [x] **39. Implement math functions.** `abs`, `ceiling`, `floor`, `round`,
   `sqrt`, `exp`, `ln`, `log`, `power`, `truncate`, with the empty-focus and
   multi-item rules, and with the precision boundary the engine actually has:
   `sqrt`, `abs`, `ceiling`, `floor`, `exp`, `ln`, `log` and `power` go through a
   binary `double`, while `round` and `truncate` are exact.
   Satisfies `path.mathfn.001` through `path.mathfn.011`.
+  **Ticked 2026-11-21 (verified at `c11ac47`):** every test tagged
+  `path.mathfn.001`-`.011` passes; `path_math` is 28 of 28.
 
 - [x] **40. Implement string functions: the base set.** `upper`, `lower`,
   `toChars`, `indexOf`, `substring` with its out-of-range rule, `startsWith`,
@@ -966,7 +976,7 @@ checkpoint because it changes what a gate measures.
   `matches`, `matchesFull` and `replaceMatches` legs of `path.string.020` and
   `path.string.021`, which task 40 otherwise satisfies, are satisfied here.
 
-- [ ] **42. Implement type conversion.** Each `toX` the R4 engine has and each
+- [x] **42. Implement type conversion.** Each `toX` the R4 engine has and each
   `convertsToX`, including every date, dateTime and time precision string, the
   boolean spellings, quantities, the failed-conversion asymmetry and the
   multi-item error. `toDateTime` and `toTime` are stubs that raise "not
@@ -976,6 +986,8 @@ checkpoint because it changes what a gate measures.
   `true`, and shipping the symmetric pair would make Frevo accept an expression
   HAPI rejects.
   Satisfies `path.convert.001` through `path.convert.014`.
+  **Ticked 2026-11-21 (verified at `c11ac47`):** every test tagged
+  `path.convert.001`-`.014` passes; `path_convert` is 14 of 14.
 
 - [x] **43. Implement the UCUM unit algebra.** A port of the parts of
   `org.fhir.ucum` the engine calls (`reference/Ucum-java`, 1.0.10, `db9d22ad`;
@@ -1069,13 +1081,15 @@ checkpoint because it changes what a gate measures.
   oracle-builder before this task can be ticked; `.011`-`.019` need tests.
   Satisfies `path.boundary.001` through `path.boundary.019`.
 
-- [ ] **46. Implement type operators and reflection.** `is`, `as`, `ofType` and
+- [x] **46. Implement type operators and reflection.** `is`, `as`, `ofType` and
   `type()` across the `System` and `FHIR` namespaces; the FHIR type hierarchy;
   `uri` versus `url`; an extension value's concrete choice type; `as` yielding
   empty on mismatch; the operator and function forms agreeing; unknown type
   names (`is` passes the check and is `false`, `as` and `ofType` raise at
   evaluation: `path.types.011`, `DEV-0024`); the empty-focus rule.
   Satisfies `path.types.001` through `path.types.013`.
+  **Ticked 2026-11-21 (verified at `c11ac47`):** every test tagged
+  `path.types.001`-`.013` passes; `path_types` is 13 of 13.
 
 - [x] **47. Implement environment variables.** The built-in system URLs, the
   three backtick shorthands, `%us-zip`, `%resource` and `%rootResource` with
@@ -1219,7 +1233,7 @@ checkpoint because it changes what a gate measures.
   `isSemanticChecks` guard cases ending at the check stage graded `failed`.
   No narrowing rule was added.
 
-- [ ] **52. Implement the strictness configuration and the four remaining engine
+- [x] **52. Implement the strictness configuration and the four remaining engine
   settings.** The non-strict default, which comes from the engine's own
   initialisation for any pre-R5 version and is what `FhirPathR4`'s constructor
   re-asserts; the harness's per-case ordering, in which the check pass runs
@@ -1240,8 +1254,14 @@ checkpoint because it changes what a gate measures.
   of 10: `.001`, `.006`-`.010` need the test seam rebound to that surface,
   `.005` has a test defect (`as(quantity)`), and `.002` needs the whole suite
   to run. See `tasks/blockers.md`, 2026-11-20, "tasks 52 and 54".
+  **Ticked 2026-11-21 (verified at `c11ac47`):** the seams are rebound and the
+  `path.strictness.005` defect is resolved in the spec and tests. Every test
+  tagged `path.strictness.001`-`.010`, `path.lexer.015`, `.016` and
+  `path.string.024` passes; `path_strictness` is 10 of 10.
+  `path.strictness.002`'s zero-`did-not-run` condition now holds over the whole
+  suite.
 
-- [ ] **53. Implement error reporting and the bounds.** 21 of the 27
+- [x] **53. Implement error reporting and the bounds.** 21 of the 27
   `invalid="execution"` cases failing at evaluation after a clean parse and
   check, with the 6 `documentFunctions` ones failing at parse, graded `failed`,
   as for HAPI; errors carrying HAPI's message, which for an error built through
@@ -1258,6 +1278,10 @@ checkpoint because it changes what a gate measures.
   as HAPI does (`path.errors.006`), and the `iif` singleton and `is`
   parameter-kind messages (`path.errors.007`).
   Satisfies `path.errors.001` through `path.errors.007`.
+  **Ticked 2026-11-21 (verified at `c11ac47`):** every test tagged
+  `path.errors.001`-`.007` passes (`path_parse_errors` 15 of 15, with the
+  `path.errors.*` tests in the other binaries). The suite run has 0
+  `did-not-run` cases and no panic.
 
 - [ ] **54. Implement the public evaluation surface.** Evaluate from text,
   evaluate a parsed expression repeatedly, evaluate-first with its no-match
@@ -1276,7 +1300,7 @@ checkpoint because it changes what a gate measures.
   8: `.003`-`.005` need the test seam rebound (`tasks/blockers.md`,
   2026-11-20, "tasks 52 and 54").
 
-- [ ] **55. Land the path benchmarks and record the baseline.** The four
+- [x] **55. Land the path benchmarks and record the baseline.** The four
   `bench/micro/` path workloads plus the suite wall-clock, with their budgets
   and the first baseline.
   Satisfies `path.perf.001` through `path.perf.006`.
@@ -1304,6 +1328,17 @@ checkpoint because it changes what a gate measures.
   `--test-threads=1` run and every isolated run passes (e.g. "first 50
   compiles median 35.50 us, the last 50 median 68.95 us" with the other five
   tests running beside it).
+  **Ticked 2026-11-21 (verified at `c11ac47`):** `path_perf` is 6 of 6 in 13
+  runs: 3 isolated, 4 more of the binary, 1 with `--test-threads=1`, and 5
+  inside full-crate runs. The `.001`/`.002` ratio intermittency recorded above
+  did not recur. The results were re-recorded at `c11ac47` (release, clean
+  tree, same Windows host as the baseline). Against the `584e668` baseline:
+  `path-compile` 7.284 us (7.194, +1.3%), `path-eval-compiled` 2.974 us (3.373,
+  -11.8%), `path-extract-patient` 143.35 us (142.40, +0.7%) with 0 untouched
+  elements materialised, and `path-suite-wallclock` 0.233 s (0.218, +6.9%; it
+  now runs the 35 cases that did not run before: 984 passed, 207 failed, 0
+  `did-not-run`). Every figure is within its budget and within the 10%
+  regression limit.
 
 ---
 
