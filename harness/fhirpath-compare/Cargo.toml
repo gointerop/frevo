@@ -1,0 +1,41 @@
+# The FHIRPath differential reference: the vendored suite through
+# helios-fhirpath and haste-fhirpath beside Frevo and HAPI 8.12.0's recorded
+# run (task 2 of add-fhirpath-and-codegen-r4, path.oracle.013, ADR 0004).
+#
+# Dev-only and outside the product workspace: the root Cargo.toml lists this
+# directory in [workspace] exclude, it has a workspace of its own, and no
+# frevo-* crate depends on it, so neither reference engine nor
+# haste-fhirpath's wildcard dependencies enter the product graph or the
+# cargo deny gate. Every reference crate is pinned exactly, at a release at
+# least 14 days old when pinned (owner decision, 2026-11-21); Cargo.lock is
+# committed so the transitive graph is pinned too.
+#
+# haste-fhirpath runs in ../fhirpath-compare-haste, a crate of its own:
+# helios-fhir 0.2.7 pins serde_json =1.0.144 and haste-fhir-model 0.129.2
+# needs ^1.0.151, so the two engines cannot share one dependency graph. That
+# crate writes its per-case outcomes to haste-results.json, which this one
+# merges into results.json.
+[package]
+name = "fhirpath-compare"
+version = "0.0.0"
+edition = "2024"
+publish = false
+license = "Apache-2.0"
+description = "Differential run of the FHIRPath suite through helios-fhirpath and haste-fhirpath (dev-only)."
+
+[workspace]
+
+[dependencies]
+frevo-path = { path = "../../crates/frevo-path" }
+regex = { version = "1.13", default-features = false, features = ["std", "perf", "unicode"] }
+
+# helios-fhirpath 0.2.7 (MIT, 2026-11-01), the version ADR 0004 measures,
+# with its family pinned to the same release.
+helios-fhirpath = { version = "=0.2.7", default-features = false, features = ["R4"] }
+helios-fhirpath-support = "=0.2.7"
+helios-fhir = { version = "=0.2.7", default-features = false, features = ["R4"] }
+helios-observability = "=0.2.7"
+helios-serde-support = "=0.2.7"
+helios-fhir-macro = "=0.2.7"
+
+serde_json = { version = "=1.0.144", features = ["arbitrary_precision"] }

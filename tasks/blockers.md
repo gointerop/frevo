@@ -3396,3 +3396,99 @@ history; this is its current status.
   choice among options (a), (b) and (c) in "the R4 Java class ancestry table"
   above. Until then the table must not be hand-written. Task 54 stays unticked
   on this alone.
+
+## 2026-11-21 — `add-fhirpath-and-codegen-r4` — task 2's measurement, for the owner's ADR 0004 verdict
+
+**Raised by** the implementer of task 2, under the owner's decision of
+2026-11-21 to build the harness as a dev-only crate outside the product
+workspace. The harness is `harness/fhirpath-compare/` (Frevo and
+`helios-fhirpath`) plus `harness/fhirpath-compare-haste/` (`haste-fhirpath`).
+Both are excluded from the root workspace, have workspaces of their own and
+commit their lockfiles. `path.oracle.013` now passes. The per-case outcomes
+are in `harness/fhirpath-compare/results.json`, which ADR 0004 can cite; the
+method and pins are in `harness/fhirpath-compare/README.md`. **The verdict is
+the owner's.** Task 2 is not ticked, because its text includes stating the
+verdict.
+
+**Pins.** `helios-fhirpath` and its family are 0.2.7 (MIT, published
+2026-11-01). `haste-fhirpath` and its family are **0.129.2** (Apache-2.0,
+published 2026-11-02). Task 2 names 0.129.3, but that release was published on
+2026-11-08 and was 13.5 days old on 2026-11-21, so it fails the owner's 14-day
+rule; 0.129.2 is the newest release that meets it. Every package in both
+lockfiles is at least 14 days old: 36 younger transitive versions were moved
+back to the newest semver-compatible release that was. Licences are all
+permissive (MIT, Apache-2.0, BSD-2/3, ISC, Zlib, Unicode-3.0, CC0, BSL-1.0,
+bzip2-1.0.6). The one disjunction with an LGPL arm, `r-efi`
+(`MIT OR Apache-2.0 OR LGPL-2.1-or-later`), is taken as MIT. Nothing is
+vendored, nothing is shipped, and no `frevo-*` crate depends on either engine,
+so section 5 is not engaged.
+
+**Two crates, not one.** `helios-fhir` 0.2.7 pins `serde_json =1.0.144`, and
+`haste-fhir-model` 0.129.2 needs `^1.0.151`, so the two engines cannot share
+one dependency graph.
+
+**Method.**
+- Every engine runs through the oracle harness Frevo's gate uses
+  (`crates/frevo-path/tests/oracle/`), so loading, staging and grading are
+  identical. HAPI is its recorded run.
+- Both reference engines read FHIR JSON. The suite's XML inputs were converted
+  once, over the pinned R4 type package, and both engines read the same text.
+- Each engine is bound as its own suite runner binds it. Neither has HAPI's
+  static check (`helios` has `check_semantics` for `contextType` only), and
+  `haste` has no public parser.
+- Release build on the Windows development host.
+
+**Results (1,191 cases).**
+
+| Engine | passed | failed | did-not-run | other | full run |
+|---|---|---|---|---|---|
+| HAPI 8.12.0 (recorded) | 968 | 210 | 0 | 13 `hapi-cannot-pass` | not recorded |
+| Frevo (`frevo-path` at this commit) | 984 | 207 | 0 | 0 | 0.28 s |
+| `helios-fhirpath` 0.2.7 | **1,047** | 144 | 0 | 0 | 0.38 s |
+| `haste-fhirpath` 0.129.2 | 878 | 312 | 1 | 0 | 1.08 s |
+
+The one `haste` did-not-run is `testSubSetOf/testSubSetOf3`: its model cannot
+deserialise `explanationofbenefit-example.json` (missing field
+`productOrService`).
+
+**Against HAPI, case by case.**
+
+| Engine | HAPI passes, engine does not | HAPI does not pass, engine does | same status as HAPI (of 1,178) |
+|---|---|---|---|
+| Frevo | **0** | 16 | 1,172 |
+| `helios-fhirpath` | 27 | 106 | 1,058 |
+| `haste-fhirpath` | 177 | 87 | 921 |
+
+`helios` passes more of the suite than HAPI, but it is not HAPI: 74 cases fail
+under HAPI and Frevo and pass under both reference engines. Those are where the
+pinned engine's behaviour, which Frevo matches by design (CLAUDE.md section 1),
+differs from the suite's expectation. `haste` fails mostly on functions it does
+not implement (`second`, `lowBoundary`, `highBoundary`, `resolve`, `hasValue`,
+`sample`, `sort`, `split`, ...).
+
+**The second condition: `IntoEvaluationResult` over a lazy node.** Measured
+from the `helios-fhirpath` 0.2.7 and `helios-fhirpath-support` 0.2.7 sources:
+- `IntoEvaluationResult` has one method,
+  `fn to_evaluation_result(&self) -> EvaluationResult`
+  (`helios-fhirpath-support/src/lib.rs:158-164`), which returns an **owned**
+  tree.
+- `EvaluationResult::Object` holds a `HashMap<String, EvaluationResult>` of
+  every member (`:305-385`), and there is no lazy or deferred variant.
+- `EvaluationContext::new` takes `Vec<helios_fhir::FhirResource>`, the
+  concrete helios model enum, not a trait object. It immediately converts the
+  first resource with `convert_resource_to_result`, which calls
+  `to_evaluation_result` (`helios-fhirpath/src/evaluator.rs:301`, `:336`,
+  `:2134-2137`). Navigation then reads that converted map.
+
+A lazy, span-based node can therefore only be evaluated by first converting
+it, and with it the whole resource, into an owned `EvaluationResult` tree. It
+cannot be passed in at all without being turned into `helios_fhir` model types.
+On these sources the trait cannot be implemented without materialising whole
+resources.
+
+**Decision needed (owner).** ADR 0004's verdict. Its reversal condition is that
+`helios` passes "at or above HAPI 8.12.0's rate **and**" `IntoEvaluationResult`
+can be implemented lazily. The numbers above show the first half holds by raw
+suite pass count and the second does not; case-by-case parity with HAPI is
+Frevo 0 behind, `helios` 27 behind. Task 2 is ticked after the owner records
+the verdict.

@@ -1,6 +1,11 @@
 [workspace]
 resolver = "3"
 members = ["crates/*"]
+# The FHIRPath differential reference (task 2 of add-fhirpath-and-codegen-r4,
+# ADR 0004): dev-only crates with workspaces of their own, so neither
+# reference engine nor haste-fhirpath's wildcard dependencies ever enter the
+# product graph or the cargo deny gate.
+exclude = ["harness/fhirpath-compare", "harness/fhirpath-compare-haste"]
 
 [workspace.package]
 version = "0.0.0"

@@ -1,0 +1,36 @@
+# haste-fhirpath half of the FHIRPath differential reference (task 2 of
+# add-fhirpath-and-codegen-r4, path.oracle.013, ADR 0004). A crate of its own
+# because helios-fhir 0.2.7 pins serde_json =1.0.144 while haste-fhir-model
+# 0.129.2 needs ^1.0.151. It writes ../fhirpath-compare/haste-results.json,
+# which ../fhirpath-compare merges.
+#
+# Dev-only and outside the product workspace (the root Cargo.toml lists it
+# in [workspace] exclude); no frevo-* crate depends on it. Cargo.lock is
+# committed.
+[package]
+name = "fhirpath-compare-haste"
+version = "0.0.0"
+edition = "2024"
+publish = false
+license = "Apache-2.0"
+description = "The vendored FHIRPath suite through haste-fhirpath (dev-only)."
+
+[workspace]
+
+[dependencies]
+frevo-path = { path = "../../crates/frevo-path" }
+regex = { version = "1.13", default-features = false, features = ["std", "perf", "unicode"] }
+
+# haste-fhirpath (Apache-2.0). Task 2 names 0.129.3 (2026-11-08), which was
+# 13.5 days old on 2026-11-21; 0.129.2 (2026-11-02) is the newest release
+# meeting the owner's 14-day rule. Its wildcard ("0.*") dependencies are
+# pinned to the same release here.
+haste-fhirpath = "=0.129.2"
+haste-fhir-model = "=0.129.2"
+haste-reflect = "=0.129.2"
+haste-reflect-derive = "=0.129.2"
+haste-fhir-serialization-json = "=0.129.2"
+haste-fhir-serialization-json-derive = "=0.129.2"
+
+serde_json = "1"
+tokio = { version = "1", default-features = false, features = ["rt"] }
