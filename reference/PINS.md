@@ -16,6 +16,9 @@ Resolution method, so this table can be rebuilt from scratch:
 3. `hapi-fhir` at `v8.12.0` declares `<fhir_core_version>6.9.12</fhir_core_version>`.
 4. `clinical-reasoning` at `v4.13.0` declares, in `gradle/libs.versions.toml`,
    `hapi = "8.12.0"` (consistent with 1) and `cql = "5.4.0"`.
+5. `org.hl7.fhir.core` `6.9.12` declares `org.fhir:ucum` `1.0.10` in its `pom.xml`
+   (dependencyManagement); the source is `FHIR/Ucum-java` at tag `1.0.10`
+   (added 2026-11-20 with the owner's approval).
 
 | Repository | Ref | Commit SHA | Role |
 |---|---|---|---|
@@ -24,6 +27,7 @@ Resolution method, so this table can be rebuilt from scratch:
 | `hapifhir/org.hl7.fhir.core` | `6.9.12` | `73c432b5f43ddbce979978a760ec4aa81e929094` | Validator, FHIRPath engine, converters, model definitions |
 | `cqframework/clinical_quality_language` | `v5.4.0` | `c41c21f5616a0da82d49e32a9cc3a5b3ca299bc2` | CQL to ELM translator and ELM engine |
 | `cqframework/clinical-reasoning` | `v4.13.0` | `ccba474a2fba73329353b41d270f9d0001d6cb52` | Measures, care gaps, `$apply`, SDC, CDS Hooks |
+| `FHIR/Ucum-java` | `1.0.10` | `db9d22ade3f0f4a667b45817b85a9ac4534e4224` | UCUM library (`org.fhir:ucum`, BSD-3-Clause) that the FHIRPath engine uses for quantity arithmetic and `Decimal` |
 
 > `image/v8.12.0-2` is an **annotated** tag: its tag-object SHA is
 > `787185517037226c5355018f6bf5a902d830ecae`, and the commit it points at is
