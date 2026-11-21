@@ -1434,11 +1434,27 @@ fn an_operand_decimal_cannot_read_is_empty_or_fails_as_the_operators_catch_decid
         );
         assert_eq!(offset, None, "{expr}: no offset");
     }
-    // The `integer` arms call `Integer.parseInt(null)` on the divisor first
-    // (FHIRPathEngine.java:3051, :3091): its text is the JDK's and is not
-    // graded, only that evaluation fails.
-    for expr in [format!("5 div {int}"), format!("5 mod {int}")] {
-        expect_evaluation_error_over(&expr, &valueless);
+    // The `integer` arms call `Integer.parseInt` on the divisor first
+    // (FHIRPathEngine.java:3051, :3091) and then, when it is not `0`, on the
+    // dividend (:3052-3053, :3092-3093): `Integer.parseInt(null)`, a
+    // NumberFormatException no arm catches. Its text is graded: HAPI 8.12.0
+    // on JDK 25 records `Cannot parse null string` under both workers
+    // (`path.math.017#61`, `#62`), and JDK 21's `Integer.parseInt` throws the
+    // same. No offset.
+    const NFE_NULL: &str = "Cannot parse null string";
+    for expr in [
+        format!("5 div {int}"),
+        format!("5 mod {int}"),
+        format!("{int} div 2"),
+        format!("{int} mod 2"),
+    ] {
+        let (message, offset) = expect_evaluation_error_over(&expr, &valueless);
+        assert_eq!(message, NFE_NULL, "{expr}: the JDK's message, exactly");
+        assert_eq!(offset, None, "{expr}: no offset");
+    }
+    // A null dividend over a zero divisor never reaches the dividend's parse.
+    for expr in [format!("{int} div 0"), format!("{int} mod 0")] {
+        assert_eq!(eval_over(&expr, &valueless), empty(), "{expr}");
     }
 
     // A non-ASCII digit is not graded: no valid resource can carry one

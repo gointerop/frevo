@@ -1,4 +1,4 @@
-//! Quantities and UCUM: `path.quantity.001` through `path.quantity.024`.
+//! Quantities and UCUM: `path.quantity.001` through `path.quantity.026`.
 //!
 //! ```text
 //! cargo test -p frevo-path --test path_quantity
@@ -218,6 +218,12 @@ const NPE_QTY_EQUIVALENT: &str = "Cannot invoke \"java.lang.Boolean.booleanValue
 const NPE_LIST_GET_IS_PRIMITIVE: &str = "Cannot invoke \
      \"org.hl7.fhir.r4.model.Base.isPrimitive()\" because the return value of \
      \"java.util.List.get(int)\" is null";
+
+/// The JVM's message for `opLessOrEqual` evaluating `lunit.equals(runit)` with
+/// a null `lunit` (FHIRPathEngine.java:2533-2538), as the in-process HAPI
+/// differential records it (`path.compare.014#01`, `path.quantity.019#17`,
+/// `#18`).
+const NPE_LUNIT_EQUALS: &str = "Cannot invoke \"String.equals(Object)\" because \"lunit\" is null";
 
 /// A case HAPI 8.12.0 fails, which Frevo must grade `failed` too.
 fn expect_hapi_failed(group: &str, name: &str) -> &'static CaseReport {
@@ -1561,6 +1567,18 @@ fn frevo_answers_as_the_suite_worker_where_hapis_server_worker_raises_hapi_0274(
         !message.contains("HAPI-0274"),
         "the `<=` failure is the NullPointerException, not the worker's: {message:?}"
     );
+    // The JVM's helpful NullPointerException text naming the local `lunit`,
+    // as HAPI 8.12.0 under JDK 25 records it under both workers
+    // (`path.quantity.019#17`, `#18`; `path.compare.014`).
+    assert_eq!(
+        message, NPE_LUNIT_EQUALS,
+        "the `<=` failure's text, exactly"
+    );
+    assert_eq!(
+        expect_execution_error_over("1 'kg' <= 1 year", None),
+        NPE_LUNIT_EQUALS,
+        "`1 'kg' <= 1 year`, the same NullPointerException"
+    );
     // --- consults UCUM: HAPI's server worker raises `HAPI-0274: `, Frevo ----
     // --- answers as the suite's worker. These need the unit algebra (task 43).
 
@@ -1685,6 +1703,30 @@ fn a_canonical_form_is_a_value_over_base_units_sorted_by_base_unit_code() {
             "the canonical form of {value} '{code}'"
         );
     }
+
+    // A canonical value keeps every digit `Decimal.multiply` produces, and so
+    // does the result of `*` built from it: no limit on significant digits
+    // (DEBT-0011, which this bullet and path.literal.017 close). HAPI:
+    // `path.quantity.020#27`, `#42`-`#47`.
+    const PI: &str = "3.1415926535897932384626433832795028841971693993751058209749445923";
+    const TWO_PI: &str = "6.2831853071795864769252867665590057683943387987502116419498891846";
+    assert_eq!(
+        eval("(1 '[pi]' * 1 '1').toString()"),
+        string(&format!("{PI} 'null'"))
+    );
+    assert_eq!(
+        eval_unchecked("(1 '[pi]' * 1 '1').value", None),
+        one("decimal", PI)
+    );
+    assert_eq!(eval("1 '[pi]' * 1 'm'"), ucum_result(PI, Some("m")));
+    assert_eq!(eval("2 '[pi]' * 1 '1'"), ucum_result(TWO_PI, None));
+    // `/` divides to path.math.015's digits.
+    assert_eq!(
+        eval("1 '[pi]' / 1 '1'"),
+        ucum_result("3.14159265358979323846264", None)
+    );
+    assert_eq!(eval("1 '[pi]' = 1 '1'"), boolean(false));
+    assert_eq!(eval("1 '[pi]' < 4 '1'"), boolean(true));
 }
 
 // ---------------------------------------------------------------------------
@@ -2081,4 +2123,231 @@ fn ucum_codes_are_parsed_by_the_pinned_grammar_and_its_errors_are_the_messages_t
     for name in ["Comparable1", "Comparable2", "Comparable3"] {
         expect_case("Comparable", name);
     }
+}
+
+// ---------------------------------------------------------------------------
+// path.quantity.025 -- a quantity the engine builds navigates as a `Quantity`
+// ---------------------------------------------------------------------------
+
+/// `expr` over `inp`, parsed and evaluated with the static check **skipped**,
+/// as `FhirPathR4` evaluates and as the differential's probes run with no
+/// `contextType` (`path.navigation.019`).
+fn eval_unchecked(expr: &str, inp: Option<&SuiteInput>) -> Vec<ResultItem> {
+    let mut engine = fresh_engine();
+    let resource_type = inp.and_then(|i| i.resource_type());
+    let context = CaseContext {
+        root_resource_type: resource_type,
+        resource_type,
+        ..CaseContext::default()
+    };
+    let parsed = engine
+        .parse(expr)
+        .unwrap_or_else(|e| panic!("{expr:?} must parse: {e}"));
+    engine
+        .evaluate(parsed, inp, &context, StrictnessFlags::EVALUATE)
+        .unwrap_or_else(|e| panic!("{expr:?} must evaluate with the check skipped: {e}"))
+}
+
+/// `expr` must fail the static check run with `inp`'s resource type as the
+/// context type (HAPI's `check(null, "Resource", type, type, node)`, as the
+/// differential's `check: run` probes call it). Returns the message.
+fn expect_check_failure_over(expr: &str, inp: &SuiteInput) -> String {
+    let mut engine = fresh_engine();
+    let resource_type = inp.resource_type();
+    assert!(
+        resource_type.is_some(),
+        "{}: the check needs a context type",
+        inp.file
+    );
+    let context = CaseContext {
+        root_resource_type: resource_type,
+        resource_type,
+        ..CaseContext::default()
+    };
+    let parsed = engine
+        .parse(expr)
+        .unwrap_or_else(|e| panic!("{expr:?} must parse before the check can reject it: {e}"));
+    match engine.check(parsed, &context, StrictnessFlags::CHECK) {
+        Ok(()) => panic!(
+            "{expr:?} must fail the static check with a context type, as HAPI's \
+             FHIRPATH_UNKNOWN_NAME rejects it, but the check passed"
+        ),
+        Err(EngineError::Diagnostic { message, .. }) => message,
+        Err(e) => panic!("{expr:?} must fail the check with a diagnostic, not: {e}"),
+    }
+}
+
+/// `expr` must pass the static check run with `inp`'s resource type as the
+/// context type.
+fn expect_check_passes_over(expr: &str, inp: &SuiteInput) {
+    let mut engine = fresh_engine();
+    let resource_type = inp.resource_type();
+    let context = CaseContext {
+        root_resource_type: resource_type,
+        resource_type,
+        ..CaseContext::default()
+    };
+    let parsed = engine
+        .parse(expr)
+        .unwrap_or_else(|e| panic!("{expr:?} must parse: {e}"));
+    engine
+        .check(parsed, &context, StrictnessFlags::CHECK)
+        .unwrap_or_else(|e| panic!("{expr:?} must pass the static check: {e}"));
+}
+
+/// A one-item result of a primitive of this FHIR type.
+fn one(fhir_type: &str, value: &str) -> Vec<ResultItem> {
+    vec![ResultItem::Primitive {
+        fhir_type: fhir_type.to_string(),
+        value: value.to_string(),
+    }]
+}
+
+/// `FHIRPATH_UNKNOWN_NAME` (Messages.properties:369) as `executeType` raises
+/// it in the check (FHIRPathEngine.java:1590-1593), with the
+/// `Error evaluating FHIRPath expression: ` prefix and ` (@char C)` suffix the
+/// check's other failures carry.
+fn unknown_name(name: &str, types: &str, column: usize) -> String {
+    format!(
+        "Error evaluating FHIRPath expression: The name '{name}' is not valid for any of the \
+         possible types: [{types}] (@char {column})"
+    )
+}
+
+const SYSTEM_QUANTITY: &str = "http://hl7.org/fhirpath/System.Quantity";
+
+// covers: path.quantity.025
+#[test]
+fn a_quantity_the_engine_builds_is_a_fhir_quantity_whose_elements_navigate() {
+    // Graded in-process against the values the scenario states; HAPI's
+    // observations are `path.quantity.021#41`-`#46`, `path.quantity.023#25`
+    // and the `path.quantity.025` probes, all with no `contextType`, so with
+    // the check skipped.
+
+    // A literal with a quoted UCUM code (FHIRPathEngine.java:1130-1132):
+    // value, code and system set; `unit` set only for a calendar keyword
+    // (:1109-1110).
+    assert_eq!(eval_unchecked("(1 'cm').value", None), one("decimal", "1"));
+    assert_eq!(eval_unchecked("(1 'cm').code", None), one("code", "cm"));
+    assert_eq!(
+        eval_unchecked("(1 'cm').system", None),
+        one("uri", UCUM_SYSTEM)
+    );
+    assert_eq!(eval_unchecked("(1 'cm').unit", None), empty());
+
+    // A calendar-duration literal: `unit` is the keyword as written, `code`
+    // and `system` only for a keyword with a UCUM code (:1109-1132).
+    assert_eq!(eval_unchecked("(1 year).unit", None), one("string", "year"));
+    assert_eq!(eval_unchecked("(1 year).code", None), empty());
+    assert_eq!(eval_unchecked("(1 year).system", None), empty());
+    assert_eq!(eval_unchecked("(1 week).unit", None), one("string", "week"));
+    assert_eq!(eval_unchecked("(1 week).code", None), one("code", "wk"));
+    assert_eq!(
+        eval_unchecked("(1 week).system", None),
+        one("uri", UCUM_SYSTEM)
+    );
+
+    // A `*` or `/` result (`pairToQty`, :2314-2316): value, system and the
+    // canonical code of path.quantity.021, and never a `unit`; a
+    // dimensionless result has no code.
+    assert_eq!(
+        eval_unchecked("(2 'cm' * 1 'm').code", None),
+        one("code", "m2")
+    );
+    assert_eq!(eval_unchecked("(2 'cm' * 1 'm').unit", None), empty());
+    assert_eq!(eval_unchecked("(1 '%' * 1 '1').code", None), empty());
+
+    // The code of a literal is the unit text as path.literal.016 decodes it.
+    assert_eq!(
+        eval_unchecked(r"(1 '[hp\'_X]').code", None),
+        one("code", "[hp''_X]")
+    );
+}
+
+// covers: path.quantity.025
+#[test]
+fn the_check_rejects_member_navigation_on_a_quantity_the_engine_builds() {
+    // With a context type the check runs and rejects the same navigation:
+    // a literal is typed `System.Quantity` (`resolveConstantType`,
+    // FHIRPathEngine.java:3118-3119), which has no child types (:6335-6336),
+    // and a `*` or `/` result has no type at all (`operateTypes`,
+    // :2028-2045). Both messages and positions are derived from the source;
+    // the `path.quantity.025` check probes observe HAPI's.
+    let patient = load_input("patient-example.xml");
+    assert_eq!(
+        expect_check_failure_over("(1 'cm').code", &patient),
+        unknown_name("code", SYSTEM_QUANTITY, 11)
+    );
+    assert_eq!(
+        expect_check_failure_over("(2 'cm' * 1 'm').code", &patient),
+        unknown_name("code", "", 22)
+    );
+
+    // A `Quantity` read from a resource is typed as the FHIR `Quantity` and
+    // passes the check.
+    let observation = load_input("observation-example.xml");
+    expect_check_passes_over("(Observation.value as Quantity).code", &observation);
+}
+
+// ---------------------------------------------------------------------------
+// path.quantity.026 -- an empty quoted unit makes a UCUM quantity with no code
+// ---------------------------------------------------------------------------
+
+// covers: path.quantity.026
+#[test]
+fn an_empty_quoted_unit_makes_a_ucum_quantity_with_no_code() {
+    // The literal passes "" to `setCode` (FHIRPathEngine.java:1130-1132),
+    // which leaves the code absent (`Quantity.setCode`, Quantity.java:620-629,
+    // `Utilities.noString`); the system is set because the unit text is not
+    // null.
+    assert_eq!(eval("1 ''"), ucum_result("1", None));
+
+    // So it is the UCUM quantity with no code of path.quantity.021, under the
+    // suite's worker (HAPI: `path.quantity.021#37`-`#40`,
+    // `path.quantity.024#33`, `#34`).
+    assert_eq!(eval("1 ''.toString()"), string("1 'null'"));
+    assert_eq!(eval("1 '' = 1 '1'"), boolean(true));
+    assert_eq!(eval("1 ''.comparable(1 '1')"), boolean(false));
+    expect_times_error(
+        "1 '' * 1 'm'",
+        None,
+        "Error processing unit 'null.m': The unit 'null' is unknown' at position 0",
+        8,
+    );
+    expect_times_error(
+        "1 'm' * 1 ''",
+        None,
+        "Error processing unit 'm.null': The unit 'null' is unknown' at position 2",
+        9,
+    );
+    assert_eq!(
+        expect_execution_error_over("1 '' / 1 'm'", None),
+        NPE_PAIR_CODE_CONTAINS
+    );
+
+    // Its elements, with the check skipped (path.quantity.025).
+    assert_eq!(eval_unchecked("(1 '').code", None), empty());
+    assert_eq!(
+        eval_unchecked("(1 '').system", None),
+        one("uri", UCUM_SYSTEM)
+    );
+    assert_eq!(eval_unchecked("(1 '').value", None), one("decimal", "1"));
+}
+
+// covers: path.quantity.026
+#[test]
+fn the_check_rejects_member_navigation_on_an_empty_unit_literal() {
+    // The literal is typed `System.Quantity`, so both fail the check as
+    // path.quantity.025 states, at the member name's lexer column 9
+    // (whitespace counting 2, FHIRLexer.java:321-324). Derived, not observed;
+    // the `path.quantity.026` check probes observe HAPI's.
+    let patient = load_input("patient-example.xml");
+    assert_eq!(
+        expect_check_failure_over("(1 '').code", &patient),
+        unknown_name("code", SYSTEM_QUANTITY, 9)
+    );
+    assert_eq!(
+        expect_check_failure_over("(1 '').system", &patient),
+        unknown_name("system", SYSTEM_QUANTITY, 9)
+    );
 }

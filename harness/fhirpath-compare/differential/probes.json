@@ -1106,6 +1106,61 @@
   "expr": "1.is(FHIR.toString())"
  },
  {
+  "id": "path.literal.016#01",
+  "scenario": "path.literal.016",
+  "expr": "1 'a\\tb'"
+ },
+ {
+  "id": "path.literal.016#02",
+  "scenario": "path.literal.016",
+  "expr": "(1 'a\\tb').code"
+ },
+ {
+  "id": "path.literal.016#03",
+  "scenario": "path.literal.016",
+  "expr": "1 'a\\u0041b'"
+ },
+ {
+  "id": "path.literal.016#04",
+  "scenario": "path.literal.016",
+  "expr": "(1 'a\\u0041b').code"
+ },
+ {
+  "id": "path.literal.016#05",
+  "scenario": "path.literal.016",
+  "expr": "1 'a\\\\b'"
+ },
+ {
+  "id": "path.literal.017#01",
+  "scenario": "path.literal.017",
+  "expr": "0.12345678901234567890123456789012345678901234567890",
+  "note": "more than 38 significant digits (DEBT-0011)"
+ },
+ {
+  "id": "path.literal.017#02",
+  "scenario": "path.literal.017",
+  "expr": "0.12345678901234567890123456789012345678901234567890.toString()",
+  "note": "more than 38 significant digits (DEBT-0011)"
+ },
+ {
+  "id": "path.literal.017#03",
+  "scenario": "path.literal.017",
+  "expr": "0.12345678901234567890123456789012345678901234567890 = 0.12345678901234567890123456789012345678901234567890",
+  "note": "more than 38 significant digits (DEBT-0011)"
+ },
+ {
+  "id": "path.literal.017#04",
+  "scenario": "path.literal.017",
+  "expr": "1234567890123456789012345678901234567890",
+  "note": "more than 38 significant digits (DEBT-0011)"
+ },
+ {
+  "id": "path.literal.017#05",
+  "scenario": "path.literal.017",
+  "expr": "1234567890123456789012345678901234567890.toString()",
+  "note": "more than 38 significant digits (DEBT-0011)"
+ },
+ {
   "id": "path.math.015#01",
   "scenario": "path.math.015",
   "expr": "1 / 2"
@@ -2166,16 +2221,14 @@
   "scenario": "path.math.017",
   "expr": "Parameters.parameter.where(name = 'i').value div 2",
   "input": "local:parameters-novalue-numbers.xml",
-  "grade": "error",
-  "note": "Integer.parseInt(null): the JDK's message, not graded"
+  "note": "Integer.parseInt(null): the text is graded (Cannot parse null string, JDK 21 and 25)"
  },
  {
   "id": "path.math.017#62",
   "scenario": "path.math.017",
   "expr": "Parameters.parameter.where(name = 'i').value mod 2",
   "input": "local:parameters-novalue-numbers.xml",
-  "grade": "error",
-  "note": "Integer.parseInt(null): the JDK's message, not graded"
+  "note": "Integer.parseInt(null): the text is graded (Cannot parse null string, JDK 21 and 25)"
  },
  {
   "id": "path.math.017#63",
@@ -3805,6 +3858,106 @@
   "id": "path.quantity.024#56",
   "scenario": "path.quantity.024",
   "expr": "1 'm)' = 1 'm'"
+ },
+ {
+  "id": "path.quantity.025#01",
+  "scenario": "path.quantity.025",
+  "expr": "(1 week).unit",
+  "note": "a quantity the engine builds: its elements"
+ },
+ {
+  "id": "path.quantity.025#02",
+  "scenario": "path.quantity.025",
+  "expr": "(1 week).code",
+  "note": "a quantity the engine builds: its elements"
+ },
+ {
+  "id": "path.quantity.025#03",
+  "scenario": "path.quantity.025",
+  "expr": "(1 week).system",
+  "note": "a quantity the engine builds: its elements"
+ },
+ {
+  "id": "path.quantity.025#04",
+  "scenario": "path.quantity.025",
+  "expr": "(1 year).code",
+  "note": "a quantity the engine builds: its elements"
+ },
+ {
+  "id": "path.quantity.025#05",
+  "scenario": "path.quantity.025",
+  "expr": "(1 year).system",
+  "note": "a quantity the engine builds: its elements"
+ },
+ {
+  "id": "path.quantity.025#06",
+  "scenario": "path.quantity.025",
+  "expr": "(2 'cm' * 1 'm').unit",
+  "note": "a quantity the engine builds: its elements"
+ },
+ {
+  "id": "path.quantity.025#07",
+  "scenario": "path.quantity.025",
+  "expr": "(1 '%' * 1 '1').code",
+  "note": "a quantity the engine builds: its elements"
+ },
+ {
+  "id": "path.quantity.025#08",
+  "scenario": "path.quantity.025",
+  "expr": "(1 'cm').code",
+  "input": "suite:patient-example.xml",
+  "check": "run",
+  "note": "the check rejects navigation on a System.Quantity or untyped result"
+ },
+ {
+  "id": "path.quantity.025#09",
+  "scenario": "path.quantity.025",
+  "expr": "(2 'cm' * 1 'm').code",
+  "input": "suite:patient-example.xml",
+  "check": "run",
+  "note": "the check rejects navigation on a System.Quantity or untyped result"
+ },
+ {
+  "id": "path.quantity.025#10",
+  "scenario": "path.quantity.025",
+  "expr": "(Observation.value as Quantity).code",
+  "input": "suite:observation-example.xml",
+  "check": "run",
+  "note": "a Quantity read from a resource passes the check"
+ },
+ {
+  "id": "path.quantity.026#01",
+  "scenario": "path.quantity.026",
+  "expr": "1 ''",
+  "note": "an empty unit literal: Quantity.setCode(\"\") leaves no code"
+ },
+ {
+  "id": "path.quantity.026#02",
+  "scenario": "path.quantity.026",
+  "expr": "(1 '').code",
+  "note": "an empty unit literal: Quantity.setCode(\"\") leaves no code"
+ },
+ {
+  "id": "path.quantity.026#03",
+  "scenario": "path.quantity.026",
+  "expr": "(1 '').system",
+  "note": "an empty unit literal: Quantity.setCode(\"\") leaves no code"
+ },
+ {
+  "id": "path.quantity.026#04",
+  "scenario": "path.quantity.026",
+  "expr": "(1 '').code",
+  "input": "suite:patient-example.xml",
+  "check": "run",
+  "note": "the check rejects navigation on a System.Quantity, (@char 9)"
+ },
+ {
+  "id": "path.quantity.026#05",
+  "scenario": "path.quantity.026",
+  "expr": "(1 '').system",
+  "input": "suite:patient-example.xml",
+  "check": "run",
+  "note": "the check rejects navigation on a System.Quantity, (@char 9)"
  },
  {
   "id": "path.strictness.005#01",

@@ -3941,6 +3941,224 @@
       ],
       "verdict": "agree"
     },
+    "path.literal.016": {
+      "agree": 3,
+      "disagree": 2,
+      "disagree_documented": 0,
+      "hapi_unreachable": 0,
+      "probes": [
+        {
+          "expr": "1 'a\\tb'",
+          "frevo": {
+            "hasLog": false,
+            "items": [
+              "Quantity:1||http://unitsofmeasure.org|a<U+0009>tb"
+            ],
+            "log": "",
+            "stage": "ok"
+          },
+          "hapi": {
+            "hasLog": false,
+            "items": [
+              "Quantity:1||http://unitsofmeasure.org|a<U+0009>tb"
+            ],
+            "log": "",
+            "stage": "ok"
+          },
+          "id": "path.literal.016#01",
+          "verdict": "agree",
+          "worker": "suite"
+        },
+        {
+          "expr": "(1 'a\\tb').code",
+          "frevo": {
+            "hasLog": false,
+            "items": [],
+            "log": "",
+            "stage": "ok"
+          },
+          "hapi": {
+            "hasLog": false,
+            "items": [
+              "code:a<U+0009>tb"
+            ],
+            "log": "",
+            "stage": "ok"
+          },
+          "id": "path.literal.016#02",
+          "verdict": "disagree",
+          "worker": "suite"
+        },
+        {
+          "expr": "1 'a\\u0041b'",
+          "frevo": {
+            "hasLog": false,
+            "items": [
+              "Quantity:1||http://unitsofmeasure.org|aAb"
+            ],
+            "log": "",
+            "stage": "ok"
+          },
+          "hapi": {
+            "hasLog": false,
+            "items": [
+              "Quantity:1||http://unitsofmeasure.org|aAb"
+            ],
+            "log": "",
+            "stage": "ok"
+          },
+          "id": "path.literal.016#03",
+          "verdict": "agree",
+          "worker": "suite"
+        },
+        {
+          "expr": "(1 'a\\u0041b').code",
+          "frevo": {
+            "hasLog": false,
+            "items": [],
+            "log": "",
+            "stage": "ok"
+          },
+          "hapi": {
+            "hasLog": false,
+            "items": [
+              "code:aAb"
+            ],
+            "log": "",
+            "stage": "ok"
+          },
+          "id": "path.literal.016#04",
+          "verdict": "disagree",
+          "worker": "suite"
+        },
+        {
+          "expr": "1 'a\\\\b'",
+          "frevo": {
+            "error": "Unknown FHIRPath character escape \\b",
+            "offset": 2,
+            "stage": "parse"
+          },
+          "hapi": {
+            "error": "Unknown FHIRPath character escape \\b",
+            "exception": "org.hl7.fhir.r4.fhirpath.FHIRLexer$FHIRLexerException",
+            "stage": "parse"
+          },
+          "id": "path.literal.016#05",
+          "verdict": "agree",
+          "worker": "suite"
+        }
+      ],
+      "verdict": "disagree"
+    },
+    "path.literal.017": {
+      "agree": 0,
+      "disagree": 5,
+      "disagree_documented": 0,
+      "hapi_unreachable": 0,
+      "probes": [
+        {
+          "expr": "0.12345678901234567890123456789012345678901234567890",
+          "frevo": {
+            "error": "Invalid Constant 0.12345678901234567890123456789012345678901234567890: it has more significant digits than this engine's decimal representation carries",
+            "offset": 0,
+            "stage": "parse"
+          },
+          "hapi": {
+            "hasLog": false,
+            "items": [
+              "decimal:0.12345678901234567890123456789012345678901234567890"
+            ],
+            "log": "",
+            "stage": "ok"
+          },
+          "id": "path.literal.017#01",
+          "note": "more than 38 significant digits (DEBT-0011)",
+          "verdict": "disagree",
+          "worker": "suite"
+        },
+        {
+          "expr": "0.12345678901234567890123456789012345678901234567890.toString()",
+          "frevo": {
+            "error": "Invalid Constant 0.12345678901234567890123456789012345678901234567890: it has more significant digits than this engine's decimal representation carries",
+            "offset": 0,
+            "stage": "parse"
+          },
+          "hapi": {
+            "hasLog": false,
+            "items": [
+              "string:0.12345678901234567890123456789012345678901234567890"
+            ],
+            "log": "",
+            "stage": "ok"
+          },
+          "id": "path.literal.017#02",
+          "note": "more than 38 significant digits (DEBT-0011)",
+          "verdict": "disagree",
+          "worker": "suite"
+        },
+        {
+          "expr": "0.12345678901234567890123456789012345678901234567890 = 0.12345678901234567890123456789012345678901234567890",
+          "frevo": {
+            "error": "Invalid Constant 0.12345678901234567890123456789012345678901234567890: it has more significant digits than this engine's decimal representation carries",
+            "offset": 0,
+            "stage": "parse"
+          },
+          "hapi": {
+            "hasLog": false,
+            "items": [
+              "boolean:true"
+            ],
+            "log": "",
+            "stage": "ok"
+          },
+          "id": "path.literal.017#03",
+          "note": "more than 38 significant digits (DEBT-0011)",
+          "verdict": "disagree",
+          "worker": "suite"
+        },
+        {
+          "expr": "1234567890123456789012345678901234567890",
+          "frevo": {
+            "error": "Invalid Constant 1234567890123456789012345678901234567890: it has more significant digits than this engine's decimal representation carries",
+            "offset": 0,
+            "stage": "parse"
+          },
+          "hapi": {
+            "hasLog": false,
+            "items": [
+              "decimal:1234567890123456789012345678901234567890"
+            ],
+            "log": "",
+            "stage": "ok"
+          },
+          "id": "path.literal.017#04",
+          "note": "more than 38 significant digits (DEBT-0011)",
+          "verdict": "disagree",
+          "worker": "suite"
+        },
+        {
+          "expr": "1234567890123456789012345678901234567890.toString()",
+          "frevo": {
+            "error": "Invalid Constant 1234567890123456789012345678901234567890: it has more significant digits than this engine's decimal representation carries",
+            "offset": 0,
+            "stage": "parse"
+          },
+          "hapi": {
+            "hasLog": false,
+            "items": [
+              "string:1234567890123456789012345678901234567890"
+            ],
+            "log": "",
+            "stage": "ok"
+          },
+          "id": "path.literal.017#05",
+          "note": "more than 38 significant digits (DEBT-0011)",
+          "verdict": "disagree",
+          "worker": "suite"
+        }
+      ],
+      "verdict": "disagree"
+    },
     "path.math.015": {
       "agree": 73,
       "disagree": 0,
@@ -6840,8 +7058,8 @@
       "verdict": "agree"
     },
     "path.math.017": {
-      "agree": 54,
-      "disagree": 0,
+      "agree": 52,
+      "disagree": 2,
       "disagree_documented": 3,
       "hapi_unreachable": 8,
       "probes": [
@@ -8035,7 +8253,6 @@
             "error": "For input string: \"\"",
             "stage": "eval"
           },
-          "grade": "error",
           "hapi": {
             "error": "Cannot parse null string",
             "exception": "java.lang.NumberFormatException",
@@ -8043,8 +8260,8 @@
           },
           "id": "path.math.017#61",
           "input": "local:parameters-novalue-numbers.xml",
-          "note": "Integer.parseInt(null): the JDK's message, not graded",
-          "verdict": "agree",
+          "note": "Integer.parseInt(null): the text is graded (Cannot parse null string, JDK 21 and 25)",
+          "verdict": "disagree",
           "worker": "suite"
         },
         {
@@ -8053,7 +8270,6 @@
             "error": "For input string: \"\"",
             "stage": "eval"
           },
-          "grade": "error",
           "hapi": {
             "error": "Cannot parse null string",
             "exception": "java.lang.NumberFormatException",
@@ -8061,8 +8277,8 @@
           },
           "id": "path.math.017#62",
           "input": "local:parameters-novalue-numbers.xml",
-          "note": "Integer.parseInt(null): the JDK's message, not graded",
-          "verdict": "agree",
+          "note": "Integer.parseInt(null): the text is graded (Cannot parse null string, JDK 21 and 25)",
+          "verdict": "disagree",
           "worker": "suite"
         },
         {
@@ -8124,7 +8340,7 @@
           "worker": "suite"
         }
       ],
-      "verdict": "disagree-documented"
+      "verdict": "disagree"
     },
     "path.mathfn.004": {
       "agree": 6,
@@ -15442,6 +15658,337 @@
       ],
       "verdict": "disagree"
     },
+    "path.quantity.025": {
+      "agree": 7,
+      "disagree": 3,
+      "disagree_documented": 0,
+      "hapi_unreachable": 0,
+      "probes": [
+        {
+          "expr": "(1 week).unit",
+          "frevo": {
+            "hasLog": false,
+            "items": [],
+            "log": "",
+            "stage": "ok"
+          },
+          "hapi": {
+            "hasLog": false,
+            "items": [
+              "string:week"
+            ],
+            "log": "",
+            "stage": "ok"
+          },
+          "id": "path.quantity.025#01",
+          "note": "a quantity the engine builds: its elements",
+          "verdict": "disagree",
+          "worker": "suite"
+        },
+        {
+          "expr": "(1 week).code",
+          "frevo": {
+            "hasLog": false,
+            "items": [],
+            "log": "",
+            "stage": "ok"
+          },
+          "hapi": {
+            "hasLog": false,
+            "items": [
+              "code:wk"
+            ],
+            "log": "",
+            "stage": "ok"
+          },
+          "id": "path.quantity.025#02",
+          "note": "a quantity the engine builds: its elements",
+          "verdict": "disagree",
+          "worker": "suite"
+        },
+        {
+          "expr": "(1 week).system",
+          "frevo": {
+            "hasLog": false,
+            "items": [],
+            "log": "",
+            "stage": "ok"
+          },
+          "hapi": {
+            "hasLog": false,
+            "items": [
+              "uri:http://unitsofmeasure.org"
+            ],
+            "log": "",
+            "stage": "ok"
+          },
+          "id": "path.quantity.025#03",
+          "note": "a quantity the engine builds: its elements",
+          "verdict": "disagree",
+          "worker": "suite"
+        },
+        {
+          "expr": "(1 year).code",
+          "frevo": {
+            "hasLog": false,
+            "items": [],
+            "log": "",
+            "stage": "ok"
+          },
+          "hapi": {
+            "hasLog": false,
+            "items": [],
+            "log": "",
+            "stage": "ok"
+          },
+          "id": "path.quantity.025#04",
+          "note": "a quantity the engine builds: its elements",
+          "verdict": "agree",
+          "worker": "suite"
+        },
+        {
+          "expr": "(1 year).system",
+          "frevo": {
+            "hasLog": false,
+            "items": [],
+            "log": "",
+            "stage": "ok"
+          },
+          "hapi": {
+            "hasLog": false,
+            "items": [],
+            "log": "",
+            "stage": "ok"
+          },
+          "id": "path.quantity.025#05",
+          "note": "a quantity the engine builds: its elements",
+          "verdict": "agree",
+          "worker": "suite"
+        },
+        {
+          "expr": "(2 'cm' * 1 'm').unit",
+          "frevo": {
+            "hasLog": false,
+            "items": [],
+            "log": "",
+            "stage": "ok"
+          },
+          "hapi": {
+            "hasLog": false,
+            "items": [],
+            "log": "",
+            "stage": "ok"
+          },
+          "hapi_server_worker": {
+            "error": "HAPI-0274: ",
+            "exception": "java.lang.UnsupportedOperationException",
+            "stage": "eval"
+          },
+          "id": "path.quantity.025#06",
+          "note": "a quantity the engine builds: its elements",
+          "verdict": "agree",
+          "worker": "suite"
+        },
+        {
+          "expr": "(1 '%' * 1 '1').code",
+          "frevo": {
+            "hasLog": false,
+            "items": [],
+            "log": "",
+            "stage": "ok"
+          },
+          "hapi": {
+            "hasLog": false,
+            "items": [],
+            "log": "",
+            "stage": "ok"
+          },
+          "hapi_server_worker": {
+            "error": "HAPI-0274: ",
+            "exception": "java.lang.UnsupportedOperationException",
+            "stage": "eval"
+          },
+          "id": "path.quantity.025#07",
+          "note": "a quantity the engine builds: its elements",
+          "verdict": "agree",
+          "worker": "suite"
+        },
+        {
+          "check": "run",
+          "expr": "(1 'cm').code",
+          "frevo": {
+            "error": "Error evaluating FHIRPath expression: The name 'code' is not valid for any of the possible types: [http://hl7.org/fhirpath/System.Quantity] (@char 11)",
+            "offset": 9,
+            "stage": "check"
+          },
+          "hapi": {
+            "error": "Error evaluating FHIRPath expression: The name 'code' is not valid for any of the possible types: [http://hl7.org/fhirpath/System.Quantity] (@char 11)",
+            "exception": "org.hl7.fhir.exceptions.PathEngineException",
+            "stage": "check"
+          },
+          "id": "path.quantity.025#08",
+          "input": "suite:patient-example.xml",
+          "note": "the check rejects navigation on a System.Quantity or untyped result",
+          "verdict": "agree",
+          "worker": "suite"
+        },
+        {
+          "check": "run",
+          "expr": "(2 'cm' * 1 'm').code",
+          "frevo": {
+            "error": "Error evaluating FHIRPath expression: The name 'code' is not valid for any of the possible types: [] (@char 22)",
+            "offset": 17,
+            "stage": "check"
+          },
+          "hapi": {
+            "error": "Error evaluating FHIRPath expression: The name 'code' is not valid for any of the possible types: [] (@char 22)",
+            "exception": "org.hl7.fhir.exceptions.PathEngineException",
+            "stage": "check"
+          },
+          "id": "path.quantity.025#09",
+          "input": "suite:patient-example.xml",
+          "note": "the check rejects navigation on a System.Quantity or untyped result",
+          "verdict": "agree",
+          "worker": "suite"
+        },
+        {
+          "check": "run",
+          "expr": "(Observation.value as Quantity).code",
+          "frevo": {
+            "hasLog": false,
+            "items": [
+              "code:[lb_av]"
+            ],
+            "log": "",
+            "stage": "ok"
+          },
+          "hapi": {
+            "hasLog": false,
+            "items": [
+              "code:[lb_av]"
+            ],
+            "log": "",
+            "stage": "ok"
+          },
+          "id": "path.quantity.025#10",
+          "input": "suite:observation-example.xml",
+          "note": "a Quantity read from a resource passes the check",
+          "verdict": "agree",
+          "worker": "suite"
+        }
+      ],
+      "verdict": "disagree"
+    },
+    "path.quantity.026": {
+      "agree": 4,
+      "disagree": 1,
+      "disagree_documented": 0,
+      "hapi_unreachable": 0,
+      "probes": [
+        {
+          "expr": "1 ''",
+          "frevo": {
+            "hasLog": false,
+            "items": [
+              "Quantity:1||http://unitsofmeasure.org|"
+            ],
+            "log": "",
+            "stage": "ok"
+          },
+          "hapi": {
+            "hasLog": false,
+            "items": [
+              "Quantity:1||http://unitsofmeasure.org|"
+            ],
+            "log": "",
+            "stage": "ok"
+          },
+          "id": "path.quantity.026#01",
+          "note": "an empty unit literal: Quantity.setCode(\"\") leaves no code",
+          "verdict": "agree",
+          "worker": "suite"
+        },
+        {
+          "expr": "(1 '').code",
+          "frevo": {
+            "hasLog": false,
+            "items": [],
+            "log": "",
+            "stage": "ok"
+          },
+          "hapi": {
+            "hasLog": false,
+            "items": [],
+            "log": "",
+            "stage": "ok"
+          },
+          "id": "path.quantity.026#02",
+          "note": "an empty unit literal: Quantity.setCode(\"\") leaves no code",
+          "verdict": "agree",
+          "worker": "suite"
+        },
+        {
+          "expr": "(1 '').system",
+          "frevo": {
+            "hasLog": false,
+            "items": [],
+            "log": "",
+            "stage": "ok"
+          },
+          "hapi": {
+            "hasLog": false,
+            "items": [
+              "uri:http://unitsofmeasure.org"
+            ],
+            "log": "",
+            "stage": "ok"
+          },
+          "id": "path.quantity.026#03",
+          "note": "an empty unit literal: Quantity.setCode(\"\") leaves no code",
+          "verdict": "disagree",
+          "worker": "suite"
+        },
+        {
+          "check": "run",
+          "expr": "(1 '').code",
+          "frevo": {
+            "error": "Error evaluating FHIRPath expression: The name 'code' is not valid for any of the possible types: [http://hl7.org/fhirpath/System.Quantity] (@char 9)",
+            "offset": 7,
+            "stage": "check"
+          },
+          "hapi": {
+            "error": "Error evaluating FHIRPath expression: The name 'code' is not valid for any of the possible types: [http://hl7.org/fhirpath/System.Quantity] (@char 9)",
+            "exception": "org.hl7.fhir.exceptions.PathEngineException",
+            "stage": "check"
+          },
+          "id": "path.quantity.026#04",
+          "input": "suite:patient-example.xml",
+          "note": "the check rejects navigation on a System.Quantity, (@char 9)",
+          "verdict": "agree",
+          "worker": "suite"
+        },
+        {
+          "check": "run",
+          "expr": "(1 '').system",
+          "frevo": {
+            "error": "Error evaluating FHIRPath expression: The name 'system' is not valid for any of the possible types: [http://hl7.org/fhirpath/System.Quantity] (@char 9)",
+            "offset": 7,
+            "stage": "check"
+          },
+          "hapi": {
+            "error": "Error evaluating FHIRPath expression: The name 'system' is not valid for any of the possible types: [http://hl7.org/fhirpath/System.Quantity] (@char 9)",
+            "exception": "org.hl7.fhir.exceptions.PathEngineException",
+            "stage": "check"
+          },
+          "id": "path.quantity.026#05",
+          "input": "suite:patient-example.xml",
+          "note": "the check rejects navigation on a System.Quantity, (@char 9)",
+          "verdict": "agree",
+          "worker": "suite"
+        }
+      ],
+      "verdict": "disagree"
+    },
     "path.strictness.005": {
       "agree": 10,
       "disagree": 0,
@@ -18660,15 +19207,15 @@
   },
   "totals": {
     "probes": {
-      "agree": 730,
-      "disagree": 18,
+      "agree": 742,
+      "disagree": 31,
       "disagree-documented": 51,
       "hapi-unreachable": 8
     },
     "scenarios": {
       "agree": 46,
-      "disagree": 6,
-      "disagree-documented": 4
+      "disagree": 11,
+      "disagree-documented": 3
     }
   }
 }

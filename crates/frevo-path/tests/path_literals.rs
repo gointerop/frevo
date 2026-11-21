@@ -1,4 +1,4 @@
-//! Literals: `path.literal.001` through `path.literal.015`.
+//! Literals: `path.literal.001` through `path.literal.017`.
 //!
 //! ```text
 //! cargo test -p frevo-path --test path_literals
@@ -704,4 +704,127 @@ fn an_integer_literal_beyond_the_32_bit_range_is_lexed_as_a_decimal() {
     // And the literal evaluates at all, which is the part a lexer that rejected
     // it outright would fail.
     assert_eq!(sole("2147483648"), primitive("decimal", "2147483648"));
+}
+
+// ---------------------------------------------------------------------------
+// path.literal.016 -- a quantity literal's unit is decoded by `processConstant`
+// ---------------------------------------------------------------------------
+
+/// `expr` parsed and evaluated with the static check **skipped**, as
+/// `FhirPathR4` evaluates and the differential's probes run.
+fn eval_unchecked(expr: &str) -> Vec<ResultItem> {
+    let mut engine = fresh_engine();
+    let context = CaseContext::default();
+    let parsed = engine
+        .parse(expr)
+        .unwrap_or_else(|e| panic!("{expr:?} must parse: {e}"));
+    engine
+        .evaluate(parsed, None, &context, StrictnessFlags::EVALUATE)
+        .unwrap_or_else(|e| panic!("{expr:?} must evaluate with the check skipped: {e}"))
+}
+
+/// A quantity literal with a quoted unit: value, the UCUM system, the code,
+/// and no `unit` (FHIRPathEngine.java:1130-1132).
+fn ucum_literal(value: &str, code: &str) -> ResultItem {
+    ResultItem::Quantity(QuantityValue {
+        value: value.to_string(),
+        comparator: None,
+        unit: None,
+        system: Some(UCUM_SYSTEM.to_string()),
+        code: Some(code.to_string()),
+        has_element_id: false,
+        has_extensions: false,
+    })
+}
+
+// covers: path.literal.016
+#[test]
+fn a_quantity_literals_unit_is_decoded_by_process_constant_which_appends_an_escape_twice() {
+    // The unit is read by `FHIRLexer.readConstant("units")`
+    // (FHIRPathEngine.java:1129-1130, FHIRLexer.java:411-416), decoded by
+    // `processConstant` (FHIRLexer.java:425-474): every escape arm but `\u`
+    // appends the decoded character without advancing past the escaped one,
+    // which the next iteration appends again as itself (only the plain arm
+    // advances, :469-472).
+    for (letter, code) in [
+        ('X', "[hp''_X]"),
+        ('C', "[hp''_C]"),
+        ('M', "[hp''_M]"),
+        ('Q', "[hp''_Q]"),
+    ] {
+        let literal = format!(r"1 '[hp\'_{letter}]'");
+        assert_eq!(sole(&literal), ucum_literal("1", code), "{literal}");
+        // Not a unit of the pinned file (HAPI: `path.quantity.023#04`-`#07`).
+        let times = format!("{literal} * 1 'm'");
+        let (stage, message, offset) = expect_failure(&times);
+        assert_eq!(stage, Stage::Evaluate, "{times}");
+        assert_eq!(
+            message,
+            format!(
+                "Error processing unit '{code}.m': The unit '{code}' is unknown' at position 0 \
+                 (@char 16)"
+            ),
+            "{times}"
+        );
+        assert_eq!(offset, Some(13), "{times}: the `*` token's byte offset");
+    }
+    // `\t` appends a tab and then the `t` itself: `a`, a tab, `t`, `b`.
+    assert_eq!(sole(r"1 'a\tb'"), ucum_literal("1", "a\ttb"));
+
+    // `\u` advances past its four hexadecimal digits (:460-465), so a unicode
+    // escape is decoded once.
+    assert_eq!(sole(r"1 'a\u0041b'"), ucum_literal("1", "aAb"));
+
+    // `\\` appends `\` and leaves the second `\` to be read as a new escape,
+    // so `\b` is unknown: a syntax error (`path.lexer.012`) with no
+    // `Error @l, c: ` prefix, built by the two-argument `FHIRLexerException`
+    // constructor (:466-467, :28-31).
+    let (stage, message, _) = expect_failure(r"1 'a\\b'");
+    assert_eq!(stage, Stage::Parse, r"1 'a\\b' fails to parse");
+    assert_eq!(message, r"Unknown FHIRPath character escape \b");
+
+    // The decoded code, navigated with the check skipped (HAPI:
+    // `path.quantity.023#25`; navigation is `path.quantity.025`).
+    assert_eq!(
+        eval_unchecked(r"(1 '[hp\'_X]').code"),
+        vec![primitive("code", "[hp''_X]")]
+    );
+    assert_eq!(
+        eval_unchecked(r"(1 'a\tb').code"),
+        vec![primitive("code", "a\ttb")]
+    );
+}
+
+// ---------------------------------------------------------------------------
+// path.literal.017 -- a decimal literal at any number of significant digits
+// ---------------------------------------------------------------------------
+
+// covers: path.literal.017
+#[test]
+fn a_decimal_literal_is_carried_at_any_number_of_significant_digits() {
+    // `Utilities.isDecimal` accepts it (FHIRPathEngine.java:1328-1329) and
+    // `new DecimalType(String)` holds it as a `BigDecimal` with its text
+    // (DEV-0011). Frevo's earlier refusal of such a literal is DEBT-0011.
+    const WIDE: &str = "0.12345678901234567890123456789012345678901234567890";
+    assert_eq!(sole(WIDE), primitive("decimal", WIDE));
+    assert_eq!(
+        sole(&format!("{WIDE}.toString()")),
+        primitive("string", WIDE),
+        "the primitive value (`convertToString`, :887-891)"
+    );
+    assert_eq!(
+        sole(&format!("{WIDE} = {WIDE}")),
+        primitive("boolean", "true")
+    );
+
+    // An integer-shaped literal of more than ten digits fails
+    // `Utilities.isInteger` (Utilities.java:97-98) and is a `DecimalType` by
+    // the same `isDecimal` arm (FHIRPathEngine.java:1326-1329).
+    const FORTY: &str = "1234567890123456789012345678901234567890";
+    assert_eq!(FORTY.len(), 40);
+    assert_eq!(sole(FORTY), primitive("decimal", FORTY));
+    assert_eq!(
+        sole(&format!("{FORTY}.toString()")),
+        primitive("string", FORTY)
+    );
 }

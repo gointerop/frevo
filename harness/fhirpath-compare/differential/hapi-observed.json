@@ -2785,6 +2785,180 @@
         "exception": "org.hl7.fhir.exceptions.PathEngineException"
       }
     },
+    "path.literal.016#01": {
+      "suite": {
+        "stage": "ok",
+        "items": [
+          "Quantity:1||http://unitsofmeasure.org|a<U+0009>tb"
+        ],
+        "hasLog": false,
+        "log": ""
+      },
+      "server": {
+        "stage": "ok",
+        "items": [
+          "Quantity:1||http://unitsofmeasure.org|a<U+0009>tb"
+        ],
+        "hasLog": false,
+        "log": ""
+      }
+    },
+    "path.literal.016#02": {
+      "suite": {
+        "stage": "ok",
+        "items": [
+          "code:a<U+0009>tb"
+        ],
+        "hasLog": false,
+        "log": ""
+      },
+      "server": {
+        "stage": "ok",
+        "items": [
+          "code:a<U+0009>tb"
+        ],
+        "hasLog": false,
+        "log": ""
+      }
+    },
+    "path.literal.016#03": {
+      "suite": {
+        "stage": "ok",
+        "items": [
+          "Quantity:1||http://unitsofmeasure.org|aAb"
+        ],
+        "hasLog": false,
+        "log": ""
+      },
+      "server": {
+        "stage": "ok",
+        "items": [
+          "Quantity:1||http://unitsofmeasure.org|aAb"
+        ],
+        "hasLog": false,
+        "log": ""
+      }
+    },
+    "path.literal.016#04": {
+      "suite": {
+        "stage": "ok",
+        "items": [
+          "code:aAb"
+        ],
+        "hasLog": false,
+        "log": ""
+      },
+      "server": {
+        "stage": "ok",
+        "items": [
+          "code:aAb"
+        ],
+        "hasLog": false,
+        "log": ""
+      }
+    },
+    "path.literal.016#05": {
+      "suite": {
+        "stage": "parse",
+        "error": "Unknown FHIRPath character escape \\b",
+        "exception": "org.hl7.fhir.r4.fhirpath.FHIRLexer$FHIRLexerException"
+      },
+      "server": {
+        "stage": "parse",
+        "error": "Unknown FHIRPath character escape \\b",
+        "exception": "org.hl7.fhir.r4.fhirpath.FHIRLexer$FHIRLexerException"
+      }
+    },
+    "path.literal.017#01": {
+      "suite": {
+        "stage": "ok",
+        "items": [
+          "decimal:0.12345678901234567890123456789012345678901234567890"
+        ],
+        "hasLog": false,
+        "log": ""
+      },
+      "server": {
+        "stage": "ok",
+        "items": [
+          "decimal:0.12345678901234567890123456789012345678901234567890"
+        ],
+        "hasLog": false,
+        "log": ""
+      }
+    },
+    "path.literal.017#02": {
+      "suite": {
+        "stage": "ok",
+        "items": [
+          "string:0.12345678901234567890123456789012345678901234567890"
+        ],
+        "hasLog": false,
+        "log": ""
+      },
+      "server": {
+        "stage": "ok",
+        "items": [
+          "string:0.12345678901234567890123456789012345678901234567890"
+        ],
+        "hasLog": false,
+        "log": ""
+      }
+    },
+    "path.literal.017#03": {
+      "suite": {
+        "stage": "ok",
+        "items": [
+          "boolean:true"
+        ],
+        "hasLog": false,
+        "log": ""
+      },
+      "server": {
+        "stage": "ok",
+        "items": [
+          "boolean:true"
+        ],
+        "hasLog": false,
+        "log": ""
+      }
+    },
+    "path.literal.017#04": {
+      "suite": {
+        "stage": "ok",
+        "items": [
+          "decimal:1234567890123456789012345678901234567890"
+        ],
+        "hasLog": false,
+        "log": ""
+      },
+      "server": {
+        "stage": "ok",
+        "items": [
+          "decimal:1234567890123456789012345678901234567890"
+        ],
+        "hasLog": false,
+        "log": ""
+      }
+    },
+    "path.literal.017#05": {
+      "suite": {
+        "stage": "ok",
+        "items": [
+          "string:1234567890123456789012345678901234567890"
+        ],
+        "hasLog": false,
+        "log": ""
+      },
+      "server": {
+        "stage": "ok",
+        "items": [
+          "string:1234567890123456789012345678901234567890"
+        ],
+        "hasLog": false,
+        "log": ""
+      }
+    },
     "path.math.015#01": {
       "suite": {
         "stage": "ok",
@@ -10454,6 +10628,230 @@
         "stage": "eval",
         "error": "HAPI-0274: ",
         "exception": "java.lang.UnsupportedOperationException"
+      }
+    },
+    "path.quantity.025#01": {
+      "suite": {
+        "stage": "ok",
+        "items": [
+          "string:week"
+        ],
+        "hasLog": false,
+        "log": ""
+      },
+      "server": {
+        "stage": "ok",
+        "items": [
+          "string:week"
+        ],
+        "hasLog": false,
+        "log": ""
+      }
+    },
+    "path.quantity.025#02": {
+      "suite": {
+        "stage": "ok",
+        "items": [
+          "code:wk"
+        ],
+        "hasLog": false,
+        "log": ""
+      },
+      "server": {
+        "stage": "ok",
+        "items": [
+          "code:wk"
+        ],
+        "hasLog": false,
+        "log": ""
+      }
+    },
+    "path.quantity.025#03": {
+      "suite": {
+        "stage": "ok",
+        "items": [
+          "uri:http://unitsofmeasure.org"
+        ],
+        "hasLog": false,
+        "log": ""
+      },
+      "server": {
+        "stage": "ok",
+        "items": [
+          "uri:http://unitsofmeasure.org"
+        ],
+        "hasLog": false,
+        "log": ""
+      }
+    },
+    "path.quantity.025#04": {
+      "suite": {
+        "stage": "ok",
+        "items": [],
+        "hasLog": false,
+        "log": ""
+      },
+      "server": {
+        "stage": "ok",
+        "items": [],
+        "hasLog": false,
+        "log": ""
+      }
+    },
+    "path.quantity.025#05": {
+      "suite": {
+        "stage": "ok",
+        "items": [],
+        "hasLog": false,
+        "log": ""
+      },
+      "server": {
+        "stage": "ok",
+        "items": [],
+        "hasLog": false,
+        "log": ""
+      }
+    },
+    "path.quantity.025#06": {
+      "suite": {
+        "stage": "ok",
+        "items": [],
+        "hasLog": false,
+        "log": ""
+      },
+      "server": {
+        "stage": "eval",
+        "error": "HAPI-0274: ",
+        "exception": "java.lang.UnsupportedOperationException"
+      }
+    },
+    "path.quantity.025#07": {
+      "suite": {
+        "stage": "ok",
+        "items": [],
+        "hasLog": false,
+        "log": ""
+      },
+      "server": {
+        "stage": "eval",
+        "error": "HAPI-0274: ",
+        "exception": "java.lang.UnsupportedOperationException"
+      }
+    },
+    "path.quantity.025#08": {
+      "suite": {
+        "stage": "check",
+        "error": "Error evaluating FHIRPath expression: The name 'code' is not valid for any of the possible types: [http://hl7.org/fhirpath/System.Quantity] (@char 11)",
+        "exception": "org.hl7.fhir.exceptions.PathEngineException"
+      },
+      "server": {
+        "stage": "check",
+        "error": "Error evaluating FHIRPath expression: The name 'code' is not valid for any of the possible types: [http://hl7.org/fhirpath/System.Quantity] (@char 11)",
+        "exception": "org.hl7.fhir.exceptions.PathEngineException"
+      }
+    },
+    "path.quantity.025#09": {
+      "suite": {
+        "stage": "check",
+        "error": "Error evaluating FHIRPath expression: The name 'code' is not valid for any of the possible types: [] (@char 22)",
+        "exception": "org.hl7.fhir.exceptions.PathEngineException"
+      },
+      "server": {
+        "stage": "check",
+        "error": "Error evaluating FHIRPath expression: The name 'code' is not valid for any of the possible types: [] (@char 22)",
+        "exception": "org.hl7.fhir.exceptions.PathEngineException"
+      }
+    },
+    "path.quantity.025#10": {
+      "suite": {
+        "stage": "ok",
+        "items": [
+          "code:[lb_av]"
+        ],
+        "hasLog": false,
+        "log": ""
+      },
+      "server": {
+        "stage": "ok",
+        "items": [
+          "code:[lb_av]"
+        ],
+        "hasLog": false,
+        "log": ""
+      }
+    },
+    "path.quantity.026#01": {
+      "suite": {
+        "stage": "ok",
+        "items": [
+          "Quantity:1||http://unitsofmeasure.org|"
+        ],
+        "hasLog": false,
+        "log": ""
+      },
+      "server": {
+        "stage": "ok",
+        "items": [
+          "Quantity:1||http://unitsofmeasure.org|"
+        ],
+        "hasLog": false,
+        "log": ""
+      }
+    },
+    "path.quantity.026#02": {
+      "suite": {
+        "stage": "ok",
+        "items": [],
+        "hasLog": false,
+        "log": ""
+      },
+      "server": {
+        "stage": "ok",
+        "items": [],
+        "hasLog": false,
+        "log": ""
+      }
+    },
+    "path.quantity.026#03": {
+      "suite": {
+        "stage": "ok",
+        "items": [
+          "uri:http://unitsofmeasure.org"
+        ],
+        "hasLog": false,
+        "log": ""
+      },
+      "server": {
+        "stage": "ok",
+        "items": [
+          "uri:http://unitsofmeasure.org"
+        ],
+        "hasLog": false,
+        "log": ""
+      }
+    },
+    "path.quantity.026#04": {
+      "suite": {
+        "stage": "check",
+        "error": "Error evaluating FHIRPath expression: The name 'code' is not valid for any of the possible types: [http://hl7.org/fhirpath/System.Quantity] (@char 9)",
+        "exception": "org.hl7.fhir.exceptions.PathEngineException"
+      },
+      "server": {
+        "stage": "check",
+        "error": "Error evaluating FHIRPath expression: The name 'code' is not valid for any of the possible types: [http://hl7.org/fhirpath/System.Quantity] (@char 9)",
+        "exception": "org.hl7.fhir.exceptions.PathEngineException"
+      }
+    },
+    "path.quantity.026#05": {
+      "suite": {
+        "stage": "check",
+        "error": "Error evaluating FHIRPath expression: The name 'system' is not valid for any of the possible types: [http://hl7.org/fhirpath/System.Quantity] (@char 9)",
+        "exception": "org.hl7.fhir.exceptions.PathEngineException"
+      },
+      "server": {
+        "stage": "check",
+        "error": "Error evaluating FHIRPath expression: The name 'system' is not valid for any of the possible types: [http://hl7.org/fhirpath/System.Quantity] (@char 9)",
+        "exception": "org.hl7.fhir.exceptions.PathEngineException"
       }
     },
     "path.strictness.005#01": {

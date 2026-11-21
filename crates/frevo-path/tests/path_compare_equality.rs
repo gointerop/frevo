@@ -757,6 +757,36 @@ fn less_or_equal_with_a_unit_less_left_quantity_and_a_unit_bearing_right_fails()
     // error in Frevo (`path.errors.003`). No live case grades it.
     let patient = load_input("patient-example.xml");
     expect_evaluation_error_over("1 'kg' <= 1 year", Some(&patient));
+
+    // The message is exactly the JVM's helpful NullPointerException text,
+    // naming the local `lunit`, as observed on HAPI 8.12.0 under JDK 25 under
+    // both workers (`path.compare.014#01`); JDK 21's text has the same form.
+    // No offset (`path.errors.002`).
+    for inp in [None, Some(&patient)] {
+        let mut engine = fresh_engine();
+        let resource_type = inp.and_then(|i| i.resource_type());
+        let context = CaseContext {
+            root_resource_type: resource_type,
+            resource_type,
+            ..CaseContext::default()
+        };
+        let parsed = engine
+            .parse("1 'kg' <= 1 year")
+            .unwrap_or_else(|e| panic!("`1 'kg' <= 1 year` must parse: {e}"));
+        engine
+            .check(parsed, &context, StrictnessFlags::CHECK)
+            .unwrap_or_else(|e| panic!("`1 'kg' <= 1 year` must pass the static check: {e}"));
+        match engine.evaluate(parsed, inp, &context, StrictnessFlags::EVALUATE) {
+            Err(EngineError::Diagnostic { message, offset }) => {
+                assert_eq!(
+                    message, "Cannot invoke \"String.equals(Object)\" because \"lunit\" is null",
+                    "the NullPointerException's text, exactly"
+                );
+                assert_eq!(offset, None, "a NullPointerException carries no position");
+            }
+            other => panic!("`1 'kg' <= 1 year` must fail with an execution error, not {other:?}"),
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------

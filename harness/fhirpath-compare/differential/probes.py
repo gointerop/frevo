@@ -321,6 +321,20 @@ P(S, "(1 | 2).iif(true, 'a')")
 P(S, "1.is('x')")
 P(S, "1.is(FHIR.toString())")
 
+# ================================================================ path.literal
+S = "path.literal.016"
+# The unit of a quantity literal is decoded by FHIRLexer.processConstant, whose
+# escape arms (all but \u) append the escaped character a second time. A raw
+# string here is the FHIRPath text as written.
+for e in (r"1 'a\tb'", r"(1 'a\tb').code", r"1 'a\u0041b'", r"(1 'a\u0041b').code", r"1 'a\\b'"):
+    P(S, e)
+
+S = "path.literal.017"
+WIDE = "0.12345678901234567890123456789012345678901234567890"
+FORTY = "1234567890123456789012345678901234567890"
+for e in (WIDE, f"{WIDE}.toString()", f"{WIDE} = {WIDE}", FORTY, f"{FORTY}.toString()"):
+    P(S, e, note="more than 38 significant digits (DEBT-0011)")
+
 # ================================================================ path.math
 S = "path.math.015"
 for e in ("1 / 2", "1 / 8", "3 / 8", "1 / 64", "1 / 1024", "7 / 2", "19 / 20", "123456789 / 1000", "4 / 2",
@@ -373,8 +387,8 @@ for lex in ("1e", "1e-", "e3", "-e3"):
 for op in ("/", "div", "mod"):
     P(S, f"Parameters.parameter.where(name = 'd').value {op} 2", input=NOVALUE_NUMS)
 for op in ("div", "mod"):
-    P(S, f"Parameters.parameter.where(name = 'i').value {op} 2", input=NOVALUE_NUMS, grade="error",
-      note="Integer.parseInt(null): the JDK's message, not graded")
+    P(S, f"Parameters.parameter.where(name = 'i').value {op} 2", input=NOVALUE_NUMS,
+      note="Integer.parseInt(null): the text is graded (Cannot parse null string, JDK 21 and 25)")
 ARABIC = dec_input("arabic", "١٢")
 for op in ("/", "div", "mod"):
     P(S, f"Parameters.parameter.value {op} 1", input=ARABIC, documented="DEV-0030",
@@ -517,6 +531,25 @@ for e in ("1 '10000000000' = 1 'm'", "1 '10000000000' = 1 '10000000000'", "1 '10
           "1 'cm'.comparable(1 '[s]')", "1 'cm'.comparable(1 '[in_i]')", "1 'm(s' = 1 'm'", "1 'm(s' ~ 1 'm'",
           "1 'm(s'.comparable(1 'm')", "1 'm(s' / 1 'm'", "1 'm(s' < 1 'm'", "1 'm)' = 1 'm'"):
     P(S, e)
+
+S = "path.quantity.025"
+# Evaluation with the check skipped, as path.quantity.021#41-#46 and
+# path.quantity.023#25 already observe for the other elements.
+for e in ("(1 week).unit", "(1 week).code", "(1 week).system", "(1 year).code", "(1 year).system",
+          "(2 'cm' * 1 'm').unit", "(1 '%' * 1 '1').code"):
+    P(S, e, note="a quantity the engine builds: its elements")
+# With a context type (the input's resource type, Patient), so HAPI runs its
+# check: FHIRPATH_UNKNOWN_NAME is expected at (@char 11) and (@char 22).
+for e in ("(1 'cm').code", "(2 'cm' * 1 'm').code"):
+    P(S, e, input=PAT, check="run", note="the check rejects navigation on a System.Quantity or untyped result")
+P(S, "(Observation.value as Quantity).code", input=OBS, check="run",
+  note="a Quantity read from a resource passes the check")
+
+S = "path.quantity.026"
+for e in ("1 ''", "(1 '').code", "(1 '').system"):
+    P(S, e, note="an empty unit literal: Quantity.setCode(\"\") leaves no code")
+for e in ("(1 '').code", "(1 '').system"):
+    P(S, e, input=PAT, check="run", note="the check rejects navigation on a System.Quantity, (@char 9)")
 
 # ================================================================ path.strictness
 S = "path.strictness.005"
