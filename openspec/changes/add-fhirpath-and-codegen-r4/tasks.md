@@ -1606,13 +1606,20 @@ checkpoint because it changes what a gate measures.
   `every_table_expression_parses`, the one test tagged
   `codegen.searchparam.005`, passes (50 of 50 in that binary).
 
-- [ ] **58. Run the full gate set and close the loop.** `cargo fmt --all
+- [x] **58. Run the full gate set and close the loop.** `cargo fmt --all
   --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo
   nextest run --workspace`, `cargo deny check`, the FHIRPath suite against the
   HAPI rate, the round-trip oracle, and the `bench/micro/` budgets. Record
   every case Frevo fails that HAPI passes. Anything that genuinely cannot pass
   goes to `docs/known-gaps.md` with its exact case identifiers and stops for
   owner approval — it is not skipped, ignored or filtered out.
+  **Ticked 2026-11-21:** every gate is green in
+  `gates/add-fhirpath-and-codegen-r4/report.json` (head `c54959c`, committed
+  in `5493135`), and CI run `44962400658` passes all 8 checks. The
+  differential gate is graded by the owner-ruled **in-process probe**: HAPI
+  8.12.0's R4 `FHIRPathEngine` run in-process beside Frevo
+  (`harness/fhirpath-compare/differential-results.json`), **not** a live
+  HAPI server.
 
 - [ ] **59. [chore] Pin the full R4 example package as an oracle.** On a
   `chore/oracles-*` branch: add `hl7.fhir.r4.examples#4.0.1` to
