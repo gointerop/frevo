@@ -1,4 +1,23 @@
-CHANGES_REQUESTED
+APPROVED
+
+Fifty-eighth review (commit `8b51103`, 2026-11-21, diff against `66c9be2`).
+It resolves the fifty-seventh review's finding and its non-blocking note.
+- `tasks/blockers.md` now records the owed `design.md` text, following the
+  section 5 and 8 precedent. In section 1, it adds a
+  `crates/frevo-path/src/eval/r4_classes.tsv` row (`frevo-codegen class-table
+  --version r4`, from the R4 package and the exception file, `@generated`)
+  and narrows the `crates/frevo-path/**` row to exclude that file. In
+  section 9, it adds a layout line beside `crates/frevo-model/src/r4/`. The
+  cited lines `design.md:15` and `:681-683` are right.
+- `codegen.output.005`'s WHEN now names both generated outputs, and one
+  check covers both. `codegen.ancestry.001` now defers to it, so the table's
+  drift is graded under `.005`, as the note suggested.
+
+The codegen scenario count is still 54. `openspec validate --strict` passes,
+and the registers agree. There are no findings. The detail is in the dated
+section at the end. The earlier record follows.
+
+## Fifty-seventh-review findings as raised (commit `64530a2`)
 
 Fifty-seventh review (commit `64530a2`, 2026-11-21, diff against `d7ac6f9`).
 
@@ -5195,3 +5214,27 @@ generated outputs. It requires the marker and regeneration, not a location.
 (`frevo-model` sources and `codegen.ancestry.001`'s table)" would let one
 test tagged `codegen.output.005` grade both. As written, the table's drift
 failure is graded under `codegen.ancestry.001`.
+
+## Fifty-eighth review - commit `8b51103` (2026-11-21)
+
+Scope: `codegen.output.005` as widened, the matching `codegen.ancestry.001`
+bullet, and the new `tasks/blockers.md` owed-text entry.
+
+**Checked.**
+- **`codegen.output.005`.** The WHEN lists `frevo-model`'s generated sources
+  and `crates/frevo-path/src/eval/r4_classes.tsv`, and the THEN requires one
+  check that names the differing files. This is consistent with
+  `codegen.output.001` to `.003`: both outputs are `@generated` and carry
+  the required header, as checked in the fifty-seventh review.
+- **`codegen.ancestry.001`.** The bullet now says the `.005` check grades the
+  table, so it no longer states a separate extension. The two scenarios
+  agree.
+- **The owed `design.md` text** names the generator command, both inputs and
+  the marker, and fixes both contradicting places (`design.md:15`, and
+  section 9 at `:681-683`). `design.md` itself is unchanged, which is right
+  for a protected file.
+- No ID was added, and the codegen count is 54. `openspec validate --strict`
+  reports the change valid, and `check-registries.sh` reports "registers
+  agree".
+
+No findings and no notes.
