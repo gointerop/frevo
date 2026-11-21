@@ -2351,3 +2351,94 @@ fn the_check_rejects_member_navigation_on_an_empty_unit_literal() {
         unknown_name("system", SYSTEM_QUANTITY, 9)
     );
 }
+
+// ---------------------------------------------------------------------------
+// path.quantity.027 -- `children()` and `descendants()` of an engine-built quantity
+// ---------------------------------------------------------------------------
+
+/// Primitives `(type, value)` in order.
+fn items(list: &[(&str, &str)]) -> Vec<ResultItem> {
+    list.iter()
+        .map(|(t, v)| ResultItem::Primitive {
+            fhir_type: t.to_string(),
+            value: v.to_string(),
+        })
+        .collect()
+}
+
+// covers: path.quantity.027
+#[test]
+fn children_and_descendants_of_an_engine_built_quantity_list_its_set_elements() {
+    // `getChildrenByName(item, "*")` (FHIRPathEngine.java:4810-4836,
+    // :255-278) lists every value of every property `Quantity.listChildren`
+    // declares, in order -- `id`, `extension`, then `value`, `comparator`,
+    // `unit`, `system`, `code` (Quantity.java:631-643) -- an unset one
+    // contributing nothing. With the check skipped, under the suite's worker.
+    let cases: [(&str, Vec<ResultItem>); 5] = [
+        (
+            "1 'cm'",
+            items(&[("decimal", "1"), ("uri", UCUM_SYSTEM), ("code", "cm")]),
+        ),
+        ("1 year", items(&[("decimal", "1"), ("string", "year")])),
+        (
+            "1 week",
+            items(&[
+                ("decimal", "1"),
+                ("string", "week"),
+                ("uri", UCUM_SYSTEM),
+                ("code", "wk"),
+            ]),
+        ),
+        // No code (path.quantity.026).
+        ("1 ''", items(&[("decimal", "1"), ("uri", UCUM_SYSTEM)])),
+        // No `unit` (path.quantity.021).
+        (
+            "2 'cm' * 1 'm'",
+            items(&[("decimal", "0.02"), ("uri", UCUM_SYSTEM), ("code", "m2")]),
+        ),
+    ];
+    for (quantity, want) in &cases {
+        let children = format!("({quantity}).children()");
+        assert_eq!(&eval_unchecked(&children, None), want, "{children}");
+        // The children are primitives with no `id` or `extension`, so the
+        // next round of `descendants()` adds nothing (:4816-4825).
+        let descendants = format!("({quantity}).descendants()");
+        assert_eq!(&eval_unchecked(&descendants, None), want, "{descendants}");
+        let count = want.len().to_string();
+        for f in ["children", "descendants"] {
+            let expr = format!("({quantity}).{f}().count()");
+            assert_eq!(
+                eval_unchecked(&expr, None),
+                one("integer", &count),
+                "{expr}"
+            );
+        }
+    }
+}
+
+// covers: path.quantity.027
+#[test]
+fn the_check_accepts_children_of_an_engine_built_quantity_and_rejects_a_step_after_them() {
+    // With a context type the check types `children()` and `descendants()`
+    // with `childTypes(focus, "*")` and `"**"` (:3512-3515, :3902-3908),
+    // which for `System.Quantity` collects no type and raises nothing ...
+    let patient = load_input("patient-example.xml");
+    assert_eq!(
+        eval_over("(1 'cm').children().count()", Some(&patient)),
+        one("integer", "3")
+    );
+
+    // ... but the result is UNORDERED (:3902-3903), so `first()` fails the
+    // check (`checkOrdered`, :3407-3408, :3845-3847; path.navigation.022),
+    // and a named step after it has no types to resolve (:1591-1593). Both
+    // tokens are at column 22 (byte 20, one space counting 2).
+    assert_eq!(
+        expect_check_failure_over("(1 'cm').children().first()", &patient),
+        "Error evaluating FHIRPath expression: The function first can only be used on \
+         ordered collections (@char 22)"
+    );
+    assert_eq!(
+        expect_check_failure_over("(1 'cm').children().code", &patient),
+        unknown_name("code", "", 22)
+    );
+}

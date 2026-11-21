@@ -394,6 +394,20 @@ for op in ("/", "div", "mod"):
     P(S, f"Parameters.parameter.value {op} 1", input=ARABIC, documented="DEV-0030",
       note="Frevo reads ASCII digits only; HAPI raises StringIndexOutOfBoundsException")
 
+S = "path.math.018"
+QI = "Parameters.parameter.where(name = 'i').value"
+QD = "Parameters.parameter.where(name = 'd').value"
+for op in ("+", "-", "*"):
+    P(S, f"{QI} {op} 1", input=NOVALUE_NUMS, note="integer arm: Integer.parseInt(null)")
+    P(S, f"1 {op} {QI}", input=NOVALUE_NUMS, note="integer arm: Integer.parseInt(null)")
+    P(S, f"{QD} {op} 1", input=NOVALUE_NUMS, note="decimal arm: new BigDecimal(null)")
+P(S, f"{QI} + 1.5", input=NOVALUE_NUMS, note="decimal arm: new BigDecimal(null)")
+P(S, f"1.5 * {QD}", input=NOVALUE_NUMS, note="decimal arm: new BigDecimal(null)")
+# With the context type Parameters (the input's), so HAPI runs its check: it
+# passes, and evaluation fails with the same texts.
+for e in (f"{QI} + 1", f"{QD} + 1"):
+    P(S, e, input=NOVALUE_NUMS, check="run", note="the check cannot see the missing value")
+
 S = "path.mathfn.004"
 for e in ("12345.round(-2)", "1234.5.round(-3)", "10000000000.abs()", "0.0000001.abs()", "0.0001.abs()",
           "12345678.abs()"):
@@ -550,6 +564,16 @@ for e in ("1 ''", "(1 '').code", "(1 '').system"):
     P(S, e, note="an empty unit literal: Quantity.setCode(\"\") leaves no code")
 for e in ("(1 '').code", "(1 '').system"):
     P(S, e, input=PAT, check="run", note="the check rejects navigation on a System.Quantity, (@char 9)")
+
+S = "path.quantity.027"
+# No contextType: the check is skipped.
+for q in ("1 'cm'", "1 year", "1 week", "1 ''", "2 'cm' * 1 'm'"):
+    for f in ("children()", "descendants()", "children().count()", "descendants().count()"):
+        P(S, f"({q}).{f}", note="Quantity.listChildren order: value, comparator, unit, system, code")
+# With the context type Patient (the input's), so HAPI runs its check.
+P(S, "(1 'cm').children().count()", input=PAT, check="run", note="the check passes children() untyped")
+for e in ("(1 'cm').children().first()", "(1 'cm').children().code"):
+    P(S, e, input=PAT, check="run", note="rejected at (@char 22)")
 
 # ================================================================ path.strictness
 S = "path.strictness.005"

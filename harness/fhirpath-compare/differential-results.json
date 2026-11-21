@@ -8361,6 +8361,238 @@
       ],
       "verdict": "disagree-documented"
     },
+    "path.math.018": {
+      "agree": 0,
+      "disagree": 13,
+      "disagree_documented": 0,
+      "hapi_unreachable": 0,
+      "probes": [
+        {
+          "expr": "Parameters.parameter.where(name = 'i').value + 1",
+          "frevo": {
+            "error": "For input string: \"\"",
+            "stage": "eval"
+          },
+          "hapi": {
+            "error": "Cannot parse null string",
+            "exception": "java.lang.NumberFormatException",
+            "stage": "eval"
+          },
+          "id": "path.math.018#01",
+          "input": "local:parameters-novalue-numbers.xml",
+          "note": "integer arm: Integer.parseInt(null)",
+          "verdict": "disagree",
+          "worker": "suite"
+        },
+        {
+          "expr": "1 + Parameters.parameter.where(name = 'i').value",
+          "frevo": {
+            "error": "For input string: \"\"",
+            "stage": "eval"
+          },
+          "hapi": {
+            "error": "Cannot parse null string",
+            "exception": "java.lang.NumberFormatException",
+            "stage": "eval"
+          },
+          "id": "path.math.018#02",
+          "input": "local:parameters-novalue-numbers.xml",
+          "note": "integer arm: Integer.parseInt(null)",
+          "verdict": "disagree",
+          "worker": "suite"
+        },
+        {
+          "expr": "Parameters.parameter.where(name = 'd').value + 1",
+          "frevo": {
+            "error": "Character array is missing \"exponent\" mark 'e' or 'E': ",
+            "stage": "eval"
+          },
+          "hapi": {
+            "error": "Cannot invoke \"String.toCharArray()\" because \"val\" is null",
+            "exception": "java.lang.NullPointerException",
+            "stage": "eval"
+          },
+          "id": "path.math.018#03",
+          "input": "local:parameters-novalue-numbers.xml",
+          "note": "decimal arm: new BigDecimal(null)",
+          "verdict": "disagree",
+          "worker": "suite"
+        },
+        {
+          "expr": "Parameters.parameter.where(name = 'i').value - 1",
+          "frevo": {
+            "error": "For input string: \"\"",
+            "stage": "eval"
+          },
+          "hapi": {
+            "error": "Cannot parse null string",
+            "exception": "java.lang.NumberFormatException",
+            "stage": "eval"
+          },
+          "id": "path.math.018#04",
+          "input": "local:parameters-novalue-numbers.xml",
+          "note": "integer arm: Integer.parseInt(null)",
+          "verdict": "disagree",
+          "worker": "suite"
+        },
+        {
+          "expr": "1 - Parameters.parameter.where(name = 'i').value",
+          "frevo": {
+            "error": "For input string: \"\"",
+            "stage": "eval"
+          },
+          "hapi": {
+            "error": "Cannot parse null string",
+            "exception": "java.lang.NumberFormatException",
+            "stage": "eval"
+          },
+          "id": "path.math.018#05",
+          "input": "local:parameters-novalue-numbers.xml",
+          "note": "integer arm: Integer.parseInt(null)",
+          "verdict": "disagree",
+          "worker": "suite"
+        },
+        {
+          "expr": "Parameters.parameter.where(name = 'd').value - 1",
+          "frevo": {
+            "error": "Character array is missing \"exponent\" mark 'e' or 'E': ",
+            "stage": "eval"
+          },
+          "hapi": {
+            "error": "Cannot invoke \"String.toCharArray()\" because \"val\" is null",
+            "exception": "java.lang.NullPointerException",
+            "stage": "eval"
+          },
+          "id": "path.math.018#06",
+          "input": "local:parameters-novalue-numbers.xml",
+          "note": "decimal arm: new BigDecimal(null)",
+          "verdict": "disagree",
+          "worker": "suite"
+        },
+        {
+          "expr": "Parameters.parameter.where(name = 'i').value * 1",
+          "frevo": {
+            "error": "For input string: \"\"",
+            "stage": "eval"
+          },
+          "hapi": {
+            "error": "Cannot parse null string",
+            "exception": "java.lang.NumberFormatException",
+            "stage": "eval"
+          },
+          "id": "path.math.018#07",
+          "input": "local:parameters-novalue-numbers.xml",
+          "note": "integer arm: Integer.parseInt(null)",
+          "verdict": "disagree",
+          "worker": "suite"
+        },
+        {
+          "expr": "1 * Parameters.parameter.where(name = 'i').value",
+          "frevo": {
+            "error": "For input string: \"\"",
+            "stage": "eval"
+          },
+          "hapi": {
+            "error": "Cannot parse null string",
+            "exception": "java.lang.NumberFormatException",
+            "stage": "eval"
+          },
+          "id": "path.math.018#08",
+          "input": "local:parameters-novalue-numbers.xml",
+          "note": "integer arm: Integer.parseInt(null)",
+          "verdict": "disagree",
+          "worker": "suite"
+        },
+        {
+          "expr": "Parameters.parameter.where(name = 'd').value * 1",
+          "frevo": {
+            "error": "Character array is missing \"exponent\" mark 'e' or 'E': ",
+            "stage": "eval"
+          },
+          "hapi": {
+            "error": "Cannot invoke \"String.toCharArray()\" because \"val\" is null",
+            "exception": "java.lang.NullPointerException",
+            "stage": "eval"
+          },
+          "id": "path.math.018#09",
+          "input": "local:parameters-novalue-numbers.xml",
+          "note": "decimal arm: new BigDecimal(null)",
+          "verdict": "disagree",
+          "worker": "suite"
+        },
+        {
+          "expr": "Parameters.parameter.where(name = 'i').value + 1.5",
+          "frevo": {
+            "error": "Character array is missing \"exponent\" mark 'e' or 'E': ",
+            "stage": "eval"
+          },
+          "hapi": {
+            "error": "Cannot invoke \"String.toCharArray()\" because \"val\" is null",
+            "exception": "java.lang.NullPointerException",
+            "stage": "eval"
+          },
+          "id": "path.math.018#10",
+          "input": "local:parameters-novalue-numbers.xml",
+          "note": "decimal arm: new BigDecimal(null)",
+          "verdict": "disagree",
+          "worker": "suite"
+        },
+        {
+          "expr": "1.5 * Parameters.parameter.where(name = 'd').value",
+          "frevo": {
+            "error": "Character array is missing \"exponent\" mark 'e' or 'E': ",
+            "stage": "eval"
+          },
+          "hapi": {
+            "error": "Cannot invoke \"String.toCharArray()\" because \"val\" is null",
+            "exception": "java.lang.NullPointerException",
+            "stage": "eval"
+          },
+          "id": "path.math.018#11",
+          "input": "local:parameters-novalue-numbers.xml",
+          "note": "decimal arm: new BigDecimal(null)",
+          "verdict": "disagree",
+          "worker": "suite"
+        },
+        {
+          "check": "run",
+          "expr": "Parameters.parameter.where(name = 'i').value + 1",
+          "frevo": {
+            "error": "For input string: \"\"",
+            "stage": "eval"
+          },
+          "hapi": {
+            "error": "Cannot parse null string",
+            "exception": "java.lang.NumberFormatException",
+            "stage": "eval"
+          },
+          "id": "path.math.018#12",
+          "input": "local:parameters-novalue-numbers.xml",
+          "note": "the check cannot see the missing value",
+          "verdict": "disagree",
+          "worker": "suite"
+        },
+        {
+          "check": "run",
+          "expr": "Parameters.parameter.where(name = 'd').value + 1",
+          "frevo": {
+            "error": "Character array is missing \"exponent\" mark 'e' or 'E': ",
+            "stage": "eval"
+          },
+          "hapi": {
+            "error": "Cannot invoke \"String.toCharArray()\" because \"val\" is null",
+            "exception": "java.lang.NullPointerException",
+            "stage": "eval"
+          },
+          "id": "path.math.018#13",
+          "input": "local:parameters-novalue-numbers.xml",
+          "note": "the check cannot see the missing value",
+          "verdict": "disagree",
+          "worker": "suite"
+        }
+      ],
+      "verdict": "disagree"
+    },
     "path.mathfn.004": {
       "agree": 6,
       "disagree": 0,
@@ -16040,6 +16272,556 @@
       ],
       "verdict": "agree"
     },
+    "path.quantity.027": {
+      "agree": 2,
+      "disagree": 21,
+      "disagree_documented": 0,
+      "hapi_unreachable": 0,
+      "probes": [
+        {
+          "expr": "(1 'cm').children()",
+          "frevo": {
+            "hasLog": false,
+            "items": [],
+            "log": "",
+            "stage": "ok"
+          },
+          "hapi": {
+            "hasLog": false,
+            "items": [
+              "decimal:1",
+              "uri:http://unitsofmeasure.org",
+              "code:cm"
+            ],
+            "log": "",
+            "stage": "ok"
+          },
+          "id": "path.quantity.027#01",
+          "note": "Quantity.listChildren order: value, comparator, unit, system, code",
+          "verdict": "disagree",
+          "worker": "suite"
+        },
+        {
+          "expr": "(1 'cm').descendants()",
+          "frevo": {
+            "hasLog": false,
+            "items": [],
+            "log": "",
+            "stage": "ok"
+          },
+          "hapi": {
+            "hasLog": false,
+            "items": [
+              "decimal:1",
+              "uri:http://unitsofmeasure.org",
+              "code:cm"
+            ],
+            "log": "",
+            "stage": "ok"
+          },
+          "id": "path.quantity.027#02",
+          "note": "Quantity.listChildren order: value, comparator, unit, system, code",
+          "verdict": "disagree",
+          "worker": "suite"
+        },
+        {
+          "expr": "(1 'cm').children().count()",
+          "frevo": {
+            "hasLog": false,
+            "items": [
+              "integer:0"
+            ],
+            "log": "",
+            "stage": "ok"
+          },
+          "hapi": {
+            "hasLog": false,
+            "items": [
+              "integer:3"
+            ],
+            "log": "",
+            "stage": "ok"
+          },
+          "id": "path.quantity.027#03",
+          "note": "Quantity.listChildren order: value, comparator, unit, system, code",
+          "verdict": "disagree",
+          "worker": "suite"
+        },
+        {
+          "expr": "(1 'cm').descendants().count()",
+          "frevo": {
+            "hasLog": false,
+            "items": [
+              "integer:0"
+            ],
+            "log": "",
+            "stage": "ok"
+          },
+          "hapi": {
+            "hasLog": false,
+            "items": [
+              "integer:3"
+            ],
+            "log": "",
+            "stage": "ok"
+          },
+          "id": "path.quantity.027#04",
+          "note": "Quantity.listChildren order: value, comparator, unit, system, code",
+          "verdict": "disagree",
+          "worker": "suite"
+        },
+        {
+          "expr": "(1 year).children()",
+          "frevo": {
+            "hasLog": false,
+            "items": [],
+            "log": "",
+            "stage": "ok"
+          },
+          "hapi": {
+            "hasLog": false,
+            "items": [
+              "decimal:1",
+              "string:year"
+            ],
+            "log": "",
+            "stage": "ok"
+          },
+          "id": "path.quantity.027#05",
+          "note": "Quantity.listChildren order: value, comparator, unit, system, code",
+          "verdict": "disagree",
+          "worker": "suite"
+        },
+        {
+          "expr": "(1 year).descendants()",
+          "frevo": {
+            "hasLog": false,
+            "items": [],
+            "log": "",
+            "stage": "ok"
+          },
+          "hapi": {
+            "hasLog": false,
+            "items": [
+              "decimal:1",
+              "string:year"
+            ],
+            "log": "",
+            "stage": "ok"
+          },
+          "id": "path.quantity.027#06",
+          "note": "Quantity.listChildren order: value, comparator, unit, system, code",
+          "verdict": "disagree",
+          "worker": "suite"
+        },
+        {
+          "expr": "(1 year).children().count()",
+          "frevo": {
+            "hasLog": false,
+            "items": [
+              "integer:0"
+            ],
+            "log": "",
+            "stage": "ok"
+          },
+          "hapi": {
+            "hasLog": false,
+            "items": [
+              "integer:2"
+            ],
+            "log": "",
+            "stage": "ok"
+          },
+          "id": "path.quantity.027#07",
+          "note": "Quantity.listChildren order: value, comparator, unit, system, code",
+          "verdict": "disagree",
+          "worker": "suite"
+        },
+        {
+          "expr": "(1 year).descendants().count()",
+          "frevo": {
+            "hasLog": false,
+            "items": [
+              "integer:0"
+            ],
+            "log": "",
+            "stage": "ok"
+          },
+          "hapi": {
+            "hasLog": false,
+            "items": [
+              "integer:2"
+            ],
+            "log": "",
+            "stage": "ok"
+          },
+          "id": "path.quantity.027#08",
+          "note": "Quantity.listChildren order: value, comparator, unit, system, code",
+          "verdict": "disagree",
+          "worker": "suite"
+        },
+        {
+          "expr": "(1 week).children()",
+          "frevo": {
+            "hasLog": false,
+            "items": [],
+            "log": "",
+            "stage": "ok"
+          },
+          "hapi": {
+            "hasLog": false,
+            "items": [
+              "decimal:1",
+              "string:week",
+              "uri:http://unitsofmeasure.org",
+              "code:wk"
+            ],
+            "log": "",
+            "stage": "ok"
+          },
+          "id": "path.quantity.027#09",
+          "note": "Quantity.listChildren order: value, comparator, unit, system, code",
+          "verdict": "disagree",
+          "worker": "suite"
+        },
+        {
+          "expr": "(1 week).descendants()",
+          "frevo": {
+            "hasLog": false,
+            "items": [],
+            "log": "",
+            "stage": "ok"
+          },
+          "hapi": {
+            "hasLog": false,
+            "items": [
+              "decimal:1",
+              "string:week",
+              "uri:http://unitsofmeasure.org",
+              "code:wk"
+            ],
+            "log": "",
+            "stage": "ok"
+          },
+          "id": "path.quantity.027#10",
+          "note": "Quantity.listChildren order: value, comparator, unit, system, code",
+          "verdict": "disagree",
+          "worker": "suite"
+        },
+        {
+          "expr": "(1 week).children().count()",
+          "frevo": {
+            "hasLog": false,
+            "items": [
+              "integer:0"
+            ],
+            "log": "",
+            "stage": "ok"
+          },
+          "hapi": {
+            "hasLog": false,
+            "items": [
+              "integer:4"
+            ],
+            "log": "",
+            "stage": "ok"
+          },
+          "id": "path.quantity.027#11",
+          "note": "Quantity.listChildren order: value, comparator, unit, system, code",
+          "verdict": "disagree",
+          "worker": "suite"
+        },
+        {
+          "expr": "(1 week).descendants().count()",
+          "frevo": {
+            "hasLog": false,
+            "items": [
+              "integer:0"
+            ],
+            "log": "",
+            "stage": "ok"
+          },
+          "hapi": {
+            "hasLog": false,
+            "items": [
+              "integer:4"
+            ],
+            "log": "",
+            "stage": "ok"
+          },
+          "id": "path.quantity.027#12",
+          "note": "Quantity.listChildren order: value, comparator, unit, system, code",
+          "verdict": "disagree",
+          "worker": "suite"
+        },
+        {
+          "expr": "(1 '').children()",
+          "frevo": {
+            "hasLog": false,
+            "items": [],
+            "log": "",
+            "stage": "ok"
+          },
+          "hapi": {
+            "hasLog": false,
+            "items": [
+              "decimal:1",
+              "uri:http://unitsofmeasure.org"
+            ],
+            "log": "",
+            "stage": "ok"
+          },
+          "id": "path.quantity.027#13",
+          "note": "Quantity.listChildren order: value, comparator, unit, system, code",
+          "verdict": "disagree",
+          "worker": "suite"
+        },
+        {
+          "expr": "(1 '').descendants()",
+          "frevo": {
+            "hasLog": false,
+            "items": [],
+            "log": "",
+            "stage": "ok"
+          },
+          "hapi": {
+            "hasLog": false,
+            "items": [
+              "decimal:1",
+              "uri:http://unitsofmeasure.org"
+            ],
+            "log": "",
+            "stage": "ok"
+          },
+          "id": "path.quantity.027#14",
+          "note": "Quantity.listChildren order: value, comparator, unit, system, code",
+          "verdict": "disagree",
+          "worker": "suite"
+        },
+        {
+          "expr": "(1 '').children().count()",
+          "frevo": {
+            "hasLog": false,
+            "items": [
+              "integer:0"
+            ],
+            "log": "",
+            "stage": "ok"
+          },
+          "hapi": {
+            "hasLog": false,
+            "items": [
+              "integer:2"
+            ],
+            "log": "",
+            "stage": "ok"
+          },
+          "id": "path.quantity.027#15",
+          "note": "Quantity.listChildren order: value, comparator, unit, system, code",
+          "verdict": "disagree",
+          "worker": "suite"
+        },
+        {
+          "expr": "(1 '').descendants().count()",
+          "frevo": {
+            "hasLog": false,
+            "items": [
+              "integer:0"
+            ],
+            "log": "",
+            "stage": "ok"
+          },
+          "hapi": {
+            "hasLog": false,
+            "items": [
+              "integer:2"
+            ],
+            "log": "",
+            "stage": "ok"
+          },
+          "id": "path.quantity.027#16",
+          "note": "Quantity.listChildren order: value, comparator, unit, system, code",
+          "verdict": "disagree",
+          "worker": "suite"
+        },
+        {
+          "expr": "(2 'cm' * 1 'm').children()",
+          "frevo": {
+            "hasLog": false,
+            "items": [],
+            "log": "",
+            "stage": "ok"
+          },
+          "hapi": {
+            "hasLog": false,
+            "items": [
+              "decimal:0.02",
+              "uri:http://unitsofmeasure.org",
+              "code:m2"
+            ],
+            "log": "",
+            "stage": "ok"
+          },
+          "hapi_server_worker": {
+            "error": "HAPI-0274: ",
+            "exception": "java.lang.UnsupportedOperationException",
+            "stage": "eval"
+          },
+          "id": "path.quantity.027#17",
+          "note": "Quantity.listChildren order: value, comparator, unit, system, code",
+          "verdict": "disagree",
+          "worker": "suite"
+        },
+        {
+          "expr": "(2 'cm' * 1 'm').descendants()",
+          "frevo": {
+            "hasLog": false,
+            "items": [],
+            "log": "",
+            "stage": "ok"
+          },
+          "hapi": {
+            "hasLog": false,
+            "items": [
+              "decimal:0.02",
+              "uri:http://unitsofmeasure.org",
+              "code:m2"
+            ],
+            "log": "",
+            "stage": "ok"
+          },
+          "hapi_server_worker": {
+            "error": "HAPI-0274: ",
+            "exception": "java.lang.UnsupportedOperationException",
+            "stage": "eval"
+          },
+          "id": "path.quantity.027#18",
+          "note": "Quantity.listChildren order: value, comparator, unit, system, code",
+          "verdict": "disagree",
+          "worker": "suite"
+        },
+        {
+          "expr": "(2 'cm' * 1 'm').children().count()",
+          "frevo": {
+            "hasLog": false,
+            "items": [
+              "integer:0"
+            ],
+            "log": "",
+            "stage": "ok"
+          },
+          "hapi": {
+            "hasLog": false,
+            "items": [
+              "integer:3"
+            ],
+            "log": "",
+            "stage": "ok"
+          },
+          "hapi_server_worker": {
+            "error": "HAPI-0274: ",
+            "exception": "java.lang.UnsupportedOperationException",
+            "stage": "eval"
+          },
+          "id": "path.quantity.027#19",
+          "note": "Quantity.listChildren order: value, comparator, unit, system, code",
+          "verdict": "disagree",
+          "worker": "suite"
+        },
+        {
+          "expr": "(2 'cm' * 1 'm').descendants().count()",
+          "frevo": {
+            "hasLog": false,
+            "items": [
+              "integer:0"
+            ],
+            "log": "",
+            "stage": "ok"
+          },
+          "hapi": {
+            "hasLog": false,
+            "items": [
+              "integer:3"
+            ],
+            "log": "",
+            "stage": "ok"
+          },
+          "hapi_server_worker": {
+            "error": "HAPI-0274: ",
+            "exception": "java.lang.UnsupportedOperationException",
+            "stage": "eval"
+          },
+          "id": "path.quantity.027#20",
+          "note": "Quantity.listChildren order: value, comparator, unit, system, code",
+          "verdict": "disagree",
+          "worker": "suite"
+        },
+        {
+          "check": "run",
+          "expr": "(1 'cm').children().count()",
+          "frevo": {
+            "hasLog": false,
+            "items": [
+              "integer:0"
+            ],
+            "log": "",
+            "stage": "ok"
+          },
+          "hapi": {
+            "hasLog": false,
+            "items": [
+              "integer:3"
+            ],
+            "log": "",
+            "stage": "ok"
+          },
+          "id": "path.quantity.027#21",
+          "input": "suite:patient-example.xml",
+          "note": "the check passes children() untyped",
+          "verdict": "disagree",
+          "worker": "suite"
+        },
+        {
+          "check": "run",
+          "expr": "(1 'cm').children().first()",
+          "frevo": {
+            "error": "Error evaluating FHIRPath expression: The function first can only be used on ordered collections (@char 22)",
+            "offset": 20,
+            "stage": "check"
+          },
+          "hapi": {
+            "error": "Error evaluating FHIRPath expression: The function first can only be used on ordered collections (@char 22)",
+            "exception": "org.hl7.fhir.exceptions.PathEngineException",
+            "stage": "check"
+          },
+          "id": "path.quantity.027#22",
+          "input": "suite:patient-example.xml",
+          "note": "rejected at (@char 22)",
+          "verdict": "agree",
+          "worker": "suite"
+        },
+        {
+          "check": "run",
+          "expr": "(1 'cm').children().code",
+          "frevo": {
+            "error": "Error evaluating FHIRPath expression: The name 'code' is not valid for any of the possible types: [] (@char 22)",
+            "offset": 20,
+            "stage": "check"
+          },
+          "hapi": {
+            "error": "Error evaluating FHIRPath expression: The name 'code' is not valid for any of the possible types: [] (@char 22)",
+            "exception": "org.hl7.fhir.exceptions.PathEngineException",
+            "stage": "check"
+          },
+          "id": "path.quantity.027#23",
+          "input": "suite:patient-example.xml",
+          "note": "rejected at (@char 22)",
+          "verdict": "agree",
+          "worker": "suite"
+        }
+      ],
+      "verdict": "disagree"
+    },
     "path.strictness.005": {
       "agree": 10,
       "disagree": 0,
@@ -19258,12 +20040,14 @@
   },
   "totals": {
     "probes": {
-      "agree": 773,
+      "agree": 775,
+      "disagree": 34,
       "disagree-documented": 51,
       "hapi-unreachable": 8
     },
     "scenarios": {
       "agree": 55,
+      "disagree": 2,
       "disagree-documented": 5
     }
   }

@@ -1463,6 +1463,91 @@ fn an_operand_decimal_cannot_read_is_empty_or_fails_as_the_operators_catch_decid
 }
 
 // ---------------------------------------------------------------------------
+// path.math.018 -- `+`, `-` and `*` over an operand with no value
+// ---------------------------------------------------------------------------
+
+/// The differential's `parameters-novalue-numbers.xml`
+/// (`harness/fhirpath-compare/differential/inputs/`): `d`, a `valueDecimal`,
+/// and `i`, a `valueInteger`, each carrying only an extension.
+fn novalue_numbers() -> SuiteInput {
+    let ext = "<extension url=\"http://example.org/x\"><valueString value=\"y\"/></extension>";
+    let body = format!(
+        "<Parameters xmlns=\"http://hl7.org/fhir\">\
+         <parameter><name value=\"d\"/><valueDecimal>{ext}</valueDecimal></parameter>\
+         <parameter><name value=\"i\"/><valueInteger>{ext}</valueInteger></parameter>\
+         </Parameters>"
+    );
+    let document = Document::Xml(
+        oracle::xml::parse(&body)
+            .unwrap_or_else(|e| panic!("the hand-built Parameters is XML: {e}")),
+    );
+    SuiteInput {
+        file: "hand-built-parameters-novalue-numbers.xml".to_string(),
+        bytes: body.into_bytes(),
+        document,
+    }
+}
+
+/// `expr` over `inp` with the static check **skipped**, failing at
+/// evaluation; returns the message and the offset.
+fn expect_unchecked_evaluation_error_over(expr: &str, inp: &SuiteInput) -> (String, Option<usize>) {
+    let mut engine = fresh_engine();
+    let resource_type = inp.resource_type();
+    let context = CaseContext {
+        root_resource_type: resource_type,
+        resource_type,
+        ..CaseContext::default()
+    };
+    let parsed = engine
+        .parse(expr)
+        .unwrap_or_else(|e| panic!("{expr:?} must parse before it can fail at evaluation: {e}"));
+    match engine.evaluate(parsed, Some(inp), &context, StrictnessFlags::EVALUATE) {
+        Ok(items) => panic!("{expr:?} must fail at evaluation, but it returned {items:?}"),
+        Err(EngineError::Diagnostic { message, offset }) => (message, offset),
+        Err(e) => panic!("{expr:?} must fail with a diagnostic, not: {e}"),
+    }
+}
+
+// covers: path.math.018
+#[test]
+fn plus_minus_and_times_over_an_operand_with_no_value_fail_as_the_arms_parse_fails() {
+    // The integer arms call `Integer.parseInt` on the left `primitiveValue()`
+    // and then the right (`+` FHIRPathEngine.java:2699-2700, `*` :2789-2790,
+    // `-` :2961-2962): a NumberFormatException the engine does not catch,
+    // `Cannot parse null string` on JDK 21 and 25, as path.math.017 states.
+    const NFE_NULL: &str = "Cannot parse null string";
+    // The decimal arms build `new BigDecimal(primitiveValue())`, left first
+    // (`+` :2701-2702, `*` :2791-2792, `-` :2963-2964): the JVM's
+    // NullPointerException, uncaught.
+    const NPE_BIG_DECIMAL: &str = "Cannot invoke \"String.toCharArray()\" because \"val\" is null";
+
+    let inp = novalue_numbers();
+    let i = "Parameters.parameter.where(name = 'i').value";
+    let d = "Parameters.parameter.where(name = 'd').value";
+    let mut cases = Vec::new();
+    for op in ["+", "-", "*"] {
+        cases.push((format!("{i} {op} 1"), NFE_NULL));
+        cases.push((format!("1 {op} {i}"), NFE_NULL));
+        cases.push((format!("{d} {op} 1"), NPE_BIG_DECIMAL));
+    }
+    cases.push((format!("{i} + 1.5"), NPE_BIG_DECIMAL));
+    cases.push((format!("1.5 * {d}"), NPE_BIG_DECIMAL));
+
+    for (expr, want) in &cases {
+        // The check, run with the context type `Parameters`, types the operand
+        // from the model and cannot see the missing value, so it passes and
+        // the failure is at evaluation ...
+        let (message, offset) = expect_evaluation_error_over(expr, &inp);
+        assert_eq!(&message, want, "{expr} (checked): the message, exactly");
+        assert_eq!(offset, None, "{expr} (checked): no offset");
+        // ... and the same with the check skipped, as `FhirPathR4` evaluates.
+        let (message, offset) = expect_unchecked_evaluation_error_over(expr, &inp);
+        assert_eq!(&message, want, "{expr} (unchecked): the message, exactly");
+        assert_eq!(offset, None, "{expr} (unchecked): no offset");
+    }
+}
+
+// ---------------------------------------------------------------------------
 // path.mathfn.001 -- `abs`
 // ---------------------------------------------------------------------------
 

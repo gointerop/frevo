@@ -6249,6 +6249,162 @@
         "exception": "java.lang.StringIndexOutOfBoundsException"
       }
     },
+    "path.math.018#01": {
+      "suite": {
+        "stage": "eval",
+        "error": "Cannot parse null string",
+        "exception": "java.lang.NumberFormatException"
+      },
+      "server": {
+        "stage": "eval",
+        "error": "Cannot parse null string",
+        "exception": "java.lang.NumberFormatException"
+      }
+    },
+    "path.math.018#02": {
+      "suite": {
+        "stage": "eval",
+        "error": "Cannot parse null string",
+        "exception": "java.lang.NumberFormatException"
+      },
+      "server": {
+        "stage": "eval",
+        "error": "Cannot parse null string",
+        "exception": "java.lang.NumberFormatException"
+      }
+    },
+    "path.math.018#03": {
+      "suite": {
+        "stage": "eval",
+        "error": "Cannot invoke \"String.toCharArray()\" because \"val\" is null",
+        "exception": "java.lang.NullPointerException"
+      },
+      "server": {
+        "stage": "eval",
+        "error": "Cannot invoke \"String.toCharArray()\" because \"val\" is null",
+        "exception": "java.lang.NullPointerException"
+      }
+    },
+    "path.math.018#04": {
+      "suite": {
+        "stage": "eval",
+        "error": "Cannot parse null string",
+        "exception": "java.lang.NumberFormatException"
+      },
+      "server": {
+        "stage": "eval",
+        "error": "Cannot parse null string",
+        "exception": "java.lang.NumberFormatException"
+      }
+    },
+    "path.math.018#05": {
+      "suite": {
+        "stage": "eval",
+        "error": "Cannot parse null string",
+        "exception": "java.lang.NumberFormatException"
+      },
+      "server": {
+        "stage": "eval",
+        "error": "Cannot parse null string",
+        "exception": "java.lang.NumberFormatException"
+      }
+    },
+    "path.math.018#06": {
+      "suite": {
+        "stage": "eval",
+        "error": "Cannot invoke \"String.toCharArray()\" because \"val\" is null",
+        "exception": "java.lang.NullPointerException"
+      },
+      "server": {
+        "stage": "eval",
+        "error": "Cannot invoke \"String.toCharArray()\" because \"val\" is null",
+        "exception": "java.lang.NullPointerException"
+      }
+    },
+    "path.math.018#07": {
+      "suite": {
+        "stage": "eval",
+        "error": "Cannot parse null string",
+        "exception": "java.lang.NumberFormatException"
+      },
+      "server": {
+        "stage": "eval",
+        "error": "Cannot parse null string",
+        "exception": "java.lang.NumberFormatException"
+      }
+    },
+    "path.math.018#08": {
+      "suite": {
+        "stage": "eval",
+        "error": "Cannot parse null string",
+        "exception": "java.lang.NumberFormatException"
+      },
+      "server": {
+        "stage": "eval",
+        "error": "Cannot parse null string",
+        "exception": "java.lang.NumberFormatException"
+      }
+    },
+    "path.math.018#09": {
+      "suite": {
+        "stage": "eval",
+        "error": "Cannot invoke \"String.toCharArray()\" because \"val\" is null",
+        "exception": "java.lang.NullPointerException"
+      },
+      "server": {
+        "stage": "eval",
+        "error": "Cannot invoke \"String.toCharArray()\" because \"val\" is null",
+        "exception": "java.lang.NullPointerException"
+      }
+    },
+    "path.math.018#10": {
+      "suite": {
+        "stage": "eval",
+        "error": "Cannot invoke \"String.toCharArray()\" because \"val\" is null",
+        "exception": "java.lang.NullPointerException"
+      },
+      "server": {
+        "stage": "eval",
+        "error": "Cannot invoke \"String.toCharArray()\" because \"val\" is null",
+        "exception": "java.lang.NullPointerException"
+      }
+    },
+    "path.math.018#11": {
+      "suite": {
+        "stage": "eval",
+        "error": "Cannot invoke \"String.toCharArray()\" because \"val\" is null",
+        "exception": "java.lang.NullPointerException"
+      },
+      "server": {
+        "stage": "eval",
+        "error": "Cannot invoke \"String.toCharArray()\" because \"val\" is null",
+        "exception": "java.lang.NullPointerException"
+      }
+    },
+    "path.math.018#12": {
+      "suite": {
+        "stage": "eval",
+        "error": "Cannot parse null string",
+        "exception": "java.lang.NumberFormatException"
+      },
+      "server": {
+        "stage": "eval",
+        "error": "Cannot parse null string",
+        "exception": "java.lang.NumberFormatException"
+      }
+    },
+    "path.math.018#13": {
+      "suite": {
+        "stage": "eval",
+        "error": "Cannot invoke \"String.toCharArray()\" because \"val\" is null",
+        "exception": "java.lang.NullPointerException"
+      },
+      "server": {
+        "stage": "eval",
+        "error": "Cannot invoke \"String.toCharArray()\" because \"val\" is null",
+        "exception": "java.lang.NullPointerException"
+      }
+    },
     "path.mathfn.004#01": {
       "suite": {
         "stage": "ok",
@@ -10851,6 +11007,428 @@
       "server": {
         "stage": "check",
         "error": "Error evaluating FHIRPath expression: The name 'system' is not valid for any of the possible types: [http://hl7.org/fhirpath/System.Quantity] (@char 9)",
+        "exception": "org.hl7.fhir.exceptions.PathEngineException"
+      }
+    },
+    "path.quantity.027#01": {
+      "suite": {
+        "stage": "ok",
+        "items": [
+          "decimal:1",
+          "uri:http://unitsofmeasure.org",
+          "code:cm"
+        ],
+        "hasLog": false,
+        "log": ""
+      },
+      "server": {
+        "stage": "ok",
+        "items": [
+          "decimal:1",
+          "uri:http://unitsofmeasure.org",
+          "code:cm"
+        ],
+        "hasLog": false,
+        "log": ""
+      }
+    },
+    "path.quantity.027#02": {
+      "suite": {
+        "stage": "ok",
+        "items": [
+          "decimal:1",
+          "uri:http://unitsofmeasure.org",
+          "code:cm"
+        ],
+        "hasLog": false,
+        "log": ""
+      },
+      "server": {
+        "stage": "ok",
+        "items": [
+          "decimal:1",
+          "uri:http://unitsofmeasure.org",
+          "code:cm"
+        ],
+        "hasLog": false,
+        "log": ""
+      }
+    },
+    "path.quantity.027#03": {
+      "suite": {
+        "stage": "ok",
+        "items": [
+          "integer:3"
+        ],
+        "hasLog": false,
+        "log": ""
+      },
+      "server": {
+        "stage": "ok",
+        "items": [
+          "integer:3"
+        ],
+        "hasLog": false,
+        "log": ""
+      }
+    },
+    "path.quantity.027#04": {
+      "suite": {
+        "stage": "ok",
+        "items": [
+          "integer:3"
+        ],
+        "hasLog": false,
+        "log": ""
+      },
+      "server": {
+        "stage": "ok",
+        "items": [
+          "integer:3"
+        ],
+        "hasLog": false,
+        "log": ""
+      }
+    },
+    "path.quantity.027#05": {
+      "suite": {
+        "stage": "ok",
+        "items": [
+          "decimal:1",
+          "string:year"
+        ],
+        "hasLog": false,
+        "log": ""
+      },
+      "server": {
+        "stage": "ok",
+        "items": [
+          "decimal:1",
+          "string:year"
+        ],
+        "hasLog": false,
+        "log": ""
+      }
+    },
+    "path.quantity.027#06": {
+      "suite": {
+        "stage": "ok",
+        "items": [
+          "decimal:1",
+          "string:year"
+        ],
+        "hasLog": false,
+        "log": ""
+      },
+      "server": {
+        "stage": "ok",
+        "items": [
+          "decimal:1",
+          "string:year"
+        ],
+        "hasLog": false,
+        "log": ""
+      }
+    },
+    "path.quantity.027#07": {
+      "suite": {
+        "stage": "ok",
+        "items": [
+          "integer:2"
+        ],
+        "hasLog": false,
+        "log": ""
+      },
+      "server": {
+        "stage": "ok",
+        "items": [
+          "integer:2"
+        ],
+        "hasLog": false,
+        "log": ""
+      }
+    },
+    "path.quantity.027#08": {
+      "suite": {
+        "stage": "ok",
+        "items": [
+          "integer:2"
+        ],
+        "hasLog": false,
+        "log": ""
+      },
+      "server": {
+        "stage": "ok",
+        "items": [
+          "integer:2"
+        ],
+        "hasLog": false,
+        "log": ""
+      }
+    },
+    "path.quantity.027#09": {
+      "suite": {
+        "stage": "ok",
+        "items": [
+          "decimal:1",
+          "string:week",
+          "uri:http://unitsofmeasure.org",
+          "code:wk"
+        ],
+        "hasLog": false,
+        "log": ""
+      },
+      "server": {
+        "stage": "ok",
+        "items": [
+          "decimal:1",
+          "string:week",
+          "uri:http://unitsofmeasure.org",
+          "code:wk"
+        ],
+        "hasLog": false,
+        "log": ""
+      }
+    },
+    "path.quantity.027#10": {
+      "suite": {
+        "stage": "ok",
+        "items": [
+          "decimal:1",
+          "string:week",
+          "uri:http://unitsofmeasure.org",
+          "code:wk"
+        ],
+        "hasLog": false,
+        "log": ""
+      },
+      "server": {
+        "stage": "ok",
+        "items": [
+          "decimal:1",
+          "string:week",
+          "uri:http://unitsofmeasure.org",
+          "code:wk"
+        ],
+        "hasLog": false,
+        "log": ""
+      }
+    },
+    "path.quantity.027#11": {
+      "suite": {
+        "stage": "ok",
+        "items": [
+          "integer:4"
+        ],
+        "hasLog": false,
+        "log": ""
+      },
+      "server": {
+        "stage": "ok",
+        "items": [
+          "integer:4"
+        ],
+        "hasLog": false,
+        "log": ""
+      }
+    },
+    "path.quantity.027#12": {
+      "suite": {
+        "stage": "ok",
+        "items": [
+          "integer:4"
+        ],
+        "hasLog": false,
+        "log": ""
+      },
+      "server": {
+        "stage": "ok",
+        "items": [
+          "integer:4"
+        ],
+        "hasLog": false,
+        "log": ""
+      }
+    },
+    "path.quantity.027#13": {
+      "suite": {
+        "stage": "ok",
+        "items": [
+          "decimal:1",
+          "uri:http://unitsofmeasure.org"
+        ],
+        "hasLog": false,
+        "log": ""
+      },
+      "server": {
+        "stage": "ok",
+        "items": [
+          "decimal:1",
+          "uri:http://unitsofmeasure.org"
+        ],
+        "hasLog": false,
+        "log": ""
+      }
+    },
+    "path.quantity.027#14": {
+      "suite": {
+        "stage": "ok",
+        "items": [
+          "decimal:1",
+          "uri:http://unitsofmeasure.org"
+        ],
+        "hasLog": false,
+        "log": ""
+      },
+      "server": {
+        "stage": "ok",
+        "items": [
+          "decimal:1",
+          "uri:http://unitsofmeasure.org"
+        ],
+        "hasLog": false,
+        "log": ""
+      }
+    },
+    "path.quantity.027#15": {
+      "suite": {
+        "stage": "ok",
+        "items": [
+          "integer:2"
+        ],
+        "hasLog": false,
+        "log": ""
+      },
+      "server": {
+        "stage": "ok",
+        "items": [
+          "integer:2"
+        ],
+        "hasLog": false,
+        "log": ""
+      }
+    },
+    "path.quantity.027#16": {
+      "suite": {
+        "stage": "ok",
+        "items": [
+          "integer:2"
+        ],
+        "hasLog": false,
+        "log": ""
+      },
+      "server": {
+        "stage": "ok",
+        "items": [
+          "integer:2"
+        ],
+        "hasLog": false,
+        "log": ""
+      }
+    },
+    "path.quantity.027#17": {
+      "suite": {
+        "stage": "ok",
+        "items": [
+          "decimal:0.02",
+          "uri:http://unitsofmeasure.org",
+          "code:m2"
+        ],
+        "hasLog": false,
+        "log": ""
+      },
+      "server": {
+        "stage": "eval",
+        "error": "HAPI-0274: ",
+        "exception": "java.lang.UnsupportedOperationException"
+      }
+    },
+    "path.quantity.027#18": {
+      "suite": {
+        "stage": "ok",
+        "items": [
+          "decimal:0.02",
+          "uri:http://unitsofmeasure.org",
+          "code:m2"
+        ],
+        "hasLog": false,
+        "log": ""
+      },
+      "server": {
+        "stage": "eval",
+        "error": "HAPI-0274: ",
+        "exception": "java.lang.UnsupportedOperationException"
+      }
+    },
+    "path.quantity.027#19": {
+      "suite": {
+        "stage": "ok",
+        "items": [
+          "integer:3"
+        ],
+        "hasLog": false,
+        "log": ""
+      },
+      "server": {
+        "stage": "eval",
+        "error": "HAPI-0274: ",
+        "exception": "java.lang.UnsupportedOperationException"
+      }
+    },
+    "path.quantity.027#20": {
+      "suite": {
+        "stage": "ok",
+        "items": [
+          "integer:3"
+        ],
+        "hasLog": false,
+        "log": ""
+      },
+      "server": {
+        "stage": "eval",
+        "error": "HAPI-0274: ",
+        "exception": "java.lang.UnsupportedOperationException"
+      }
+    },
+    "path.quantity.027#21": {
+      "suite": {
+        "stage": "ok",
+        "items": [
+          "integer:3"
+        ],
+        "hasLog": false,
+        "log": ""
+      },
+      "server": {
+        "stage": "ok",
+        "items": [
+          "integer:3"
+        ],
+        "hasLog": false,
+        "log": ""
+      }
+    },
+    "path.quantity.027#22": {
+      "suite": {
+        "stage": "check",
+        "error": "Error evaluating FHIRPath expression: The function first can only be used on ordered collections (@char 22)",
+        "exception": "org.hl7.fhir.exceptions.PathEngineException"
+      },
+      "server": {
+        "stage": "check",
+        "error": "Error evaluating FHIRPath expression: The function first can only be used on ordered collections (@char 22)",
+        "exception": "org.hl7.fhir.exceptions.PathEngineException"
+      }
+    },
+    "path.quantity.027#23": {
+      "suite": {
+        "stage": "check",
+        "error": "Error evaluating FHIRPath expression: The name 'code' is not valid for any of the possible types: [] (@char 22)",
+        "exception": "org.hl7.fhir.exceptions.PathEngineException"
+      },
+      "server": {
+        "stage": "check",
+        "error": "Error evaluating FHIRPath expression: The name 'code' is not valid for any of the possible types: [] (@char 22)",
         "exception": "org.hl7.fhir.exceptions.PathEngineException"
       }
     },

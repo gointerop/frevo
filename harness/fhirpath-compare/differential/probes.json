@@ -2255,6 +2255,99 @@
   "note": "Frevo reads ASCII digits only; HAPI raises StringIndexOutOfBoundsException"
  },
  {
+  "id": "path.math.018#01",
+  "scenario": "path.math.018",
+  "expr": "Parameters.parameter.where(name = 'i').value + 1",
+  "input": "local:parameters-novalue-numbers.xml",
+  "note": "integer arm: Integer.parseInt(null)"
+ },
+ {
+  "id": "path.math.018#02",
+  "scenario": "path.math.018",
+  "expr": "1 + Parameters.parameter.where(name = 'i').value",
+  "input": "local:parameters-novalue-numbers.xml",
+  "note": "integer arm: Integer.parseInt(null)"
+ },
+ {
+  "id": "path.math.018#03",
+  "scenario": "path.math.018",
+  "expr": "Parameters.parameter.where(name = 'd').value + 1",
+  "input": "local:parameters-novalue-numbers.xml",
+  "note": "decimal arm: new BigDecimal(null)"
+ },
+ {
+  "id": "path.math.018#04",
+  "scenario": "path.math.018",
+  "expr": "Parameters.parameter.where(name = 'i').value - 1",
+  "input": "local:parameters-novalue-numbers.xml",
+  "note": "integer arm: Integer.parseInt(null)"
+ },
+ {
+  "id": "path.math.018#05",
+  "scenario": "path.math.018",
+  "expr": "1 - Parameters.parameter.where(name = 'i').value",
+  "input": "local:parameters-novalue-numbers.xml",
+  "note": "integer arm: Integer.parseInt(null)"
+ },
+ {
+  "id": "path.math.018#06",
+  "scenario": "path.math.018",
+  "expr": "Parameters.parameter.where(name = 'd').value - 1",
+  "input": "local:parameters-novalue-numbers.xml",
+  "note": "decimal arm: new BigDecimal(null)"
+ },
+ {
+  "id": "path.math.018#07",
+  "scenario": "path.math.018",
+  "expr": "Parameters.parameter.where(name = 'i').value * 1",
+  "input": "local:parameters-novalue-numbers.xml",
+  "note": "integer arm: Integer.parseInt(null)"
+ },
+ {
+  "id": "path.math.018#08",
+  "scenario": "path.math.018",
+  "expr": "1 * Parameters.parameter.where(name = 'i').value",
+  "input": "local:parameters-novalue-numbers.xml",
+  "note": "integer arm: Integer.parseInt(null)"
+ },
+ {
+  "id": "path.math.018#09",
+  "scenario": "path.math.018",
+  "expr": "Parameters.parameter.where(name = 'd').value * 1",
+  "input": "local:parameters-novalue-numbers.xml",
+  "note": "decimal arm: new BigDecimal(null)"
+ },
+ {
+  "id": "path.math.018#10",
+  "scenario": "path.math.018",
+  "expr": "Parameters.parameter.where(name = 'i').value + 1.5",
+  "input": "local:parameters-novalue-numbers.xml",
+  "note": "decimal arm: new BigDecimal(null)"
+ },
+ {
+  "id": "path.math.018#11",
+  "scenario": "path.math.018",
+  "expr": "1.5 * Parameters.parameter.where(name = 'd').value",
+  "input": "local:parameters-novalue-numbers.xml",
+  "note": "decimal arm: new BigDecimal(null)"
+ },
+ {
+  "id": "path.math.018#12",
+  "scenario": "path.math.018",
+  "expr": "Parameters.parameter.where(name = 'i').value + 1",
+  "input": "local:parameters-novalue-numbers.xml",
+  "check": "run",
+  "note": "the check cannot see the missing value"
+ },
+ {
+  "id": "path.math.018#13",
+  "scenario": "path.math.018",
+  "expr": "Parameters.parameter.where(name = 'd').value + 1",
+  "input": "local:parameters-novalue-numbers.xml",
+  "check": "run",
+  "note": "the check cannot see the missing value"
+ },
+ {
   "id": "path.mathfn.004#01",
   "scenario": "path.mathfn.004",
   "expr": "12345.round(-2)"
@@ -3958,6 +4051,150 @@
   "input": "suite:patient-example.xml",
   "check": "run",
   "note": "the check rejects navigation on a System.Quantity, (@char 9)"
+ },
+ {
+  "id": "path.quantity.027#01",
+  "scenario": "path.quantity.027",
+  "expr": "(1 'cm').children()",
+  "note": "Quantity.listChildren order: value, comparator, unit, system, code"
+ },
+ {
+  "id": "path.quantity.027#02",
+  "scenario": "path.quantity.027",
+  "expr": "(1 'cm').descendants()",
+  "note": "Quantity.listChildren order: value, comparator, unit, system, code"
+ },
+ {
+  "id": "path.quantity.027#03",
+  "scenario": "path.quantity.027",
+  "expr": "(1 'cm').children().count()",
+  "note": "Quantity.listChildren order: value, comparator, unit, system, code"
+ },
+ {
+  "id": "path.quantity.027#04",
+  "scenario": "path.quantity.027",
+  "expr": "(1 'cm').descendants().count()",
+  "note": "Quantity.listChildren order: value, comparator, unit, system, code"
+ },
+ {
+  "id": "path.quantity.027#05",
+  "scenario": "path.quantity.027",
+  "expr": "(1 year).children()",
+  "note": "Quantity.listChildren order: value, comparator, unit, system, code"
+ },
+ {
+  "id": "path.quantity.027#06",
+  "scenario": "path.quantity.027",
+  "expr": "(1 year).descendants()",
+  "note": "Quantity.listChildren order: value, comparator, unit, system, code"
+ },
+ {
+  "id": "path.quantity.027#07",
+  "scenario": "path.quantity.027",
+  "expr": "(1 year).children().count()",
+  "note": "Quantity.listChildren order: value, comparator, unit, system, code"
+ },
+ {
+  "id": "path.quantity.027#08",
+  "scenario": "path.quantity.027",
+  "expr": "(1 year).descendants().count()",
+  "note": "Quantity.listChildren order: value, comparator, unit, system, code"
+ },
+ {
+  "id": "path.quantity.027#09",
+  "scenario": "path.quantity.027",
+  "expr": "(1 week).children()",
+  "note": "Quantity.listChildren order: value, comparator, unit, system, code"
+ },
+ {
+  "id": "path.quantity.027#10",
+  "scenario": "path.quantity.027",
+  "expr": "(1 week).descendants()",
+  "note": "Quantity.listChildren order: value, comparator, unit, system, code"
+ },
+ {
+  "id": "path.quantity.027#11",
+  "scenario": "path.quantity.027",
+  "expr": "(1 week).children().count()",
+  "note": "Quantity.listChildren order: value, comparator, unit, system, code"
+ },
+ {
+  "id": "path.quantity.027#12",
+  "scenario": "path.quantity.027",
+  "expr": "(1 week).descendants().count()",
+  "note": "Quantity.listChildren order: value, comparator, unit, system, code"
+ },
+ {
+  "id": "path.quantity.027#13",
+  "scenario": "path.quantity.027",
+  "expr": "(1 '').children()",
+  "note": "Quantity.listChildren order: value, comparator, unit, system, code"
+ },
+ {
+  "id": "path.quantity.027#14",
+  "scenario": "path.quantity.027",
+  "expr": "(1 '').descendants()",
+  "note": "Quantity.listChildren order: value, comparator, unit, system, code"
+ },
+ {
+  "id": "path.quantity.027#15",
+  "scenario": "path.quantity.027",
+  "expr": "(1 '').children().count()",
+  "note": "Quantity.listChildren order: value, comparator, unit, system, code"
+ },
+ {
+  "id": "path.quantity.027#16",
+  "scenario": "path.quantity.027",
+  "expr": "(1 '').descendants().count()",
+  "note": "Quantity.listChildren order: value, comparator, unit, system, code"
+ },
+ {
+  "id": "path.quantity.027#17",
+  "scenario": "path.quantity.027",
+  "expr": "(2 'cm' * 1 'm').children()",
+  "note": "Quantity.listChildren order: value, comparator, unit, system, code"
+ },
+ {
+  "id": "path.quantity.027#18",
+  "scenario": "path.quantity.027",
+  "expr": "(2 'cm' * 1 'm').descendants()",
+  "note": "Quantity.listChildren order: value, comparator, unit, system, code"
+ },
+ {
+  "id": "path.quantity.027#19",
+  "scenario": "path.quantity.027",
+  "expr": "(2 'cm' * 1 'm').children().count()",
+  "note": "Quantity.listChildren order: value, comparator, unit, system, code"
+ },
+ {
+  "id": "path.quantity.027#20",
+  "scenario": "path.quantity.027",
+  "expr": "(2 'cm' * 1 'm').descendants().count()",
+  "note": "Quantity.listChildren order: value, comparator, unit, system, code"
+ },
+ {
+  "id": "path.quantity.027#21",
+  "scenario": "path.quantity.027",
+  "expr": "(1 'cm').children().count()",
+  "input": "suite:patient-example.xml",
+  "check": "run",
+  "note": "the check passes children() untyped"
+ },
+ {
+  "id": "path.quantity.027#22",
+  "scenario": "path.quantity.027",
+  "expr": "(1 'cm').children().first()",
+  "input": "suite:patient-example.xml",
+  "check": "run",
+  "note": "rejected at (@char 22)"
+ },
+ {
+  "id": "path.quantity.027#23",
+  "scenario": "path.quantity.027",
+  "expr": "(1 'cm').children().code",
+  "input": "suite:patient-example.xml",
+  "check": "run",
+  "note": "rejected at (@char 22)"
  },
  {
   "id": "path.strictness.005#01",
