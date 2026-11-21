@@ -619,12 +619,13 @@ fn every_unimplemented_function_is_unsupported_and_never_empty() {
         let feature = unsupported(text, Some(&p));
         assert!(feature.contains("function"), "{text}: {feature}");
     }
-    // `comparable()` is built except for two different UCUM codes, which
-    // needs the UCUM unit algebra (task 43, blocked); that branch is still
-    // Unsupported, never `false` or empty.
-    let text = "1 'mg'.comparable(1 'g')";
-    let feature = unsupported(text, Some(&p));
-    assert!(feature.contains("comparable()"), "{text}: {feature}");
+    // `comparable()` is built in full now (tasks 43, 44): two different UCUM
+    // codes answer through `isComparable` (path.quantity.014).
+    assert_eq!(
+        ok("1 'cm'.comparable(1 '[in_i]')", Some(&p)),
+        ["boolean:true"]
+    );
+    assert_eq!(ok("1 'cm'.comparable(1 's')", Some(&p)), ["boolean:false"]);
 }
 
 #[test]
@@ -638,24 +639,32 @@ fn every_binary_operator_is_unsupported_and_never_empty() {
     let text = "Patient.gender memberOf 'http://x'";
     let feature = unsupported(text, Some(&p));
     assert!(feature.contains("value sets"), "{text}: {feature}");
-    // `/` over numbers is built (task 37, path.math.015: `1 / 3` is `0.3`);
-    // `/` and `*` over two quantities need the UCUM unit algebra (task 43).
+    // Quantity `/`, `*`, `<` and `~` are built (tasks 43, 44). What is still
+    // Unsupported is decimal arithmetic whose result needs more than the 38
+    // significant digits this port carries (`arith.rs`, DEBT-0011): never a
+    // truncated or empty answer.
     for text in [
-        "1 'mg' / 2 'g'",
-        "1 'mg' * 2 'g'",
-        "1 'mg' < 2 'g'",
-        "1 'mg' ~ 1 'mg'",
+        "1.0000000000000000000001 * 1.0000000000000000000001",
+        "99999999999999999999999999999999999999 + 1.5",
     ] {
-        unsupported(text, Some(&p));
+        let feature = unsupported(text, Some(&p));
+        assert!(
+            feature.contains("38 significant digits"),
+            "{text}: {feature}"
+        );
     }
 }
 
 #[test]
 fn a_unary_sign_over_an_unbuilt_operation_is_unsupported() {
-    // A sign over an operation that is still Unsupported (quantity `/` and
-    // `*`, task 43) surfaces it rather than negating an empty result.
-    unsupported("-(1 'mg' / 2 'g')", None);
-    unsupported("-(1 'mg' * 2 'g')", None);
+    // A sign over an operation that is still Unsupported (a decimal result
+    // wider than 38 significant digits, DEBT-0011) surfaces it rather than
+    // negating an empty result.
+    unsupported(
+        "-(1.0000000000000000000001 * 1.0000000000000000000001)",
+        None,
+    );
+    unsupported("-(99999999999999999999999999999999999999 + 1.5)", None);
 }
 
 #[test]
@@ -822,12 +831,16 @@ fn in_and_contains_disagree_about_an_empty_right_operand() {
 }
 
 #[test]
-fn equality_reaches_the_decimal_rule_and_leaves_quantities_unsupported() {
+fn equality_reaches_the_decimal_rule_and_the_canonical_quantity_rule() {
     assert_eq!(ok("1 = 1.0", None), ["boolean:true"]);
     assert_eq!(ok("1 != 2", None), ["boolean:true"]);
     assert!(ok("{} = 1", None).is_empty());
     assert_eq!(ok("1 = 'a'", None), ["boolean:false"]);
     assert_eq!(ok("@2015 = @2015", None), ["boolean:true"]);
-    assert!(unsupported("1 'mg' = 1 'g'", None).contains("quantit"));
-    assert!(unsupported("1 'mg' = 1 'mg'", None).contains("quantit"));
+    // Quantities compare their canonical forms (path.quantity.022, .019):
+    // different canonical units are `false`, not empty.
+    assert_eq!(ok("1 'mg' = 1 'mg'", None), ["boolean:true"]);
+    assert_eq!(ok("4 'g' = 4000 'mg'", None), ["boolean:true"]);
+    assert_eq!(ok("4 'g' = 4040 'mg'", None), ["boolean:false"]);
+    assert_eq!(ok("1 'cm' = 1 's'", None), ["boolean:false"]);
 }

@@ -1471,9 +1471,17 @@ fn a_quantity_whose_system_is_not_ucum_is_not_canonicalised() {
         expect_execution_error_over(&format!("{} ~ {}", p(0), p(2)), Some(&other)),
         NPE_QTY_EQUIVALENT
     );
+    // `comparable()`'s argument is evaluated against the focus, not the
+    // resource (FHIRPathEngine.java:4613), so the other quantity is reached
+    // through `%resource`; a `Parameters.` path there would be a type test
+    // against the focus item and yield nothing (`:4614-4616` then answers
+    // `false` whatever the codes).
     for (i, j, want) in [(0, 1, true), (0, 2, false), (0, 3, false)] {
         assert_eq!(
-            eval_over(&format!("{}.comparable({})", p(i), p(j)), Some(&other)),
+            eval_over(
+                &format!("{}.comparable(%resource.parameter[{j}].value)", p(i)),
+                Some(&other)
+            ),
             boolean(want),
             "parameter[{i}].comparable(parameter[{j}])"
         );
@@ -1508,7 +1516,9 @@ fn frevo_answers_as_the_suite_worker_where_hapis_server_worker_raises_hapi_0274(
     // A quantity with no system, or no code, is not comparable (:4622-4627).
     assert_eq!(
         eval_over(
-            "Parameters.parameter[2].value.comparable(Parameters.parameter[3].value)",
+            // The argument is evaluated against the focus (:4613), so the
+            // other quantity is reached through `%resource`.
+            "Parameters.parameter[2].value.comparable(%resource.parameter[3].value)",
             Some(&quantities)
         ),
         boolean(false),
