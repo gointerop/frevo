@@ -573,4 +573,4 @@ prerequisite of archiving. The corrections:
 
 The parity denominator therefore changes from 209: three rows go, and the
 bound keys of section 6 come in. The new count is for the owner to confirm
-(Open Question 11 in proposal.md).
+(task 6, a `chore/*` prerequisite of archiving; owner ruling of 2026-11-22).

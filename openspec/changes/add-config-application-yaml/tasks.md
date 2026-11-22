@@ -12,10 +12,8 @@ work in `crates/frevo-config/**`. No task after 3 starts before its scenarios
 have failing tests, and no file under `crates/` is edited before `review.md`
 reads `APPROVED`.
 
-**Open questions.** Tasks whose behaviour depends on an open question in
-[`proposal.md`](proposal.md) say so; they are implemented to the recommended
-option only after the owner answers, and the spec delta is rewritten in place
-if the answer differs.
+**Decisions.** Every question of the first draft was decided on 2026-11-22
+(proposal.md, "Decisions"); no task waits on one.
 
 ---
 
@@ -41,9 +39,10 @@ if the answer differs.
   `requestVerb` case; generate `all-keys.yaml`, `all-keys.env` and
   `all-keys-kebab.yaml` from `keys.md` (config.key.005-.007) with a
   non-default value for every bound key and every generic map-entry field;
-  add cases for Open Questions 8 and 14 (lower-case environment names on
-  Linux; an environment variable named `--spring.config.location`) whose
-  recorded HAPI result decides the question. Record
+  add the cases whose recorded HAPI result settles a clause: lower-case and
+  mixed-case environment names on Linux (config.env.004), an environment
+  variable named `--spring.config.location` (config.env.014), and the
+  `JAVA_TOOL_OPTIONS`/`JDK_JAVA_OPTIONS` precedence (config.source.023). Record
   `hapi-8.12.0-results.json` with the image digest. Implement the comparison
   of config.oracle.003 and .004, and the coverage check of config.oracle.005.
   Any recorded HAPI result that contradicts a THEN clause in the spec delta
@@ -60,21 +59,25 @@ if the answer differs.
 
 ## Phase B — prerequisites outside this branch
 
-- [ ] **4. [chore] ADR 0007.** Owner decision on
-  [`adr-0007-yaml-event-parser.md`](adr-0007-yaml-event-parser.md) (Open
-  Question 13); on approval move it to `docs/adr/0007-yaml-event-parser.md`,
-  add the crate to `[workspace.dependencies]`, remove `serde_yaml_ng`, and
-  confirm `cargo deny check` passes. Blocks task 7.
-- [ ] **5. [chore] Pin the Spring sources** in `reference/PINS.md` and
-  `reference/clone.sh` if the owner accepts Open Question 5. Does not block
-  implementation; the oracle is the standard either way.
+- [ ] **4. [chore] ADR 0007.** Accepted by the owner on 2026-11-22 (option
+  A). The owner moves
+  [`adr-0007-yaml-event-parser.md`](adr-0007-yaml-event-parser.md) to
+  `docs/adr/0007-yaml-event-parser.md`; add `yaml-rust2` to
+  `[workspace.dependencies]`, remove `serde_yaml_ng`, and confirm
+  `cargo deny check` passes. Blocks task 7.
+- [ ] **5. [chore] Pin the Spring sources** — `spring-projects/spring-boot`
+  `v3.5.14`, `spring-projects/spring-framework` `v6.2.18`, SnakeYAML
+  `snakeyaml-2.4` — in `reference/PINS.md` and `reference/clone.sh`, on a
+  `chore/*` branch (ruling of 2026-11-22). A prerequisite recorded here, not
+  work of this change; does not block implementation, since the oracle is the
+  standard either way.
 - [ ] **6. [chore] Correct the inventory.** Fix
   `harness/scripts/gen-inventory.py` to read bean properties (getters and
   setters) instead of fields, to see `TerminologyServerClientSettings` and
   `PackageInstallationSpec`, and to stop reading YAML comments and splitting
   list values; regenerate `docs/inventory.md` and `docs/inventory-totals.json`;
-  the result must match `keys.md` sections 5 to 7 (Open Question 11). Blocks
-  archiving, not implementation.
+  the result must match `keys.md` sections 5 to 7 (ruling of 2026-11-22: a
+  `chore/*` branch before archive). Blocks archiving, not implementation.
 
 ## Phase C — implementation
 
@@ -93,24 +96,28 @@ if the answer differs.
 - [ ] **10. Property sources and name mappers.** Command-line arguments
   (repeats joined, bare `--name`), `SPRING_APPLICATION_JSON`, the environment
   with both mappers on a case-sensitive environment, the uniform-form name
-  model, kebab-first lookup within a source, and the ambiguity failure of
-  config.relaxed.007 (Open Question 10). Satisfies config.env.001-.013,
-  config.args.001-.007, config.relaxed.001-.003, .005-.008.
+  model, kebab-first lookup within a source, the ambiguity failure of
+  config.relaxed.007 (`DEV-0032`), and the `-D` tokens of `JAVA_TOOL_OPTIONS`
+  and `JDK_JAVA_OPTIONS` as the system-properties source. Satisfies
+  config.env.001-.014, config.args.001-.007, config.relaxed.001-.003,
+  .005-.008, config.source.023, .024.
 - [ ] **11. Config data locations and imports.** Default locations and
   wildcard subdirectories, `location`, `additional-location`, `import` (from
   sources and from documents, relative resolution), `name`, `optional:`,
-  extension precedence, `classpath:` as the embedded files (Open Question 2),
-  the not-found and unsupported-location failures (Open Question 7).
-  Satisfies config.source.001-.022.
+  extension precedence, `classpath:` as the embedded files only, the
+  not-found and unsupported-location failures including `configtree:` and
+  `.xml` (`DEV-0031`). Satisfies config.source.001-.022.
 - [ ] **12. Profiles.** `active`, `include`, `group`, `default`; profile files
   and `on-profile` documents with `!`, `&`, `|` expressions; ordering; the
-  invalid-in-profile-resource failure. Satisfies config.profile.001-.013.
+  invalid-in-profile-resource failure; `on-cloud-platform` never matching
+  (`DEV-0031`). Satisfies config.profile.001-.014.
 - [ ] **13. Placeholders.** Lenient and strict resolution, defaults, nesting,
   escaping, circular detection, `random.*`. Satisfies
   config.placeholder.001-.011.
 - [ ] **14. Conversion.** Boolean, Integer, Long, String, enum (exact,
   lenient, boolean-to-`ON`/`OFF`, ordinal), comma lists, sets, empty handling,
-  and every failure text the spec quotes (Open Question 9). Satisfies
+  and every failure text the spec quotes, verbatim with Java type names.
+  Satisfies
   config.coerce.001-.027.
 - [ ] **15. Descriptor tables for `AppProperties`.** Every property, nested
   class and quirk of design.md section 5.1, with a provenance header naming
@@ -140,9 +147,10 @@ if the answer differs.
   START` block, origins, exit status `1`, nothing started before
   configuration succeeds. Satisfies config.error.001-.006.
 - [ ] **20. `frevo-config effective`.** The binary, the document of
-  config.dump.001-.006, redaction (Open Question 1).
-- [ ] **21. Warnings for keys this build does not act on.** The list derived
-  from `keys.md` and the merged changes (Open Question 4). Satisfies
+  config.dump.001-.006, redaction of the e-mail password.
+- [ ] **21. Silent acceptance of keys this build does not act on.** A test
+  over every `bound` key of `keys.md` set to a non-default value asserts that
+  startup writes nothing about it, as HAPI writes nothing. Satisfies
   config.unknown.007.
 - [ ] **22. Benchmarks.** Add `config-load-packaged` and `config-get` to
   `bench/micro/workloads.yaml` with the fixture
@@ -151,10 +159,11 @@ if the answer differs.
 
 ## Phase D — records
 
-- [ ] **23. Registers.** With the owner's answers: the `DEV` entries of
-  proposal "Registers this change will touch" in `docs/deviations.md`, the
-  five `DEBT` entries of Open Question 3 in `docs/tech-debt.md`; run
-  `harness/scripts/check-registries.sh`.
+- [ ] **23. Registers.** The coordinator appends
+  [`register-entries.md`](register-entries.md) — `DEV-0031`, `DEV-0032` to
+  `docs/deviations.md` and `DEBT-0022` to `DEBT-0026` to `docs/tech-debt.md`;
+  every test of a scenario that cites one also carries the entry's ID in a
+  comment; `harness/scripts/check-registries.sh` passes.
 - [ ] **24. Provenance and notices.** A `docs/provenance.md` row per ported
   starter, hapi-fhir and clinical-reasoning file and for the three packaged
   YAML files; confirm `NOTICE` already carries the starter's Apache-2.0

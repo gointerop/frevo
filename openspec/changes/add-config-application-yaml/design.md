@@ -12,8 +12,9 @@ by what; record the PostgreSQL schema changes.
   marked `@generated`; if a later change wants them generated from the Java
   sources, that is a generator decision for then, not a reason to hand-edit
   generated output now.
-- **New dependency:** one YAML event parser, ADR 0007 (draft in this
-  directory), section 4.
+- **New dependency:** one YAML event parser, `yaml-rust2`, ADR 0007 (accepted
+  by the owner on 2026-11-22; the file stays in this directory until the owner
+  moves it to `docs/adr/`), section 4.
 
 ## 1. The model in one paragraph
 
@@ -57,7 +58,7 @@ Two limits, both handed to the oracle (section 7):
 
 1. **It ran on Windows.** Environment-variable names are case-insensitive
    there; config.env.004's Linux clause is reasoned from Spring's mappers and
-   must be confirmed on Linux (Open Question 8).
+   is confirmed by the oracle on Linux (owner ruling: Linux semantics).
 2. **The jars are from a cache, not from the image.** The oracle's HAPI side
    uses the jars inside `hapiproject/hapi:v8.12.0-2@sha256:0ff86aac…`
    (`/app/main.war!/WEB-INF/lib/`), and asserts their versions.
@@ -70,7 +71,7 @@ Two limits, both handed to the oracle (section 7):
 |---|---|---|---|
 | 1 | command-line `--name=value` (config.args) | as written | `"<name>" from property source "commandLineArgs"` |
 | 2 | `SPRING_APPLICATION_JSON`, flattened like YAML | flattened JSON path | `System Environment Property "SPRING_APPLICATION_JSON"` |
-| 3 | Java system properties — Open Question 6 | as written | `System Property "<name>"` |
+| 3 | Java system properties: the `-D` tokens of `JAVA_TOOL_OPTIONS`, then `JDK_JAVA_OPTIONS` (later wins), whitespace-separated, other tokens ignored (config.source.023, .024) | as written | as the oracle records it |
 | 4 | OS environment (config.env) | as set | `System Environment Property "<NAME>"` |
 | 5 | `random.*` (only for placeholders) | `random.int`, … | — |
 | 6.. | configuration documents, in config-data order (3.2) | flattened key | `URL [file:<path>] - L:C` / `class path resource [<name>] - L:C` |
@@ -101,7 +102,10 @@ profiles over earlier (config.profile.004), and a profile *file* over an
 `on-profile` *document* of a base file (config.profile.005).
 
 `classpath:` resolves to the three packaged files embedded in the binary
-(`include_bytes!`), and to nothing else (Open Question 2).
+(`include_bytes!`), and to nothing else (`DEV-0031`). `configtree:` and
+`.xml` locations fail to start with a message naming the location and the
+supported kinds, and `spring.config.activate.on-cloud-platform` never matches
+(`DEV-0031`).
 
 ### 3.3 Document readers
 
@@ -135,7 +139,7 @@ letters-and-digits are equal (`ConfigurationPropertyName` "uniform" form).
 
 Within one source, the canonical kebab-case name is looked up first, so it
 wins over other spellings (config.relaxed.006); two other spellings of one
-property in one source fail to start (Open Question 10).
+property in one source fail to start, naming both (`DEV-0032`).
 
 ### 3.5 Placeholders
 
@@ -175,8 +179,9 @@ ADR 0007's options: (A) `yaml-rust2` event parser — pure Rust, MIT/Apache-2.0,
 positions and styles on every event; (B) `saphyr-parser`, the same lineage,
 younger; (C) a hand-written YAML parser — no dependency, but YAML's block and
 flow grammar is the largest single piece of this change; (D) `serde_yaml_ng`
-— ruled out above. Recommended: A. Not a runtime service, but a crate in the
-product binary, so it needs the owner's approval (constitution section 5).
+— ruled out above. **Decided: A**, accepted by the owner on 2026-11-22
+(constitution section 5); the unused `serde_yaml_ng` workspace entry is
+removed.
 
 ## 5. Binding
 
@@ -235,7 +240,8 @@ removed, optional sign, `0x`/`#` hex; YAML numbers narrowed with overflow
 checks and truncation. Enums: exact name, then letters-and-digits
 case-insensitive match; YAML booleans map to constants `ON`/`OFF`; YAML
 integers by ordinal. `String` from any YAML scalar via 4's rendering. All
-failure texts as the spec quotes them (Open Question 9).
+failure texts as the spec quotes them, verbatim, Java type names included:
+a table from (target type, failure kind) to Spring's text.
 
 ## 6. Named reads and gates
 
@@ -305,7 +311,8 @@ Derived getters that are not bean properties (`getRetrieveSettings`,
 wrapper) are not reported; the last is flattened into its four modes. The
 password redaction of config.dump.005 is applied on both sides of the oracle.
 
-`frevo-config effective` is a binary target of `frevo-config` (Open Question 1).
+`frevo-config effective` is a binary target of `frevo-config` (owner
+decision of 2026-11-22).
 Arguments after `effective` are the configuration's command-line arguments.
 
 ## 9. Performance budget
@@ -327,6 +334,7 @@ is met trivially and there is no before/after number for any HTTP workload.
 
 A typed, immutable `Config` with one accessor per descriptor property, the
 reads, the gates, and a generic `bind::<T>(prefix)` over the same sources for
-the consumer's own `spring.*`/`server.*` classes (Open Question 12). The
+the consumer's own `spring.*`/`server.*` classes (ruled 2026-11-22: typed
+binding of those keys belongs to the consuming change). The
 accessors are the only API consumers use; nothing outside `frevo-config` sees
 a source, a name mapper or a YAML event.

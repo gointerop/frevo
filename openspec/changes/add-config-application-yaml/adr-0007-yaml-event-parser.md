@@ -1,10 +1,10 @@
 # 7. The YAML parser for frevo-config
 
-- **Status:** proposed, awaiting the owner's decision. Drafted inside the
-  change directory because the proposer writes nothing outside it; on
-  approval it moves to `docs/adr/0007-yaml-event-parser.md` unchanged except
-  for this status line. Constitution section 5 requires an ADR and the
-  owner's approval for any new runtime dependency.
+- **Status:** accepted by owner 2026-11-22 (option A), relayed by the
+  coordinator. Constitution section 5 requires an ADR and the owner's
+  approval for any new runtime dependency; both now exist. The file stays a
+  draft file inside the change directory, because the proposer writes nothing
+  outside it, until the owner moves it to `docs/adr/0007-yaml-event-parser.md`.
 - **Date:** 2026-11-22
 - **Context phase:** Phase 1, `add-config-application-yaml` task 7
 
@@ -78,7 +78,7 @@ throughout) and resolves scalars by YAML 1.2 rules during deserialisation,
 before Frevo can see the text. Every row of the table above but the last would
 be wrong, and the original text cannot be recovered. Ruled out.
 
-## Decision (proposed)
+## Decision (accepted by owner 2026-11-22)
 
 **Option A.** Add `yaml-rust2` (event parser only; no use of its `Yaml` value
 type, whose resolution is YAML 1.2) to `frevo-config`, and remove the unused

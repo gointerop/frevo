@@ -7,8 +7,8 @@ promotes into `openspec/specs/config/spec.md`:
 
 | Capability | Delta file | Scenarios |
 |---|---|---:|
-| `config` | [`specs/config/spec.md`](specs/config/spec.md) | 200 |
-| **Total** | | **200** |
+| `config` | [`specs/config/spec.md`](specs/config/spec.md) | 204 |
+| **Total** | | **204** |
 
 [`keys.md`](keys.md) is normative for the four scenarios that reference its
 tables (`config.key.001`, `.003`, `.004`, `.011`) and is otherwise the key
@@ -33,11 +33,11 @@ contiguous.
 | Area | What it covers | IDs | Count |
 |---|---|---|---:|
 | `config.dump` | the effective-configuration document and `frevo-config effective` | `001`-`006` | 6 |
-| `config.source` | packaged files, locations, imports, `optional:`, precedence across source kinds | `001`-`022` | 22 |
+| `config.source` | packaged files, locations, imports, `optional:`, precedence across source kinds, JVM option variables | `001`-`024` | 24 |
 | `config.yaml` | YAML structure, YAML 1.1 scalar resolution, flattening, YAML errors | `001`-`016` | 16 |
 | `config.properties` | `.properties` syntax | `001`-`007` | 7 |
-| `config.profile` | profiles, profile files and documents, the packaged `cds` and `elastic` profiles | `001`-`013` | 13 |
-| `config.env` | environment-variable name mapping | `001`-`013` | 13 |
+| `config.profile` | profiles, profile files and documents, the packaged `cds` and `elastic` profiles, `on-cloud-platform` | `001`-`014` | 14 |
+| `config.env` | environment-variable name mapping | `001`-`014` | 14 |
 | `config.args` | command-line arguments, `SPRING_APPLICATION_JSON` | `001`-`007` | 7 |
 | `config.placeholder` | `${...}` resolution, lenient and strict, `random.*` | `001`-`011` | 11 |
 | `config.relaxed` | relaxed property-name matching | `001`-`008` | 8 |
@@ -51,22 +51,31 @@ contiguous.
 | `config.key` | every key's defaults and round-trips; the inventory | `001`-`011` | 11 |
 | `config.oracle` | the `config-roundtrip` harness | `001`-`005` | 5 |
 | `config.perf` | load and access budgets | `001`-`003` | 3 |
-| **Total** | | | **200** |
+| **Total** | | | **204** |
 
-## Scenarios that depend on an open question
+## Revision after the owner's rulings of 2026-11-22
 
-They state the recommended option of [`proposal.md`](proposal.md) and say
-"pending Open Question N". If the owner chooses otherwise, the scenario is
-rewritten in place under the same ID.
+Every open question of the first draft was decided (proposal.md,
+"Decisions"). **4 IDs were added** at the end of their areas:
+`config.source.023` and `.024` (Java system properties from the `-D` tokens of
+`JAVA_TOOL_OPTIONS` and `JDK_JAVA_OPTIONS`), `config.profile.014`
+(`on-cloud-platform` never activates) and `config.env.014` (an environment
+variable named `--spring.config.location`). **1 scenario was rewritten in
+place**: `config.unknown.007` now states that a key this build does not act
+on yet is accepted silently, as in HAPI, instead of warned about. The other
+scenarios that said "pending" keep their behaviour and now cite their register
+entry or ruling. None was removed, renumbered, reused or repurposed.
 
-| Open question | Scenarios |
+## Scenarios that carry a register entry
+
+| Entry | Scenarios |
 |---|---|
-| 1 — the observable surface | `config.dump.001`-`.006` |
-| 2 — `classpath:` | `config.source.017` |
-| 3 — reproducing hazards | `config.read.005`, `config.gate.003`, `config.placeholder.009` |
-| 4 — not-yet-wired keys | `config.unknown.007` |
-| 6 — Java system properties | `config.source.019` (the gap in the order) |
-| 7 — `configtree:`, `.xml` | `config.source.020` |
-| 8 — environment case on Linux | `config.env.004` |
-| 9 — report text | `config.error.002` and every quoted `Reason:` |
-| 10 — two non-kebab spellings | `config.relaxed.007` |
+| `DEV-0031` — unsupported location kinds, `on-cloud-platform` | `config.source.017`, `config.source.020`, `config.profile.014` |
+| `DEV-0032` — two non-kebab spellings in one source | `config.relaxed.007` |
+| `DEBT-0022` — named reads split from binding | `config.read.005`, `config.read.002`, `config.gate.006`, `config.gate.007` |
+| `DEBT-0023` — empty `fhir_version` selects DSTU2 | `config.gate.003` |
+| `DEBT-0024` — environment variables expand into the request-log templates | `config.placeholder.009` |
+| `DEBT-0025` — `cr.cql.compiler.error_level` accepted and ignored | `config.relaxed.004` |
+| `DEBT-0026` — `cr.cql.runtime.enable_validation` cannot be enabled | `config.unknown.005` |
+
+The entries' text is in [`register-entries.md`](register-entries.md).

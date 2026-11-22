@@ -259,8 +259,8 @@ treating the starter's packaged files as the `classpath:` location.
   `hapi.fhir.cr.enabled` = `true`
 - **AND** with `--spring.config.location=classpath:/another.application.yaml`
   Frevo fails to start with the `does not exist` report of config.source.008
-  (pending Open Question 2: HAPI resolves any resource on the war's class path,
-  including `/app/extra-classes/` in the distroless image)
+  (`DEV-0031`: HAPI resolves any resource on the war's class path, including
+  `/app/extra-classes/` in the distroless image)
 
 #### Scenario: [config.source.018] file: URLs with an authority-less absolute path are accepted
 
@@ -282,16 +282,15 @@ treating the starter's packaged files as the `classpath:` location.
   `max-page-size` = `3`, `expunge-thread-count` = `2` and
   `reindex-thread-count` = `4`
 - **AND** so the order, highest first, is command-line arguments,
-  `SPRING_APPLICATION_JSON`, environment variables, configuration files, class
-  defaults (Java system properties: Open Question 6)
+  `SPRING_APPLICATION_JSON`, Java system properties (config.source.023),
+  environment variables, configuration files, class defaults
 
 #### Scenario: [config.source.020] unsupported location kinds fail loudly
 
 - **WHEN** `spring.config.import` names `configtree:./tree/` or a location with
   an `.xml` extension
 - **THEN** Frevo fails to start with a report naming the location and stating
-  that the location kind is not supported (pending Open Question 7: HAPI loads
-  both)
+  that the location kind is not supported (`DEV-0031`: HAPI loads both)
 - **AND** a location no loader recognises (for example `configserver:`, or a
   file name with an extension other than `.properties`, `.xml`, `.yml` and
   `.yaml`) fails to start in both, with `Unable to load config data from
@@ -310,6 +309,29 @@ treating the starter's packaged files as the `classpath:` location.
   present and `HAPI_FHIR_DEFAULT_PAGE_SIZE` set
 - **THEN** the document's `profiles.active` is `[]` and its `profiles.default`
   is `["default"]`
+
+#### Scenario: [config.source.023] -D tokens in JAVA_TOOL_OPTIONS and JDK_JAVA_OPTIONS are system properties
+
+- **WHEN** `JAVA_TOOL_OPTIONS=-Xmx3g -Dhapi.fhir.default_page_size=6
+  -XX:+UseG1GC`, `HAPI_FHIR_DEFAULT_PAGE_SIZE=2` and `./application.yaml`
+  sets `default_page_size: 1`
+- **THEN** `hapi.fhir.default-page-size` = `6`, because the JVM turns the
+  `-D` token into a Java system property, which ranks above environment
+  variables and below `SPRING_APPLICATION_JSON`
+- **AND** the same holds for a `-D` token in `JDK_JAVA_OPTIONS`; when both
+  variables define the same name, `JDK_JAVA_OPTIONS` wins (the launcher applies
+  it after the VM has read `JAVA_TOOL_OPTIONS`), and within one variable the
+  last definition wins; the oracle's recorded HAPI run decides each clause
+- **AND** system-property names bind with relaxed matching like arguments
+  (`-Dhapi.fhir.default-page-size=6` also works)
+
+#### Scenario: [config.source.024] only -D tokens are read from the JVM option variables
+
+- **WHEN** `JAVA_TOOL_OPTIONS=-Xmx3g -XX:+UseG1GC -Dhapi.fhir.server_address`
+- **THEN** Frevo starts, `hapi.fhir.server-address` = `""` (a `-D` token with
+  no `=` defines the empty string), and every other token changes nothing
+- **AND** tokens are separated by whitespace; a token that is not `-D` is
+  ignored, whatever it is
 
 ### Requirement: YAML documents
 
@@ -591,6 +613,16 @@ documents as Spring Boot 3.5.14 does, including the starter's packaged `cds` and
   `spring.profiles.active: r`, and `SPRING_PROFILES_ACTIVE=q`
 - **THEN** Frevo starts and `profiles.active` = `["q"]`
 
+#### Scenario: [config.profile.014] on-cloud-platform documents never activate
+
+- **WHEN** `./application.yaml` has a document with
+  `spring.config.activate.on-cloud-platform: kubernetes` setting
+  `hapi.fhir.default_page_size: 7`, and the environment has
+  `KUBERNETES_SERVICE_HOST` and `KUBERNETES_SERVICE_PORT` set
+- **THEN** Frevo starts and `default-page-size` = `20`: the document never
+  applies, on any platform (`DEV-0031`: HAPI applies it when it detects
+  Kubernetes)
+
 ### Requirement: Environment variables
 
 `frevo-config` SHALL map environment variables onto configuration properties
@@ -619,10 +651,11 @@ with Spring Boot 3.5.14's `SystemEnvironmentPropertyMapper` and
 
 - **WHEN** `HAPI_FHIR__DEFAULT_PAGE_SIZE=18` is set
 - **THEN** `hapi.fhir.default-page-size` = `20`
-- **AND** on Linux `hapi_fhir_default_page_size=15` and
-  `Hapi_Fhir_Default_Page_Size=16` do not bind either (pending Open Question 8;
-  on Windows, where variable names are case-insensitive, the lower-case form
-  binds)
+- **AND** on Linux, where variable names are case-sensitive and where HAPI
+  runs, `hapi_fhir_default_page_size=15` and `Hapi_Fhir_Default_Page_Size=16`
+  do not bind either; the oracle's Linux run confirms this clause (on Windows,
+  where names are case-insensitive, the lower-case form binds, in HAPI and in
+  Frevo alike)
 
 #### Scenario: [config.env.005] nested properties and camelCase upstream names
 
@@ -681,6 +714,15 @@ with Spring Boot 3.5.14's `SystemEnvironmentPropertyMapper` and
 - **THEN** every `HAPI_FHIR_*` variable there that names a bound property takes
   effect, and `HAPI_FHIR_ALLOW_PLACEHOLDER_REFERENCES` (no such property)
   changes nothing (config.unknown.001)
+
+#### Scenario: [config.env.014] a variable named like an argument is not an argument
+
+- **WHEN** the environment has a variable whose name is
+  `--spring.config.location` and whose value is `file:///configs/x.yaml` (the
+  starter README's `docker run -e "--spring.config.location=…"` form)
+- **THEN** Frevo does exactly what the oracle's recorded HAPI run does for the
+  same case; by Spring's two name mappers that is to ignore it, so the default
+  locations apply and `/configs/x.yaml` is not loaded
 
 ### Requirement: Command-line arguments and SPRING_APPLICATION_JSON
 
@@ -785,8 +827,8 @@ when the starter reads a key by name.
 - **WHEN** `hapi.fhir.logger.error_format: "ERROR - ${requestVerb} ${requestUrl}"`
   and the environment has `requestVerb=GET`
 - **THEN** `hapi.fhir.logger.error-format` = `"ERROR - GET ${requestUrl}"`
-- **AND** without that variable it is the text as written (this is HAPI's
-  behaviour; the hazard is proposed as a debt entry, Open Question 3)
+- **AND** without that variable it is the text as written (HAPI's behaviour,
+  reproduced; the hazard is `DEBT-0024`)
 
 #### Scenario: [config.placeholder.010] random values
 
@@ -837,7 +879,7 @@ property names (not its field names).
 
 - **WHEN** `hapi.fhir.cr.cql.compiler.error_level: Error` is set
 - **THEN** `hapi.fhir.cr.cql.compiler.error-severity-level` = `"Info"` (the
-  key is unknown and ignored)
+  key is unknown and ignored, as in HAPI; the hazard is `DEBT-0025`)
 - **AND** `hapi.fhir.cr.cql.compiler.error_severity_level: error` gives `"Error"`
 
 #### Scenario: [config.relaxed.005] a higher source overrides a lower source's other spelling
@@ -855,9 +897,9 @@ property names (not its field names).
 
 - **WHEN** one mapping holds `defaultPageSize: 4` and `default_page_size: 3`
 - **THEN** Frevo fails to start with a report naming both spellings and their
-  origins (pending Open Question 10: HAPI starts and picks `3` by
-  `java.util.HashSet` iteration order; the same holds for `max_page_size` /
-  `maxPageSize`, where it picks the snake-case spelling)
+  origins (`DEV-0032`: HAPI starts and picks `3` by `java.util.HashSet`
+  iteration order; the same holds for `max_page_size` / `maxPageSize`, where it
+  picks the snake-case spelling)
 
 #### Scenario: [config.relaxed.008] map keys are matched case-insensitively but kept verbatim
 
@@ -1186,8 +1228,10 @@ SHALL fail on a key whose property has no setter exactly when the starter does.
 #### Scenario: [config.unknown.004] keys outside hapi.fhir are kept for reads
 
 - **WHEN** `spring.*`, `server.*` and `management.*` keys are set
-- **THEN** they do not appear under `properties`, their values are available
-  to reads (config.read.*), and no type check is applied to them by this change
+- **THEN** they are loaded through the same sources, profiles, placeholders
+  and name mapping as `hapi.fhir.*`, they do not appear under `properties`,
+  their values are available to reads (config.read.*), and no type check is
+  applied to them by this change; typed binding is the consuming change's
 
 #### Scenario: [config.unknown.005] a setter-less property fails when set to a new value
 
@@ -1197,7 +1241,8 @@ SHALL fail on a key whose property has no setter exactly when the starter does.
   `Property: hapi.fhir.cr.cql.runtime.enable-validation`, `Value: "true"` and
   `Reason: java.lang.IllegalStateException: No setter found for property:
   enable-validation`
-- **AND** `enable_validation: false` (its current value) starts
+- **AND** `enable_validation: false` (its current value) starts (HAPI's
+  behaviour, reproduced; the hazard is `DEBT-0026`)
 
 #### Scenario: [config.unknown.006] the getter-only remote terminology map
 
@@ -1208,14 +1253,14 @@ SHALL fail on a key whose property has no setter exactly when the starter does.
   remote-terminology-services-map`
 - **AND** `hapi.fhir.remote_terminology_service.a.url: http://x` binds
 
-#### Scenario: [config.unknown.007] a set key that this build does not act on is reported
+#### Scenario: [config.unknown.007] a set key that this build does not act on yet is accepted silently
 
 - **WHEN** a bound key whose behaviour no merged change implements yet (for
   example `hapi.fhir.bulk_export_enabled: true`) is set by any source to a
   value other than its default
-- **THEN** Frevo starts and writes one warning per such key to standard error
-  naming the key, its origin and that this build does not act on it (pending
-  Open Question 4)
+- **THEN** Frevo starts, the key is bound and reported in the effective
+  configuration, and nothing about it is written to standard output or
+  standard error, exactly as HAPI writes nothing about a key it binds
 
 ### Requirement: Failure reporting
 
@@ -1242,7 +1287,8 @@ prints.
   `    Reason: failed to convert java.lang.String to java.lang.Boolean (caused by
   java.lang.IllegalArgumentException: Invalid boolean value 'Y')`, a blank
   line, `Action:`, a blank line, `Update your application's configuration`
-  (pending Open Question 9 on reproducing the Java type names)
+  — verbatim, including the Java type names, which are fixed strings per
+  property type and failure kind
 
 #### Scenario: [config.error.003] the property is named canonically whatever was written
 
@@ -1301,7 +1347,7 @@ form, exact (plus the environment-variable variants) for a name that contains
 - **THEN** `hapi.fhir.mdm-enabled` = `true` and `hapi.fhir.ips-enabled` =
   `true` in `properties`
 - **AND** the read `hapi.fhir.mdm_enabled` is `"false"` (the packaged spelling)
-  and the read `hapi.fhir.ips_enabled` is `null`
+  and the read `hapi.fhir.ips_enabled` is `null` (`DEBT-0022`)
 
 #### Scenario: [config.read.003] a canonical name is read relaxed
 
@@ -1326,7 +1372,8 @@ form, exact (plus the environment-variable variants) for a name that contains
 
 - **WHEN** the environment has `hapi.fhir.fhir-version=R5`
 - **THEN** `hapi.fhir.fhir-version` = `"R5"` while the read
-  `hapi.fhir.fhir_version` is `"R4"` (pending Open Question 3)
+  `hapi.fhir.fhir_version` is `"R4"` (HAPI's behaviour, reproduced; the hazard
+  is `DEBT-0022`)
 
 #### Scenario: [config.read.006] reads see YAML values as their text
 
@@ -1376,8 +1423,8 @@ reaches, including where that answer disagrees with the bound property.
 
 - **WHEN** `fhir_version: ""`
 - **THEN** `hapi.fhir.fhir-version` = `"R4"` but gate `fhir-dstu2` is on and
-  `fhir-r4` is off (every version string starts with the empty string; this is
-  HAPI's behaviour, proposed as a debt entry under Open Question 3)
+  `fhir-r4` is off (every version string starts with the empty string; HAPI's
+  behaviour, reproduced; the hazard is `DEBT-0023`)
 
 #### Scenario: [config.gate.004] a version the gates do not know turns every version gate off
 
@@ -1398,6 +1445,7 @@ reaches, including where that answer disagrees with the bound property.
 - **THEN** gate `cr` is on, on, off, off, off
 - **AND** gate `cdshooks` applies the same rule to `hapi.fhir.cdshooks.enabled`
 - **AND** so `hapi.fhir.cr.enabled: yes` binds `true` while gate `cr` is off
+  (HAPI's behaviour, reproduced; `DEBT-0022`)
 
 #### Scenario: [config.gate.007] mdm is on for any present value but false
 
@@ -1405,6 +1453,7 @@ reaches, including where that answer disagrees with the bound property.
   `"FALSE"` or absent
 - **THEN** gate `mdm` is on, on, on, on, off, off
 - **AND** so `mdm_enabled: "no"` binds `false` while gate `mdm` is on
+  (HAPI's behaviour, reproduced; `DEBT-0022`)
 
 #### Scenario: [config.gate.008] having-value gates compare ignoring case
 
