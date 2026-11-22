@@ -1381,7 +1381,6 @@ Deviations are expected to concentrate in:
   pick and asserts Frevo's failure instead of equality.
 - **Reviewed:** 2026-11-22, owner: chosen as written (relayed by the
   coordinator).
-```
 
 ### DEV-0033 — startup-failure output omits Java stack frames
 
@@ -1409,6 +1408,5 @@ Deviations are expected to concentrate in:
 - **Normalizer impact:** the `config-roundtrip` failure comparison removes
   lines matching `^\tat ` and `^\t\.\.\. [0-9]+ more$` from HAPI's output
   before comparing, and masks each log line's timestamp and process id.
-- **Reviewed:** proposed 2026-11-22 by the proposer after review finding 12;
-  **needs the owner's approval**.
-```
+- **Reviewed:** 2026-11-22, owner: approved as written (proposed by the
+  proposer after review finding 12).
