@@ -20,7 +20,9 @@ reads `APPROVED`.
 ## Phase A — the oracle and the failing tests
 
 - [ ] **1. Build the `config-roundtrip` HAPI side.** `harness/config-roundtrip/`
-  per design.md section 7: a Maven module with the probe, the getter-to-path
+  per design.md section 7: the probe, compiled with `javac` in a Docker build
+  stage against the image's own `WEB-INF/lib` and `WEB-INF/classes` (no Maven
+  `pom.xml`; owner ruling of 2026-11-22), with the getter-to-path
   dumper of config.dump.002 (including the derived-getter exclusions and the
   `CqlTerminologyProperties` flattening of design.md section 8, and the
   password redaction of config.dump.005), the starter's condition classes
@@ -36,7 +38,8 @@ reads `APPROVED`.
   `application*.{properties,xml,yml,yaml}` or `config/application*`; fail the
   build if
   `spring-boot`, `spring-core` or `snakeyaml` in that directory is not
-  3.5.14, 6.2.18, 2.4 (proposal Risk 1). Extract the three packaged YAML files
+  3.5.14, 6.2.19, 2.4 (proposal Risk 1; Spring Framework 6.2.19 is the
+  reference by the owner's ruling of 2026-11-22). Extract the three packaged YAML files
   from the war and assert them byte-equal to the copies Frevo embeds
   (config.source.001). Self-test: two runs, identical output
   (config.oracle.001, .002).
@@ -56,12 +59,15 @@ reads `APPROVED`.
   `hapi-8.12.0-results.json` with the image digest. Implement the comparison
   of config.oracle.003 and .004, and the coverage check of config.oracle.005.
   Any recorded HAPI result that contradicts a THEN clause in the spec delta
-  is written to `tasks/blockers.md` and the delta is corrected before task 3.
+  is written to `tasks/blockers.md` and the delta is corrected before task 3
+  (findings O-1 to O-13 of 2026-11-22, folded into the delta the same day;
+  proposal.md, "Oracle findings of 2026-11-22 and the owner's rulings").
 - [ ] **3. Write the failing Rust tests.** `crates/frevo-config/tests/`, one
   file per area, every scenario tagged `// covers: config.<area>.<nnn>`:
   each config case runs `frevo-config effective` in a temporary directory
-  with the case's files, a cleared environment plus the case's variables, and
-  its arguments, and compares the document (or the failure report and exit
+  with the case's files, a cleared environment plus the case's variables
+  and `FREVO_CONFIG_TEST_ROOT` (design.md section 11), and its arguments,
+  and compares the document (or the failure report and exit
   status) with the recorded HAPI result. Scenarios with no HAPI counterpart
   (config.dump.*, config.unknown.007, config.perf.*) assert the spec text
   directly. `harness/scripts/scenario-coverage.sh --change
@@ -76,11 +82,14 @@ reads `APPROVED`.
   `[workspace.dependencies]`, remove `serde_yaml_ng`, and confirm
   `cargo deny check` passes. Blocks task 7.
 - [ ] **5. [chore] Pin the Spring sources** — `spring-projects/spring-boot`
-  `v3.5.14`, `spring-projects/spring-framework` `v6.2.18`, SnakeYAML
+  `v3.5.14`, `spring-projects/spring-framework` `v6.2.19`, SnakeYAML
   `snakeyaml-2.4` — in `reference/PINS.md` and `reference/clone.sh`, on a
-  `chore/*` branch (ruling of 2026-11-22). A prerequisite recorded here, not
-  work of this change; does not block implementation, since the oracle is the
-  standard either way.
+  `chore/*` branch (ruling of 2026-11-22). #38 pinned Spring Framework at
+  `v6.2.18`; the owner ruled on 2026-11-22 that the reference is 6.2.19, the
+  version the pinned image ships, so the Spring Framework pin is moved to
+  `v6.2.19` (Spring Boot and SnakeYAML unchanged). A prerequisite recorded
+  here, not work of this change; does not block implementation, since the
+  oracle is the standard either way.
 - [ ] **6. [chore] Correct the inventory.** Fix
   `harness/scripts/gen-inventory.py` to read bean properties (getters and
   setters) instead of fields, to see `TerminologyServerClientSettings` and
@@ -88,6 +97,8 @@ reads `APPROVED`.
   list values; regenerate `docs/inventory.md` and `docs/inventory-totals.json`;
   the result must match `keys.md` sections 5 to 7 (ruling of 2026-11-22: a
   `chore/*` branch before archive). Blocks archiving, not implementation.
+  #39 corrected `docs/inventory.md` and `docs/inventory-totals.json` by hand
+  (220 configuration rows, config.key.011); the generator fix is still owed.
 
 ## Phase C — implementation
 
@@ -117,8 +128,11 @@ reads `APPROVED`.
 - [ ] **11. Config data locations and imports.** Default locations and
   wildcard subdirectories, `location`, `additional-location`, `import` (from
   sources and from documents, relative resolution), `name`, `optional:`,
-  extension precedence, `classpath:` as the embedded files then
-  `/app/extra-classes/`, profile variants of named files, extension hints,
+  extension precedence, `classpath:` as the embedded files (from
+  `crates/frevo-config/packaged/`, byte-identical to
+  `harness/config-roundtrip/packaged/`) then `/app/extra-classes/`, absolute
+  paths beneath `FREVO_CONFIG_TEST_ROOT` when it is set (design.md section
+  11), profile variants of named files, extension hints,
   directory imports, one-level wildcards, the not-found and
   unsupported-location failures including `configtree:` and `.xml`
   (`DEV-0031`). Satisfies config.source.001-.022, .026-.030.
@@ -166,12 +180,14 @@ reads `APPROVED`.
   config.placeholder.011.
 - [ ] **19. Failure output and early exit.** Design.md section 6a: standard
   output, the logback console line form, the failure-analysis and run-failed
-  forms per failure kind, the preceding `WARN`/`INFO` lines, no stack frames
-  and no non-config log line (`DEV-0033`, approved by the owner on 2026-11-22), origins, exit status `1`, nothing
+  forms per failure kind, the preceding `WARN`/`INFO` lines, no stack frames,
+  no logback status line and no non-config log line (`DEV-0033`, approved by the owner on 2026-11-22), origins, exit status `1`, nothing
   started before configuration succeeds. Satisfies config.error.001-.010,
   config.dump.006.
-- [ ] **20. `frevo-config effective`.** The binary, the document of
-  config.dump.001-.006, redaction of the e-mail password.
+- [ ] **20. `frevo-config effective`.** The binary target, named
+  `frevo-config` (the tests use `CARGO_BIN_EXE_frevo-config`, design.md
+  section 11), the document of config.dump.001-.006, redaction of the e-mail
+  password.
 - [ ] **21. Silent acceptance of keys this build does not act on.** A test
   over every `bound` key of `keys.md` set to a non-default value asserts that
   startup writes nothing about it, as HAPI writes nothing. Satisfies

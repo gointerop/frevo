@@ -85,7 +85,10 @@ by Spring Boot 3.5.14 with the HAPI 8.12.0, clinical-reasoning 4.13.0 and CQL
 and every value, message and line:column in a THEN clause is what it printed
 ([`design.md`](design.md) section 2). The `config-roundtrip` oracle re-runs the
 same cases against the jars inside the pinned image on Linux; it, not this
-text, is the standard.
+text, is the standard. Its first full run (419 cases) produced thirteen
+findings against the first draft; the owner ruled on 2026-11-22 that the
+recorded HAPI behaviour wins, and the delta now quotes the record
+(design.md section 2, "Oracle findings of 2026-11-22").
 
 The probe found that the configuration surface is not what the inventory says:
 
@@ -119,7 +122,7 @@ Pins are from [`reference/PINS.md`](../../../reference/PINS.md).
 | Version gate predicate | `hapifhir/hapi-fhir` | `hapi-fhir-base/src/main/java/ca/uhn/fhir/context/FhirVersionEnum.java:283-315` | `7ab4c7c7c49281496faa1b3c2498a652457669ae` | **derived** |
 | Implementation-guide entry fields | same | `hapi-fhir-storage/src/main/java/ca/uhn/fhir/jpa/packages/PackageInstallationSpec.java` | same | **derived** (descriptor) |
 | Enum domains for lenient conversion | same; `hapifhir/org.hl7.fhir.core`; `cqframework/clinical-reasoning`; `cqframework/clinical_quality_language` | `JpaStorageSettings` (`ClientIdStrategyEnum`, `IdStrategyEnum`, `StoreMetaSourceInformationEnum`), `NormalizedQuantitySearchLevel`, `EncodingEnum`, `FhirVersionEnum`; `org.hl7.fhir.r4.model.Bundle.BundleType`; `RetrieveSettings`, `TerminologySettings`, `TerminologyServerClientSettings` (cqf-fhir-cql, cqf-fhir-utility); `CqlCompilerException.ErrorSeverity`, `LibraryBuilder.SignatureLevel`, `CqlTranslator.Format` | `7ab4c7c7…`, `73c432b5…`, `ccba474a…`, `c41c21f5…` | **derived** (constant lists) |
-| Loading, binding, conversion and YAML resolution rules | `spring-projects/spring-boot` 3.5.14, `spring-projects/spring-framework` 6.2.18, `snakeyaml` 2.4 | `ConfigDataEnvironment`, `StandardConfigDataLocationResolver`, `OriginTrackedYamlLoader`, `OriginTrackedPropertiesLoader`, `Binder`, `JavaBeanBinder`, `MapBinder`, `IndexedElementsBinder`, `ConfigurationPropertyName`, `SystemEnvironmentPropertyMapper`, `DefaultPropertyMapper`, `LenientStringToEnumConverterFactory`, `BindFailureAnalyzer`; Spring's `YamlProcessor`, `SystemEnvironmentPropertySource`, `PropertyPlaceholderHelper`, `NumberUtils`, `StringToBooleanConverter`; SnakeYAML's `Resolver` | **not pinned in `reference/`** (pinned on a `chore/*` branch, task 5) | **derived behaviour** — measured by the probe, judged by the oracle; no source is ported |
+| Loading, binding, conversion and YAML resolution rules | `spring-projects/spring-boot` 3.5.14, `spring-projects/spring-framework` 6.2.19 (what the pinned image ships; owner ruling of 2026-11-22), `snakeyaml` 2.4 | `ConfigDataEnvironment`, `StandardConfigDataLocationResolver`, `OriginTrackedYamlLoader`, `OriginTrackedPropertiesLoader`, `Binder`, `JavaBeanBinder`, `MapBinder`, `IndexedElementsBinder`, `ConfigurationPropertyName`, `SystemEnvironmentPropertyMapper`, `DefaultPropertyMapper`, `LenientStringToEnumConverterFactory`, `BindFailureAnalyzer`; Spring's `YamlProcessor`, `SystemEnvironmentPropertySource`, `PropertyPlaceholderHelper`, `NumberUtils`, `StringToBooleanConverter`; SnakeYAML's `Resolver` | `reference/PINS.md` pins `v3.5.14`, `snakeyaml-2.4` and, for Spring Framework, `v6.2.18` (#38); the re-pin to `v6.2.19` is owed on a `chore/*` branch (task 5) | **derived behaviour** — measured by the probe, judged by the oracle; no source is ported |
 
 ## Oracles
 
@@ -142,11 +145,15 @@ There is no HL7 suite pass rate to meet for this change.
 1. **`config-roundtrip` is a new oracle.** It does not exist in
    `oracles/PINS.md` and needs no new pin: its HAPI side is the already-pinned
    image. It lives in `harness/` (oracle-builder), not `oracles/`.
-2. **Spring Boot is not in `reference/`** (task 5). Adding
-   `spring-projects/spring-boot@v3.5.14`, `spring-framework@v6.2.18` and
+2. **The Spring sources in `reference/`** (task 5). Pinning
+   `spring-projects/spring-boot@v3.5.14`, `spring-framework` and
    `snakeyaml@snakeyaml-2.4` is a `chore/*` branch and an owner decision,
    because it adds to what "correct" refers to. Ruled 2026-11-22: it happens
-   on a `chore/*` branch, not in this change, and does not block it.
+   on a `chore/*` branch, not in this change, and does not block it. #38
+   pinned Spring Framework `v6.2.18`; the owner ruled on 2026-11-22 that the
+   reference is **6.2.19**, the version the pinned image ships, so
+   `reference/PINS.md` and `reference/clone.sh` are re-pinned to `v6.2.19` on
+   a `chore/*` branch.
 3. **`docs/inventory.md` needs correcting** (`keys.md` section 7) on a
    `chore/*` branch: `harness/scripts/gen-inventory.py` is not this branch's to
    edit.
@@ -176,18 +183,28 @@ test infrastructure. No PostgreSQL schema change.
 
 ## Risks
 
-1. **The reference for half of this change is not pinned.** Spring Boot's
-   binder and SnakeYAML's resolver define most of the behaviour, and neither
-   is in `reference/`. The probe used jars from a local Maven cache whose
-   versions match the starter's `pom.xml` (`spring_boot_version` 3.5.14,
-   `pom.xml:22`; the parent's 3.5.15 is overridden), but the image might ship
-   different ones. Task 1 reads the versions out of the image and fails if
-   they differ.
+1. **The probe's jars were not the image's.** Spring Boot's binder and
+   SnakeYAML's resolver define most of the behaviour. The probe used jars from
+   a local Maven cache whose versions follow the starter's `pom.xml`
+   (`spring_boot_version` 3.5.14, `pom.xml:22`; the parent's 3.5.15 is
+   overridden), with the Spring Framework 6.2.18 that Boot 3.5.14's BOM
+   declares. Task 1 read the versions out of the image: `spring-boot` 3.5.14
+   and `snakeyaml` 2.4 as expected, but `spring-core`, `-beans`, `-context`,
+   `-aop` and `-expression` **6.2.19**, `slf4j-api` 2.0.16 (not 2.0.17) and
+   no `spring-jcl` jar. The owner ruled on 2026-11-22 that **Spring
+   Framework 6.2.19 is the reference**, because it is what HAPI 8.12.0's image
+   runs; Spring Boot 3.5.14 and SnakeYAML 2.4 are unchanged. The residual
+   risk is a 6.2.18-to-6.2.19 difference the cache probe could not show: the
+   oracle's record, taken against 6.2.19, is the standard, so any such
+   difference already shows up as a recorded result, and `reference/` is
+   re-pinned to `v6.2.19` (task 5).
 2. **The probe ran on Windows.** Environment-variable names are
-   case-insensitive there, so the lower-case `hapi_fhir_default_page_size`
-   bound in the probe and almost certainly does not on Linux, where HAPI runs.
-   The oracle runs on Linux and its recorded result decides config.env.004's
-   Linux clause (owner ruling of 2026-11-22: Linux semantics).
+   case-insensitive there. The first draft expected the lower-case
+   `hapi_fhir_default_page_size` not to bind on Linux; the oracle's Linux run
+   shows that it does, because Spring Boot 3.5.14 looks up lower-case
+   environment forms too, and only mixed case does not bind (config.env.004,
+   finding O-2). Linux semantics, as ruled, are therefore HAPI's recorded
+   ones.
 3. **Faithful parity reproduces hazards.** The split between named reads and
    binding (config.read.005, config.gate.003, .006, .007), request-logger
    templates expanded from the environment (config.placeholder.009), and a
@@ -220,13 +237,13 @@ readable.
 | 5 | Pinning the Spring sources | on a `chore/*` branch, as a prerequisite task, not in this change | standing ruling | — | none |
 | 6 | Java system properties | honour `-D` tokens of `JAVA_TOOL_OPTIONS` and `JDK_JAVA_OPTIONS` with the JVM's quoting, and provide the JVM's own system properties with the image's values | standing ruling, coordinator direction | config.source.019, .023-.025, config.placeholder.012, .013 | none |
 | 7 | `configtree:`, `.xml`, `on-cloud-platform` | fail loudly on `configtree:` and `.xml`; `on-cloud-platform` documents never activate | owner | config.source.020, config.profile.014 | `DEV-0031` (the same entry as 2) |
-| 8 | Environment-variable case | Linux semantics; the oracle confirms on Linux | standing ruling | config.env.004 | none |
-| 9 | Failure report text | HAPI's failure output verbatim for the analysis block or exception chain (Java type names included) and the config-related `WARN`/`INFO` lines, on standard output; no Java stack frames and no other log line (startup info, Tomcat, servlet context, components) | standing ruling; owner ruling 2026-11-22 (`DEV-0033` approved, scope extended the same day) | config.error.002, .007-.010, config.oracle.003 | `DEV-0033` |
+| 8 | Environment-variable case | Linux semantics as the oracle records them: all-lower-case names bind, mixed case does not (finding O-2) | standing ruling; owner ruling 2026-11-22 on O-2 | config.env.004 | none |
+| 9 | Failure report text | HAPI's failure output verbatim for the analysis block or exception chain (Java type names included) and the config-related `WARN`/`INFO` lines, on standard output; no Java stack frames, no logback status line and no other log line (startup info, Tomcat, servlet context, components) | standing ruling; owner ruling 2026-11-22 (`DEV-0033` approved, scope extended the same day, and to logback's status lines on O-1) | config.error.002, .007-.010, config.dump.006, config.oracle.003 | `DEV-0033` |
 | 10 | Two non-kebab spellings in one source | fail to start, naming both spellings and their origins | owner | config.relaxed.007 | `DEV-0032` |
 | 11 | Inventory denominator | corrected on a `chore/*` branch before archiving, as a prerequisite task | standing ruling | config.key.011 | none |
 | 12 | Non-`hapi.fhir` keys | loaded through the same pipeline and exposed to reads; typed binding left to the consuming changes | standing ruling | config.unknown.004 | none |
 | 13 | YAML parser | ADR 0007 option A: `yaml-rust2` event parser plus Frevo's own SnakeYAML 1.1 resolver; the unused `serde_yaml_ng` workspace entry is dropped | owner (ADR accepted 2026-11-22) | config.yaml.* | ADR 0007 |
-| 14 | README's `-e "--spring.config.location=…"` | match HAPI as the oracle records it (by Spring's mappers: ignored) | standing ruling | config.env.014 | none |
+| 14 | README's `-e "--spring.config.location=…"` | match HAPI as the oracle records it: the variable is applied as the location (finding O-3; the first draft's "ignored" was wrong) | standing ruling; owner ruling 2026-11-22 on O-3 | config.env.014 | none |
 
 ### Review of 2026-11-22 (13 findings) and the coordinator's direction
 
@@ -246,6 +263,30 @@ readable.
 | 12 failure output | measured with the starter's `logback.xml`: standard output, log header lines, failure analysis or `Application run failed` by kind; `config.gate.005` is HAPI's `NullPointerException`; `config.placeholder.011` is the condition's own failure | config.error.002 (rewritten), .007-.010, config.dump.006, config.gate.005, config.placeholder.011, config.yaml.003, .016, config.args.007, config.profile.012 (rewritten) |
 | 13 untestable text | the escape and the fixture are in the change | config.properties.004, config.yaml.016 (rewritten), `probe/fixtures/` |
 
+### Oracle findings of 2026-11-22 and the owner's rulings
+
+The oracle-builder's first full `config-roundtrip` run raised thirteen
+findings (O-1 to O-13) and three test contracts (`tasks/blockers.md`, entry
+of 2026-11-22). The owner ruled the same day:
+
+| Item | Ruling | Scenarios and text |
+|---|---|---|
+| Recording blocked by Spring Framework 6.2.19 | 6.2.19 is the reference; Boot 3.5.14 and SnakeYAML 2.4 unchanged | Risk 1, design.md section 2, oracle.001, task 5 |
+| Probe build | compiled with `javac` in a Docker build stage against the image's own `WEB-INF/lib` and classes; no Maven `pom.xml` | design.md section 7, task 1 |
+| O-1 logback status lines | stripped and counted by the harness; Frevo writes none; `DEV-0033` extended | config.dump.006, .error.007, .error.009, .oracle.003; `register-entries.md` |
+| O-2, O-3 | follow HAPI: lower-case names bind on Linux; a variable named `--spring.config.location` is applied | config.env.004, .014; design.md section 3.4 |
+| O-4, O-5 | quote the recorded Jackson cause lines and the unprefixed, indented SnakeYAML lines | config.args.007, .009, config.yaml.003, .016, config.error.007 |
+| O-6 | state the no-version failure and the version-set variant, as recorded | config.source.007, .009, .010, .011, .013, config.key.001, .003 |
+| O-7 | the gate site names are the probe's choice, not measured in a real context | config.placeholder.011; design.md section 7 |
+| O-8 | the identity hash of `Bindable@<hex>` is masked on both sides | config.collection.002, config.oracle.002, .003 |
+| O-9 | compare the bean-creation wrapper only through `Error creating bean with name` | config.unknown.005, .008, config.oracle.003 |
+| O-10 | reworded: `4.0`/`4.0.1` fail to bind first | config.gate.002 |
+| O-11 | 220 inventory rows | config.key.011 |
+| O-12, O-13 | clarifying notes | config.relaxed.007, config.key.007 |
+| Test contracts | accepted: `FREVO_CONFIG_TEST_ROOT` (test-only), embedded copies in `crates/frevo-config/packaged/`, binary target `frevo-config` | design.md section 11 |
+
+No scenario was added or removed; the count stays 232.
+
 ## Registers this change touches
 
 The append-ready text is in [`register-entries.md`](register-entries.md); the
@@ -258,7 +299,7 @@ directory.
   property in one source; unchanged), and `DEV-0033` (failure output keeps
   only the config-related lines; approved by the owner on 2026-11-22 and
   registered; **replacement text** in `register-entries.md` for the scope
-  extended the same day).
+  extended the same day, now also covering logback's status lines, O-1).
 - `docs/tech-debt.md`: `DEBT-0022` (**replacement text**, finding 11) and
   `DEBT-0023` to `DEBT-0026` (unchanged).
 - `docs/provenance.md`: one row per ported starter, hapi-fhir and

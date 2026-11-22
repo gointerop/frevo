@@ -25,7 +25,8 @@ property path in canonical kebab-case, with map keys verbatim, for example
 
 "Starts" means `frevo-config effective` exits 0. "Fails to start" means it
 exits 1, prints no document, and writes the failure report of config.error.*
-to standard error.
+to standard output (config.error.002, .007), as HAPI's logback console
+appender does.
 
 Unless a scenario says otherwise, the working directory contains only the
 files the scenario names, no `SPRING_*`, `HAPI_*` or `hapi.*` environment
@@ -34,7 +35,22 @@ config.source.001 are present.
 
 Every value quoted in a THEN clause was measured on Spring Boot 3.5.14 with the
 starter's nine properties classes compiled from
-`hapi-fhir-jpaserver-starter@377e6eba`; see design.md section 2.
+`hapi-fhir-jpaserver-starter@377e6eba`; see design.md section 2. The
+`config-roundtrip` oracle re-ran every case inside the pinned image (Spring
+Boot 3.5.14, Spring Framework 6.2.19, SnakeYAML 2.4; owner ruling of
+2026-11-22), and where its record and the first probe differed, the THEN
+clause quotes the record (design.md section 2, "Oracle findings").
+
+"Fails to start as config.gate.005 does" means the run-failed output of
+config.error.007 whose exception line is HAPI's `NullPointerException` of
+config.gate.005. Any configuration that replaces the default locations with
+`spring.config.location` and whose sources set no `hapi.fhir.fhir_version`
+fails that way, because the packaged `application.yaml` is what sets the
+version. config.source.007, .009, .010, .011, .013 and config.key.001 state
+both runs; in every other scenario that replaces the default locations
+without setting a version, the THEN clauses describe the run with
+`--hapi.fhir.fhir_version=R4` added, which is how the oracle's case for it
+is written.
 -->
 
 ### Requirement: Effective configuration document
@@ -105,6 +121,13 @@ oracle.
 - **AND** nothing else is written to standard error (only the JVM-option
   notices of config.source.023, when those variables are set), as HAPI's
   logback console appender targets standard output
+- **AND** Frevo writes none of logback's own status lines (lines of the form
+  `HH:MM:SS,mmm |-<LEVEL> in …`, for example the `|-WARN in
+  …ConfigurationModelHandlerFull - Missing watchable .xml or .properties
+  files.` and `Watching .xml files requires …` pair), which HAPI prints on
+  every run, on standard error and on standard output, because the packaged
+  `logback.xml` sets `scan="true"` inside a jar; the oracle strips and counts
+  them on the HAPI side (config.oracle.003, `DEV-0033`)
 
 ### Requirement: Configuration sources and locations
 
@@ -176,8 +199,12 @@ treating the starter's packaged files as the `classpath:` location.
 
 - **WHEN** Frevo is started with `--spring.config.location=file:./other/x.yaml`
   and `./other/x.yaml` sets `hapi.fhir.default_page_size: 5`
-- **THEN** the effective configuration reports `hapi.fhir.default-page-size` = `5`
-- **AND** the packaged `application.yaml` is not loaded: it reports
+- **THEN** Frevo fails to start as config.gate.005 does: the packaged
+  `application.yaml`, which sets `hapi.fhir.fhir_version`, is not loaded, and
+  no other source sets it
+- **AND** with `--hapi.fhir.fhir_version=R4` added it starts and the effective
+  configuration reports `hapi.fhir.default-page-size` = `5`
+- **AND** in that run the packaged `application.yaml` is not loaded: it reports
   `hapi.fhir.openapi-enabled` = `false`, `hapi.fhir.tester` = `null`,
   `hapi.fhir.cors` = `null`, `hapi.fhir.narrative-enabled` = `true` (the class
   defaults)
@@ -196,24 +223,37 @@ treating the starter's packaged files as the `classpath:` location.
 #### Scenario: [config.source.009] an optional: location may be missing
 
 - **WHEN** Frevo is started with `--spring.config.location=optional:file:./nope.yaml`
-- **THEN** Frevo starts and every property has its class default
-  (config.key.001)
+  and `./nope.yaml` does not exist
+- **THEN** the missing location is not an error, and Frevo fails to start as
+  config.gate.005 does, because no source sets `hapi.fhir.fhir_version`
+- **AND** with `--hapi.fhir.fhir_version=R4` added it starts and every
+  property has its class default (config.key.001)
 
 #### Scenario: [config.source.010] a location ending in / is a directory
 
 - **WHEN** Frevo is started with `--spring.config.location=file:./dir/` and
   `./dir/application.yaml` sets `hapi.fhir.default_page_size: 33`
-- **THEN** the effective configuration reports `hapi.fhir.default-page-size` = `33`
-- **AND** `application-<profile>.yaml` files in `./dir/` apply for active profiles
+- **THEN** Frevo fails to start as config.gate.005 does, because no source
+  sets `hapi.fhir.fhir_version`
+- **AND** with `--hapi.fhir.fhir_version=R4` added it starts and the
+  effective configuration reports `hapi.fhir.default-page-size` = `33`
+- **AND** `application-<profile>.yaml` files in `./dir/` apply for active
+  profiles: with `SPRING_PROFILES_ACTIVE=p` as well and
+  `./dir/application-p.yaml` setting `hapi.fhir.max_page_size: 34`, it
+  reports `hapi.fhir.default-page-size` = `33` and `hapi.fhir.max-page-size`
+  = `34`
 
 #### Scenario: [config.source.011] spring.config.name changes the file base name
 
 - **WHEN** Frevo is started with `--spring.config.location=file:./dir/
-  --spring.config.name=frevo` and `./dir/frevo.yaml` sets
-  `hapi.fhir.max_page_size: 44` while `./dir/application.yaml` sets
-  `default_page_size: 33`
+  --spring.config.name=frevo --hapi.fhir.fhir_version=R4` and
+  `./dir/frevo.yaml` sets `hapi.fhir.max_page_size: 44` while
+  `./dir/application.yaml` sets `default_page_size: 33`
 - **THEN** the effective configuration reports `hapi.fhir.max-page-size` = `44`
   and `hapi.fhir.default-page-size` = `20`
+- **AND** without `--hapi.fhir.fhir_version=R4` no source sets the version,
+  and Frevo fails to start as config.gate.005 does (the oracle records only
+  the version-set form of this case)
 
 #### Scenario: [config.source.012] spring.config.additional-location layers over the defaults
 
@@ -227,9 +267,13 @@ treating the starter's packaged files as the `classpath:` location.
 #### Scenario: [config.source.013] in a location list later entries win
 
 - **WHEN** Frevo is started with
-  `--spring.config.location=file:./l/1.yaml,file:./l/2.yaml`, the files setting
+  `--spring.config.location=file:./l/1.yaml,file:./l/2.yaml
+  --hapi.fhir.fhir_version=R4`, the files setting
   `hapi.fhir.default_page_size` to `31` and `32`
 - **THEN** the effective configuration reports `hapi.fhir.default-page-size` = `32`
+- **AND** without `--hapi.fhir.fhir_version=R4` no source sets the version,
+  and Frevo fails to start as config.gate.005 does (the oracle records only
+  the version-set form of this case)
 
 #### Scenario: [config.source.014] SPRING_CONFIG_IMPORT imports a plain path over the defaults
 
@@ -450,14 +494,27 @@ and SHALL flatten it into properties the way Spring's `YamlProcessor` does.
 
 #### Scenario: [config.yaml.003] a duplicate key in one mapping fails to start
 
-- **WHEN** one mapping holds `default_page_size: 3` and, on the next line,
-  `default_page_size: 4`
+- **WHEN** `./application.yaml` is `hapi:`, `  fhir:`,
+  `    default_page_size: 3`, `    default_page_size: 4` (one mapping holding
+  the key twice, on lines 3 and 4, at column 5)
 - **THEN** Frevo fails to start with the run-failed output of config.error.007
-  whose exception lines are
-  `org.yaml.snakeyaml.constructor.DuplicateKeyException: while constructing a mapping`,
-  ` in 'reader', line 3, column 5:`, the source line and a caret line,
-  `found duplicate key default_page_size`, ` in 'reader', line 4, column 5:`,
-  the source line and a caret line
+  whose lines after `Application run failed` and its blank line are exactly
+  these, as HAPI's run prints them: SnakeYAML's message lines with no
+  exception class prefix and no `Caused by:`, each echoed source line
+  indented by four spaces plus its own indentation, each caret line four
+  spaces plus (column - 1) spaces before the `^`, and a final blank line:
+
+  ```text
+  while constructing a mapping
+   in 'reader', line 3, column 5:
+          default_page_size: 3
+          ^
+  found duplicate key default_page_size
+   in 'reader', line 4, column 5:
+          default_page_size: 4
+          ^
+
+  ```
 
 #### Scenario: [config.yaml.004] YAML 1.1 booleans
 
@@ -559,12 +616,22 @@ and SHALL flatten it into properties the way Spring's `YamlProcessor` does.
   ```
 
 - **THEN** Frevo fails to start with the run-failed output of config.error.007
-  whose exception lines are
-  `org.yaml.snakeyaml.parser.ParserException: while parsing a flow sequence`,
-  ` in 'reader', line 5, column 31:`,
-  `    supported_resource_types: [${nope3}]`, a caret under the `[`,
-  `expected ',' or ']', but got {`, ` in 'reader', line 5, column 33:`, the
-  same source line and a caret under the `{`
+  whose lines after `Application run failed` and its blank line are exactly
+  these, in the form of config.yaml.003 (no exception class prefix, source
+  lines indented four spaces plus their own indentation, a caret under the
+  `[` at column 31 and under the `{` at column 33, a final blank line):
+
+  ```text
+  while parsing a flow sequence
+   in 'reader', line 5, column 31:
+          supported_resource_types: [${nope3}]
+                                    ^
+  expected ',' or ']', but got {
+   in 'reader', line 5, column 33:
+          supported_resource_types: [${nope3}]
+                                      ^
+
+  ```
 
 ### Requirement: Properties files
 
@@ -816,10 +883,14 @@ with Spring Boot 3.5.14's `SystemEnvironmentPropertyMapper` and
 - **WHEN** `HAPI_FHIR__DEFAULT_PAGE_SIZE=18` is set
 - **THEN** `hapi.fhir.default-page-size` = `20`
 - **AND** on Linux, where variable names are case-sensitive and where HAPI
-  runs, `hapi_fhir_default_page_size=15` and `Hapi_Fhir_Default_Page_Size=16`
-  do not bind either; the oracle's Linux run confirms this clause (on Windows,
-  where names are case-insensitive, the lower-case form binds, in HAPI and in
-  Frevo alike)
+  runs, the mixed-case `Hapi_Fhir_Default_Page_Size=16` does not bind either
+  (`20`)
+- **AND** the all-lower-case `hapi_fhir_default_page_size=15` does bind, on
+  Linux too (`15`), as the oracle's Linux run records: Spring Boot 3.5.14's
+  `SystemEnvironmentPropertyMapper` looks a property up under its upper-case
+  and its lower-case environment forms (design.md section 3.4); likewise the
+  exact read `hapi.fhir.ips_enabled` sees `hapi_fhir_ips_enabled=true`
+  (config.read.004)
 
 #### Scenario: [config.env.005] nested properties and camelCase upstream names
 
@@ -883,10 +954,16 @@ with Spring Boot 3.5.14's `SystemEnvironmentPropertyMapper` and
 
 - **WHEN** the environment has a variable whose name is
   `--spring.config.location` and whose value is `file:///configs/x.yaml` (the
-  starter README's `docker run -e "--spring.config.location=…"` form)
-- **THEN** Frevo does exactly what the oracle's recorded HAPI run does for the
-  same case; by Spring's two name mappers that is to ignore it, so the default
-  locations apply and `/configs/x.yaml` is not loaded
+  starter README's `docker run -e "--spring.config.location=…"` form), and
+  `/configs/x.yaml` sets only `hapi.fhir.default_page_size: 61`
+- **THEN** the variable is applied as `spring.config.location`, as the
+  oracle's recorded HAPI run shows: under the dotted-name mapper the element
+  `--spring` has the uniform form `spring` (dashes are not significant,
+  design.md section 3.4), so the name equals `spring.config.location`
+- **AND** so the default locations and the packaged files are not loaded and
+  `/configs/x.yaml` is (a missing mandatory location would fail with
+  config.source.008's report instead), and because nothing then sets
+  `hapi.fhir.fhir_version`, Frevo fails to start as config.gate.005 does
 
 ### Requirement: Command-line arguments and SPRING_APPLICATION_JSON
 
@@ -931,9 +1008,12 @@ semantics.
 
 - **WHEN** `SPRING_APPLICATION_JSON={bad`
 - **THEN** Frevo fails to start with the run-failed output of config.error.007
-  whose exception lines are `org.springframework.boot.json.JsonParseException:
-  Cannot parse JSON` and `Caused by: java.lang.NullPointerException: Cannot
-  load from object array because "values" is null`
+  whose exception lines are exactly
+  `org.springframework.boot.json.JsonParseException: Cannot parse JSON` and
+  `Caused by: com.fasterxml.jackson.core.JsonParseException: Unexpected character ('b' (code 98)): was expecting double-quote to start field name`
+  (the image ships Jackson, so Spring Boot's `JsonParserFactory` parses with
+  it; the quoted character and its decimal code are those of the first
+  character Jackson rejects)
 
 #### Scenario: [config.args.008] spring.application.json as an argument
 
@@ -955,10 +1035,10 @@ semantics.
   property source "systemProperties"`
 - **AND** without the single quotes the JVM strips the double quotes
   (config.source.024) and Frevo fails to start with the run-failed output of
-  config.error.007 whose exception lines are
+  config.error.007 whose exception lines are exactly
   `org.springframework.boot.json.JsonParseException: Cannot parse JSON` and
-  `Caused by: java.lang.IllegalStateException: Expecting double-quotes around
-  field names`
+  `Caused by: com.fasterxml.jackson.core.JsonParseException: Unexpected character ('h' (code 104)): was expecting double-quote to start field name`
+  (Jackson, as in config.args.007)
 
 #### Scenario: [config.args.010] --=x is invalid
 
@@ -1061,12 +1141,23 @@ when the starter reads a key by name.
   `@ConditionalOnProperty(prefix = "hapi.fhir", name = "app_content_path")`
   (`web/WebAppFilesConfigurer.java:17`) resolves the value strictly (gate
   `app-content`, config.gate.010)
-- **AND** the same holds for `custom_content_path`
-  (`CustomContentFilesConfigurer`), `mdm_enabled` (`MdmConfig`),
+- **AND** the same holds for `custom_content_path`, `mdm_enabled`,
   `binary_storage_mode`, `enable_repository_validating_interceptor`,
   `ig_runtime_upload_enabled`, `ips_enabled` and
-  `spring.ai.mcp.server.enabled`, each naming its own configuration class;
-  the oracle records each class name
+  `spring.ai.mcp.server.enabled`, whose first exception lines name
+  respectively `ca.uhn.fhir.jpa.starter.web.CustomContentFilesConfigurer`,
+  `ca.uhn.fhir.jpa.starter.mdm.MdmConfig`,
+  `ca.uhn.fhir.jpa.starter.common.FhirServerConfigCommon.filesystemBinaryStorageSvc`,
+  `ca.uhn.fhir.jpa.starter.common.StarterJpaConfig.repositoryValidatingInterceptor`,
+  `ca.uhn.fhir.jpa.starter.ig.ImplementationGuideR4OperationProvider`,
+  `ca.uhn.fhir.jpa.starter.ips.StarterIpsConfig` and
+  `ca.uhn.fhir.jpa.starter.mcp.McpServerConfig`, as the oracle records them
+- **AND** these names are those of the condition site the oracle's probe
+  evaluates for each gate, on the starter's own annotation metadata; they were
+  not measured in HAPI's real `Application` context. For the three gates with
+  several sites (binary storage, repository validation, implementation-guide
+  upload) the site is the probe's choice; which one HAPI's context evaluates
+  first, and so names, was not measured
 
 #### Scenario: [config.placeholder.012] the JVM's system properties resolve in placeholders
 
@@ -1146,6 +1237,9 @@ property names (not its field names).
   origins (`DEV-0032`: HAPI starts and picks `3` by `java.util.HashSet`
   iteration order; the same holds for `max_page_size` / `maxPageSize`, where it
   picks the snake-case spelling)
+- **AND** the oracle records both HAPI runs (cases `config.relaxed.007` and
+  `config.relaxed.007-b`, `3` both times) as `DEV-0032`'s evidence; they are
+  not compared with Frevo's run, which fails by design
 
 #### Scenario: [config.relaxed.008] map keys are matched case-insensitively but kept verbatim
 
@@ -1355,9 +1449,17 @@ has any element; a map merges entry by entry.
 
 - **WHEN** `./application.yaml` holds `hapi.fhir.supported_resource_types[1]: Patient`
   and no `[0]`
-- **THEN** Frevo fails to start with `Property:
+- **THEN** Frevo fails to start with the failure-analysis output of
+  config.error.002 whose description line is `Binding to target
+  [Bindable@<hex> type = java.util.List<java.lang.String>, value =
+  'provided', annotations = array<Annotation>[[empty]], bindMethod = [null]]
+  failed:` (one line), followed by `Property:
   hapi.fhir.supportedresourcetypes[1]`, `Value: "Patient"` and `Reason: The
   elements [hapi.fhir.supportedresourcetypes[1]] were left unbound.`
+- **AND** `<hex>` is a Java identity hash that changes from run to run in HAPI
+  (`Bindable@e25951c` on one run, `Bindable@15f47664` on the next); Frevo
+  writes a lower-case hexadecimal number there, and the oracle masks the
+  number on both sides (config.oracle.003)
 
 #### Scenario: [config.collection.003] maps merge entries across sources
 
@@ -1492,6 +1594,18 @@ SHALL fail on a key whose property has no setter exactly when the starter does.
   enable-validation`
 - **AND** `enable_validation: false` (its current value) starts (HAPI's
   behaviour, reproduced; the hazard is `DEBT-0026`)
+- **AND** the preceding `WARN` line of config.error.008 carries the
+  bean-creation wrapper; Frevo writes it as the oracle's probe context
+  records it,
+  `org.springframework.boot.context.properties.ConfigurationPropertiesBindException:
+  Error creating bean with name
+  'hapi.fhir.cr.cql.runtime-ca.uhn.fhir.jpa.starter.cr.CqlRuntimeProperties':
+  Could not bind properties to 'CqlRuntimeProperties' :
+  prefix=hapi.fhir.cr.cql.runtime, ignoreInvalidFields=false,
+  ignoreUnknownFields=true` (one line), and the oracle compares that line's
+  message only through `Error creating bean with name`, because HAPI's servlet
+  context may reach the bean through another dependency chain and word the
+  rest differently (config.oracle.003)
 
 #### Scenario: [config.unknown.006] the getter-only remote terminology map
 
@@ -1526,6 +1640,16 @@ SHALL fail on a key whose property has no setter exactly when the starter does.
   `hapi.fhir.cr.cql.terminology.terminology_settings.code_lookup_mode: AUTO`
   fails with `No setter found for property: terminology-settings`
   (`cr/CqlTerminologyProperties.java:35`)
+- **AND** the preceding `WARN` line carries the bean-creation wrapper of
+  config.unknown.005, naming
+  `'hapi.fhir.cr.cql.data-ca.uhn.fhir.jpa.starter.cr.CqlData'` and `'CqlData'
+  : prefix=hapi.fhir.cr.cql.data`; for the second run
+  `'hapi.fhir.cr-ca.uhn.fhir.jpa.starter.cr.CrProperties'` and `'CrProperties'
+  : prefix=hapi.fhir.cr`; for the third
+  `'hapi.fhir.cr.cql.terminology-ca.uhn.fhir.jpa.starter.cr.CqlTerminologyProperties'`
+  and `'CqlTerminologyProperties' : prefix=hapi.fhir.cr.cql.terminology`, as
+  the oracle's probe context records them; it is compared only through `Error
+  creating bean with name` (config.oracle.003)
 
 ### Requirement: Failure reporting
 
@@ -1556,6 +1680,12 @@ prints.
   a blank line, `Action:`, a blank line, `Update your application's configuration`
 - **AND** the Java type names are reproduced verbatim; they are fixed strings
   per property type and failure kind
+- **AND** when the property is enum-typed (config.coerce.018, .026, .027),
+  the action is instead `Update your application's configuration. The
+  following values are valid:`, a blank line, and one line per enum
+  constant, indented four spaces, sorted by name (for `FhirVersionEnum`:
+  `DSTU2`, `DSTU2_1`, `DSTU2_HL7ORG`, `DSTU3`, `R4`, `R4B`, `R5`), as the
+  oracle records
 - **AND** this form is used for every failure to bind a property, every
   `Config data resource … does not exist` and `Config data location … does not
   exist`, and a profile name rejected while binding (config.profile.015's
@@ -1600,9 +1730,11 @@ prints.
   line, and the exception chain: `<exception class>: <message>` and then one
   `Caused by: <exception class>: <message>` line per cause, each exception's
   message lines verbatim (SnakeYAML's position and caret lines included), with
-  the class names HAPI's run prints
+  the class names HAPI's run prints; for a YAML syntax or duplicate-key error
+  HAPI's run prints SnakeYAML's message lines with no class name, no
+  `Caused by:` line and a trailing blank line (config.yaml.003, .016)
 - **AND** nothing is written to standard error but the JVM-option notices of
-  config.source.023
+  config.source.023 (Frevo writes no logback status line, config.dump.006)
 
 #### Scenario: [config.error.008] the config-related log lines around a failure
 
@@ -1638,7 +1770,8 @@ prints.
 #### Scenario: [config.error.009] stack frames and non-config log lines are not reproduced
 
 - **WHEN** HAPI's failure output contains Java stack-frame lines (`\tat …` and
-  `\t... N more`), or log lines that are not config-related: the startup-info
+  `\t... N more`), logback's own status lines (config.dump.006), or log lines
+  that are not config-related: the startup-info
   lines `Starting Application using Java … with PID …` and `No active profile
   set, falling back to 1 default profile: "default"` (or the `The following
   … profile(s) are active` variant), embedded Tomcat's lines, the servlet
@@ -1772,8 +1905,11 @@ reaches, including where that answer disagrees with the bound property.
   `Constants.VERSION` in the pinned image: `3.0.2`, `4.0.1`, `4.3.0`, `5.0.0`)
   starts with the read text cut before its second `.` is chosen, else the
   names `DSTU2`, `DSTU3`, `STU3`, `R4`, `R4B`, `R5` are tried
-- **AND** so `4.0` and `4.0.1` turn on `fhir-r4` (although neither binds to
-  `hapi.fhir.fhir-version`, config.coerce.018)
+- **AND** by this rule `4.0` and `4.0.1` would select `R4`, but that is not
+  observable through `frevo-config effective`: neither binds to
+  `hapi.fhir.fhir-version` (config.coerce.018), so with `fhir_version: "4.0"`
+  or `"4.0.1"` Frevo fails to start with that binding failure before any gate
+  is reported, as HAPI does
 
 #### Scenario: [config.gate.003] an empty version turns on DSTU2
 
@@ -1966,7 +2102,11 @@ effective configuration.
 #### Scenario: [config.key.001] AppProperties class defaults
 
 - **WHEN** Frevo is started with `--spring.config.location=optional:file:./none.yaml`
-- **THEN** every `hapi.fhir.*` property reports the class default listed in
+  and `./none.yaml` does not exist
+- **THEN** Frevo fails to start as config.gate.005 does, because no source
+  sets `hapi.fhir.fhir_version`
+- **AND** with `--hapi.fhir.fhir_version=R4` added it starts and every
+  `hapi.fhir.*` property reports the class default listed in
   [`keys.md`](../../keys.md) section 1, including `openapi-enabled` = `false`,
   `narrative-enabled` = `true`, `default-page-size` = `20`, `max-page-size` =
   `2147483647`, `client-id-strategy` = `"ALPHANUMERIC"`,
@@ -2003,7 +2143,8 @@ effective configuration.
 
 #### Scenario: [config.key.003] clinical reasoning and CDS Hooks class defaults
 
-- **WHEN** Frevo is started as in config.key.001
+- **WHEN** Frevo is started as in config.key.001, with
+  `--hapi.fhir.fhir_version=R4`
 - **THEN** `hapi.fhir.cr.enabled` = `null`, `hapi.fhir.cdshooks.enabled` =
   `false`, `hapi.fhir.cdshooks.client-id-header-name` = `null`, and every
   `hapi.fhir.cr.*` property reports the default listed in `keys.md` section 2,
@@ -2041,7 +2182,13 @@ effective configuration.
 #### Scenario: [config.key.007] every bound key accepts its kebab-case spelling
 
 - **WHEN** Frevo starts with `harness/config-roundtrip/cases/all-keys-kebab.yaml`
-- **THEN** the effective configuration equals the one for config.key.005
+- **THEN** the `properties` member of the effective configuration equals the
+  one for config.key.005
+- **AND** the `reads` and `gates` members are not expected to equal
+  config.key.005's, in HAPI either: the exact-name reads (`fhir_version`,
+  `mdm_enabled`, …) do not see kebab-case spellings (config.read.002,
+  `DEBT-0022`); like every case, they are compared with the HAPI side's
+  record for this case
 
 #### Scenario: [config.key.008] zero cache-reuse milliseconds means absent
 
@@ -2072,9 +2219,12 @@ effective configuration.
 
 #### Scenario: [config.key.011] every inventory row is accounted for
 
-- **WHEN** `keys.md` is compared with the 209 configuration rows of
-  `docs/inventory.md`
-- **THEN** every row appears in `keys.md` with one of the dispositions
+- **WHEN** `keys.md` is compared with the 220 configuration rows of
+  `docs/inventory.md` (as corrected in #39, task 6: the 209 rows of
+  `keys.md` section 5 less the three `not a key` rows, plus the 14 bound keys
+  of section 6)
+- **THEN** every row appears in `keys.md` section 5 or section 6 with one of
+  the dispositions
   `bound`, `bound, never read`, `bound, setter-less`, `map entry`, `read only`,
   `not bound` or `not a key`, the scenarios that cover it, and the change that
   wires it to behaviour (or `none`)
@@ -2106,19 +2256,25 @@ fixture is judged against HAPI rather than against this text.
   (`org.springframework.boot.loader.PropertiesLauncher` with the ENTRYPOINT's
   `-Dloader.path=main.war!/WEB-INF/classes/,main.war!/WEB-INF/,/app/extra-classes`),
   so the class path, its order and `/app/extra-classes/` are HAPI's, and boots
-  a Spring Boot 3.5.14 application with `WebApplicationType.NONE`, the nine
+  a Spring Boot 3.5.14 application (Spring Framework 6.2.19, SnakeYAML 2.4, as
+  the image ships them) with `WebApplicationType.NONE`, the nine
   properties classes compiled from `hapi-fhir-jpaserver-starter@377e6eba`, the
   starter's condition classes, the packaged resources and the packaged
   `logback.xml`, with the case's working directory, environment and arguments
-- **AND** its jar versions are those inside the pinned image, and no
-  `WEB-INF/lib` jar carries `application*.{properties,xml,yml,yaml}` or
-  `config/application*`
+- **AND** its jar versions are those inside the pinned image (`spring-boot`
+  3.5.14, `spring-core` 6.2.19, `snakeyaml` 2.4; the run refuses to record
+  otherwise), the probe is compiled with `javac` against the image's own
+  `WEB-INF/lib` and `WEB-INF/classes`, and no `WEB-INF/lib` jar carries
+  `application*.{properties,xml,yml,yaml}` or `config/application*`
 
 #### Scenario: [config.oracle.002] self-test
 
 - **WHEN** the HAPI side runs the whole case corpus twice
 - **THEN** both runs produce byte-identical documents, except for values a case
   marks as random (config.placeholder.010)
+- **AND** for a failing case both runs produce identical compared lines after
+  the masks of config.oracle.003, the `Bindable@<hex>` identity hash among
+  them, which differs between HAPI runs when unmasked (config.collection.002)
 
 #### Scenario: [config.oracle.003] failures are compared on the config-related lines
 
@@ -2137,6 +2293,17 @@ fixture is judged against HAPI rather than against this text.
     servlet context, and config.error.008 states the logger name)
 - **AND** in each compared log line the timestamp and the process id are
   masked; the application-name field is compared
+- **AND** in every compared line the hexadecimal number of `Bindable@<hex>`
+  is masked on both sides, because it is a Java identity hash that changes
+  between HAPI runs (config.collection.002)
+- **AND** where the `WARN` line's exception message begins `Error creating bean
+  with name` (the bean-creation wrapper of a properties bean that fails to
+  bind, config.unknown.005, .008), that line is compared only through `Error
+  creating bean with name`; the bean name and dependency chain after it are
+  the probe context's, and HAPI's servlet context may differ there
+- **AND** logback's own status lines (`HH:MM:SS,mmm |-<LEVEL> in …`) are
+  removed from both of HAPI's streams before anything is compared, and
+  counted in the record (config.dump.006); Frevo writes none
 - **AND** every other line of HAPI's output is stripped before comparing
   (config.error.009); Frevo's output must contain no line outside the
   compared set

@@ -98,13 +98,42 @@ context, components) are not written, and the oracle compares only the
 config-related lines. `DEV-0033` is approved and its scope extended
 accordingly.
 
+## Revision after the oracle findings of 2026-11-22 (O-1 to O-13)
+
+No ID was added or removed; the count stays 232. The `config-roundtrip`
+oracle's first full run inside the pinned image (Spring Framework 6.2.19,
+ruled the reference) contradicted or sharpened thirteen points, and the owner
+ruled that HAPI's recorded behaviour wins (proposal.md, "Oracle findings of
+2026-11-22 and the owner's rulings"). **28 scenarios were rewritten in
+place**, keeping their subject:
+
+- O-1, logback status lines: `config.dump.006`, `config.error.007`, `.009`,
+  `config.oracle.003`;
+- O-2, O-3, environment names: `config.env.004`, `.014`;
+- O-4, O-5, recorded exception lines: `config.args.007`, `.009`,
+  `config.yaml.003`, `.016`;
+- O-6, no version after `spring.config.location`: `config.source.007`,
+  `.009`, `.010`, `.011`, `.013`, `config.key.001`, `.003`;
+- O-7, gate site names: `config.placeholder.011`;
+- O-8, `Bindable@<hex>`: `config.collection.002`, `config.oracle.002`;
+- O-9, the bean-creation wrapper: `config.unknown.005`, `.008`;
+- O-10: `config.gate.002`; O-11: `config.key.011`; O-12:
+  `config.relaxed.007`; O-13: `config.key.007`;
+- the jar versions and the `javac` build of the HAPI side:
+  `config.oracle.001`;
+- the enum action text the record shows: `config.error.002`.
+
+The notation comment at the top of the delta now says that failure output is
+on standard output, and how a scenario that replaces the default locations
+without a version is to be read.
+
 ## Scenarios that carry a register entry
 
 | Entry | Scenarios |
 |---|---|
 | `DEV-0031` — `configtree:`, `.xml`, `on-cloud-platform` (narrowed) | `config.source.020`, `config.profile.014` |
 | `DEV-0032` — two non-kebab spellings in one source | `config.relaxed.007` |
-| `DEV-0033` — failure output keeps only the config-related lines (no stack frames, no other log lines); owner approved 2026-11-22 | `config.error.008`, `config.error.009`, `config.oracle.003` |
+| `DEV-0033` — failure output keeps only the config-related lines (no stack frames, no other log lines, no logback status lines); owner approved 2026-11-22 | `config.dump.006`, `config.error.007`, `config.error.008`, `config.error.009`, `config.oracle.003` |
 | `DEBT-0022` — named reads split from binding | `config.read.002`, `config.read.005`, `config.gate.006`, `config.gate.007` |
 | `DEBT-0023` — empty `fhir_version` selects DSTU2 | `config.gate.003` |
 | `DEBT-0024` — environment variables expand into the request-log templates | `config.placeholder.009` |

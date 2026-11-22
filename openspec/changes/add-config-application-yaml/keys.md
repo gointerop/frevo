@@ -10,9 +10,13 @@ spec delta's normative text for those four scenarios.
 transcribed from the Java source. They are the output of the probe described
 in [`design.md`](design.md) section 2: the starter's nine properties classes,
 compiled from `hapi-fhir-jpaserver-starter@377e6eba`, bound by Spring Boot
-3.5.14 (Spring Framework 6.2.18, SnakeYAML 2.4) against the HAPI 8.12.0 and
-clinical-reasoning 4.13.0 jars, with every getter dumped. Sections 1 and 2 ran
-with `--spring.config.location=optional:file:./none.yaml` (no file at all);
+3.5.14 (Spring Framework 6.2.18 from a local cache, SnakeYAML 2.4) against
+the HAPI 8.12.0 and clinical-reasoning 4.13.0 jars, with every getter dumped;
+the oracle re-records them inside the pinned image, whose Spring Framework
+6.2.19 is the reference (owner ruling of 2026-11-22). Sections 1 and 2 ran
+with `--spring.config.location=optional:file:./none.yaml` (no file at all)
+and `--hapi.fhir.fhir_version=R4`, without which HAPI fails to start
+(config.key.001, config.gate.005);
 section 3 with the packaged files; section 4 with `SPRING_PROFILES_ACTIVE=cds`.
 A JSON value is shown for each path; sets are sorted, as config.dump.004
 requires. The `config-roundtrip` oracle (design.md section 7) re-derives every
@@ -577,5 +581,8 @@ prerequisite of archiving. The corrections:
    field names; that is the root cause of items 2 and 3.
 
 The parity denominator therefore changes from 209: three rows go, and the
-bound keys of section 6 come in. The new count is for the owner to confirm
-(task 6, a `chore/*` prerequisite of archiving; owner ruling of 2026-11-22).
+bound keys of section 6 come in. #39 applied items 1 to 4 to
+`docs/inventory.md` by hand: it now has **220** configuration rows (209 - 3
++ 14), and config.key.011 checks every one of them against sections 5 and 6.
+Item 5, the generator fix, is still owed (task 6, a `chore/*` prerequisite of
+archiving; owner ruling of 2026-11-22).

@@ -39,7 +39,7 @@ documentation:
 | Probe input | Version | Where it came from |
 |---|---|---|
 | The nine properties classes | `hapi-fhir-jpaserver-starter@377e6eba` | `reference/`, compiled unchanged |
-| `spring-boot`, `spring-core`, `-beans`, `-context`, `-aop`, `-expression`, `-jcl` | 3.5.14 / 6.2.18 | local Maven cache; 3.5.14 is the starter's `spring_boot_version` (`pom.xml:22`, overriding the parent's 3.5.15) and declares Spring 6.2.18 |
+| `spring-boot`, `spring-core`, `-beans`, `-context`, `-aop`, `-expression`, `-jcl` | 3.5.14 / 6.2.18 | local Maven cache; 3.5.14 is the starter's `spring_boot_version` (`pom.xml:22`, overriding the parent's 3.5.15), whose BOM declares Spring 6.2.18. **The pinned image ships 6.2.19 instead** (see below) |
 | `snakeyaml` | 2.4 | the version Spring Boot 3.5.x manages |
 | `hapi-fhir-base`, `-storage`, `-jpaserver-model`, `org.hl7.fhir.r4`, `.utilities` | 8.12.0 / 6.9.12 | local Maven cache |
 | `cqf-fhir-cql`, `cqf-fhir-utility` | 4.13.0 | local Maven cache |
@@ -54,14 +54,51 @@ placeholders, failure analysers). After startup it dumps every getter
 reachable from each bean, and the `Environment.getProperty` result for each
 named read. About 150 configurations were run.
 
-Two limits, both handed to the oracle (section 7):
+Two limits, both handed to the oracle (section 7), and both since settled by
+its record:
 
 1. **It ran on Windows.** Environment-variable names are case-insensitive
-   there; config.env.004's Linux clause is reasoned from Spring's mappers and
-   is confirmed by the oracle on Linux (owner ruling: Linux semantics).
+   there. The oracle's Linux run shows that the all-lower-case form binds on
+   Linux as well, because Spring Boot 3.5.14's mapper looks up lower-case
+   forms too (section 3.4); only mixed case does not (config.env.004).
 2. **The jars are from a cache, not from the image.** The oracle's HAPI side
    uses the jars inside `hapiproject/hapi:v8.12.0-2@sha256:0ff86aac…`
-   (`/app/main.war!/WEB-INF/lib/`), and asserts their versions.
+   (`/app/main.war!/WEB-INF/lib/`), and asserts their versions. They are
+   `spring-boot` 3.5.14 and `snakeyaml` 2.4, as the probe used, but
+   `spring-core`, `spring-beans`, `spring-context`, `spring-aop` and
+   `spring-expression` **6.2.19**, `slf4j-api` 2.0.16, and no `spring-jcl`
+   jar. **The owner ruled on 2026-11-22 that Spring Framework 6.2.19 is the
+   reference**, because it is what HAPI 8.12.0's image runs; Spring Boot
+   3.5.14 and SnakeYAML 2.4 are unchanged. The oracle checks those three
+   versions and records nothing if they differ.
+
+### Oracle findings of 2026-11-22
+
+The oracle's first full run (`harness/config-roundtrip/diagnostic-spring-core-6.2.19.json`,
+recorded against the 6.2.19 image before the ruling) contradicted or
+sharpened thirteen points of the first probe's text (`tasks/blockers.md`,
+entry of 2026-11-22, O-1 to O-13). The owner ruled the same day that HAPI's
+recorded behaviour wins; the delta now says:
+
+| Finding | What the record shows | Where the delta says it |
+|---|---|---|
+| O-1 | logback prints its own status lines on every run, on both streams, because the packaged `logback.xml` sets `scan="true"` inside a jar | config.dump.006, .error.007, .error.009, .oracle.003; `DEV-0033` extended (`register-entries.md`) |
+| O-2 | lower-case `hapi_fhir_default_page_size` binds on Linux; mixed case does not | config.env.004, section 3.4 |
+| O-3 | an environment variable named `--spring.config.location` is applied as the location | config.env.014, section 3.4 |
+| O-4 | invalid JSON is reported through Jackson's `JsonParseException` | config.args.007, .009 |
+| O-5 | SnakeYAML errors print without a class prefix, source lines indented four spaces plus their own | config.yaml.003, .016, config.error.007 |
+| O-6 | replacing the default locations without a version fails as config.gate.005 does | config.source.007, .009, .010, .011, .013, config.key.001, .003, and the notation comment |
+| O-7 | the class a strict-placeholder gate failure names is the probe's condition site, not measured in HAPI's real context | config.placeholder.011, section 7 |
+| O-8 | `Bindable@<hex>` is an identity hash that changes between runs | config.collection.002, config.oracle.002, .003 |
+| O-9 | the bean-creation wrapper's wording after `Error creating bean with name` is the probe context's | config.unknown.005, .008, config.oracle.003 |
+| O-10 | `4.0` and `4.0.1` fail to bind before any gate is reported | config.gate.002 |
+| O-11 | `docs/inventory.md` has 220 configuration rows after #39 | config.key.011, `keys.md` section 7 |
+| O-12 | HAPI picks the snake-case spelling in config.relaxed.007's second run, as stated | config.relaxed.007 (a note) |
+| O-13 | the kebab-case corpus's reads and gates differ from config.key.005's, in HAPI too | config.key.007 (a note) |
+
+The record also shows the action text of an enum conversion failure (`The
+following values are valid:` and the constants), which the first draft did not
+quote; config.error.002 now states it.
 
 ## 3. Loading
 
@@ -102,7 +139,8 @@ profiles over earlier (config.profile.004), and a profile *file* over an
 `on-profile` *document* of a base file (config.profile.005).
 
 `classpath:` resolves to the three packaged files embedded in the binary
-(`include_bytes!`), then to the fixed directory `/app/extra-classes/`, the
+(`include_bytes!` of `crates/frevo-config/packaged/`, section 11), then to the
+fixed directory `/app/extra-classes/`, the
 last entry of the image's `loader.path`; the first match wins, so a packaged
 name shadows the same name there, while `application.properties`,
 `application.yml`, `config/application.*` and `application-<profile>.*` for
@@ -145,9 +183,17 @@ letters-and-digits are equal (`ConfigurationPropertyName` "uniform" form).
 - Environment: each variable is mapped twice. As above (so `hapi.fhir.x_y`
   works), and by `SystemEnvironmentPropertyMapper`: split at `_`, lower-cased,
   an all-digit element becoming an index. A property is looked up in the
-  environment under its uniform form (`HAPI_FHIR_DEFAULTPAGESIZE`) and its
-  legacy form (`HAPI_FHIR_DEFAULT_PAGE_SIZE`, dashes to underscores,
-  upper-cased) (config.env.001-.011).
+  environment under four names, in this order: its uniform form upper-cased
+  (`HAPI_FHIR_DEFAULTPAGESIZE`), its legacy form upper-cased
+  (`HAPI_FHIR_DEFAULT_PAGE_SIZE`, dashes to underscores), then the same two
+  lower-cased (`hapi_fhir_defaultpagesize`, `hapi_fhir_default_page_size`)
+  (Spring Boot 3.5.14's `SystemEnvironmentPropertyMapper.map`, read from the
+  3.5.14 jar). So on a case-sensitive environment an all-lower-case name
+  binds and a mixed-case one does not (config.env.001-.011, config.env.004).
+- The dotted mapper applies to every variable name, including one that
+  starts with dashes: the element `--spring` has the uniform form `spring`
+  (dashes are not letters or digits), so a variable named
+  `--spring.config.location` is `spring.config.location` (config.env.014).
 
 Within one source, the canonical kebab-case name is looked up first, so it
 wins over other spellings (config.relaxed.006); two other spellings of one
@@ -307,17 +353,28 @@ twenty-five gates. Later changes read gates, never re-derive them.
 Measured with the starter's `logback.xml` (which includes Spring Boot's
 `console-appender.xml`, a `ConsoleAppender` on standard output). Every
 startup failure goes to **standard output** as log lines; nothing goes to
-standard error except the JVM-option notices. Two forms:
+standard error except the JVM-option notices and logback's own status lines.
+Those status lines (`HH:MM:SS,mmm |-<LEVEL> in …`, among them `Missing
+watchable .xml or .properties files.`) appear on every HAPI run, on both
+streams, because the packaged `logback.xml` sets `scan="true"` while it is
+read from inside a jar; they say nothing about the configuration. Frevo
+writes none of them; the oracle strips and counts them (section 7), and
+`DEV-0033`'s scope covers them. Two forms:
 
 - **Failure analysis** (config.error.002): one `ERROR` line from
   `o.s.b.d.LoggingFailureAnalysisReporter` with an empty message, then the
   `APPLICATION FAILED TO START` block. Used for property binding failures and
-  for missing config data resources and locations.
+  for missing config data resources and locations. For an enum-typed
+  property the action lists the valid constants, sorted by name.
 - **Run failed** (config.error.007): one `ERROR` line from
   `o.s.boot.SpringApplication` with `Application run failed`, a blank line,
   and the exception chain (`<class>: <message>`, `Caused by: …`). Used for
   everything else, including HAPI's own `NullPointerException` when no
-  version is configured (config.gate.005).
+  version is configured (config.gate.005). A SnakeYAML error's chain is its
+  message lines alone: no class prefix, no `Caused by:`, echoed source lines
+  indented four spaces plus their own indentation, and a trailing blank line
+  (config.yaml.003). Invalid JSON is Jackson's `JsonParseException`, because
+  the image ships Jackson (config.args.007).
 
 Before either, a failure during context refresh is preceded by HAPI's `WARN`
 line from the application context and, for binding and gate-placeholder
@@ -328,8 +385,16 @@ initialisation. Java stack frames and every non-config log line (the
 startup-info lines `Starting Application …` and `No active profile set …`,
 Tomcat, the servlet context, HAPI components) are not reproduced; Frevo
 writes none of them (`DEV-0033`, approved by the owner on 2026-11-22, scope
-extended the same day). The `WARN` line carries HAPI's servlet-context logger
-name, `ConfigServletWebServerApplicationContext`.
+extended the same day, and extended again to logback's status lines). The
+`WARN` line carries HAPI's servlet-context logger name,
+`ConfigServletWebServerApplicationContext`. When a properties bean fails to
+bind, the `WARN` line's exception is the bean-creation wrapper,
+`ConfigurationPropertiesBindException: Error creating bean with name
+'<prefix>-<class>': Could not bind properties to '<SimpleClass>' :
+prefix=<prefix>, ignoreInvalidFields=false, ignoreUnknownFields=true`, as the
+oracle's probe context words it; HAPI's servlet context may reach the bean
+through another dependency chain, so only the text through `Error creating
+bean with name` is compared (config.unknown.005, config.oracle.003).
 A table maps each failure kind to its exception class names and messages,
 generated from the oracle's record.
 
@@ -338,19 +403,37 @@ generated from the oracle's record.
 New, in `harness/config-roundtrip/` (oracle-builder), shaped like
 `harness/hapi-fhirpath-results/`:
 
-- **HAPI side:** a Maven module containing the probe class, a dumper that maps
-  each getter to the canonical path of config.dump.002, the starter's
-  condition classes evaluated against the started `Environment`, and a
-  runner, packaged into the image's `/app/extra-classes/` and started by the
-  image's own launcher (`PropertiesLauncher` with the ENTRYPOINT's
-  `loader.path`), so the class path and its order, `/app/extra-classes/`, the
-  packaged `logback.xml` and the exact jars HAPI 8.12.0 runs are all HAPI's,
-  on Linux. It also records `System.getProperties()` for section 3.6, and
-  asserts that no `WEB-INF/lib` jar carries an application file.
+- **HAPI side:** the probe class, a dumper that maps each getter to the
+  canonical path of config.dump.002, the starter's condition classes
+  evaluated against the started `Environment`, and a runner. They are
+  compiled with `javac` in a Docker build stage
+  (`eclipse-temurin:21-jdk@sha256:8ad118b1…`) against the image's own
+  `WEB-INF/lib` and `WEB-INF/classes`, not by Maven, so they compile against
+  exactly the jars the image runs rather than Maven Central copies; there is
+  no `pom.xml`. The classes are added to the unchanged image at
+  `/app/extra-classes/` and started by the image's own launcher
+  (`PropertiesLauncher` with the ENTRYPOINT's `loader.path`, `loader.main`
+  from `/app/loader.properties`, working directory `/app`), so the class path
+  and its order, `/app/extra-classes/`, the packaged `logback.xml` and the
+  exact jars HAPI 8.12.0 runs are all HAPI's, on Linux. It also records
+  `System.getProperties()` for section 3.6, asserts that no `WEB-INF/lib`
+  jar carries an application file, and refuses to record unless
+  `spring-boot`, `spring-core` and `snakeyaml` are 3.5.14, 6.2.19 and 2.4.
+- **Gate site names.** Each starter condition is evaluated on the starter's
+  own annotation metadata, so a strict-placeholder failure names the class
+  (or `Class.method`) of the site the probe evaluates (config.placeholder.011).
+  For the three gates with several sites — repository validation,
+  implementation-guide upload, binary storage — the site is the probe's
+  choice. Which site HAPI's real `Application` context evaluates first, and so
+  which class its failure names, was not measured.
 - **Cases:** one directory per case: `files/` (copied into an empty working
-  directory), `env` (one `NAME=value` per line, nothing inherited), `args`,
-  and `covers:` tags. The three whole-surface cases of config.key.005-.007
-  are generated from `keys.md` so that a key added there cannot be missed.
+  directory), `root/` (copied to `/`, for absolute paths), `env` (one
+  `NAME=value` per line, nothing inherited), `args`, and `covers:` tags. The
+  three whole-surface cases of config.key.005-.007 are generated from
+  `keys.md` so that a key added there cannot be missed. A scenario that
+  replaces the default locations without a version has a case exactly as
+  stated (it fails as config.gate.005 does) and a `-v` case with
+  `--hapi.fhir.fhir_version=R4` added.
 - **Recording:** the HAPI side's documents are recorded in
   `harness/config-roundtrip/hapi-8.12.0-results.json` with the image digest,
   so CI compares Frevo against the record without Docker, and a scheduled job
@@ -362,6 +445,12 @@ New, in `harness/config-roundtrip/` (oracle-builder), shaped like
   line and everything after it with stack frames removed, and the
   `WARN`/`INFO` lines above it without their logger field; timestamps and
   process ids masked; every other HAPI line stripped (config.oracle.003).
+  Three further normalisations, each because the HAPI side varies or is not
+  HAPI's servlet context: logback status lines are removed from both HAPI
+  streams and counted; the hexadecimal identity hash in `Bindable@<hex>` is
+  masked on both sides (config.collection.002); and a `WARN` line whose
+  exception message begins `Error creating bean with name` is compared only
+  through that prefix (config.unknown.005, .008).
 
 ## 8. The effective-configuration document
 
@@ -391,8 +480,8 @@ reported, the last flattened into its four modes; binding beneath them fails
 an array of integers or `null` (config.key.012). The
 password redaction of config.dump.005 is applied on both sides of the oracle.
 
-`frevo-config effective` is a binary target of `frevo-config` (owner
-decision of 2026-11-22).
+`frevo-config effective` is a binary target of `frevo-config`, named
+`frevo-config` (owner decision of 2026-11-22; section 11).
 Arguments after `effective` are the configuration's command-line arguments.
 
 ## 9. Performance budget
@@ -418,3 +507,33 @@ the consumer's own `spring.*`/`server.*` classes (ruled 2026-11-22: typed
 binding of those keys belongs to the consuming change). The
 accessors are the only API consumers use; nothing outside `frevo-config` sees
 a source, a name mapper or a YAML event.
+
+## 11. Test contracts
+
+The oracle-builder's tests (task 3) fix three points of the implementation's
+shape. All three were accepted on 2026-11-22.
+
+1. **`FREVO_CONFIG_TEST_ROOT`, a test seam.** A test cannot create the
+   absolute paths HAPI's cases use (`/app/extra-classes/`, `/app/config/…`,
+   `/configs/…`). The tests therefore run `frevo-config effective` with the
+   working directory `<tmp>/root/app/`, mirroring the image's `WORKDIR /app`,
+   and set `FREVO_CONFIG_TEST_ROOT=<tmp>/root`. When the variable is set,
+   every absolute path Frevo resolves — `file:` locations and imports, plain
+   absolute paths in `SPRING_CONFIG_IMPORT`, and the fixed
+   `/app/extra-classes/` of `classpath:` — resolves beneath it, so
+   `/configs/x.yaml` is `<tmp>/root/configs/x.yaml`. It is **test-only and
+   not a HAPI setting**: it is not a configuration property, no source can
+   set it as one, it never appears in the effective-configuration document or
+   in a failure report (paths in `Origin:` lines and `does not exist` reports
+   are written as if the root were `/`), and production deployments never set
+   it. It is not a deviation, because it changes nothing HAPI's
+   configuration can express.
+2. **Embedded packaged files.** The three packaged files are embedded from
+   `crates/frevo-config/packaged/` (`application.yaml`,
+   `application-cds.yaml`, `application-elastic.yaml`), each byte-identical
+   to the copy in `harness/config-roundtrip/packaged/`, which the harness
+   extracted from the pinned image and checked against
+   `hapi-fhir-jpaserver-starter@377e6eba` after filtering
+   (config.source.001).
+3. **Binary target name.** The binary target is named `frevo-config`; the
+   tests find it through `CARGO_BIN_EXE_frevo-config`.
