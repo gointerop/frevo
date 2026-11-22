@@ -41,6 +41,51 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@nextest
+      - name: Restore fetched oracle data
+        # The oracle data the workspace tests read is fetched, never vendored
+        # (constitution rule 10; oracles/PINS.md), and git-ignored, so a clean
+        # checkout has none of it and every test that needs it fails. The key
+        # hashes the scripts that hold the pins, so moving a pin invalidates
+        # the cache and an unchanged pin never refetches.
+        id: oracle-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            oracles/fhir-test-cases/fetched
+            oracles/r4-example-roundtrip/fetched
+            crates/frevo-codegen/packages/fetched
+            reference/hapi-fhir
+          key: oracles-${{ runner.os }}-${{ hashFiles('reference/PINS.md', 'reference/clone.sh', 'oracles/fetch.sh', 'oracles/PINS.md', 'crates/frevo-codegen/packages/fetch.sh', 'crates/frevo-codegen/packages/PINS.md') }}
+      - name: Fetch oracle data (digest- and commit-verified by the fetch scripts)
+        # Only what the tests read: the fhir-test-cases tree (R4 examples, the
+        # FHIRPath input files and ucum-essence.xml) and, where the checkout has
+        # it, the hl7.fhir.r4.core package frevo-codegen generates from. The
+        # scripts are no-ops for content already restored from the cache.
+        run: |
+          bash oracles/fetch.sh --only fhir-test-cases
+          # The full R4 example package (round-trip oracle), digest-verified.
+          bash oracles/fetch.sh --only r4-example-roundtrip
+          if [ -f crates/frevo-codegen/packages/fetch.sh ]; then
+            bash crates/frevo-codegen/packages/fetch.sh
+            # The codegen cross-check reads HAPI's copy of the R4 definitions
+            # (crates/frevo-codegen/tests/codegen_r4.rs, HAPI_PROFILE_DIR).
+            # reference/ is gigabytes, so take one directory of one pin, blobless
+            # and sparse; clone.sh still checks the commit against the pin.
+            bash reference/clone.sh --sparse hapi-fhir \
+              hapi-fhir-validation-resources-r4/src/main/resources/org/hl7/fhir/r4/model/profile
+          fi
+      - name: Save fetched oracle data
+        if: steps.oracle-cache.outputs.cache-hit != 'true'
+        # Saved here, not in the action's post step, which is skipped when the
+        # tests below fail -- exactly when a warm cache matters most.
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            oracles/fhir-test-cases/fetched
+            oracles/r4-example-roundtrip/fetched
+            crates/frevo-codegen/packages/fetched
+            reference/hapi-fhir
+          key: ${{ steps.oracle-cache.outputs.cache-primary-key }}
       - name: cargo nextest
         run: cargo nextest run --workspace --locked --no-fail-fast
       - name: Doc tests

@@ -4,6 +4,10 @@
 #   bash oracles/fetch.sh             # fetch what is not vendored
 #   bash oracles/fetch.sh --verify    # verify vendored content against its pin
 #   bash oracles/fetch.sh --list      # show the pins and dispositions
+#   bash oracles/fetch.sh --only fhir-test-cases
+#                                     # restrict fetch/--verify to the named
+#                                     # suite(s); repeatable. Pins and digests
+#                                     # are checked exactly as without it.
 #
 # Three dispositions:
 #
@@ -39,7 +43,30 @@ TBL
 )
 
 GIT="git -c advice.detachedHead=false -c core.longpaths=true"
-MODE="${1:-fetch}"
+MODE="fetch"
+ONLY=" "
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --verify|--list) MODE="$1" ;;
+    --only)
+      [ $# -ge 2 ] || { echo "[FAIL] --only needs a suite name"; exit 2; }
+      ONLY="$ONLY$2 "; shift ;;
+    *) echo "[FAIL] unknown argument: $1 (use --verify, --list or --only <suite>)"; exit 2 ;;
+  esac
+  shift
+done
+
+# An --only name that matches no pin is a typo, and a typo that fetched nothing
+# would report success.
+if [ "$ONLY" != " " ]; then
+  for want in $ONLY; do
+    if ! printf '%s
+' "$PINS" | cut -d'|' -f1 | grep -qx -- "$want"; then
+      echo "[FAIL] --only $want: no such suite in the pin table (see --list)"
+      exit 2
+    fi
+  done
+fi
 
 if [ "$MODE" = "--list" ]; then
   printf '%-20s %-10s %-16s %s\n' SUITE DISPOSITION PIN PATH
@@ -130,6 +157,7 @@ fetch_pkg() { # url pin dest
 
 while IFS='|' read -r suite disp repo sha path; do
   [ -z "${suite:-}" ] && continue
+  case "$ONLY" in " ") ;; *" $suite "*) ;; *) continue ;; esac
   dir="oracles/$suite"
   mkdir -p "$dir"
 

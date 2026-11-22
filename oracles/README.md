@@ -25,6 +25,7 @@ Pins, licences and dispositions: [`PINS.md`](PINS.md).
 bash oracles/fetch.sh            # fetch what is not vendored
 bash oracles/fetch.sh --verify   # verify vendored content against its pin
 bash oracles/fetch.sh --list     # show pins and dispositions
+bash oracles/fetch.sh --only fhir-test-cases   # fetch just the named suite(s); repeatable
 ```
 
 Fetched trees land in `<suite>/fetched/` and are git-ignored.

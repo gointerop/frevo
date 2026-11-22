@@ -5,6 +5,16 @@
 # product. The script is idempotent and verifies the commit SHA of every tree,
 # so a silently re-pinned or half-finished clone fails loudly instead of quietly
 # changing what "correct" means.
+#
+#   bash reference/clone.sh                          # clone every pin in full
+#   bash reference/clone.sh --sparse <name> <path>...
+#                                                    # clone ONE pin, blobless and
+#                                                    # sparse, materialising only
+#                                                    # the named directories
+#
+# --sparse is for CI, which needs a few files from a multi-GB tree. The commit
+# is checked against the pin exactly as in a full clone; only the working tree
+# is partial, and each <path> must exist and be non-empty afterwards.
 set -uo pipefail
 cd "$(dirname "$0")"
 
@@ -23,9 +33,52 @@ TBL
 # exceed MAX_PATH. Set per-invocation so no global git config is touched.
 GIT="git -c core.longpaths=true -c advice.detachedHead=false"
 
+SPARSE_NAME=""
+SPARSE_PATHS=()
+if [ "${1:-}" = "--sparse" ]; then
+  [ $# -ge 3 ] || { echo "usage: clone.sh --sparse <name> <path>..."; exit 2; }
+  SPARSE_NAME="$2"; shift 2; SPARSE_PATHS=("$@")
+  if ! printf '%s
+' "$PINS" | cut -f1 | grep -qx -- "$SPARSE_NAME"; then
+    echo "[FAIL] --sparse $SPARSE_NAME: no such pin"; exit 2
+  fi
+elif [ $# -gt 0 ]; then
+  echo "usage: clone.sh [--sparse <name> <path>...]"; exit 2
+fi
+
 rc=0
 while IFS=$'\t' read -r name url ref want; do
   [ -z "${name:-}" ] && continue
+  [ -n "$SPARSE_NAME" ] && [ "$name" != "$SPARSE_NAME" ] && continue
+
+  if [ -n "$SPARSE_NAME" ]; then
+    if [ ! -d "$name/.git" ]; then
+      echo "[clone] $name @ $ref (blobless, sparse: ${SPARSE_PATHS[*]})"
+      rm -rf "$name"
+      ( $GIT clone -q --filter=blob:none --no-checkout --depth 1 --branch "$ref"           --single-branch "$url" "$name"         && $GIT -C "$name" sparse-checkout set --cone "${SPARSE_PATHS[@]}"         && $GIT -C "$name" checkout -q ) >/dev/null 2>&1
+    fi
+    if [ ! -d "$name/.git" ]; then
+      echo "[FAIL] $name: sparse clone produced no repository"; rc=1; continue
+    fi
+    got=$($GIT -C "$name" rev-parse HEAD 2>/dev/null)
+    if [ "$got" != "$want" ]; then
+      echo "[FAIL] $name: HEAD $got != pinned $want (PINS.md and the tree disagree)"
+      rc=1; continue
+    fi
+    # A cached tree may have been sparsified for other paths: set them again
+    # (cheap and idempotent) and force the checkout.
+    $GIT -C "$name" sparse-checkout set --cone "${SPARSE_PATHS[@]}" >/dev/null 2>&1
+    $GIT -C "$name" checkout -q -f HEAD >/dev/null 2>&1
+    bad=0
+    for sp in "${SPARSE_PATHS[@]}"; do
+      if [ -z "$(ls -A "$name/$sp" 2>/dev/null)" ]; then
+        echo "[FAIL] $name: $sp is missing or empty after the sparse checkout"; bad=1
+      fi
+    done
+    if [ "$bad" != "0" ]; then rc=1; continue; fi
+    echo "[ok]    $name $got  (sparse: ${SPARSE_PATHS[*]})"
+    continue
+  fi
 
   if [ ! -d "$name/.git" ]; then
     echo "[clone] $name @ $ref"
