@@ -371,19 +371,48 @@ scenario govern each of the ten is recorded in
   for type dispatch, not read as an element. That covers a `contained`
   resource, `Bundle.entry.resource` and `Parameters.parameter.resource`
   (`model.json.006`, `model.json.007`). No R4 resource declares an element
-  called `resourceType`, so asking the reader for a resource's child
-  `resourceType` yields nothing
+  called `resourceType`, so the lazy reader rejects a path naming a
+  resource's `resourceType` exactly as it rejects any undeclared name, with a
+  decode error rather than an empty answer (observed at `8793755`):
+  - `read("ExampleScenario.resourceType")` fails with
+    `ExampleScenario has no element named "resourceType"`;
+  - `read("ExampleScenario.contained[0].resourceType")` over a contained
+    `Patient` fails with `Patient has no element named "resourceType"`;
+  - while `read("ExampleScenario.instance[0].resourceType")` gives the `code`
+    `MedicationRequest`
+- **AND** a `_resourceType` key on a resource's own object, at the root or
+  nested, is dropped **silently in both modes**: no diagnostic, no strict
+  error, and it is not re-encoded. In `JsonParser.parseChildren`
+  (`hapi-fhir-base`), the resource's `resourceType` `continue`s at
+  `:1342-1344`, before the alternate-name lookup at `:1363-1366`, so the
+  underscore name is counted (`:1356-1358`) but never handled. The
+  unhandled-underscore loop then finds `resourceType` present and
+  `continue`s (`:1387-1400`), so `unknownElement` is never called. So
+  `{"resourceType": "Patient", "_resourceType": {"extension": [{"url": "http://x", "valueString": "y"}]}}`
+  decodes as a `Patient` with no diagnostic in lenient mode, decodes in
+  strict mode, and re-encodes as `{"resourceType": "Patient"}`. Frevo at
+  `8793755` reports `UnknownProperty` (code 1825) at `Patient._resourceType`
+  instead, and fails in strict mode (observed by the spec-reviewer); task 5c
+  makes it match
 - **AND** the document re-encodes byte-identically. In canonical form the
   instance's `resourceType` is an ordinary member of the instance object,
   sorted among its siblings (`model.canonical.001`). Each resource object's
   own marker is written once, as that resource's type
 - **AND** in any other object that does not declare `resourceType`, the key is
-  an undeclared property (`model.json.004`). The `Patient`
+  an undeclared property (`model.json.004`). HAPI's `parseChildren` passes it
+  to `ElementCompositeState.enteringNewElement`, which finds no child of that
+  name and calls `unknownElement(null, "resourceType")`
+  (`ParserState.java:640-657`, the call at `:655`). The location is `null`,
+  so `describeLocation` gives `""` (`ParseErrorHandler.java:24-30`), and
+  HAPI's strict text is exactly
+  `HAPI-1825: Unknown element 'resourceType' found during parse`, with no path
+  (`StrictErrorHandler.java:88-90`). So the `Patient`
   `{"resourceType": "Patient", "name": [{"resourceType": "x", "family": "F"}]}`
-  is accepted in lenient mode with an unrecognised-property diagnostic naming
-  `Patient.name.resourceType`. It fails in strict mode with an error naming
-  that path. This bullet is derived from `parseChildren` falling through to
-  the unknown-element path (`JsonParser.java:1339-1344`), not observed
+  is accepted in lenient mode with an unrecognised-property diagnostic, code
+  `1825`, and fails in strict mode with code `1825`. The path is Frevo's own
+  diagnostic field, the indexed element path `Patient.name[0].resourceType`
+  (observed at `8793755`), as `model.json.004` does for its path; the code is
+  what is compared with HAPI
 - **AND** the oracle is the unit tests in
   `crates/frevo-model/tests/model_decode.rs`, one hand-built document per
   bullet (task 5b). `codegen.roundtrip.001` over the full

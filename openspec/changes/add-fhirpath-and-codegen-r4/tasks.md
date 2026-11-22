@@ -291,12 +291,16 @@ checkpoint because it changes what a gate measures.
     `resourceType` sorted among its siblings;
   - a `contained` resource, a `Bundle.entry.resource` and a
     `Parameters.parameter.resource`. Each still has its marker skipped and
-    dispatched on, and a reader asking a resource for a child `resourceType`
-    gets nothing;
+    dispatched on. `read("ExampleScenario.resourceType")` and
+    `read("ExampleScenario.contained[0].resourceType")` fail with the
+    scenario's `... has no element named "resourceType"` errors;
   - a `Patient.name` object carrying `resourceType`. Lenient mode gives the
-    unrecognised-property diagnostic at `Patient.name.resourceType`, and
-    strict mode an error naming that path.
-  The behaviour already holds in code at `adaecd3`, so these tests should
+    unrecognised-property diagnostic, code `1825`, at
+    `Patient.name[0].resourceType`, and strict mode fails with code `1825`;
+  - a `_resourceType` on a resource's own object, at the root and on a
+    `contained` resource. Both modes accept it with no diagnostic, and it is
+    not re-encoded. This case fails until task 5c lands.
+  Every other case already holds in code at `adaecd3`, so those tests should
   pass at once. A test that fails goes back to the implementer, or to the
   proposer if a stated value is wrong; neither the test nor the scenario is
   bent to fit. Until this lands, `scenario-coverage.sh --change
@@ -304,6 +308,22 @@ checkpoint because it changes what a gate measures.
   `codegen.roundtrip.001` (task 56, over the full package) grades it
   additionally.
   Satisfies the tests for `model.json.026`.
+
+- [ ] **5c. Drop `_resourceType` on a resource's own object silently, as HAPI
+  does.** Found by the sixty-fifth review (owner ruling: HAPI wins, no new
+  deviation). HAPI's `parseChildren` never handles a resource's
+  `_resourceType` and never reports it (`hapi-fhir-base`
+  `JsonParser.java:1342-1344`, `:1356-1358`, `:1363-1366`, `:1387-1400`).
+  So in both modes it is accepted with no diagnostic and is not re-encoded,
+  at the root and on every nested resource. At `8793755` Frevo instead
+  reports `UnknownProperty` (code 1825) at `Patient._resourceType` and fails
+  in strict mode. This difference predates `adaecd3`. In
+  `crates/frevo-model/src/codec/decode.rs` (`shape_members`), skip
+  `_resourceType` on a resource object exactly where the bare marker is
+  skipped. Leave it an ordinary primitive-extension sibling on an element
+  that declares `resourceType` (`ExampleScenario.instance`). Depends on task
+  5b.
+  Satisfies the `_resourceType` bullet of `model.json.026`.
 
 ---
 
