@@ -1284,7 +1284,12 @@ impl Decoder<'_> {
         let mut props: Vec<Prop> = Vec::new();
         for (key, raw) in members {
             let key_bytes = key.of(self.bytes);
-            if key_bytes == b"resourceType" {
+            // `resourceType` is the type marker only on a resource's own
+            // object: `JsonParser` skips it there and nowhere else
+            // (`JsonParser.java:1342-1345`, `isToplevelResourceElement()`),
+            // so in any other object it is an ordinary property, as
+            // `ExampleScenario.instance.resourceType` is (`codegen.roundtrip.001`).
+            if is_resource && key_bytes == b"resourceType" {
                 continue;
             }
             // The quote-inclusive start of the property name, which is where a

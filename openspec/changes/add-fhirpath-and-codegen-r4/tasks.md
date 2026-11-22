@@ -1595,6 +1595,10 @@ checkpoint because it changes what a gate measures.
   per file, 146 coverage rows with 69 covered and 77 listed at zero, and the
   XML inputs not claimed. Re-run against the full package when task 59
   lands.
+  **Re-verified 2026-11-21 on the full package:** `codegen_r4` is 57 of 57,
+  and all 5,308 JSON examples of `hl7.fhir.r4.examples#4.0.1` round-trip
+  byte-identically, once the codec stopped dropping `resourceType` outside a
+  resource's own object (`ExampleScenario-example.json`).
 
 - [x] **57. Check every generated search-parameter expression against the
   parser.** All 1,375 expressions parse; a parameter with no expression recorded
@@ -1621,17 +1625,21 @@ checkpoint because it changes what a gate measures.
   (`harness/fhirpath-compare/differential-results.json`), **not** a live
   HAPI server.
 
-- [ ] **59. [chore] Pin the full R4 example package as an oracle.** On a
+- [x] **59. [chore] Pin the full R4 example package as an oracle.** On a
   `chore/oracles-*` branch: add `hl7.fhir.r4.examples#4.0.1` to
   `oracles/PINS.md` with its licence determination and digest, add it to
   `oracles/fetch.sh`, add the `r4-example-roundtrip` suite to `oracles/run.sh`'s
   suite list, and switch task 56's selector from the interim 103 examples to the
   full set. Owner checkpoint: it changes what the round-trip gate measures.
+  **Ticked 2026-11-21:** the selector runs the full package (5,308 JSON
+  examples, `73c36e6`), and the round trip is fully green: `codegen_r4` is 57
+  of 57.
 
-- [ ] **60. [chore] Record the UCUM notice.** On the same branch: add
+- [x] **60. [chore] Record the UCUM notice.** On the same branch: add
   Regenstrief's UCUM copyright notice for `ucum-essence.xml` to `NOTICE`, and
   record in `oracles/PINS.md` that the file is fetched inside the Apache-2.0
   `fhir-test-cases` tree but carries its own licence terms.
+  **Ticked 2026-11-21:** the work merged in PR 31.
 
 - [x] **61. Update `docs/inventory.md` and `docs/provenance.md`.** In
   `docs/inventory.md`: move the `frevo-path` rows this change covers to `done`

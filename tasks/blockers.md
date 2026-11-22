@@ -3849,3 +3849,27 @@ filtered out and the comparison was not relaxed, so `codegen.roundtrip.001`
 Until it is fixed, the Tests gate is red on `codegen.roundtrip.001`. Every
 other round-trip scenario is green on the full package: `.002` gives 146 rows,
 140 covered and 6 at zero, and `.003` is green too.
+
+## 2026-11-21 — `add-fhirpath-and-codegen-r4` — resolved: `ExampleScenario-example.json`; a model scenario is owed
+
+**Raised by** the implementer who fixed it (owner ruling: HAPI wins). The
+codec now skips `resourceType` only on a resource's own object, top-level or
+nested (`contained`, `Bundle.entry.resource`, `Parameters.parameter.resource`,
+which all decode through `shape_resource`), as `JsonParser.java:1342-1345`
+does. Anywhere else it is an ordinary property
+(`crates/frevo-model/src/codec/decode.rs`, `shape_members`), and
+`Tables::resolve_property_in` no longer refuses the name
+(`crates/frevo-model/src/codec/tables.rs`); no resource declares an element
+called `resourceType`, so a resource's marker still resolves to nothing. The
+encoders were already right: they write the marker only for an object flagged
+as a resource, and any other `resourceType` property in element order.
+`codegen_r4` is 57 of 57, with all 5,308 examples byte-identical.
+
+**Owed (proposer, then oracle-builder).** No scenario in
+`openspec/changes/add-fhirpath-and-codegen-r4/specs/model/spec.md` states
+this rule. `model.json.001`-`.003` cover only the resource's own marker. Only
+`codegen.roundtrip.001` grades it today, through one example. A model
+scenario is owed, plus a unit test decoding and re-encoding a non-resource
+object with a `resourceType` member, such as
+`ExampleScenario.instance.resourceType`. The spec was not edited.
+

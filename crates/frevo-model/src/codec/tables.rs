@@ -216,14 +216,16 @@ impl Tables {
     /// [`Tables::resolve_property_bytes`] for a type already looked up. A
     /// decode resolves every property of an object against the same type, so
     /// it finds the type once per object rather than once per property.
+    ///
+    /// `resourceType` resolves like any other name: no resource declares an
+    /// element of that name, so on a resource's own object it resolves to
+    /// nothing (the caller reads it as the type marker), while
+    /// `ExampleScenario.instance.resourceType` is an ordinary `code` element.
     pub fn resolve_property_in(
         &self,
         type_def: &'static TypeDef,
         property: &[u8],
     ) -> Option<(&'static ElementDef, &'static str, bool)> {
-        if property == b"resourceType" {
-            return None;
-        }
         let (name, sibling) = match property.strip_prefix(b"_") {
             Some(rest) => (rest, true),
             None => (property, false),
