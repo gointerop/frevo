@@ -1,4 +1,77 @@
-APPROVED
+CHANGES_REQUESTED
+
+Sixty-fifth review (commit `8793755`, 2026-11-21, diff against `8793755^`;
+implementation `adaecd3`). It checks the new `model.json.026` and task 5b.
+The core rule is right. HAPI skips `resourceType` only when the parse state
+is a resource state, and nested resources are parsed in that state. I
+confirmed that Frevo now matches this for `ExampleScenario.instance` by
+running `frevo_model::codec` at `8793755` from a scratch crate outside the
+repository. The `Patient.name` bullet is correctly labelled as derived.
+Three behaviours are missing or untestable as written. The detail is in the
+dated section at the end.
+
+1. **`_resourceType` on a resource's own object: HAPI ignores it, Frevo
+   rejects it.**
+   - **HAPI, in both modes.** In `JsonParser.parseChildren`
+     (`hapi-fhir-base` `JsonParser.java:1342-1344`), a top-level
+     `resourceType` hits `continue` before the alternate lookup at
+     `:1363-1366`, so `handledUnderscoreNames` is not incremented for it.
+     `_resourceType` only bumps `allUnderscoreNames` (`:1356-1358`). The
+     unhandled-underscore loop then reaches `_resourceType`. It finds
+     `resourceType` present (`nonAlternativeValue != null`) and
+     `continue`s (`:1397-1399`). So `_resourceType` on any resource object
+     is dropped silently: no `unknownElement` call, no log, no strict
+     error.
+   - **Frevo.** I observed the following for
+     `{"resourceType":"Patient","_resourceType":{"extension":[{"url":"http://x","valueString":"y"}]}}`.
+     Lenient decode reports `UnknownProperty` (code 1825) at
+     `Patient._resourceType`, and strict decode fails with the same
+     diagnostic. `shape_members` skips only the bare key
+     (`decode.rs:1292`), and `resolve_property_in` strips `_` and finds no
+     `resourceType` on `Patient`.
+
+   The scenario now owns where `resourceType` is special, so this belongs
+   in it. Add a bullet: a `_resourceType` on a resource's own object (root
+   or nested) is accepted silently in both modes and is not re-encoded.
+   Add a task 5b case, and an implementer task to make Frevo match.
+
+2. **The `Patient.name` path and its citation are not what the oracle will
+   see.**
+   - **The path.** The bullet says the diagnostic names
+     `Patient.name.resourceType`. Frevo reports `Patient.name[0].resourceType`
+     (observed). The oracle's paths are indexed element paths
+     (`crates/frevo-model/tests/model_decode.rs:134`, "`Patient.name[0].given[1]`").
+     `assert_located` compares the path for equality (`:432-436`). A test
+     written from the scenario would therefore fail on a correct
+     implementation. State `Patient.name[0].resourceType`.
+   - **The citation.** The fall-through is cited as
+     `JsonParser.java:1339-1344`, but those lines are only the skip test.
+     The unknown-element handling is `ParserState`'s
+     `ElementCompositeState.enteringNewElement` (`ParserState.java:640-657`,
+     `unknownElement(null, theChildName)` at `:655`). Cite it.
+   - **HAPI's text.** Because the location is `null`, `describeLocation`
+     returns `""` (`ParseErrorHandler.java:24-30`). HAPI's strict text is
+     therefore `HAPI-1825: Unknown element 'resourceType' found during parse`
+     with no path (`StrictErrorHandler.java:88-90`). The bullet should
+     state that, as `model.json.004` does, so the path is understood as
+     Frevo's diagnostic field and the code 1825 as the HAPI comparison.
+
+3. **"Asking the reader for a resource's child `resourceType` yields
+   nothing" is ambiguous, and the observed answer is an error.** Through
+   `Resource::from_stored(...).read(...)`, I observed:
+   - `ExampleScenario.resourceType` returns
+     `Err(DecodeError { message: "ExampleScenario has no element named \"resourceType\"" })`;
+   - `ExampleScenario.contained[0].resourceType` returns
+     `Err(... "Patient has no element named \"resourceType\"")`;
+   - `ExampleScenario.instance[0].resourceType` returns
+     `Ok(Some(("code", "MedicationRequest")))`, as stated.
+
+   "Yields nothing" reads as `Ok(None)`, so task 5b would assert the wrong
+   thing. State the answer: the reader rejects the path as naming an
+   undeclared element, exactly as for any other undeclared name.
+   Alternatively, if `Ok(None)` is intended, task it to the implementer.
+
+## Sixty-fourth review header as issued (commit `5fec667`)
 
 Sixty-fourth review (commit `5fec667`, 2026-11-21, diff against `5fec667^`).
 The amendment changes wording only. It describes the differential as the
@@ -5834,3 +5907,69 @@ proposer's paths, and it is wording, not behaviour.
 **Checks.** `openspec validate add-fhirpath-and-codegen-r4 --strict`
 passes, and `harness/scripts/check-registries.sh` reports that the
 registers agree.
+
+## Sixty-fifth review - commit `8793755` (2026-11-21)
+
+Scope: `git diff 8793755^..8793755`, covering `specs/model/spec.md` and
+`tasks.md`, and the implementation `adaecd3` (`decode.rs`, `tables.rs`). I
+read HAPI at `hapi-fhir` `7ab4c7c` and `org.hl7.fhir.core` `73c432b5`.
+
+**Verified against HAPI.**
+- **The skip.** `JsonParser.java:1341-1344`: `if ("resourceType".equals(nextName)) { if (theState.isToplevelResourceElement()) continue; }`.
+  Otherwise the key falls through to `parseChildren(theState, nextName, ...)`
+  like any other.
+- **Resource states.** `ParserState.java:157-159`: `isToplevelResourceElement`
+  is `myState instanceof ResourceStateHl7Org || ... ResourceStateHapi`.
+  `:1133-1137` pushes `ResourceStateHl7Org` for every non-`IResource`
+  instance. That is the state each resource object is parsed in, including
+  nested ones.
+- **The declared element.** `org.hl7.fhir.r4` `formats/JsonParser.java:13050-13054`
+  reads `instance.resourceType` (an `Enumeration<FHIRResourceType>`) and
+  `_resourceType`. So the element is declared, and the scenario's "holds its
+  `code` value" is right for a valid code.
+- **Unknown elements.** `ParserState.java:640-657` calls
+  `unknownElement(null, name)` and swallows the subtree. The lenient handler
+  logs (`LenientErrorHandler.java:200-204`), and the strict handler throws
+  1825 (`StrictErrorHandler.java:88-90`).
+- **The gap.** `JsonParser.java:1356-1358`, `:1363-1366` and `:1387-1400`
+  give the silent drop of `_resourceType` on a resource object (finding 1).
+
+**Observed on Frevo at `8793755`.** These come from a scratch crate in the
+session scratchpad that depends on `crates/frevo-model` by path, with
+nothing in the repository touched.
+- **`ExampleScenario` with `instance[0].resourceType`.**
+  - `codec::decode` in lenient and strict mode: no diagnostics.
+  - `Resource::read("ExampleScenario.instance[0].resourceType")`:
+    `Ok(Some(("code", Some("MedicationRequest"))))`.
+  - `write_canonical`: `{"contained":[{"id":"p","resourceType":"Patient"}],"instance":[{"resourceId":"a","resourceType":"MedicationRequest"}],"resourceType":"ExampleScenario","status":"draft"}`.
+    The instance member is sorted among its siblings, and each resource's
+    marker is written once.
+
+  All of this matches the scenario.
+- **`_resourceType` on the instance** (`{"id":"q"}`): no diagnostics in
+  either mode. This matches `model.primext.001`.
+- **`Patient.name[0]` carrying `resourceType`.** Lenient decode gives
+  `UnknownProperty`, code 1825, at `Patient.name[0].resourceType`, and
+  strict decode is rejected the same way. The behaviour matches; the stated
+  path does not (finding 2).
+- **`_resourceType` on `Patient`.** Lenient decode gives `UnknownProperty`
+  1825 at `Patient._resourceType`, and strict decode is rejected. HAPI
+  accepts it silently (finding 1).
+- **Reading a resource's own `resourceType`.** The reader returns `Err`
+  "has no element named" for both the root and a contained resource
+  (finding 3).
+
+**Derived versus observed.** The scenario marks the `Patient.name` bullet
+as derived. The ExampleScenario values are stated without a label, and I
+confirmed them on Frevo. Its HAPI side rests on the cited source, which is
+right. No HAPI run is claimed.
+
+**Implementation note.** `adaecd3`'s two edits match its description.
+`shape_members` gates the skip on `is_resource`, and `resolve_property_in`
+no longer special-cases the name. The `_resourceType` divergence predates
+`adaecd3`: the old guard tested only the bare name.
+
+**Checks.** `openspec validate add-fhirpath-and-codegen-r4 --strict`
+passes, and `harness/scripts/check-registries.sh` reports that the
+registers agree. `model.json.026` is new and does not collide with an
+existing ID.
