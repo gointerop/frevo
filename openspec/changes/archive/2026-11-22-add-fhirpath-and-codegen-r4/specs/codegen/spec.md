@@ -1,5 +1,9 @@
 # codegen spec delta
 
+## Purpose
+
+Generates the R4 model code, the class table and the search-parameter tables from StructureDefinitions with frevo-codegen.
+
 ## ADDED Requirements
 
 ### Requirement: Pinned, verified generator inputs

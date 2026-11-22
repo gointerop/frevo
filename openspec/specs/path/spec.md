@@ -1,6 +1,9 @@
-# path spec delta
+# path Specification
 
-## ADDED Requirements
+## Purpose
+The FHIRPath engine (lexer, parser, checker, evaluator and UCUM quantities) with HAPI FHIR 8.12.0 behaviour.
+
+## Requirements
 
 ### Requirement: Lexing
 

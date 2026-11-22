@@ -1,5 +1,9 @@
 # model spec delta
 
+## Purpose
+
+The generated R4 resource model with a lazy, byte-preserving JSON codec.
+
 ## ADDED Requirements
 
 ### Requirement: A read that returns a resource unchanged does not parse it

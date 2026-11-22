@@ -1743,7 +1743,7 @@ checkpoint because it changes what a gate measures.
   filled in. `DEBT-0010` is present in `docs/tech-debt.md`. The ten are raised
   at the checkpoint.
 
-- [ ] **62. Update `tasks/graph.yaml` and finalise ADR 0004.** Set this change's
+- [x] **62. Update `tasks/graph.yaml` and finalise ADR 0004.** Set this change's
   `status` to `done`, so `add-server-skeleton` and `add-store-schema` unblock.
   Confirm ADR 0004 carries task 2's measured numbers and a recorded verdict, as
   its own closing line requires before this change is archived. Then archive.
