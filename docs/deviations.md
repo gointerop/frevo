@@ -1382,49 +1382,75 @@ Deviations are expected to concentrate in:
 - **Reviewed:** 2026-11-22, owner: chosen as written (relayed by the
   coordinator).
 
-### DEV-0033 — startup-failure output keeps only the config-related lines: no Java stack frames, no other log lines
+### DEV-0033 — startup-failure output keeps only the config-related lines: no Java stack frames, no other log lines, no logback status lines
 
 - **Area:** config
-- **Scenario IDs:** config.error.008, config.error.009, config.oracle.003
+- **Scenario IDs:** config.dump.006, config.error.007, config.error.008,
+  config.error.009, config.oracle.003
 - **HAPI 8.12.0 behaviour:** when startup fails, HAPI's standard output holds,
   besides the failure itself, (1) Java stack frames after the exception
-  chain of the `Application run failed` form and after the `WARN … cancelling
-  refresh attempt` line (`\tat <class>.<method>(<file>:<line>)` and
-  `\t... N more`; with no `hapi.fhir.fhir_version`, for example, frames from
-  `ca.uhn.fhir.jpa.starter.annotations.On*Condition.matches` down to
-  `ca.uhn.fhir.jpa.starter.Application.main`), and (2) log lines that are not
-  about configuration: the startup-info lines `Starting Application using
-  Java … with PID …` and `No active profile set, falling back to 1 default
-  profile: "default"` (or the active-profiles variant), embedded Tomcat's
-  startup lines, the servlet context's initialisation lines, and whatever
-  HAPI components and beans log before the failing bean is created, in an
-  order set by HAPI's bean graph.
+  chain of the `Application run failed` form, each led by a tab
+  (`\tat <class>.<method>(<file>:<line>)`, `\t... N more` and `\t... N
+  common frames omitted`; with no `hapi.fhir.fhir_version`, for example, 35
+  frame lines from `ca.uhn.fhir.jpa.starter.annotations.On*Condition.matches`
+  down to `ca.uhn.fhir.jpa.starter.Application.main`), and (2) log lines that
+  are not about configuration: the startup-info lines `Starting Application
+  using Java … with PID …` and `No active profile set, falling back to 1
+  default profile: "default"` (or the active-profiles variant), embedded
+  Tomcat's startup lines, the servlet context's initialisation lines,
+  whatever HAPI components, beans and libraries (Hibernate, Hikari, Quartz)
+  log before the failing bean is created, and their shutdown lines after the
+  `WARN … cancelling refresh attempt` line, in an order set by HAPI's bean
+  graph. (3) logback prints its own status lines (`HH:MM:SS,mmm |-<LEVEL> in
+  …`, among them `|-WARN in …ConfigurationModelHandlerFull - Missing
+  watchable .xml or .properties files.` and `Watching .xml files requires
+  …`), because the packaged `logback.xml` sets `scan="true"` while it is read
+  from inside a jar: on standard output on every run, failing or not (57
+  lines in each of the oracle's 419 runs), and on standard error on every run
+  except those that fail before the application context exists (2 lines in
+  396 runs, none in the other 23).
 - **Specification requirement:** none.
 - **Chosen behaviour:** Frevo. It reproduces verbatim the failure-analysis
   block or the `Application run failed` exception chain (each exception class
-  and message, SnakeYAML's position and caret lines, each `Caused by:`), the
-  `ERROR` line that introduces it, and the config-related `WARN` (`Exception
-  encountered during context initialization - cancelling refresh attempt`,
-  with HAPI's `ConfigServletWebServerApplicationContext` logger name) and
-  `INFO` (`ConditionEvaluationReportLogger`, `Error starting
-  ApplicationContext …`) lines, all on standard output in the starter's
-  logback console format. It writes no stack-frame line and none of the other
-  log lines: no startup-info line, no Tomcat line, no servlet-context or
-  component line.
+  and message, SnakeYAML's position and caret lines, Jackson's space-led
+  ` at [Source: …]` location line, each `Caused by:`), the `ERROR` line that
+  introduces it, and the config-related `WARN` (`Exception encountered during
+  context initialization - cancelling refresh attempt: <exception>`, with
+  HAPI's `ConfigServletWebServerApplicationContext` logger name and HAPI's
+  exception text, including the `BeanDefinitionStoreException` that names a
+  class file under `jar:file:/app/main.war!/WEB-INF/classes!/`) and `INFO`
+  (`.s.b.a.l.ConditionEvaluationReportLogger`, `Error starting
+  ApplicationContext …`) lines, for exactly the failure kinds in which HAPI's
+  `Application` prints them (config.error.008), all on standard output in the
+  starter's logback console format. It writes no stack-frame line and none of
+  the other log lines: no startup-info line, no Tomcat line, no
+  servlet-context, component, library or shutdown line, and no logback status
+  line on either stream, whether startup fails or succeeds.
 - **Configuration flag:** none.
 - **Debt:** none
 - **Rationale:** the frames describe the JVM call stack of HAPI's own code
-  and the other lines describe a Java servlet container and a Spring bean
-  graph that a Rust process does not have; reproducing them would be
+  and the other lines describe a Java servlet container, a Spring bean graph
+  and a logback configuration scanner that a Rust process does not have;
+  reproducing them would be
   fabricated output that no operator can act on and that changes with every
   HAPI build. The lines an operator reads and alerts on — the failure itself
   and its config-related context — are kept identical.
 - **Normalizer impact:** the `config-roundtrip` failure comparison
-  (config.oracle.003) compares only the config-related lines: the `ERROR`
-  line and every line after it with stack-frame lines (`^\tat `,
-  `^\t\.\.\. [0-9]+ more$`) removed, and the `WARN` and `INFO` lines above
-  when HAPI has them, whose logger field is not compared. In each compared
-  log line the timestamp and process id are masked. Every other line of
+  (config.oracle.003) compares only the config-related lines of the record,
+  which for every failing case is the image's own `Application`
+  (config.oracle.001): the `ERROR` line and every line after it with
+  stack-frame lines (`^\t+at `, `^\t+\.\.\. [0-9]+ more$`,
+  `^\t+\.\.\. [0-9]+ common frames omitted$`; tab-led only, so Jackson's
+  space-led location line is kept) removed, and the `WARN` and `INFO` lines
+  above when HAPI has them, logger field included. In each compared log line
+  the timestamp and process id are masked, and in every compared line the
+  number of `Bindable@<hex>`. Every other line of
   HAPI's output is stripped before comparing, and Frevo's output must contain
-  no line outside the compared set.
-- **Reviewed:** owner approved 2026-11-22; scope extended same day.
+  no line outside the compared set. Logback status lines, matching
+  `^\d\d:\d\d:\d\d,\d\d\d \|-(INFO|WARN|ERROR) in `, are removed from
+  both of HAPI's streams, for every case, before anything is compared, and
+  counted in the record (`logback_status_lines`).
+- **Reviewed:** owner approved 2026-11-22; scope extended same day; extended
+  again the same day to logback's status lines (oracle finding O-1); text
+  restated the same day against the record of HAPI's real `Application`
+  (fourth review, findings 1 to 3), with no change of scope.
