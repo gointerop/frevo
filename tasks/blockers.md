@@ -3936,3 +3936,64 @@ Resolved and needing nothing further:
 - task 44b's stale tests (`50da39e`);
 - the `model.json.026` scenario and tests (tasks 5b and 5c, `cac9e28`).
 
+## 2026-11-22 — `add-fhirpath-and-codegen-r4` — owed `design.md` text: prepared, still refused by the hook the session runs
+
+**Raised by** the proposer, asked to write the owed `design.md` text now that
+`a3988e8` (#36) fixed `protect-paths.sh` on `main`. The edit is **still
+refused** with "`design.md` is marked @generated". The cause: the hooks run
+from `$CLAUDE_PROJECT_DIR/.claude/hooks/`, which is the main checkout
+(`C:/gointerop/git/frevo`, still at `86d03ef`, before #36), not this
+worktree. The worktree's copy of the hook is fixed, but the copy that runs is
+not. The hook was not bypassed: no shell write to `design.md` was made.
+
+**Decision needed (owner or coordinator).** Fast-forward the main checkout to
+`origin/main`, so that it runs the fixed hook, or start the session from this
+worktree. Then rerun the proposer. Changing which hook copy runs is a
+governance change, so the proposer did not do it.
+
+**Prepared, ready to apply.** The text was checked against `spec.md`, the
+`specs/*/spec.md` deltas and the code. All 15 replacements match once in
+`design.md` at `0410452`. They cover every owed item listed in the 2026-11-21
+task-62 entry and in the entries it cites:
+- sections 1 and 9 (the `r4_classes.tsv` rows);
+- 4.1 (quantity navigation and `children()`, `path.quantity.025`-`.027`);
+- a new 4.6 (no narrowing: options, ruling, consequences, revisit trigger);
+- the 111-of-115 wording (`design.md:519-521`);
+- section 5 (the `Ucum-java` port with provenance);
+- section 6 (unbounded decimals, `Unscaled`, `MAX_SHIFT` 10,000, `DEBT-0014`);
+- section 8 (`model-meta-update` at 5 µs and 12 µs, and the median of five
+  runs at 15% for the model workloads);
+- the regex limits;
+- a section 10 bullet.
+
+The prepared copy is in the proposer's session scratchpad, which is not
+durable. The durable source is the owed-text blocks in this file plus the list
+below.
+
+**Found while preparing, not previously recorded as owed.** `design.md` also
+contradicts the implementation in these places, and the prepared text fixes
+each one:
+1. Section 3's `meta` bullet still says `model.perf.004` requires the 4 KiB and
+   64 KiB cases to be within 25% of each other.
+2. Section 6's first row says `frevo-path` needs only `thiserror`. In fact it
+   depends on `regex` alone (ADR 0005) and does not use `thiserror`. The
+   `regex` row, and the limits that ADR 0005 decision 7 says to record in the
+   design, belong in that section.
+3. Section 6's "criterion or divan" row is wrong: the benches are plain `main`s
+   (`harness = false`) timed with `std::time::Instant`, and neither crate was
+   added.
+4. Section 8's workload table says each workload is "a criterion/divan
+   benchmark in the crate it measures". In fact `path-eval-compiled` and
+   `path-extract-patient` are in `frevo-model`'s `path_bytes` bench
+   (`path.api.008`, `path.perf.004`), and `path-extract-patient` also grades
+   `path.perf.004`. The path workloads' 4 KiB `Patient` is the fetched,
+   canonicalised `patient-example.json` (3,912 bytes), not the committed
+   `bench/micro/fixtures/patient-4kib.json`.
+
+**Still owed outside the proposer's paths, unchanged.**
+`bench/micro/workloads.yaml` still gives the `model-meta-update` budget as
+"within 25%" and a 10% regression limit for every row. `bench/targets.md` says
+the same. Both are for a `chore/` branch, per the 2026-11-12 task-27
+resolution. `r4_classes.tsv` itself needs no row: the owed "rows" are the
+`design.md` rows that name it, and the file is `@generated`.
+
