@@ -49,11 +49,11 @@ ruling: no `DEV` entry for matching HAPI).
   instead, as it does for a missing file. An `on-cloud-platform` document
   never activates, on any platform.
 - **Configuration flag:** none.
-- **Debt:** none. Owner ruling of 2026-11-22: support is owed when, and only
+- **Debt:** none
+- **Rationale:** Owner ruling of 2026-11-22: support is owed when, and only
   when, a deployment needs one of the three; the failure is loud precisely so
   that such a deployment finds out at startup rather than running with
-  configuration silently missing.
-- **Rationale:** (1) and (2) are rare in starter deployments; the starter's
+  configuration silently missing. (1) and (2) are rare in starter deployments; the starter's
   own Helm chart uses `SPRING_CONFIG_IMPORT` with a plain file path, which
   Frevo supports. Failing loudly turns both into a startup error instead of a
   silent difference in effective configuration. `on-cloud-platform` cannot

@@ -87,6 +87,10 @@ nodes:
     crates: [frevo-server]
     depends_on: [add-fhirpath-and-codegen-r4, add-config-application-yaml]
     oracles: [differential]
+    notes: >
+      Owes typed binding of the server.* keys (and the matching startup
+      failures, for example server.port: abc) that add-config-application-yaml
+      only loads. Owner ruling 2026-11-22.
 
   # ------------------------------------------------------------------ phase 2
   - id: add-store-schema

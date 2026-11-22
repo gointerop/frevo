@@ -1309,54 +1309,47 @@ Deviations are expected to concentrate in:
 - `$expand` paging and `ValueSet.expansion.total` on pre-expanded value sets;
 - HAPI's identifier and placeholder-reference handling in transactions.
 
-### DEV-0031 — configuration locations Frevo does not load fail loudly; `on-cloud-platform` never matches
+### DEV-0031 — `configtree:` and `.xml` configuration locations fail loudly; `on-cloud-platform` never matches
 
 - **Area:** config
-- **Scenario IDs:** config.source.017, config.source.020, config.profile.014
-- **HAPI 8.12.0 behaviour:** Spring Boot 3.5.14 in the starter loads four
-  things Frevo does not. (1) Any `classpath:` resource on the war's class
-  path, which in the distroless image includes `/app/extra-classes/`
-  (`Dockerfile`, `-Dloader.path=main.war!/WEB-INF/classes/,main.war!/WEB-INF/,/app/extra-classes`),
-  so `--spring.config.location=classpath:/another.application.yaml` loads an
-  operator-mounted `/app/extra-classes/another.application.yaml`.
-  (2) `spring.config.import=configtree:<dir>/`, one property per file under
-  the directory. (3) `.xml` files in Java `Properties.loadFromXML` format at
-  any location. (4) Documents with
+- **Scenario IDs:** config.source.020, config.profile.014
+- **HAPI 8.12.0 behaviour:** Spring Boot 3.5.14 in the starter loads three
+  things Frevo does not. (1) `spring.config.import=configtree:<dir>/`, one
+  property per file under the directory. (2) `.xml` files in Java
+  `Properties.loadFromXML` format at any location. (3) Documents with
   `spring.config.activate.on-cloud-platform: kubernetes` (or another
   platform), activated when Spring Boot detects that platform, for Kubernetes
   from `KUBERNETES_SERVICE_HOST` and `KUBERNETES_SERVICE_PORT`.
+  `classpath:` locations are **not** part of this entry: Frevo resolves them
+  as the image does, to the packaged files and then the fixed directory
+  `/app/extra-classes/` (the last entry of the ENTRYPOINT's `loader.path`),
+  for explicitly named and default locations alike (config.source.017, .030).
 - **Specification requirement:** none; this is configuration loading, which
   the FHIR specification does not address. The reference is HAPI's behaviour
   alone.
-- **Chosen behaviour:** Frevo. A `classpath:` location other than the three
-  packaged files (`application.yaml`, `application-cds.yaml`,
-  `application-elastic.yaml`) fails to start with Spring's `Config data
-  resource '…' via location '…' does not exist` report; a `configtree:` or
-  `.xml` location fails to start with a report naming the location and the
-  supported kinds (`file:`, `classpath:` for the packaged files, `.properties`,
-  `.yml`, `.yaml`); `optional:` makes each of them a no-op instead, as it does
-  for a missing file. An `on-cloud-platform` document never activates, on any
-  platform.
+- **Chosen behaviour:** Frevo. A `configtree:` or `.xml` location fails to
+  start with a report naming the location and the supported kinds (`file:`,
+  `classpath:`, `.properties`, `.yml`, `.yaml`); `optional:` makes it a no-op
+  instead, as it does for a missing file. An `on-cloud-platform` document
+  never activates, on any platform.
 - **Configuration flag:** none.
 - **Debt:** none
 - **Rationale:** Owner ruling of 2026-11-22: support is owed when, and only
-  when, a deployment needs one of the four; the failure is loud precisely so
+  when, a deployment needs one of the three; the failure is loud precisely so
   that such a deployment finds out at startup rather than running with
-  configuration silently missing. Frevo is a single binary with no class path, so (1) can only
-  be imitated by guessing a directory layout that is specific to one image.
-  (2) to (4) are rare in starter deployments; the starter's own Helm chart
-  uses `SPRING_CONFIG_IMPORT` with a plain file path, which Frevo supports.
-  Failing loudly turns every case where the two servers would differ into a
-  startup error instead of a silent difference in effective configuration.
-  `on-cloud-platform` cannot fail loudly without failing every Kubernetes
-  deployment that never uses it, so it is the one silent case, and it is
-  listed here for that reason.
-- **Normalizer impact:** none. The `config-roundtrip` cases for these four
+  configuration silently missing. (1) and (2) are rare in starter deployments; the starter's
+  own Helm chart uses `SPRING_CONFIG_IMPORT` with a plain file path, which
+  Frevo supports. Failing loudly turns both into a startup error instead of a
+  silent difference in effective configuration. `on-cloud-platform` cannot
+  fail loudly without failing every Kubernetes deployment that never uses it,
+  so it is the one silent case, and it is listed here for that reason.
+- **Normalizer impact:** none. The `config-roundtrip` cases for these three
   record HAPI's result and assert Frevo's documented failure (or, for
   `on-cloud-platform`, its non-activation) instead of equality; no
   normalisation rule is added.
 - **Reviewed:** 2026-11-22, owner: chosen as written (relayed by the
-  coordinator).
+  coordinator); narrowed the same day after review finding 8, by the
+  coordinator's direction that `classpath:` match HAPI.
 
 ### DEV-0032 — two non-kebab spellings of one property in one source fail to start
 
@@ -1388,4 +1381,34 @@ Deviations are expected to concentrate in:
   pick and asserts Frevo's failure instead of equality.
 - **Reviewed:** 2026-11-22, owner: chosen as written (relayed by the
   coordinator).
+```
+
+### DEV-0033 — startup-failure output omits Java stack frames
+
+- **Area:** config
+- **Scenario IDs:** config.error.009, config.oracle.003
+- **HAPI 8.12.0 behaviour:** when startup fails with the `Application run
+  failed` form (config.error.007), HAPI's log line is followed by the
+  exception chain with every Java stack frame (`\tat <class>.<method>(<file>:<line>)`
+  lines and `\t... N more`), and the `WARN` line of config.error.008 carries a
+  frame list too. Example: with no `hapi.fhir.fhir_version`, the
+  `NullPointerException` is followed by frames from
+  `ca.uhn.fhir.jpa.starter.annotations.On*Condition.matches` down to
+  `ca.uhn.fhir.jpa.starter.Application.main`.
+- **Specification requirement:** none.
+- **Chosen behaviour:** Frevo. Every other line is reproduced verbatim —
+  stream, log header lines, `Application run failed`, each exception class
+  and message, each `Caused by:` — and the stack-frame lines are omitted.
+- **Configuration flag:** none.
+- **Debt:** none.
+- **Rationale:** the frames describe the JVM call stack of HAPI's own code;
+  a Rust process has no such stack, and fabricating one from a table would be
+  output no operator can act on and that changes with every HAPI build. The
+  lines an operator reads and alerts on (the exception classes and messages)
+  are kept identical.
+- **Normalizer impact:** the `config-roundtrip` failure comparison removes
+  lines matching `^\tat ` and `^\t\.\.\. [0-9]+ more$` from HAPI's output
+  before comparing, and masks each log line's timestamp and process id.
+- **Reviewed:** proposed 2026-11-22 by the proposer after review finding 12;
+  **needs the owner's approval**.
 ```

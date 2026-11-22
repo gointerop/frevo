@@ -679,8 +679,11 @@ them is the whole reason that decision is safe to make.
   config.gate.006, config.gate.007), matching HAPI 8.12.0
 - **Owed:** a startup check, behind no flag, that reports when a gate and the
   property it guards disagree — for example `mdm-enabled: true` binding
-  `true` while the `mdm` gate reads the packaged `false`; `cr.enabled: yes`
-  binding `true` while `Boolean.parseBoolean` turns the `cr` gate off;
+  `true` while the `mdm` gate reads the packaged `false`; the quoted
+  `cr.enabled: "yes"` (or `HAPI_FHIR_CR_ENABLED=yes`) binding `true` while the
+  read is the text `yes` and `Boolean.parseBoolean` turns the `cr` gate off
+  (the unquoted YAML `yes` is a boolean, reads `"true"` and turns the gate
+  on, config.gate.023);
   `mdm_enabled: "no"` binding `false` while the `mdm` gate is on;
   `hapi.fhir.fhir-version=R5` binding R5 while the version gates read R4.
 - **Why deferred:** HAPI starts in every one of these cases, with the feature
