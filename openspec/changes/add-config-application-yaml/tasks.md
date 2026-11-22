@@ -19,7 +19,7 @@ reads `APPROVED`.
 
 ## Phase A — the oracle and the failing tests
 
-- [ ] **1. Build the `config-roundtrip` HAPI side.** `harness/config-roundtrip/`
+- [x] **1. Build the `config-roundtrip` HAPI side.** `harness/config-roundtrip/`
   per design.md section 7: the probe, compiled with `javac` in a Docker build
   stage against the image's own `WEB-INF/lib` and `WEB-INF/classes` (no Maven
   `pom.xml`; owner ruling of 2026-11-22), with the getter-to-path

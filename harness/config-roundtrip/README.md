@@ -32,6 +32,31 @@ starter's classes and the packaged `application*.yaml` and `logback.xml` are
 taken from the image's `WEB-INF/classes`, which precedes `/app/extra-classes`
 on the class path, so nothing of the starter is recompiled.
 
+### Two runners (review.md finding 1, owner decision 2026-11-22)
+
+The probe is not HAPI's application context: it does not run the starter's
+component scan, so a failure during context refresh is wrapped differently, or
+is a different failure, in the real `Application`. Each recorded case therefore
+says which runner produced it (`"runner"`):
+
+- `probe` — every case runs the probe first. A case it does not fail is
+  recorded from it: the document, reads, gates and properties.
+- `application` — a case the probe fails is run again in a fresh container of
+  the **unchanged** pinned image, with the same files, environment and
+  arguments and no `loader.properties`, so `PropertiesLauncher` starts the war's
+  own `Start-Class`, `ca.uhn.fhir.jpa.starter.Application`. That run's exit
+  status, streams and config-related lines are the case's record; the probe's
+  run is kept under `"probe"` for comparison. A real `Application` still
+  running after `CONFIG_ROUNDTRIP_APP_TIMEOUT` seconds (600) has started the
+  server: the case keeps the probe's result, is marked
+  `"application_started": true` and is listed in `runner_disagreements`.
+  `CONFIG_ROUNDTRIP_APP_JOBS` (3) bounds how many run at once.
+
+A Java stack frame, removed and counted in `stack_frame_lines`, is tab-led
+only: `\tat …`, `\t... N more`, `\t... N common frames omitted` (review.md
+finding 2). Jackson's ` at [Source: REDACTED …]` location line is led by a
+space and is kept.
+
 Logback's own status lines (`HH:MM:SS,mmm |-INFO in …`, printed because the
 packaged `logback.xml` sets `scan="true"`) are removed from both streams before
 recording and counted in `logback_status_lines`.
@@ -40,8 +65,10 @@ recording and counted in `logback_status_lines`.
 
 `run.py inspect` reads `main.war` out of the pinned image and fails if:
 
-- `spring-boot`, `spring-core` or `snakeyaml` in `WEB-INF/lib` is not 3.5.14,
-  6.2.18, 2.4 (proposal Risk 1);
+- `WEB-INF/lib` does not hold exactly `spring-boot` 3.5.14, `spring-core`,
+  `spring-beans`, `spring-context`, `spring-aop` and `spring-expression`
+  6.2.19, `snakeyaml` 2.4 and `slf4j-api` 2.0.16, or holds a `spring-jcl` jar
+  (proposal Risk 1; the re-pin of `reference/PINS.md`, #40);
 - any `WEB-INF/lib` jar carries `application*.{properties,xml,yml,yaml}` or
   `config/application*` (config.oracle.001);
 - `packaged/` is not byte-identical to `WEB-INF/classes/application*.yaml`.

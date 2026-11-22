@@ -19,6 +19,16 @@ of the probe image, through the image's own ENTRYPOINT (PropertiesLauncher), wit
 working directory /app (the image's WORKDIR), the case's files copied into /app, its
 root/ files copied to /, the image's environment plus the case's variables, and the
 case's arguments. Standard output and standard error are captured separately.
+
+Two runners (review.md finding 1, owner decision 2026-11-22). The probe runner
+(loader.main=dev.frevo.harness.config.ConfigRoundtrip) is what a case's document, reads,
+gates and properties come from; every case runs it. A case the probe fails is run a
+second time by the application runner: the unchanged pinned image itself, whose
+PropertiesLauncher starts the war's own Start-Class, ca.uhn.fhir.jpa.starter.Application,
+with the same files, environment and arguments. Its failure output is what HAPI prints,
+so it is the case's recorded result ("runner": "application"); the probe's own failure is
+kept beside it under "probe". A case the application runner does not fail (it starts the
+server) is listed under "runner_disagreements" and keeps the probe's result, flagged.
 """
 
 from __future__ import annotations
@@ -32,6 +42,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import threading
 import zipfile
 from pathlib import Path
 
@@ -47,17 +58,24 @@ HAPI_IMAGE = "hapiproject/hapi:v8.12.0-2@sha256:0ff86aac4c7bd13a1ee226444a70263b
 PROBE_TAG = "frevo-config-roundtrip:local"
 
 # proposal.md Risk 1: the versions the spec delta's THEN clauses were measured with.
+# Re-pinned in reference/PINS.md (#38, #40): Spring Framework 6.2.19 is what the image ships.
 EXPECTED_JARS = {
     "spring-boot": "3.5.14",
-    "spring-core": "6.2.18",
+    "spring-core": "6.2.19",
+    "spring-beans": "6.2.19",
+    "spring-context": "6.2.19",
+    "spring-aop": "6.2.19",
+    "spring-expression": "6.2.19",
     "snakeyaml": "2.4",
+    "slf4j-api": "2.0.16",
 }
+# Must be absent from WEB-INF/lib (the image ships no spring-jcl jar).
+ABSENT_JARS = ["spring-jcl"]
 # Reported, not enforced: the rest of the probe's class path (design.md section 2).
 REPORTED_JARS = [
-    "spring-boot-autoconfigure", "spring-beans", "spring-context", "spring-aop", "spring-expression",
-    "spring-jcl", "logback-classic", "logback-core", "slf4j-api", "jul-to-slf4j", "hapi-fhir-base",
-    "hapi-fhir-storage", "hapi-fhir-jpaserver-model", "org.hl7.fhir.r4", "org.hl7.fhir.utilities",
-    "cqf-fhir-cql", "cqf-fhir-utility", "cql-to-elm-jvm",
+    "spring-boot-autoconfigure", "logback-classic", "logback-core", "jul-to-slf4j", "jackson-core",
+    "hapi-fhir-base", "hapi-fhir-storage", "hapi-fhir-jpaserver-model", "org.hl7.fhir.r4",
+    "org.hl7.fhir.utilities", "cqf-fhir-cql", "cqf-fhir-utility", "cql-to-elm-jvm",
 ]
 PACKAGED_FILES = ["application.yaml", "application-cds.yaml", "application-elastic.yaml"]
 APPLICATION_FILE = re.compile(r"^(config/)?application[^/]*\.(properties|xml|yml|yaml)$|^config/application")
@@ -108,6 +126,11 @@ def inspect() -> dict:
             if got != [want]:
                 report["problems"].append(
                     f"WEB-INF/lib/{name}: expected {want} (proposal Risk 1), found {', '.join(got) or 'none'}")
+        for name in ABSENT_JARS:
+            got = versions.get(name, [])
+            report["jars"][name] = got
+            if got:
+                report["problems"].append(f"WEB-INF/lib/{name}: expected absent, found {', '.join(got)}")
         for name in REPORTED_JARS:
             report["jars"][name] = versions.get(name, [])
         if report["application_files_in_lib"]:
@@ -161,12 +184,21 @@ def read_case(d: Path) -> dict:
     return {"id": d.name, "meta": meta, "env": env, "args": args, "dir": d}
 
 
-def run_case(case: dict) -> dict:
+APPLICATION_MAIN = "ca.uhn.fhir.jpa.starter.Application"
+# A real Application that has not exited after this many seconds has started the server.
+APPLICATION_TIMEOUT = int(os.environ.get("CONFIG_ROUNDTRIP_APP_TIMEOUT", "600"))
+# The real Application boots H2, JPA and Quartz: fewer of them at once than probe runs.
+APPLICATION_SLOTS = threading.Semaphore(int(os.environ.get("CONFIG_ROUNDTRIP_APP_JOBS", "3")))
+
+
+def run_container(case: dict, image: str, timeout: int | None = None) -> dict:
+    """One run of a case in a fresh container of `image`: exit, both streams, probe files."""
     create = ["create"]
     for name, value in case["env"]:
         create += ["-e", f"{name}={value}"]
-    create += [PROBE_TAG, *case["args"]]
+    create += [image, *case["args"]]
     cid = docker(*create, text=True).stdout.strip()
+    started = False
     try:
         d: Path = case["dir"]
         if (d / "files").is_dir():
@@ -174,7 +206,12 @@ def run_case(case: dict) -> dict:
         if (d / "root").is_dir():
             docker("cp", f"{d / 'root'}{os.sep}.", f"{cid}:/")
         docker("start", cid)
-        exit_code = int(docker("wait", cid, text=True).stdout.strip())
+        try:
+            exit_code = int(docker("wait", cid, text=True, timeout=timeout).stdout.strip())
+        except subprocess.TimeoutExpired:
+            started = True
+            docker("kill", cid, check=False)
+            exit_code = int(docker("wait", cid, text=True).stdout.strip())
         logs = docker("logs", cid)
         stdout = logs.stdout.decode("utf-8", "replace")
         stderr = logs.stderr.decode("utf-8", "replace")
@@ -201,8 +238,8 @@ def run_case(case: dict) -> dict:
     frames = sum(1 for l in out_lines if FRAME.match(l))
     out_lines = [l for l in out_lines if not FRAME.match(l)]
     return {
-        "covers": [c.strip() for c in case["meta"].get("covers", "").split(",") if c.strip()],
         "exit": exit_code,
+        "started": started,
         "document": document,
         "stdout": out_lines,
         "stderr": err_lines,
@@ -211,9 +248,27 @@ def run_case(case: dict) -> dict:
             "stdout": sum(1 for l in stdout.split("\n") if STATUS_LINE.match(l)),
             "stderr": sum(1 for l in stderr.split("\n") if STATUS_LINE.match(l)),
         },
-        "config_lines": config_lines(out_lines) if exit_code != 0 else [],
+        "config_lines": config_lines(out_lines) if exit_code != 0 and not started else [],
         "_system_properties": system_properties,
     }
+
+
+def run_case(case: dict) -> dict:
+    """The probe runner, and for a case the probe fails, the application runner too."""
+    covers = [c.strip() for c in case["meta"].get("covers", "").split(",") if c.strip()]
+    probe = run_container(case, PROBE_TAG)
+    probe.pop("started")
+    if probe["exit"] == 0:
+        return {"covers": covers, "runner": "probe", **probe}
+    with APPLICATION_SLOTS:
+        app = run_container(case, HAPI_IMAGE, timeout=APPLICATION_TIMEOUT)
+    app.pop("_system_properties")
+    if app.pop("started"):
+        # The real Application did not fail: the probe's failure is not HAPI's. Kept, flagged.
+        return {"covers": covers, "runner": "probe", "application_started": True, **probe}
+    probe_part = {k: probe[k] for k in ("exit", "stdout", "stderr", "stack_frame_lines", "config_lines")}
+    return {"covers": covers, "runner": "application", "application_main": APPLICATION_MAIN,
+            **app, "probe": probe_part, "_system_properties": probe["_system_properties"]}
 
 
 # ----------------------------------------------------------------------------------------
@@ -223,7 +278,10 @@ def run_case(case: dict) -> dict:
 LOG_LINE = re.compile(
     r"^(?P<ts>\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}(?:Z|[+-]\d\d:\d\d))\s+(?P<level>[A-Z]+) (?P<pid>\d*) --- "
     r"(?P<app>\[[^\]]*\] )?\[(?P<thread>[^\]]*)\] (?P<logger>.{40}) : (?P<msg>.*)$")
-FRAME = re.compile(r"^\s+at |^\s+\.\.\. \d+ (more|common frames omitted)$")
+# A Java stack frame is tab-led only (review.md finding 2): `\tat ...`, `\t... N more`,
+# `\t... N common frames omitted` (one more tab per level of a suppressed exception).
+# Jackson's ` at [Source: REDACTED ...]` location line is led by a space: a message line, kept.
+FRAME = re.compile(r"^\t+at |^\t+\.\.\. \d+ (more|common frames omitted)$")
 
 
 def config_lines(lines: list[str]) -> list[str]:
@@ -281,7 +339,8 @@ def run_all(cases: list[dict], jobs: int) -> dict[str, dict]:
         for n, f in enumerate(concurrent.futures.as_completed(futs), 1):
             cid = futs[f]
             results[cid] = f.result()
-            print(f"[{n}/{len(cases)}] {cid}: exit {results[cid]['exit']}", file=sys.stderr)
+            print(f"[{n}/{len(cases)}] {cid}: exit {results[cid]['exit']} ({results[cid]['runner']})",
+                  file=sys.stderr)
     return dict(sorted(results.items()))
 
 
@@ -342,10 +401,21 @@ def cmd_record(diagnostic: bool, jobs: int, only: list[str] | None = None) -> in
         if cid == "config.oracle.001":
             sysprops = r["_system_properties"]
         r.pop("_system_properties")
+    disagreements = [cid for cid, r in results.items() if r.get("application_started")]
+    for cid in disagreements:
+        print(f"record: {cid}: the probe fails but the real Application starts", file=sys.stderr)
     record = {
         "comment": "Recorded by harness/config-roundtrip/run.py from the pinned HAPI image. Do not edit.",
         "image": HAPI_IMAGE,
         "probe_image": probe,
+        "runners": {
+            "probe": "the probe image, loader.main=dev.frevo.harness.config.ConfigRoundtrip: documents, "
+                     "reads, gates and properties; every case runs it",
+            "application": f"the unchanged pinned image, its own Start-Class {APPLICATION_MAIN}: the "
+                           "recorded result of every case the probe fails (the probe's run is kept "
+                           "under 'probe')",
+        },
+        "runner_disagreements": disagreements,
         "diagnostic": diagnostic,
         "inspection": report,
         "system_properties": sysprops,

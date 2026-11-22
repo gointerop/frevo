@@ -35,8 +35,9 @@ fn main() {
         let l = lines[i];
         if is_log(l) && l.contains(" ERROR ") && (l.contains("LoggingFailureAnalysisReporter") || l.contains("o.s.boot.SpringApplication")) {
             for r in &lines[i..] {
-                let t = r.trim_start();
-                let frame = r.starts_with(char::is_whitespace) && (t.starts_with("at ") || (t.starts_with("... ") && (t.ends_with(" more") || t.ends_with("omitted"))));
+                // a frame is tab-led only (review.md finding 2); Jackson's ` at [Source: …]` is kept
+                let t = r.trim_start_matches('\t');
+                let frame = r.starts_with('\t') && (t.starts_with("at ") || (t.starts_with("... ") && (t.ends_with(" more") || t.ends_with(" common frames omitted"))));
                 if !frame {
                     writeln!(out, "{r}").unwrap();
                 }

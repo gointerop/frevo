@@ -4166,3 +4166,190 @@ except those with no HAPI counterpart:
 - oracle.001's `diagnostic` flag;
 - oracle.002's two differing cases: collection.002 (O-8), and placeholder.010-b, whose random reads were not yet marked `random:` when the diagnostic ran (they are now);
 - `config.perf.*`.
+
+---
+
+## 2026-11-22 — `add-config-application-yaml` — re-recorded from HAPI's real `Application`: THEN clauses that now differ from the record
+
+**Raised by** `oracle-builder`, after review.md (CHANGES_REQUESTED at `831c5ba`)
+findings 1 and 2 and the lead's ruling of 2026-11-22: the HAPI reference is the
+image's real `Application`. Re-recorded rather than taking a `DEV`.
+
+**What changed in the oracle** (`harness/config-roundtrip/`):
+
+- `run.py` `EXPECTED_JARS`: spring-core, -beans, -context, -aop and
+  -expression 6.2.19, spring-boot 3.5.14, snakeyaml 2.4, slf4j-api 2.0.16; a
+  `spring-jcl` jar fails inspection. `inspect` passes.
+- Two runners, named per case in the record (`"runner"`). Every case runs the
+  probe. The 80 cases the probe fails are run again on the **unchanged** pinned
+  image, whose launcher starts the war's `Start-Class`
+  `ca.uhn.fhir.jpa.starter.Application` (`"runner": "application"`). That run
+  is the case's record. The probe's run is kept under `"probe"`. 339 cases are
+  `probe`, 80 are `application`. `runner_disagreements` is `[]`: every case the
+  probe fails, the real `Application` fails too. `self_test.differing` is `[]`.
+- A frame is tab-led only (`^\t+at `, `^\t+... N more`,
+  `^\t+... N common frames omitted`) in `run.py` and in `replay/`. Jackson's
+  ` at [Source: …]` line is now kept.
+- 23 of the 80 have the same config lines in both runners. These are the
+  pre-context failures: args.007 and .009-e (but see the Jackson line below),
+  args.010, error.007, profile.012/.015*/.017/.018*, source.008, .016, .017-c,
+  .020-c/-e, .027-b, .028-c, .029-c, yaml.003 and .016. The other 57 differ.
+- The real `WARN` line's logger field is `ConfigServletWebServerApplicationContext`
+  in all 57 runs that have one.
+
+**Blocked: `crates/frevo-config/tests/**` cannot be edited.** The
+`PreToolUse` hook keeps `crates/` closed while review.md reads
+`CHANGES_REQUESTED`. I did not route around it. These test edits are still
+owed, by whoever may edit `crates/` once the review is approved:
+
+1. `tests/common/mod.rs` `is_frame`: tab-led only, as in `run.py` `FRAME`
+   (`line.starts_with('\t')`, then `at ` or `... <digits> more` or
+   `... <digits> common frames omitted` after the tabs). With the old rule
+   still in place, the replay check fails config.args.007 and .009-e with
+   "frevo wrote lines outside the compared set: [\" at [Source: REDACTED …\"]".
+   The Frevo side drops the Jackson line as a frame, and the HAPI side keeps it.
+2. `tests/error.rs` `stack_frames_and_non_config_log_lines_are_not_reproduced`:
+   the frame check should be `line.starts_with("\tat ")`, not
+   `trim_start().starts_with("at ")`.
+3. `tests/oracle.rs` config.oracle.003 `SAMPLE`: add a space-led Jackson line
+   (kept) and a `\t... 3 common frames omitted` line (dropped).
+4. `tests/oracle.rs` config.oracle.001: the assertion
+   `!dockerfile.contains("ENTRYPOINT")` fails on the Dockerfile's comment
+   ("The image's ENTRYPOINT is kept"). It should check that no line *starts
+   with* `ENTRYPOINT`. It should also assert that every case with exit ≠ 0 has
+   `"runner": "application"` and that `runner_disagreements` is `[]`.
+5. The THEN-clause tests below follow the record, once the proposer has
+   rewritten the clauses.
+
+**Scenarios whose THEN clauses now differ from the record** (for the proposer
+to rewrite against `hapi-8.12.0-results.json`; `<ts>`/`<pid>` masked as in
+config.oracle.003):
+
+1. **config.error.008.**
+   - **The `WARN` line for an `AppProperties` (`hapi.fhir.*`) binding failure.**
+     The exception is
+     `org.springframework.beans.factory.BeanDefinitionStoreException: Failed to read candidate component class: URL [jar:file:/app/main.war!/WEB-INF/classes!/ca/uhn/fhir/jpa/starter/common/PartitionModeConfigurer.class]`.
+     It is not the `BindException`.
+     - Cases: dump.006, error.002/.003*/.004*/.006/.009/.010, coerce.003*/.004/.008*/.010*/.018*/.026-b/.027,
+       collection.002, gate.002-h/-i, key.012-b, object.003, placeholder.005/.007,
+       placeholder.011-c…-g, args.008-d, args.009-d, source.023-e, unknown.006.
+   - **The `INFO` line is absent** for those binding failures. It is present
+     only in these cases:
+     - the `spring.elasticsearch.*` binding failures (gate.024-e…-j);
+     - the strict-placeholder condition failures (placeholder.011, -b, -h);
+     - the CQL bean-creation failures (unknown.005, .008, -b, -c).
+     It is absent for the gate.005 family. The clause "for a binding failure
+     and a strict-placeholder gate failure" is therefore wrong in both
+     directions.
+   - **The logger name `ConfigServletWebServerApplicationContext` is now
+     measured** (57 of 57 runs).
+2. **config.error.002.** The block itself is unchanged. "After the
+   config-related log lines of config.error.008" now means the `WARN` line
+   only, with no `INFO` line.
+3. **config.gate.005, and the "fails to start as config.gate.005 does"
+   definition (spec.md lines 44-50).** Affects config.source.007, .009, .010,
+   config.key.001 and config.env.014.
+   - The `WARN` exception is
+     `org.springframework.beans.factory.BeanDefinitionStoreException: Failed to read candidate component class: URL [jar:file:/app/main.war!/WEB-INF/classes!/ca/uhn/fhir/jpa/starter/common/FhirServerConfigDstu2.class]`.
+   - The exception chain is that same line, then
+     `Caused by: java.lang.NullPointerException: Cannot invoke "String.toUpperCase()" because the return value of "org.springframework.core.env.Environment.getProperty(String)" is null`.
+   - There is no `INFO` line, which is unchanged.
+   - config.source.011 and .013 start in the record (exit 0, probe runner), so
+     they are not in this family.
+4. **config.placeholder.011.**
+   - **`app_content_path`, `custom_content_path` and `spring.ai.mcp.server.enabled`
+     (cases -, -b, -h).** The `WARN` line and the first chain line are
+     `org.springframework.beans.factory.BeanDefinitionStoreException: Failed to read candidate component class: URL [jar:file:/app/main.war!/WEB-INF/classes!/ca/uhn/fhir/jpa/starter/web/WebAppFilesConfigurer.class]`.
+     For -b the class is `…/web/CustomContentFilesConfigurer.class`, and for -h
+     it is `…/mcp/McpServerConfig.class`. They are followed by
+     `Caused by: java.lang.IllegalStateException: Error processing condition on ca.uhn.fhir.jpa.starter.web.WebAppFilesConfigurer`
+     (or `…CustomContentFilesConfigurer`, or `…mcp.McpServerConfig`) and
+     `Caused by: org.springframework.util.PlaceholderResolutionException: Could not resolve placeholder 'nope' in value "${nope}"`.
+     The `INFO` line is present.
+   - **`mdm_enabled`, `binary_storage_mode`, `enable_repository_validating_interceptor`,
+     `ig_runtime_upload_enabled` and `ips_enabled` (cases -c…-g).** No gate is
+     reached. These cases fail with config.error.002's failure analysis. The
+     `WARN` line is the `PartitionModeConfigurer` wrapper, and there is no
+     `INFO` line.
+     - `Failed to bind properties under 'hapi.fhir.mdm-enabled' to java.lang.Boolean:`,
+       with `Value: "${nope}"`, `Origin: URL [file:application.yaml] - 1:24` and
+       `Reason: failed to convert java.lang.String to java.lang.Boolean (caused by java.lang.IllegalArgumentException: Invalid boolean value '${nope}')`.
+     - `hapi.fhir.enable-repository-validating-interceptor` (1:53),
+       `hapi.fhir.ig-runtime-upload-enabled` (1:38) and `hapi.fhir.ips-enabled`
+       (1:24) fail the same way.
+     - `binary_storage_mode` gives
+       `Failed to bind properties under 'hapi.fhir.binary-storage-mode' to ca.uhn.fhir.jpa.starter.AppProperties$BinaryStorageMode:`
+       (1:32), with `Reason: failed to convert java.lang.String to ca.uhn.fhir.jpa.starter.AppProperties$BinaryStorageMode (caused by java.lang.IllegalArgumentException: No enum constant ca.uhn.fhir.jpa.starter.AppProperties.BinaryStorageMode.${nope})`.
+       Its `Action:` is
+       `Update your application's configuration. The following values are valid:`,
+       followed by `    DATABASE` and `    FILESYSTEM`.
+   - The "not measured in HAPI's real context" caveat is now measured: drop it.
+5. **config.unknown.005.**
+   - The `WARN` line is
+     `…cancelling refresh attempt: org.springframework.boot.context.properties.ConfigurationPropertiesBindException: Error creating bean with name 'cqlProperties': Could not bind properties to 'CqlProperties' : prefix=hapi.fhir.cr.cql, ignoreInvalidFields=false, ignoreUnknownFields=true`.
+     The bean is `cqlProperties` with prefix `hapi.fhir.cr.cql`, not the
+     probe's `CqlRuntimeProperties`.
+   - The `INFO` line is present.
+   - The analysis description is unchanged:
+     `Failed to bind properties under 'hapi.fhir.cr.cql.runtime' to ca.uhn.fhir.jpa.starter.cr.CqlRuntimeProperties:`,
+     with no CGLIB suffix.
+6. **config.unknown.008.** The `INFO` line is present in all three runs.
+   - **First run.** Description
+     `Failed to bind properties under 'hapi.fhir.cr.cql.data' to ca.uhn.fhir.jpa.starter.cr.CqlData$$SpringCGLIB$$0:`.
+     The `WARN` line has `Error creating bean with name 'cqlData': Could not bind properties to 'CqlData' : prefix=hapi.fhir.cr.cql.data, ignoreInvalidFields=false, ignoreUnknownFields=true`.
+   - **-b.** Description
+     `Failed to bind properties under 'hapi.fhir.cr.cql' to ca.uhn.fhir.jpa.starter.cr.CqlProperties$$SpringCGLIB$$0:`.
+     The `WARN` line has `'cqlProperties': Could not bind properties to 'CqlProperties' : prefix=hapi.fhir.cr.cql, …`.
+     The delta's `CrProperties` / `prefix=hapi.fhir.cr` is wrong.
+   - **-c.** Description
+     `Failed to bind properties under 'hapi.fhir.cr.cql.terminology' to ca.uhn.fhir.jpa.starter.cr.CqlTerminologyProperties$$SpringCGLIB$$0:`.
+     The `WARN` line has `'cqlTerminologyProperties': Could not bind properties to 'CqlTerminologyProperties' : prefix=hapi.fhir.cr.cql.terminology, …`.
+7. **config.args.007 and config.args.009 (the unquoted run, case -e).** The
+   exception lines are three, not two. The third is
+   ` at [Source: REDACTED (`StreamReadFeature.INCLUDE_SOURCE_IN_LOCATION` disabled); line: 1, column: 2]`,
+   with one leading space. Both cases print `column: 2`.
+8. **config.error.009.** Frames are tab-led: `\tat …`, `\t... N more` **and
+   `\t... N common frames omitted`**. A line led by a space is not a frame.
+9. **config.oracle.003.**
+   - The same frame definition applies.
+   - Failures are now recorded from the real `Application`, so the reason given
+     for not comparing the `WARN`/`INFO` logger field ("the oracle's application
+     context is not the starter's servlet context") no longer holds.
+   - The `Error creating bean with name` prefix-only rule no longer has a cause:
+     HAPI's names are now recorded.
+   - The `Bindable@<hex>` mask is still needed. The probe and application runs
+     differ (`Bindable@15f47664` against `Bindable@19b89d4`), although the two
+     application runs of the self-test agreed.
+10. **config.oracle.001.** It should state the two runners: the probe for
+    documents, reads, gates and properties; the unchanged image's own
+    `Application` for every case the probe fails.
+11. **config.gate.024 (the `spring.elasticsearch` failures, cases -e…-j).**
+    The failure-analysis text matches. If the clause names the log lines, it
+    needs:
+    - a `WARN` line with
+      `org.springframework.beans.factory.BeanDefinitionStoreException: Failed to read candidate component class: URL [jar:file:/app/main.war!/WEB-INF/classes!/ca/uhn/fhir/jpa/starter/elastic/ElasticsearchBootSvcImpl.class]`;
+    - and the `INFO` line, which the probe did not have.
+
+**Replay stand-in check** (`replay/` as `FREVO_CONFIG_TEST_BIN`, committed
+record). Every test passes except:
+
+- the 11 targets of the THEN clauses above that the record now contradicts:
+  - args.007 and .009, through the `is_frame` item above;
+  - error.008 (`the WARN, INFO and ERROR lines`: 2 against 3, for dump.006);
+  - gate.005;
+  - placeholder.011;
+  - unknown.008 (the CGLIB description);
+- oracle.001 (item 4 above);
+- those with no HAPI counterpart: source.001 (the embedded copies),
+  placeholder.012 (process values), the `DEV-0031`/`DEV-0032` tests
+  (profile.014, relaxed.007, source.020) and `config.perf.*`.
+
+unknown.005 and collection.002 pass only because of config.oracle.003's
+prefix rule and `Bindable` mask.
+
+**Decision needed.**
+
+- **Proposer:** rewrite items 1-11 against the record. Task 2 stays unticked
+  until then.
+- **Whoever may edit `crates/` after approval:** make the four test edits
+  above.
