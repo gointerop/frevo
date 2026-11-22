@@ -1,0 +1,2 @@
+hapi.fhir.server_address: ${random.int(10)}
+hapi.fhir.default_page_size: ${random.int[5,6]}

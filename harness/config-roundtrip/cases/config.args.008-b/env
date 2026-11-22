@@ -1,0 +1,1 @@
+SPRING_APPLICATION_JSON={"hapi":{"fhir":{"default_page_size":9}}}

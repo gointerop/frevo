@@ -1,0 +1,2 @@
+# config-roundtrip case config.error.007; written by make_cases.py, do not edit
+covers: config.error.007, config.error.008

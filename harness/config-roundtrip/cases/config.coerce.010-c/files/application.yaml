@@ -1,0 +1,1 @@
+hapi.fhir.retain_cached_searches_mins: 99999999999

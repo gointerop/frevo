@@ -1,0 +1,3 @@
+hapi.fhir.cors.allowed_headers:
+hapi.fhir.cors.exposed_headers: []
+hapi.fhir.cors.allowed_methods: ''

@@ -1,0 +1,7 @@
+hapi.fhir.cr_enabled: true
+hapi.fhir.install_additional_resources_from_ig_folders: [f]
+hapi.fhir.subscription.email.auth: true
+hapi.fhir.subscription.email.quitWait: true
+hapi.fhir.subscription.email.startTlsRequired: true
+hapi.fhir.cr.cql.compiler.translator_format: XML
+hapi.fhir.cr.cql.use_embedded_libraries: false

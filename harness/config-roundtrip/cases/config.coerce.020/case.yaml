@@ -1,0 +1,2 @@
+# config-roundtrip case config.coerce.020; written by make_cases.py, do not edit
+covers: config.coerce.020, config.gate.003

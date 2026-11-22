@@ -1,0 +1,7 @@
+hapi.fhir.fhir_version: R4
+hapi.fhir.cors.allow_credentials: false
+hapi.fhir.partitioning.allow_references_across_partitions: false
+hapi.fhir.elasticsearch.index_prefix: ''
+hapi.fhir.subscription.email.host: h
+hapi.fhir.tester.t.name: t
+hapi.fhir.remote_terminology_service.r.url: u

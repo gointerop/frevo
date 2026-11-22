@@ -1,0 +1,1 @@
+spring.elasticsearch.socket-keep-alive: maybe

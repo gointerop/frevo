@@ -1,0 +1,7 @@
+hapi.fhir.implementationguides:
+  ips_1_0_0:
+    name: ips
+  Swiss:
+    name: swiss
+hapi.fhir.cr.cql.namespaces:
+  Mixed_Key: http://m

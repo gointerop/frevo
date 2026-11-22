@@ -4003,3 +4003,166 @@ the same. Both are for a `chore/` branch, per the 2026-11-12 task-27
 resolution. `r4_classes.tsv` itself needs no row: the owed "rows" are the
 `design.md` rows that name it, and the file is `@generated`.
 
+
+---
+
+## 2026-11-22 — `add-config-application-yaml` — config-roundtrip: recording blocked by the image's Spring Framework 6.2.19; thirteen oracle findings against the delta
+
+**Raised by** `oracle-builder`, tasks 1 to 3.
+
+**What ran.** I ran this on Docker Desktop's Linux engine (WSL 2) on the
+Windows workstation. The pinned `hapiproject/hapi:v8.12.0-2@sha256:0ff86aac…`
+was already pulled.
+
+- **Task 1.** `harness/config-roundtrip/` builds the probe in a Docker build
+  stage (`eclipse-temurin:21-jdk@sha256:8ad118b1…`). It compiles against the
+  image's own `WEB-INF/lib` and `WEB-INF/classes`, then adds the probe to the
+  unchanged image at `/app/extra-classes/`. Every case runs through the image's
+  own `ENTRYPOINT` (`PropertiesLauncher`, with `loader.main` from
+  `/app/loader.properties`), with `/app` as the working directory.
+- **Task 2.** The corpus has 419 cases in `harness/config-roundtrip/cases/`,
+  written by `make_cases.py`. It ran twice in full.
+
+The probe is compiled with `javac` in that stage, not by Maven. A Maven build
+would compile against Maven Central copies; the stage compiles against the
+exact jars the image runs. If a `pom.xml` is still wanted, that is for the
+coordinator to say.
+
+**1. Recording is blocked (decision needed, owner).** `run.py inspect` fails,
+as task 1 requires:
+
+- `main.war!/WEB-INF/lib` holds `spring-core`, `spring-beans`,
+  `spring-context`, `spring-aop` and `spring-expression` **6.2.19**.
+  Proposal Risk 1 and design.md section 2 expect 6.2.18.
+- `spring-boot` 3.5.14 and `snakeyaml` 2.4 match.
+- `slf4j-api` is 2.0.16, not 2.0.17. There is no `spring-jcl` jar.
+- No `WEB-INF/lib` jar carries an application file.
+- The three packaged YAML files are byte-identical to
+  `hapi-fhir-jpaserver-starter@377e6eba` after filtering. They are committed as
+  `harness/config-roundtrip/packaged/`.
+
+Because inspection fails, `hapi-8.12.0-results.json` was **not** written. The
+full run was kept as evidence instead, in
+`harness/config-roundtrip/diagnostic-spring-core-6.2.19.json`. No test reads
+it.
+
+Decide whether 6.2.19 is the reference. The image is HAPI 8.12.0, so presumably
+it is. If so:
+1. set `EXPECTED_JARS["spring-core"]` in `run.py`;
+2. correct design.md section 2, proposal Risk 1 and task 5's pin;
+3. run `python harness/config-roundtrip/run.py record`.
+
+Until then, once Frevo exists, every config-roundtrip test fails on the
+missing record.
+
+**2. Recorded HAPI results that contradict THEN clauses (decision needed,
+proposer, before task 3 is final).** Task 2 says the delta is corrected before
+task 3, but the delta is in the proposer's paths, not mine. Where the record
+and a THEN clause differ, the tests follow the record and name the finding.
+
+- **O-1, standard error.** Every run writes two logback status lines to
+  standard error, because the packaged `logback.xml` sets `scan="true"` inside
+  a jar:
+  - `|-WARN in …ConfigurationModelHandlerFull - Missing watchable .xml or .properties files.`
+  - `Watching .xml files requires …`
+
+  config.dump.006 and config.error.007 say that only the JVM notices reach
+  standard error. `run.py` strips logback status lines and counts them, and
+  Frevo writes none. The delta should say so, or `DEV-0033` should cover it.
+- **O-2, config.env.004.** On Linux the lower-case
+  `hapi_fhir_default_page_size=15` **binds** (15). Only the mixed case
+  `Hapi_Fhir_…` does not. The read `hapi.fhir.ips_enabled` also sees
+  `hapi_fhir_ips_enabled` (case `config.read.004-d`).
+- **O-3, config.env.014.** An environment variable named
+  `--spring.config.location` is applied as the location. The packaged files
+  are not loaded, and HAPI fails with config.gate.005's
+  `NullPointerException`. The scenario defers to the record, but its "ignore
+  it" reasoning is wrong.
+- **O-4, config.args.007 and .009.** The image ships Jackson, so
+  `JsonParserFactory` uses it. The cause line is not the `NullPointerException`
+  or `IllegalStateException` the scenarios quote. It is:
+  - `Caused by: com.fasterxml.jackson.core.JsonParseException: Unexpected character ('b' (code 98)): was expecting double-quote to start field name`
+  - with `'h' (code 104)` instead for .009.
+- **O-5, config.yaml.003 and .016.** HAPI prints the SnakeYAML message lines
+  without an `org.yaml.snakeyaml.…Exception: ` prefix. Each source line is
+  indented 4 spaces plus its own indentation, so the lines read
+  `        default_page_size: 3` and
+  `        supported_resource_types: [${nope3}]`.
+- **O-6, config.source.007, .009, .010 and config.key.001 as written.** These
+  cases replace the defaults with `--spring.config.location`, and no source
+  sets `hapi.fhir.fhir_version`. HAPI therefore does not start: it fails with
+  config.gate.005's `NullPointerException`.
+  - Each case is recorded twice: exactly as stated, and with
+    `--hapi.fhir.fhir_version=R4` (the `-v` variant).
+  - The tests assert the failure, then the THEN values on the `-v` variant.
+  - source.011 and .013 have the same problem and have only the `-v` form.
+- **O-7, config.placeholder.011.** `GateEvaluator` evaluates each starter
+  condition on the starter's own annotation metadata. The class names that
+  gives are:
+  - `WebAppFilesConfigurer`
+  - `CustomContentFilesConfigurer`
+  - `MdmConfig`
+  - `FhirServerConfigCommon.filesystemBinaryStorageSvc`
+  - `StarterJpaConfig.repositoryValidatingInterceptor`
+  - `ImplementationGuideR4OperationProvider`
+  - `StarterIpsConfig`
+  - `McpServerConfig`
+
+  Three gates have several sites: repository validation, IG upload and binary
+  storage. For those, the site is the probe's choice. Which site HAPI's real
+  `Application` context evaluates first was not measured.
+- **O-8, config.collection.002 and config.oracle.002/.003.** HAPI's
+  description line is `Binding to target [Bindable@e25951c type = …] failed:`.
+  The identity hash changes between runs (`Bindable@15f47664` on the next
+  run). So the self-test reports the case as differing, and an exact
+  config.oracle.003 comparison is impossible. That one test masks
+  `Bindable@<hex>` on both sides and says why. The delta needs a rule.
+- **O-9, the WARN line when a properties bean fails to bind on creation**
+  (config.unknown.005, .008). The message is the probe context's
+  `ConfigurationPropertiesBindException: Error creating bean with name
+  '<prefix>-<class>' …`. HAPI's servlet context may reach that bean through a
+  different dependency chain, and so word the message differently.
+  config.oracle.003 compares that message.
+- **O-10, config.gate.002.** `4.0` and `4.0.1` fail to bind
+  (config.coerce.018) before any gate is reported. "Turn on `fhir-r4`"
+  therefore cannot be observed through `frevo-config effective`.
+- **O-11, config.key.011.** The scenario counts 209 inventory rows, but after
+  #39 (task 6, merged) `docs/inventory.md` has 220. The test checks that every
+  current row is in keys.md section 5 or 6.
+- **O-12, config.relaxed.007-b.** HAPI picks the snake spelling, as the
+  scenario says (`DEV-0032` evidence). This is not a contradiction; it is
+  recorded for completeness.
+- **O-13, config.key.007.** The kebab-case properties equal config.key.005's,
+  but the reads and gates do not, in HAPI too. The exact-name reads
+  (`fhir_version`, `mdm_enabled`, …) do not see kebab spellings
+  (config.read.002, `DEBT-0022`). The test compares properties.
+
+**3. Test contracts the implementer must accept or replace (decision needed,
+implementer).**
+
+- **`FREVO_CONFIG_TEST_ROOT`.** A test cannot create absolute paths
+  (`/app/extra-classes/`, `/app/config/…`, `/configs/…`). So the harness runs
+  `frevo-config effective` in `<tmp>/root/app/`, mirroring the image's
+  `WORKDIR /app`, and sets this variable to `<tmp>/root`. Every absolute path
+  is expected to resolve beneath it. It is a test seam, not a setting.
+- **Embedded copies.** config.source.001 expects the embedded copies of the
+  three packaged files in `crates/frevo-config/packaged/`.
+- **Binary target.** It is named `frevo-config`, and the tests find it through
+  `CARGO_BIN_EXE_frevo-config`.
+
+**4. What could not be run here.** Windows Application Control intermittently
+blocks freshly built test executables (`os error 4551`). On different runs it
+refused `perf`, `placeholder`, `gate` and `source`. Each ran on a later
+attempt or after a rebuild. All 19 test targets compile. CI runs on Linux and
+is not affected.
+
+**Oracle self-check.** I stood `harness/config-roundtrip/replay/` in for the
+binary and ran the tests against the diagnostic record. Every test passed
+except those with no HAPI counterpart:
+- config.source.001;
+- the `DEV-0031` and `DEV-0032` tests (source.020, profile.014, relaxed.007);
+- error.008's servlet logger name;
+- placeholder.012's process values;
+- oracle.001's `diagnostic` flag;
+- oracle.002's two differing cases: collection.002 (O-8), and placeholder.010-b, whose random reads were not yet marked `random:` when the diagnostic ran (they are now);
+- `config.perf.*`.

@@ -1,0 +1,2 @@
+hapi.fhir.cr.Enabled: true
+hapi.fhir.CdsHooks.enabled: true

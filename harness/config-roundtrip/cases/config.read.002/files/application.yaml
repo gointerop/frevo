@@ -1,0 +1,4 @@
+hapi:
+  fhir:
+    mdm-enabled: true
+    IPS_ENABLED: "true"

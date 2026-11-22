@@ -1,0 +1,4 @@
+hapi.fhir.custom_interceptor_classes: a.B
+hapi.fhir.custom_provider_classes: c.D
+hapi.fhir.local_base_urls: http://l
+hapi.fhir.auto_version_reference_at_paths: "Device.patient, Observation.subject"

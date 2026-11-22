@@ -1,0 +1,12 @@
+hapi.fhir.supported_resource_types:
+  - 1.10
+  - 1.0
+  - .5
+  - +.5
+  - 1_0.5
+  - 1e3
+  - 1.0e+3
+  - -.inf
+  - .NaN
+  - 1e7
+  - 0.0001

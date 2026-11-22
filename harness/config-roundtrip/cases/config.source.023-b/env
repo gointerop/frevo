@@ -1,0 +1,2 @@
+JAVA_TOOL_OPTIONS=-Dhapi.fhir.default_page_size=6
+JDK_JAVA_OPTIONS=-Dhapi.fhir.default_page_size=9

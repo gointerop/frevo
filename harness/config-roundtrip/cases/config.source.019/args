@@ -1,0 +1,2 @@
+--hapi.fhir.default_page_size=4
+--hapi.fhir.reindex-thread-count=4

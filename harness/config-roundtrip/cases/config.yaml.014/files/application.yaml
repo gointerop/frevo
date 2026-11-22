@@ -1,0 +1,8 @@
+hapi:
+  fhir:
+    logger:
+      format: >-
+        Path[${servletPath}] Source[${requestHeader.x-forwarded-for}]
+        Operation[${operationType} ${operationName} ${idOrResourceName}]
+        UA[${requestHeader.user-agent}] Params[${requestParameters}]
+        ResponseEncoding[${responseEncodingNoDefault}]

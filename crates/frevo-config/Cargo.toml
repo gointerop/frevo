@@ -9,3 +9,10 @@ repository.workspace = true
 description = "application.yaml-compatible configuration with the starter's hapi.fhir.* key semantics."
 
 [dependencies]
+
+[dev-dependencies]
+# Test-only, for the config-roundtrip tests (tests/common/mod.rs): reading the recorded
+# HAPI documents and parsing the console log-line form of config.error.008. Both are
+# already workspace dependencies.
+serde_json.workspace = true
+regex.workspace = true

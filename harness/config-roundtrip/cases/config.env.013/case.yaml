@@ -1,0 +1,3 @@
+# config-roundtrip case config.env.013; written by make_cases.py, do not edit
+covers: config.env.013, config.unknown.001
+note: harness/docker-compose.yml service hapi, with HAPI_PORT at its default 8090

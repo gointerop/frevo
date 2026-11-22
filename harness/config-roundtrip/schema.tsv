@@ -1,0 +1,217 @@
+hapi.fhir.advanced-lucene-indexing	boolean	setter	
+hapi.fhir.allow-cascading-deletes	java.lang.Boolean	setter	
+hapi.fhir.allow-contains-searches	java.lang.Boolean	setter	
+hapi.fhir.allow-database-validation-override	boolean	setter	
+hapi.fhir.allow-external-references	java.lang.Boolean	setter	
+hapi.fhir.allow-multiple-delete	java.lang.Boolean	setter	
+hapi.fhir.allow-override-default-search-params	java.lang.Boolean	setter	
+hapi.fhir.allowed-bundle-types	java.util.List<org.hl7.fhir.r4.model.Bundle$BundleType>	setter	[DOCUMENT, MESSAGE, TRANSACTION, TRANSACTIONRESPONSE, BATCH, BATCHRESPONSE, HISTORY, SEARCHSET, COLLECTION, NULL]
+hapi.fhir.app-content-path	java.lang.String	setter	
+hapi.fhir.auto-create-placeholder-reference-targets	java.lang.Boolean	setter	
+hapi.fhir.auto-version-reference-at-paths	java.util.Set<java.lang.String>	no-setter	
+hapi.fhir.binary-storage-enabled	java.lang.Boolean	setter	
+hapi.fhir.binary-storage-filesystem-base-directory	java.lang.String	setter	
+hapi.fhir.binary-storage-minimum-binary-size	java.lang.Integer	setter	
+hapi.fhir.binary-storage-mode	ca.uhn.fhir.jpa.starter.AppProperties$BinaryStorageMode	setter	[DATABASE, FILESYSTEM]
+hapi.fhir.bulk-export-enabled	java.lang.Boolean	setter	
+hapi.fhir.bulk-export-file-retention-period-hours	java.lang.Integer	setter	
+hapi.fhir.bulk-import-enabled	java.lang.Boolean	setter	
+hapi.fhir.bundle-batch-pool-max-size	java.lang.Integer	setter	
+hapi.fhir.bundle-batch-pool-size	java.lang.Integer	setter	
+hapi.fhir.client	ca.uhn.fhir.jpa.starter.AppProperties$Client	setter	
+hapi.fhir.client.connect-timeout	java.lang.Integer	setter	
+hapi.fhir.client.connection-request-timeout	java.lang.Integer	setter	
+hapi.fhir.client.connection-ttl	java.lang.Integer	setter	
+hapi.fhir.client.pool-max-per-route	java.lang.Integer	setter	
+hapi.fhir.client.pool-max-total	java.lang.Integer	setter	
+hapi.fhir.client.socket-timeout	java.lang.Integer	setter	
+hapi.fhir.client-id-strategy	ca.uhn.fhir.jpa.api.config.JpaStorageSettings$ClientIdStrategyEnum	setter	[NOT_ALLOWED, ALPHANUMERIC, ANY]
+hapi.fhir.cors	ca.uhn.fhir.jpa.starter.AppProperties$Cors	setter	
+hapi.fhir.cors.allow-credentials	java.lang.Boolean	setter	
+hapi.fhir.cors.allowed-headers	java.util.List<java.lang.String>	setter	
+hapi.fhir.cors.allowed-methods	java.util.List<java.lang.String>	setter	
+hapi.fhir.cors.allowed-origin	java.util.List<java.lang.String>	setter	
+hapi.fhir.cors.exposed-headers	java.util.List<java.lang.String>	setter	
+hapi.fhir.cr-enabled	java.lang.Boolean	setter	
+hapi.fhir.custom-interceptor-classes	java.util.List<java.lang.String>	no-setter	
+hapi.fhir.custom-provider-classes	java.util.List<java.lang.String>	no-setter	
+hapi.fhir.custom-content-path	java.lang.String	setter	
+hapi.fhir.dao-scheduling-enabled	java.lang.Boolean	setter	
+hapi.fhir.default-encoding	ca.uhn.fhir.rest.api.EncodingEnum	setter	[JSON, XML, RDF, NDJSON]
+hapi.fhir.default-page-size	java.lang.Integer	setter	
+hapi.fhir.default-pretty-print	java.lang.Boolean	setter	
+hapi.fhir.defer-indexing-for-codesystems-of-size	java.lang.Integer	setter	
+hapi.fhir.delete-enabled	boolean	setter	
+hapi.fhir.delete-expunge-enabled	java.lang.Boolean	setter	
+hapi.fhir.elasticsearch	ca.uhn.fhir.jpa.starter.AppProperties$Elasticsearch	setter	
+hapi.fhir.elasticsearch.index-prefix	java.lang.String	setter	
+hapi.fhir.enable-index-contained-resource	java.lang.Boolean	setter	
+hapi.fhir.enable-index-missing-fields	java.lang.Boolean	setter	
+hapi.fhir.enable-index-of-type	boolean	setter	
+hapi.fhir.enable-repository-validating-interceptor	java.lang.Boolean	setter	
+hapi.fhir.enable-task-pre-expand-value-sets	java.lang.Boolean	setter	
+hapi.fhir.enforce-referential-integrity-on-delete	java.lang.Boolean	setter	
+hapi.fhir.enforce-referential-integrity-on-write	java.lang.Boolean	setter	
+hapi.fhir.etag-support-enabled	java.lang.Boolean	setter	
+hapi.fhir.expunge-enabled	java.lang.Boolean	setter	
+hapi.fhir.expunge-thread-count	java.lang.Integer	setter	
+hapi.fhir.fhir-version	ca.uhn.fhir.context.FhirVersionEnum	setter	[DSTU2, DSTU2_HL7ORG, DSTU2_1, DSTU3, R4, R4B, R5]
+hapi.fhir.fhirpath-interceptor-enabled	java.lang.Boolean	setter	
+hapi.fhir.filter-search-enabled	java.lang.Boolean	setter	
+hapi.fhir.graphql-enabled	java.lang.Boolean	setter	
+hapi.fhir.ig-runtime-upload-enabled	java.lang.Boolean	setter	
+hapi.fhir.implementation-guides	java.util.Map<java.lang.String, ca.uhn.fhir.jpa.packages.PackageInstallationSpec>	setter	
+hapi.fhir.implementation-guides.<key>.additional-resource-folders	java.util.Set<java.lang.String>	setter	
+hapi.fhir.implementation-guides.<key>.dependency-excludes	java.util.List<java.lang.String>	setter	
+hapi.fhir.implementation-guides.<key>.install-mode	ca.uhn.fhir.jpa.packages.PackageInstallationSpec$InstallModeEnum	setter	[STORE_ONLY, STORE_AND_INSTALL, INSTALL_ONLY]
+hapi.fhir.implementation-guides.<key>.install-resource-types	java.util.List<java.lang.String>	setter	
+hapi.fhir.implementation-guides.<key>.name	java.lang.String	setter	
+hapi.fhir.implementation-guides.<key>.package-contents	byte[]	setter	
+hapi.fhir.implementation-guides.<key>.package-url	java.lang.String	setter	
+hapi.fhir.implementation-guides.<key>.version	java.lang.String	setter	
+hapi.fhir.implementation-guides.<key>.version-policy	ca.uhn.fhir.jpa.packages.PackageInstallationSpec$VersionPolicyEnum	setter	[MULTI_VERSION, SINGLE_VERSION]
+hapi.fhir.implementation-guides.<key>.dry-run	boolean	setter	
+hapi.fhir.implementation-guides.<key>.fetch-dependencies	boolean	setter	
+hapi.fhir.implementation-guides.<key>.overwrite-content-not-present-code-systems	boolean	setter	
+hapi.fhir.implementation-guides.<key>.reload-existing	boolean	setter	
+hapi.fhir.index-storage-optimized	boolean	setter	
+hapi.fhir.install-additional-resources-from-ig-folders	java.util.List<java.lang.String>	setter	
+hapi.fhir.install-transitive-ig-dependencies	boolean	setter	
+hapi.fhir.ips-enabled	java.lang.Boolean	setter	
+hapi.fhir.language-search-parameter-enabled	java.lang.Boolean	setter	
+hapi.fhir.lastn-enabled	java.lang.Boolean	setter	
+hapi.fhir.local-base-urls	java.util.Set<java.lang.String>	no-setter	
+hapi.fhir.logger	ca.uhn.fhir.jpa.starter.AppProperties$Logger	setter	
+hapi.fhir.logger.error-format	java.lang.String	setter	
+hapi.fhir.logger.format	java.lang.String	setter	
+hapi.fhir.logger.log-exceptions	java.lang.Boolean	setter	
+hapi.fhir.logger.name	java.lang.String	setter	
+hapi.fhir.logical-urls	java.util.Set<java.lang.String>	no-setter	
+hapi.fhir.mark-resources-for-reindexing-upon-search-parameter-change	boolean	setter	
+hapi.fhir.mass-ingestion-mode-enabled	java.lang.Boolean	setter	
+hapi.fhir.match-url-cache-enabled	boolean	setter	
+hapi.fhir.max-binary-size	java.lang.Integer	setter	
+hapi.fhir.max-page-size	java.lang.Integer	setter	
+hapi.fhir.maximum-expansion-size	java.lang.Integer	setter	
+hapi.fhir.mdm-enabled	java.lang.Boolean	setter	
+hapi.fhir.mdm-rules-json-location	java.lang.String	setter	
+hapi.fhir.narrative-enabled	java.lang.Boolean	setter	
+hapi.fhir.normalized-quantity-search-level	ca.uhn.fhir.jpa.model.entity.NormalizedQuantitySearchLevel	setter	[NORMALIZED_QUANTITY_SEARCH_NOT_SUPPORTED, NORMALIZED_QUANTITY_STORAGE_SUPPORTED, NORMALIZED_QUANTITY_SEARCH_SUPPORTED]
+hapi.fhir.openapi-enabled	java.lang.Boolean	setter	
+hapi.fhir.partitioning	ca.uhn.fhir.jpa.starter.AppProperties$Partitioning	setter	
+hapi.fhir.partitioning.allow-references-across-partitions	java.lang.Boolean	setter	
+hapi.fhir.partitioning.conditional-create-duplicate-identifiers-enabled	java.lang.Boolean	setter	
+hapi.fhir.partitioning.database-partition-mode-enabled	java.lang.Boolean	setter	
+hapi.fhir.partitioning.default-partition-id	java.lang.Integer	setter	
+hapi.fhir.partitioning.partitioning-include-in-search-hashes	java.lang.Boolean	setter	
+hapi.fhir.partitioning.patient-id-partitioning-mode	java.lang.Boolean	setter	
+hapi.fhir.partitioning.request-tenant-partitioning-mode	boolean	setter	
+hapi.fhir.partitioning.request-tenant-partitioning-mode	boolean	setter	
+hapi.fhir.pre-expand-value-sets	java.lang.Boolean	setter	
+hapi.fhir.pre-expand-value-sets-default-count	java.lang.Integer	setter	
+hapi.fhir.pre-expand-value-sets-max-count	java.lang.Integer	setter	
+hapi.fhir.reindex-thread-count	java.lang.Integer	setter	
+hapi.fhir.remote-terminology-services-map	java.util.Map<java.lang.String, ca.uhn.fhir.jpa.starter.AppProperties$RemoteSystem>	no-setter	
+hapi.fhir.remote-terminology-services-map.<key>.system	java.lang.String	setter	
+hapi.fhir.remote-terminology-services-map.<key>.url	java.lang.String	setter	
+hapi.fhir.resource-dbhistory-enabled	java.lang.Boolean	setter	
+hapi.fhir.retain-cached-searches-mins	java.lang.Long	setter	
+hapi.fhir.reuse-cached-search-results-millis	java.lang.Long	setter	
+hapi.fhir.search-index-full-text-enabled	boolean	setter	
+hapi.fhir.search-prefetch-thresholds	java.util.List<java.lang.Integer>	setter	
+hapi.fhir.server-address	java.lang.String	setter	
+hapi.fhir.server-id-strategy	ca.uhn.fhir.jpa.api.config.JpaStorageSettings$IdStrategyEnum	setter	[SEQUENTIAL_NUMERIC, UUID]
+hapi.fhir.store-meta-source-information	ca.uhn.fhir.jpa.api.config.JpaStorageSettings$StoreMetaSourceInformationEnum	setter	[NONE, SOURCE_URI, REQUEST_ID, SOURCE_URI_AND_REQUEST_ID]
+hapi.fhir.store-resource-in-lucene-index-enabled	boolean	setter	
+hapi.fhir.subscription	ca.uhn.fhir.jpa.starter.AppProperties$Subscription	setter	
+hapi.fhir.subscription.cross-partition-enabled	java.lang.Boolean	setter	
+hapi.fhir.subscription.email	ca.uhn.fhir.jpa.starter.AppProperties$Subscription$Email	setter	
+hapi.fhir.subscription.email.auth	java.lang.Boolean	setter	
+hapi.fhir.subscription.email.from	java.lang.String	setter	
+hapi.fhir.subscription.email.host	java.lang.String	setter	
+hapi.fhir.subscription.email.password	java.lang.String	setter	
+hapi.fhir.subscription.email.port	java.lang.Integer	setter	
+hapi.fhir.subscription.email.quit-wait	java.lang.Boolean	setter	
+hapi.fhir.subscription.email.start-tls-enable	java.lang.Boolean	setter	
+hapi.fhir.subscription.email.start-tls-required	java.lang.Boolean	setter	
+hapi.fhir.subscription.email.username	java.lang.String	setter	
+hapi.fhir.subscription.immediately-queued	java.lang.Boolean	setter	
+hapi.fhir.subscription.polling-interval-ms	java.lang.Integer	setter	
+hapi.fhir.subscription.resthook-enabled	java.lang.Boolean	setter	
+hapi.fhir.subscription.websocket-enabled	java.lang.Boolean	setter	
+hapi.fhir.supported-resource-types	java.util.List<java.lang.String>	setter	
+hapi.fhir.tester	java.util.Map<java.lang.String, ca.uhn.fhir.jpa.starter.AppProperties$Tester>	setter	
+hapi.fhir.tester.<key>.fhir-version	ca.uhn.fhir.context.FhirVersionEnum	setter	[DSTU2, DSTU2_HL7ORG, DSTU2_1, DSTU3, R4, R4B, R5]
+hapi.fhir.tester.<key>.name	java.lang.String	setter	
+hapi.fhir.tester.<key>.refuse-to-fetch-third-party-urls	java.lang.Boolean	setter	
+hapi.fhir.tester.<key>.server-address	java.lang.String	setter	
+hapi.fhir.uplifted-refchains-enabled	boolean	setter	
+hapi.fhir.use-apache-address-strategy	java.lang.Boolean	setter	
+hapi.fhir.use-apache-address-strategy-https	java.lang.Boolean	setter	
+hapi.fhir.user-request-retry-version-conflicts-interceptor-enabled	java.lang.Boolean	setter	
+hapi.fhir.validate-resource-status-for-package-upload	java.lang.Boolean	setter	
+hapi.fhir.validation	ca.uhn.fhir.jpa.starter.AppProperties$Validation	setter	
+hapi.fhir.validation.requests-enabled	java.lang.Boolean	setter	
+hapi.fhir.validation.responses-enabled	java.lang.Boolean	setter	
+hapi.fhir.cdshooks.client-id-header-name	java.lang.String	setter	
+hapi.fhir.cdshooks.enabled	boolean	setter	
+hapi.fhir.cr.care-gaps	ca.uhn.fhir.jpa.starter.cr.CareGapsProperties	setter	
+hapi.fhir.cr.care-gaps.reporter	java.lang.String	setter	
+hapi.fhir.cr.care-gaps.section-author	java.lang.String	setter	
+hapi.fhir.cr.cql	ca.uhn.fhir.jpa.starter.cr.CqlProperties	setter	
+hapi.fhir.cr.cql.compiler	ca.uhn.fhir.jpa.starter.cr.CqlCompilerProperties	setter	
+hapi.fhir.cr.cql.compiler.compatibility-level	java.lang.String	setter	
+hapi.fhir.cr.cql.compiler.error-severity-level	org.cqframework.cql.cql2elm.CqlCompilerException$ErrorSeverity	setter	[Info, Warning, Error]
+hapi.fhir.cr.cql.compiler.signature-level	org.cqframework.cql.cql2elm.LibraryBuilder$SignatureLevel	setter	[None, Differing, Overloads, All]
+hapi.fhir.cr.cql.compiler.translator-format	org.cqframework.cql.cql2elm.CqlTranslator$Format	setter	[XML, JSON, COFFEE]
+hapi.fhir.cr.cql.compiler.analyze-data-requirements	boolean	setter	
+hapi.fhir.cr.cql.compiler.collapse-data-requirements	boolean	setter	
+hapi.fhir.cr.cql.compiler.disable-default-model-info-load	boolean	setter	
+hapi.fhir.cr.cql.compiler.disable-list-demotion	boolean	setter	
+hapi.fhir.cr.cql.compiler.disable-list-promotion	boolean	setter	
+hapi.fhir.cr.cql.compiler.disable-list-traversal	boolean	setter	
+hapi.fhir.cr.cql.compiler.disable-method-invocation	boolean	setter	
+hapi.fhir.cr.cql.compiler.enable-annotations	boolean	setter	
+hapi.fhir.cr.cql.compiler.enable-date-range-optimization	boolean	setter	
+hapi.fhir.cr.cql.compiler.enable-detailed-errors	boolean	setter	
+hapi.fhir.cr.cql.compiler.enable-interval-demotion	boolean	setter	
+hapi.fhir.cr.cql.compiler.enable-interval-promotion	boolean	setter	
+hapi.fhir.cr.cql.compiler.enable-locators	boolean	setter	
+hapi.fhir.cr.cql.compiler.enable-results-type	boolean	setter	
+hapi.fhir.cr.cql.compiler.require-from-keyword	boolean	setter	
+hapi.fhir.cr.cql.compiler.validate-units	boolean	setter	
+hapi.fhir.cr.cql.compiler.verify-only	boolean	setter	
+hapi.fhir.cr.cql.data	ca.uhn.fhir.jpa.starter.cr.CqlData	setter	
+hapi.fhir.cr.cql.data.profile-mode	org.opencds.cqf.fhir.cql.engine.retrieve.RetrieveSettings$PROFILE_MODE	setter	[ENFORCED, DECLARED, OPTIONAL, TRUST, OFF]
+hapi.fhir.cr.cql.data.retrieve-settings	org.opencds.cqf.fhir.cql.engine.retrieve.RetrieveSettings	no-setter	
+hapi.fhir.cr.cql.data.retrieve-settings.profile-mode	org.opencds.cqf.fhir.cql.engine.retrieve.RetrieveSettings$PROFILE_MODE	setter	[ENFORCED, DECLARED, OPTIONAL, TRUST, OFF]
+hapi.fhir.cr.cql.data.retrieve-settings.search-parameter-mode	org.opencds.cqf.fhir.cql.engine.retrieve.RetrieveSettings$SEARCH_FILTER_MODE	setter	[AUTO, USE_SEARCH_PARAMETERS, FILTER_IN_MEMORY]
+hapi.fhir.cr.cql.data.retrieve-settings.terminology-parameter-mode	org.opencds.cqf.fhir.cql.engine.retrieve.RetrieveSettings$TERMINOLOGY_FILTER_MODE	setter	[AUTO, USE_VALUE_SET_URL, USE_INLINE_CODES, FILTER_IN_MEMORY]
+hapi.fhir.cr.cql.data.search-parameter-mode	org.opencds.cqf.fhir.cql.engine.retrieve.RetrieveSettings$SEARCH_FILTER_MODE	setter	[AUTO, USE_SEARCH_PARAMETERS, FILTER_IN_MEMORY]
+hapi.fhir.cr.cql.data.terminology-parameter-mode	org.opencds.cqf.fhir.cql.engine.retrieve.RetrieveSettings$TERMINOLOGY_FILTER_MODE	setter	[AUTO, USE_VALUE_SET_URL, USE_INLINE_CODES, FILTER_IN_MEMORY]
+hapi.fhir.cr.cql.namespaces	java.util.Map<java.lang.String, java.lang.String>	setter	
+hapi.fhir.cr.cql.retrieve-settings	org.opencds.cqf.fhir.cql.engine.retrieve.RetrieveSettings	no-setter	
+hapi.fhir.cr.cql.retrieve-settings.profile-mode	org.opencds.cqf.fhir.cql.engine.retrieve.RetrieveSettings$PROFILE_MODE	setter	[ENFORCED, DECLARED, OPTIONAL, TRUST, OFF]
+hapi.fhir.cr.cql.retrieve-settings.search-parameter-mode	org.opencds.cqf.fhir.cql.engine.retrieve.RetrieveSettings$SEARCH_FILTER_MODE	setter	[AUTO, USE_SEARCH_PARAMETERS, FILTER_IN_MEMORY]
+hapi.fhir.cr.cql.retrieve-settings.terminology-parameter-mode	org.opencds.cqf.fhir.cql.engine.retrieve.RetrieveSettings$TERMINOLOGY_FILTER_MODE	setter	[AUTO, USE_VALUE_SET_URL, USE_INLINE_CODES, FILTER_IN_MEMORY]
+hapi.fhir.cr.cql.runtime	ca.uhn.fhir.jpa.starter.cr.CqlRuntimeProperties	setter	
+hapi.fhir.cr.cql.runtime.debug-logging-enabled	boolean	setter	
+hapi.fhir.cr.cql.runtime.enable-expression-caching	boolean	setter	
+hapi.fhir.cr.cql.runtime.enable-validation	boolean	no-setter	
+hapi.fhir.cr.cql.terminology	org.opencds.cqf.fhir.cql.engine.terminology.TerminologySettings	setter	
+hapi.fhir.cr.cql.terminology.code-lookup-mode	org.opencds.cqf.fhir.cql.engine.terminology.TerminologySettings$CODE_LOOKUP_MODE	setter	[AUTO, USE_VALIDATE_CODE_OPERATION, USE_CODESYSTEM_URL]
+hapi.fhir.cr.cql.terminology.valueset-expansion-mode	org.opencds.cqf.fhir.cql.engine.terminology.TerminologySettings$VALUESET_EXPANSION_MODE	setter	[AUTO, USE_EXPAND_OPERATION, PERFORM_NAIVE_EXPANSION]
+hapi.fhir.cr.cql.terminology.valueset-membership-mode	org.opencds.cqf.fhir.cql.engine.terminology.TerminologySettings$VALUESET_MEMBERSHIP_MODE	setter	[AUTO, USE_VALIDATE_CODE_OPERATION, USE_EXPANSION]
+hapi.fhir.cr.cql.terminology.valueset-pre-expansion-mode	org.opencds.cqf.fhir.cql.engine.terminology.TerminologySettings$VALUESET_PRE_EXPANSION_MODE	setter	[REQUIRE, USE_IF_PRESENT, IGNORE]
+hapi.fhir.cr.cql.use-embedded-libraries	java.lang.Boolean	setter	
+hapi.fhir.cr.enabled	java.lang.Boolean	setter	
+hapi.fhir.cr.terminology-server-client-settings	org.opencds.cqf.fhir.utility.client.TerminologyServerClientSettings	setter	
+hapi.fhir.cr.terminology-server-client-settings.crmi-version	java.lang.String	setter	
+hapi.fhir.cr.terminology-server-client-settings.expansions-per-page	int	setter	
+hapi.fhir.cr.terminology-server-client-settings.max-expansion-pages	int	setter	
+hapi.fhir.cr.terminology-server-client-settings.max-retry-count	int	setter	
+hapi.fhir.cr.terminology-server-client-settings.max-tx-resource-code-system-concepts	int	setter	
+hapi.fhir.cr.terminology-server-client-settings.retry-interval-millis	long	setter	
+hapi.fhir.cr.terminology-server-client-settings.socket-timeout	int	setter	
+hapi.fhir.cr.terminology-server-client-settings.timeout-seconds	int	setter	
+hapi.fhir.cr.terminology-server-client-settings.tx-resource-mode	org.opencds.cqf.fhir.utility.client.TerminologyServerClientSettings$TxResourceMode	setter	[AUTO, ENABLED, DISABLED]

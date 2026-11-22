@@ -1,0 +1,4 @@
+hapi.fhir.max_page_size: 1
+---
+spring.config.activate.on-cloud-platform: kubernetes
+hapi.fhir.default_page_size: 7

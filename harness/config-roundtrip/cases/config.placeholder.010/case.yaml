@@ -1,0 +1,3 @@
+# config-roundtrip case config.placeholder.010; written by make_cases.py, do not edit
+covers: config.placeholder.010
+random: hapi.fhir:server-address

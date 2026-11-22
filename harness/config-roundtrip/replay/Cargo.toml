@@ -1,0 +1,13 @@
+# Not part of the cargo workspace. A stand-in for `frevo-config effective` that replays the
+# recorded HAPI result of a case, used only to check the tests in crates/frevo-config/tests/
+# against the oracle itself (see ../README.md, "Checking the tests against the record").
+[package]
+name = "config-roundtrip-replay"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[workspace]
+
+[dependencies]
+serde_json = "1"

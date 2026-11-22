@@ -1,0 +1,3 @@
+# config-roundtrip case config.env.004-b; written by make_cases.py, do not edit
+covers: config.env.004
+note: Linux: names are case-sensitive; the Windows clause of the scenario has no HAPI counterpart here

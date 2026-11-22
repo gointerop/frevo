@@ -1,0 +1,4 @@
+hapi:
+  fhir:
+    defaultPageSize: 4
+    default_page_size: 3

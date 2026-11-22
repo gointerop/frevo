@@ -1,0 +1,19 @@
+hapi.fhir.supported_resource_types:
+  - true
+  - True
+  - TRUE
+  - false
+  - False
+  - FALSE
+  - yes
+  - Yes
+  - YES
+  - no
+  - No
+  - NO
+  - on
+  - On
+  - ON
+  - off
+  - Off
+  - OFF

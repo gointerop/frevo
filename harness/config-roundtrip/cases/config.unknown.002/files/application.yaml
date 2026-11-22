@@ -1,0 +1,3 @@
+hapi.fhir.search-coord-core-pool-size: abc
+hapi.fhir.search-coord-max-pool-size: abc
+hapi.fhir.search-coord-queue-capacity: abc

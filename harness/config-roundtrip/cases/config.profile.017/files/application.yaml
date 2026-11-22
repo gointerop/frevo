@@ -1,0 +1,2 @@
+spring.profiles: dev
+hapi.fhir.default_page_size: 3

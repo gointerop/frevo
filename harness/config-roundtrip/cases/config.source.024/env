@@ -1,0 +1,1 @@
+JAVA_TOOL_OPTIONS=-Xmx3g -XX:+UseG1GC -Dhapi.fhir.server_address

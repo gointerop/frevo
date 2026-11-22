@@ -1,0 +1,1 @@
+SPRING_APPLICATION_JSON={"hapi":{"fhir":{"server_address":"json"}}}

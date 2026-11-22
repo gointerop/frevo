@@ -1,0 +1,2 @@
+hapi.fhir.partitioning: {}
+hapi.fhir.subscription.email: {}

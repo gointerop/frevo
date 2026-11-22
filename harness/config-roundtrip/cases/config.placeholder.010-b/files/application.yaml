@@ -1,0 +1,4 @@
+hapi.fhir.server_address: ${random.uuid}
+hapi.fhir.custom_content_path: ${random.long}
+hapi.fhir.mdm_rules_json_location: ${random.int}
+hapi.fhir.app_content_path: ${random.value}

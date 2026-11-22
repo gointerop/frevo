@@ -1,0 +1,3 @@
+--spring.config.location=file:./dir/
+--spring.config.name=frevo
+--hapi.fhir.fhir_version=R4

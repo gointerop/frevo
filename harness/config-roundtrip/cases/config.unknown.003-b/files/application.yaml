@@ -1,0 +1,3 @@
+hapi.fhir.partitioning.database_partition_mode_enabled: true
+hapi.fhir.partitioning.patient_id_partitioning_mode: true
+hapi.fhir.partitioning.request_tenant_partitioning_mode: false

@@ -1,0 +1,2 @@
+--hapi.fhir.supported_resource_types=A
+--hapi.fhir.supported_resource_types=B

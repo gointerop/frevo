@@ -1,0 +1,9 @@
+hapi:
+  fhir:
+    uplifted_refchains_enabled: true
+    user-request-retry-version-conflicts-interceptor-enabled: true
+    cdshooks.client-id-header-name: x
+    cors.allow-credentials: true
+    cr.terminology_server_client_settings.max_retry_count: 5
+    implementationguides.a.install_mode: STORE_ONLY
+    subscription.email.start_tls_enable: true

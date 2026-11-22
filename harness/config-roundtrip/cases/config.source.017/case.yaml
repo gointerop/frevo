@@ -1,0 +1,3 @@
+# config-roundtrip case config.source.017; written by make_cases.py, do not edit
+covers: config.source.017
+note: exactly as the scenario states it

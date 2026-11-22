@@ -110,6 +110,10 @@ dependencies = [
 [[package]]
 name = "frevo-config"
 version = "0.0.0"
+dependencies = [
+ "regex",
+ "serde_json",
+]
 
 [[package]]
 name = "frevo-convert"

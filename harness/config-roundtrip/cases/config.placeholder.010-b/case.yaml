@@ -1,0 +1,3 @@
+# config-roundtrip case config.placeholder.010-b; written by make_cases.py, do not edit
+covers: config.placeholder.010
+random: hapi.fhir:server-address, hapi.fhir:custom-content-path, hapi.fhir:mdm-rules-json-location, hapi.fhir:app-content-path, reads:hapi.fhir.custom_content_path, reads:hapi.fhir.app_content_path

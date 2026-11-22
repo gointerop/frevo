@@ -1,0 +1,4 @@
+hapi.fhir.database_partition_mode_enabled: true
+hapi.fhir.patient_id_partitioning_mode: true
+hapi.fhir.request_tenant_partitioning_mode: false
+hapi.fhir.additionalResourceFolders: [example]

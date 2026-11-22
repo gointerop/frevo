@@ -1,0 +1,5 @@
+hapi.fhir.server_address:
+hapi.fhir.custom_content_path: ~
+hapi.fhir.mdm_rules_json_location: null
+hapi.fhir.binary_storage_filesystem_base_directory: Null
+hapi.fhir.logger.name: NULL

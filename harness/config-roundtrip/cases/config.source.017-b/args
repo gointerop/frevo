@@ -1,0 +1,2 @@
+--spring.config.location=classpath:/another.application.yaml
+--hapi.fhir.fhir_version=R4

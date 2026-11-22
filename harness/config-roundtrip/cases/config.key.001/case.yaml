@@ -1,0 +1,3 @@
+# config-roundtrip case config.key.001; written by make_cases.py, do not edit
+covers: config.key.001, config.key.003
+note: exactly as the scenario states it: no source sets the version

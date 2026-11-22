@@ -1,0 +1,6 @@
+spring.elasticsearch.uris: http://a, http://b
+spring.elasticsearch.username: u
+spring.elasticsearch.password: p
+spring.elasticsearch.socket-keep-alive: true
+spring.elasticsearch.path-prefix: /es
+spring.elasticsearch.restclient.ssl.bundle: b

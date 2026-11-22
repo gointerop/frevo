@@ -1,0 +1,1 @@
+JAVA_TOOL_OPTIONS=-Dspring.application.json='{"hapi":{"fhir":{"default_page_size":"abc"}}}'

@@ -1,0 +1,5 @@
+hapi.fhir.server_address: 2026-01-02
+hapi.fhir.custom_content_path: 2026-01-02T10:00:00Z
+hapi.fhir.mdm_rules_json_location: "010"
+hapi.fhir.app_content_path: 'yes'
+hapi.fhir.logger.name: !!str 010

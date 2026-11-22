@@ -1,0 +1,1 @@
+--spring.application.json={"hapi":{"fhir":{"default_page_size":"abc"}}}

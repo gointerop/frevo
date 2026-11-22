@@ -1,0 +1,2 @@
+# config-roundtrip case config.dump.001; written by make_cases.py, do not edit
+covers: config.dump.001, config.dump.002, config.dump.004

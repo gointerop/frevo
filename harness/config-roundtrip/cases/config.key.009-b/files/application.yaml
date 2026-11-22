@@ -1,0 +1,5 @@
+hapi.fhir.implementationguides.x:
+  name: x
+  installResourceTypes: CodeSystem, ValueSet
+  fetch_dependencies: yes
+  reloadExisting: false

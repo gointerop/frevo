@@ -1,0 +1,4 @@
+# Case inputs and the packaged files are compared byte for byte (config.source.001,
+# config.properties.003/.004, config.yaml.016): no line-ending conversion.
+cases/**      -text
+packaged/**   -text

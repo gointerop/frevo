@@ -1,0 +1,2 @@
+hapi.fhir.partitioning:
+  default_partition_id:

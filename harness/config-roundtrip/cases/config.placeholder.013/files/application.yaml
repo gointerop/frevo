@@ -1,0 +1,1 @@
+hapi.fhir.server_address: "${java.version}|${java.vendor}|${java.home}|${java.class.path}"

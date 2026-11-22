@@ -1,0 +1,2 @@
+JAVA_TOOL_OPTIONS=-Xmx3g -Dhapi.fhir.default_page_size=6 -XX:+UseG1GC
+HAPI_FHIR_DEFAULT_PAGE_SIZE=2

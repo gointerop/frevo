@@ -1,0 +1,3 @@
+spring.config.import: extra/x.yaml
+hapi.fhir.default_page_size: 1
+hapi.fhir.max_page_size: 1

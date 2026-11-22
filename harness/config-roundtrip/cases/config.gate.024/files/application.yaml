@@ -1,0 +1,4 @@
+spring.elasticsearch.connection-timeout: PT5S
+spring.elasticsearch.socket-timeout: pt5s
+spring.elasticsearch.restclient.sniffer.interval: 10
+spring.elasticsearch.restclient.sniffer.delay-after-failure: -5s

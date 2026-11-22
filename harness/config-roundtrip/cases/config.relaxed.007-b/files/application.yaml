@@ -1,0 +1,4 @@
+hapi:
+  fhir:
+    max_page_size: 3
+    maxPageSize: 4

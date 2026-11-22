@@ -1,0 +1,1 @@
+hapi.fhir.binary_storage_mode: "filesystem"

@@ -1,0 +1,2 @@
+hapi.fhir.custom_content_path: ${hapi.fhir.mdm-rules-json-location}
+hapi.fhir.mdm_rules_json_location: ${MDMX:${MDMY:nested}}

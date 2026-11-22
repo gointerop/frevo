@@ -1,0 +1,2 @@
+hapi.fhir.fhir_version: R4
+hapi.fhir.default_page_size: 5

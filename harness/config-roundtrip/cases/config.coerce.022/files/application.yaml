@@ -1,0 +1,2 @@
+hapi.fhir.search_prefetch_thresholds: "13, 503 ,-1"
+hapi.fhir.allowed_bundle_types: "collection, transaction-response"

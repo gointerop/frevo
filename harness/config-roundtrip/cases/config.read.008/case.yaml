@@ -1,0 +1,2 @@
+# config-roundtrip case config.read.008; written by make_cases.py, do not edit
+covers: config.read.008, config.gate.021

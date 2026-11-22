@@ -1,0 +1,1 @@
+hapi.fhir.logger.error_format: "ERROR - ${requestVerb} ${requestUrl}"

@@ -1,0 +1,1 @@
+hapi.fhir.server_address: "${java.io.tmpdir}|${user.dir}|${PID:nopid}|${os.name}|${file.separator}|${loader.path:none}|${user.name}"

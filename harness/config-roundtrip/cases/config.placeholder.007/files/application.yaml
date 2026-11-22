@@ -1,0 +1,1 @@
+hapi.fhir.server_address: ${hapi.fhir.server_address}

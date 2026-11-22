@@ -1,0 +1,2 @@
+base: &b { default_page_size: 5 }
+hapi: { fhir: { <<: *b, max_page_size: 9 } }

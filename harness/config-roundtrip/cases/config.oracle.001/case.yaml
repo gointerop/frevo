@@ -1,0 +1,3 @@
+# config-roundtrip case config.oracle.001; written by make_cases.py, do not edit
+covers: config.oracle.001, config.oracle.002
+note: the baseline case; its System.getProperties() is the record's system_properties (design.md section 3.6)

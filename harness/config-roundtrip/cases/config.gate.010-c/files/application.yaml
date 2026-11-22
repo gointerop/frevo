@@ -1,0 +1,2 @@
+hapi.fhir.custom_content_path: "false"
+hapi.fhir.app_content_path: "false"

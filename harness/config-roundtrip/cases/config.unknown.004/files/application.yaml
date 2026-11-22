@@ -1,0 +1,4 @@
+spring.ai.mcp.server.enabled: false
+server.port: not-a-number
+management.endpoints.web.exposure.include: abc
+spring.main.banner-mode: off

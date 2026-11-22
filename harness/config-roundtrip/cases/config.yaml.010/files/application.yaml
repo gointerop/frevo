@@ -1,0 +1,2 @@
+hapi.fhir.cors.allowed_origin: []
+hapi.fhir.partitioning: {}

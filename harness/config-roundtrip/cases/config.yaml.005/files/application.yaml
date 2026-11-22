@@ -1,0 +1,9 @@
+hapi.fhir.supported_resource_types:
+  - 0x1F
+  - 010
+  - 0777
+  - 0b101
+  - 1_000
+  - 190:20:30
+  - 09
+  - 0o17
