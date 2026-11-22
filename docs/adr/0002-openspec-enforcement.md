@@ -186,6 +186,41 @@ directory and the payload `cwd` on `main` while the edited file is in a sibling
 worktree on `change/<id>` whose delta alone defines the `covers:` id. Six of
 those cases fail against the pre-fix hooks.
 
+### 3f. `openspec archive` is judged where it runs, against a committable report
+
+H5's archive check had the same wrong-tree defect as 3d, plus one of its own.
+
+**Which tree.** A Bash payload carries no file path, so `use_input_root` falls
+back to the payload `cwd`: the orchestrator's session on `main` in the primary
+tree. The change being archived lives in a sibling worktree on `change/<id>`,
+so H5 found no `tasks.md` and refused a finished, green change. Worse, a change
+directory that happened to exist in the primary tree would have been judged by
+whatever was checked out there. H5 now picks the root for the archive, in
+order:
+
+1. the directory of the last `cd <dir>` before `openspec archive` in the
+   command, if it is a worktree of this repository, because that is where the
+   command runs;
+2. the session's tree, if it holds `openspec/changes/<named>`;
+3. the worktree on `change/<named>` that holds it (from `git worktree list`),
+   else any worktree that holds it.
+
+Like `use_input_root`, this only moves between worktrees of the same repository
+(compared by common dir). If nothing qualifies, `REPO_ROOT` stays as it was, and
+the missing `tasks.md` still blocks. On a change branch, an archive naming a
+different change is now refused. The old comment said this was intended, but
+the code never checked it.
+
+**Which commit.** The report records `head_sha`, the commit the gates ran on.
+The check required `head_sha == HEAD`, but committing the report moves HEAD,
+so a committed report could never pass. The self-test sandbox hid this
+because it `.gitignore`s `gates/`. A report is now current if `head_sha` is HEAD, **or** if
+it is HEAD's first parent and `git diff --no-renames --name-only HEAD^ HEAD`
+is exactly `gates/<id>/report.json`. Any other history still blocks: a
+grandparent, a commit on top that also touches code, or one that touches only
+code. The self-tests pin each of these, and they also pin the cross-tree cases
+from the primary tree, both with and without `cd`.
+
 ### 3b. The hooks no longer fail open on an unreachable root
 
 Every hook began with `cd "$REPO_ROOT" 2>/dev/null || exit 0`, and exit 0
