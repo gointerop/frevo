@@ -1,9 +1,9 @@
 {
-  "config_keys": 209,
-  "config_keys_in_yaml": 182,
+  "config_keys": 220,
+  "config_keys_in_yaml": 179,
   "operations": 67,
   "interactions": 24,
   "search_features": 42,
   "pointcuts": 112,
-  "total": 454
+  "total": 465
 }
