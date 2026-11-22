@@ -22,9 +22,14 @@ Resolution method, so this table can be rebuilt from scratch:
 6. The Spring sources define the configuration binding and property-source
    behaviour that `application.yaml` relies on (ruling of 2026-11-22, task 5 of
    `add-config-application-yaml`): `spring-projects/spring-boot` at `v3.5.14`,
-   `spring-projects/spring-framework` at `v6.2.18` and SnakeYAML at
+   `spring-projects/spring-framework` at `v6.2.19` and SnakeYAML at
    `snakeyaml-2.4`, the YAML parser Spring Boot 3.5 manages. All three are
    Apache-2.0 (each tree's `LICENSE.txt` and, for SnakeYAML, its `pom.xml`).
+   The Spring Framework pin is 6.2.19, not 6.2.18 (ruling of 2026-11-22): the
+   pinned HAPI image `hapiproject/hapi:v8.12.0-2` ships `spring-core`,
+   `spring-beans`, `spring-context`, `spring-aop` and `spring-expression` 6.2.19,
+   and the image defines the reference. Spring Boot 3.5.14 and SnakeYAML 2.4 match
+   the image; its `slf4j-api` is 2.0.16 and it has no `spring-jcl` jar.
 
 | Repository | Ref | Commit SHA | Role |
 |---|---|---|---|
@@ -35,7 +40,7 @@ Resolution method, so this table can be rebuilt from scratch:
 | `cqframework/clinical-reasoning` | `v4.13.0` | `ccba474a2fba73329353b41d270f9d0001d6cb52` | Measures, care gaps, `$apply`, SDC, CDS Hooks |
 | `FHIR/Ucum-java` | `1.0.10` | `db9d22ade3f0f4a667b45817b85a9ac4534e4224` | UCUM library (`org.fhir:ucum`, BSD-3-Clause) that the FHIRPath engine uses for quantity arithmetic and `Decimal` |
 | `spring-projects/spring-boot` | `v3.5.14` | `7d7b3ac12735161f9c096ce6cb415bdd9fc4a0f4` | Configuration binding, relaxed names, placeholder resolution and `application.yaml` loading (Apache-2.0) |
-| `spring-projects/spring-framework` | `v6.2.18` | `6b117247d383294662e199c6b47d7bf54c49caaa` | `Environment`, property sources, `PropertyResolver` placeholder and conversion-service behaviour (Apache-2.0) |
+| `spring-projects/spring-framework` | `v6.2.19` | `6214eae8bd02c2ed7ab382bb8d16a9cc6de49522` | `Environment`, property sources, `PropertyResolver` placeholder and conversion-service behaviour (Apache-2.0) |
 | `snakeyaml/snakeyaml` | `snakeyaml-2.4` | `558c81a4893726c3c03f5c433fed69e79001899e` | YAML parser under Spring Boot's YAML loading (Apache-2.0); hosted on Bitbucket, not GitHub |
 
 > `image/v8.12.0-2` is an **annotated** tag: its tag-object SHA is
