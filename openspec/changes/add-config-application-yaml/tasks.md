@@ -167,7 +167,7 @@ reads `APPROVED`.
 - [ ] **19. Failure output and early exit.** Design.md section 6a: standard
   output, the logback console line form, the failure-analysis and run-failed
   forms per failure kind, the preceding `WARN`/`INFO` lines, no stack frames
-  (`DEV-0033`, once the owner approves it), origins, exit status `1`, nothing
+  and no non-config log line (`DEV-0033`, approved by the owner on 2026-11-22), origins, exit status `1`, nothing
   started before configuration succeeds. Satisfies config.error.001-.010,
   config.dump.006.
 - [ ] **20. `frevo-config effective`.** The binary, the document of

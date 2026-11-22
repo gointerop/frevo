@@ -324,7 +324,12 @@ line from the application context and, for binding and gate-placeholder
 failures, an `INFO` line from `ConditionEvaluationReportLogger`
 (config.error.008). Log lines use the console pattern; the process id and
 application name are absent when the failure precedes logging
-initialisation. Java stack frames are not reproduced (`DEV-0033`, proposed).
+initialisation. Java stack frames and every non-config log line (the
+startup-info lines `Starting Application …` and `No active profile set …`,
+Tomcat, the servlet context, HAPI components) are not reproduced; Frevo
+writes none of them (`DEV-0033`, approved by the owner on 2026-11-22, scope
+extended the same day). The `WARN` line carries HAPI's servlet-context logger
+name, `ConfigServletWebServerApplicationContext`.
 A table maps each failure kind to its exception class names and messages,
 generated from the oracle's record.
 
@@ -353,8 +358,10 @@ New, in `harness/config-roundtrip/` (oracle-builder), shaped like
   `oracles/fhirpath/hapi-8.12.0-results.json`.
 - **Comparison:** member for member; sets sorted; nothing else normalised
   (config.oracle.004). A failing HAPI case passes only if Frevo also fails and
-  its standard output equals HAPI's line for line after masking timestamps and
-  process ids and removing Java stack frames (config.oracle.003).
+  the config-related lines of the two standard outputs are equal: the `ERROR`
+  line and everything after it with stack frames removed, and the
+  `WARN`/`INFO` lines above it without their logger field; timestamps and
+  process ids masked; every other HAPI line stripped (config.oracle.003).
 
 ## 8. The effective-configuration document
 

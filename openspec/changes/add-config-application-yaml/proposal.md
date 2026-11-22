@@ -66,7 +66,9 @@ and leaves what each key *does* to the change that implements the behaviour
    (`APPLICATION FAILED TO START`, verbatim including Java type names) or
    `Application run failed` with the exception chain, by failure kind; exit
    status `1`, before anything else starts (config.error). Java stack frames
-   are the one thing not reproduced (`DEV-0033`, proposed).
+   and the non-config log lines (startup info, Tomcat, servlet context, HAPI
+   components) are not reproduced (`DEV-0033`, approved by the owner on
+   2026-11-22, scope extended the same day).
 5. **`frevo-config effective`**, a command that prints the effective
    configuration as JSON (`profiles`, `properties` per bean prefix, `reads`,
    `gates`). It is the observable surface for every scenario here and the
@@ -126,7 +128,7 @@ Pins are from [`reference/PINS.md`](../../../reference/PINS.md).
 | `config.source.*`, `.yaml.*`, `.properties.*`, `.profile.*`, `.env.*`, `.args.*`, `.placeholder.*`, `.relaxed.*`, `.coerce.*`, `.collection.*`, `.object.*`, `.unknown.*` (except `.007`), `.read.*`, `.gate.*`, `.key.*` | **`config-roundtrip`** — new, `harness/config-roundtrip/` (design.md section 7): each case run by Spring Boot 3.5.14 with the starter's classes and conditions, using the jars inside `hapiproject/hapi:v8.12.0-2@sha256:0ff86aac…`, on Linux; documents compared member for member | every case under `harness/config-roundtrip/cases/` tagged `covers: <id>`; `config.oracle.005` requires one per scenario with a configuration |
 | `config.key.005`, `.006`, `.007` | `config-roundtrip` | the three whole-surface cases `all-keys.yaml`, `all-keys.env`, `all-keys-kebab.yaml` |
 | `config.key.002` (CORS defaults) | `config-roundtrip`, plus HAPI's JUnit `AppPropertiesCorsDefaultsTest` (starter `src/test/java/ca/uhn/fhir/jpa/starter/`) for the defaults the class declares | `defaultCorsHeadersIncludeFhirOptimisticLockingHeaders`, `nullCorsListsFallBackToDefaults` |
-| `config.error.*` | `config-roundtrip` failure comparison (`config.oracle.003`); report text compared line for line (verbatim, owner ruling of 2026-11-22) | cases whose HAPI run fails |
+| `config.error.*` | `config-roundtrip` failure comparison (`config.oracle.003`); the config-related lines compared verbatim, the rest stripped (owner rulings of 2026-11-22, `DEV-0033`) | cases whose HAPI run fails |
 | `config.source.001` | **self-checking** against the pinned image: the three packaged files extracted from `/app/main.war!/WEB-INF/classes/` | byte comparison |
 | `config.dump.*`, `config.unknown.007` | **Frevo-only surface**, tested directly; the document's shape is what the oracle's HAPI side emits | — |
 | `config.oracle.*` | the harness's own self-test | — |
@@ -219,7 +221,7 @@ readable.
 | 6 | Java system properties | honour `-D` tokens of `JAVA_TOOL_OPTIONS` and `JDK_JAVA_OPTIONS` with the JVM's quoting, and provide the JVM's own system properties with the image's values | standing ruling, coordinator direction | config.source.019, .023-.025, config.placeholder.012, .013 | none |
 | 7 | `configtree:`, `.xml`, `on-cloud-platform` | fail loudly on `configtree:` and `.xml`; `on-cloud-platform` documents never activate | owner | config.source.020, config.profile.014 | `DEV-0031` (the same entry as 2) |
 | 8 | Environment-variable case | Linux semantics; the oracle confirms on Linux | standing ruling | config.env.004 | none |
-| 9 | Failure report text | HAPI's failure output verbatim (stream, log lines, analysis block or exception chain, Java type names), except Java stack frames | standing ruling; frames: proposed `DEV-0033`, needs the owner | config.error.002, .007-.010 | `DEV-0033` (proposed) |
+| 9 | Failure report text | HAPI's failure output verbatim for the analysis block or exception chain (Java type names included) and the config-related `WARN`/`INFO` lines, on standard output; no Java stack frames and no other log line (startup info, Tomcat, servlet context, components) | standing ruling; owner ruling 2026-11-22 (`DEV-0033` approved, scope extended the same day) | config.error.002, .007-.010, config.oracle.003 | `DEV-0033` |
 | 10 | Two non-kebab spellings in one source | fail to start, naming both spellings and their origins | owner | config.relaxed.007 | `DEV-0032` |
 | 11 | Inventory denominator | corrected on a `chore/*` branch before archiving, as a prerequisite task | standing ruling | config.key.011 | none |
 | 12 | Non-`hapi.fhir` keys | loaded through the same pipeline and exposed to reads; typed binding left to the consuming changes | standing ruling | config.unknown.004 | none |
@@ -253,8 +255,10 @@ directory.
 - `docs/deviations.md`: `DEV-0031` (unsupported configuration location kinds
   and `on-cloud-platform`; **replacement text** in `register-entries.md`,
   narrowed after finding 8), `DEV-0032` (two non-kebab spellings of one
-  property in one source; unchanged), and `DEV-0033` (Java stack frames in
-  failure output; **new, proposed, needs the owner's approval**).
+  property in one source; unchanged), and `DEV-0033` (failure output keeps
+  only the config-related lines; approved by the owner on 2026-11-22 and
+  registered; **replacement text** in `register-entries.md` for the scope
+  extended the same day).
 - `docs/tech-debt.md`: `DEBT-0022` (**replacement text**, finding 11) and
   `DEBT-0023` to `DEBT-0026` (unchanged).
 - `docs/provenance.md`: one row per ported starter, hapi-fhir and

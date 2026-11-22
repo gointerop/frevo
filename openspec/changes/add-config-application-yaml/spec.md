@@ -86,13 +86,25 @@ corrected `cr.enabled: yes`. None was removed, renumbered, reused or
 repurposed. The delta changed after review, so the spec-reviewer must
 re-review it.
 
+## Revision after the second review of 2026-11-22
+
+No ID was added. **4 scenarios were rewritten in place**, keeping their
+subject: `config.error.002`, `.008` and `.009` and `config.oracle.003`.
+Under the owner's ruling of 2026-11-22, the failure output is reproduced
+verbatim only for the failure-analysis block or exception chain and the
+config-related `WARN`/`INFO` lines (with HAPI's servlet-context logger
+name); stack frames and every other log line (startup info, Tomcat, servlet
+context, components) are not written, and the oracle compares only the
+config-related lines. `DEV-0033` is approved and its scope extended
+accordingly.
+
 ## Scenarios that carry a register entry
 
 | Entry | Scenarios |
 |---|---|
 | `DEV-0031` — `configtree:`, `.xml`, `on-cloud-platform` (narrowed) | `config.source.020`, `config.profile.014` |
 | `DEV-0032` — two non-kebab spellings in one source | `config.relaxed.007` |
-| `DEV-0033` (proposed) — Java stack frames in failure output | `config.error.009`, `config.oracle.003` |
+| `DEV-0033` — failure output keeps only the config-related lines (no stack frames, no other log lines); owner approved 2026-11-22 | `config.error.008`, `config.error.009`, `config.oracle.003` |
 | `DEBT-0022` — named reads split from binding | `config.read.002`, `config.read.005`, `config.gate.006`, `config.gate.007` |
 | `DEBT-0023` — empty `fhir_version` selects DSTU2 | `config.gate.003` |
 | `DEBT-0024` — environment variables expand into the request-log templates | `config.placeholder.009` |

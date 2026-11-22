@@ -1543,12 +1543,12 @@ prints.
 
 - **WHEN** `./config/application.yaml` holds `hapi.fhir.graphql_enabled: "Y"`
   on line 3 with the value at column 22
-- **THEN** standard output carries, after the log lines of config.error.008,
-  one log line with level `ERROR` and logger
-  `o.s.b.d.LoggingFailureAnalysisReporter` whose message is empty, followed by
-  these lines verbatim: a blank line, `***************************`,
-  `APPLICATION FAILED TO START`, `***************************`, a blank line,
-  `Description:`, a blank line,
+- **THEN** standard output carries, after the config-related log lines of
+  config.error.008 (and no other log line, config.error.009), one log line
+  with level `ERROR` and logger `o.s.b.d.LoggingFailureAnalysisReporter`
+  whose message is empty, followed by these lines verbatim: a blank line,
+  `***************************`, `APPLICATION FAILED TO START`,
+  `***************************`, a blank line, `Description:`, a blank line,
   `Failed to bind properties under 'hapi.fhir.graphql-enabled' to java.lang.Boolean:`,
   a blank line, `    Property: hapi.fhir.graphql-enabled`, `    Value: "Y"`,
   `    Origin: URL [file:config/application.yaml] - 3:22`,
@@ -1604,39 +1604,52 @@ prints.
 - **AND** nothing is written to standard error but the JVM-option notices of
   config.source.023
 
-#### Scenario: [config.error.008] the log lines around a failure
+#### Scenario: [config.error.008] the config-related log lines around a failure
 
 - **WHEN** startup fails
-- **THEN** each log line has the starter's logback console form (the packaged
-  `logback.xml` with Spring Boot's `console-appender.xml`): an ISO-8601
-  timestamp with offset, the level right-aligned in five characters, the
-  process id, ` --- `, `[<spring.application.name>] ` when the application
-  name is known, the thread name right-aligned in fifteen characters in
-  brackets (`[           main]`), the logger name abbreviated to forty
-  characters, ` : ` and the message
+- **THEN** each log line Frevo writes has the starter's logback console form
+  (the packaged `logback.xml` with Spring Boot's `console-appender.xml`): an
+  ISO-8601 timestamp with offset, the level right-aligned in five characters,
+  the process id, ` --- `, `[<spring.application.name>] ` when the
+  application name is known, the thread name right-aligned in fifteen
+  characters in brackets (`[           main]`), the logger name abbreviated
+  to forty characters, ` : ` and the message
 - **AND** when the failure happens before logging is initialised (invalid
   JSON, an invalid profile name, `--=x`, a missing location, YAML errors) the
   process id and application name are absent, as in
   `ERROR  --- [           main] o.s.boot.SpringApplication               : Application run failed`
-- **AND** when it happens during context refresh (binding, gates) HAPI first
-  logs a `WARN` line `Exception encountered during context initialization -
-  cancelling refresh attempt: <exception class>: <message>`; for a binding
-  failure and a strict-placeholder gate failure it then logs an `INFO` line
-  from `ConditionEvaluationReportLogger` whose message is a blank line and
-  `Error starting ApplicationContext. To display the condition evaluation
-  report re-run your application with 'debug' enabled.` (measured: not for the
-  `NullPointerException` of config.gate.005); Frevo writes the same lines, with
-  the logger names the oracle records from the image
+- **AND** when it happens during context refresh (binding, gates), Frevo
+  first writes HAPI's `WARN` line whose message is `Exception encountered
+  during context initialization - cancelling refresh attempt: <exception
+  class>: <message>`, with HAPI's servlet application-context logger name
+  `ConfigServletWebServerApplicationContext` (the last forty characters of
+  `org.springframework.boot.web.servlet.context.AnnotationConfigServletWebServerApplicationContext`),
+  and then, for a binding failure and a strict-placeholder gate failure, the
+  `INFO` line from `.s.b.a.l.ConditionEvaluationReportLogger` whose message is
+  a blank line and `Error starting ApplicationContext. To display the
+  condition evaluation report re-run your application with 'debug' enabled.`
+  (measured: not for the `NullPointerException` of config.gate.005)
+- **AND** these are the only log lines Frevo writes before the failure
+  output: the config-related lines are the `WARN` line, the `INFO` line and
+  the `ERROR` line of config.error.002 or .007
 - **AND** in the image `spring.application.name` is
   `hapi-fhir-jpaserver-starter` (config.source.001)
 
-#### Scenario: [config.error.009] Java stack frames are not reproduced
+#### Scenario: [config.error.009] stack frames and non-config log lines are not reproduced
 
 - **WHEN** HAPI's failure output contains Java stack-frame lines (`\tat …` and
-  `\t... N more`)
-- **THEN** Frevo's output has every other line of config.error.007 and .008
-  and no stack-frame line (`DEV-0033`, proposed: a stack trace of Java frames
-  cannot be produced by a Rust process)
+  `\t... N more`), or log lines that are not config-related: the startup-info
+  lines `Starting Application using Java … with PID …` and `No active profile
+  set, falling back to 1 default profile: "default"` (or the `The following
+  … profile(s) are active` variant), embedded Tomcat's lines, the servlet
+  context's initialisation lines, and any line a HAPI component or bean logs
+  before the failing one is created
+- **THEN** Frevo's output has the lines of config.error.002 or .007 and the
+  config-related lines of config.error.008, and none of those others, in
+  any position (`DEV-0033`: a Rust process has no Java stack, no Tomcat and no
+  HAPI beans, and reproducing their log lines would be fabrication)
+- **AND** in particular Frevo writes no startup-info line, neither
+  `Starting …` nor the active-profiles line, before a failure
 
 #### Scenario: [config.error.010] the property line inside a map entry keeps the source spelling of its parents
 
@@ -2107,13 +2120,26 @@ fixture is judged against HAPI rather than against this text.
 - **THEN** both runs produce byte-identical documents, except for values a case
   marks as random (config.placeholder.010)
 
-#### Scenario: [config.oracle.003] failures are compared as failures
+#### Scenario: [config.oracle.003] failures are compared on the config-related lines
 
 - **WHEN** the HAPI side fails to start for a case
-- **THEN** the case passes only if Frevo also fails to start, and Frevo's
-  standard output equals HAPI's line for line after masking each log line's
-  timestamp and process id and removing Java stack-frame lines
-  (config.error.009)
+- **THEN** the case passes only if Frevo also fails to start and these lines
+  of the two standard outputs are equal, in order:
+  - the `ERROR` line of config.error.002 or .007 (level, logger, thread and
+    message), and every line after it up to the end of output, with Java
+    stack-frame lines removed (the analysis block, or the exception chain
+    with each class, message, SnakeYAML position and caret line, and each
+    `Caused by:` line);
+  - the `WARN … cancelling refresh attempt` line and the
+    `ConditionEvaluationReportLogger` `INFO` line with its message line, when
+    HAPI has them (level, thread and message compared; the logger field is
+    not, because the oracle's application context is not the starter's
+    servlet context, and config.error.008 states the logger name)
+- **AND** in each compared log line the timestamp and the process id are
+  masked; the application-name field is compared
+- **AND** every other line of HAPI's output is stripped before comparing
+  (config.error.009); Frevo's output must contain no line outside the
+  compared set
 
 #### Scenario: [config.oracle.004] nothing is normalised but set order
 
