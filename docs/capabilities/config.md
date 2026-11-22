@@ -28,7 +28,7 @@ file derived from upstream source carries a provenance header and a row in
 
 ## Oracles
 
-Every key in `docs/inventory.md` round-trips: parsed from the starter's own configuration files and observably affecting behaviour.
+Every key in `docs/inventory.md` (220 rows since the correction of 2026-11-22, which follows `keys.md` of `add-config-application-yaml`) round-trips: parsed from the starter's own configuration files and observably affecting behaviour.
 
 HAPI FHIR 8.12.0 is the reference behaviour. A difference from HAPI is a bug
 unless it is recorded in [`docs/deviations.md`](../deviations.md).
@@ -37,6 +37,11 @@ unless it is recorded in [`docs/deviations.md`](../deviations.md).
 
 1. Spring relaxed binding accepts several spellings of each key (kebab-case, snake_case, camelCase, environment variables). Which forms must be supported?
 2. Which keys are accepted but ignored by the starter, and should those be accepted-and-ignored here too rather than rejected?
+
+## Related records
+
+- [ADR 0007](../adr/0007-yaml-event-parser.md): `yaml-rust2` event parser plus Frevo's own SnakeYAML 1.1 resolver.
+- The two open questions above are answered by `add-config-application-yaml`; its task 25 links them here once it archives.
 
 ## Scenario ID namespace
 
