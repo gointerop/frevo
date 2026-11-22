@@ -277,6 +277,34 @@ checkpoint because it changes what a gate measures.
   of 6, covering `model.json.024`, `model.json.025` and
   `model.canonical.007`.
 
+- [ ] **5b. Write the tests for `model.json.026`.** The implementer's
+  `adaecd3` fixed the codec to skip `resourceType` only on a resource's own
+  object, as HAPI's `JsonParser.java:1341-1344` does (`tasks/blockers.md`,
+  2026-11-21, "resolved: `ExampleScenario-example.json`"). No scenario stated
+  this rule until now. `oracle-builder` work, in
+  `crates/frevo-model/tests/model_decode.rs`, tagged
+  `// covers: model.json.026`, over hand-built documents:
+  - an `ExampleScenario` with an `instance` carrying `resourceType` (and one
+    carrying `_resourceType`). It decodes with no diagnostic in both modes,
+    the lazy reader gives the `code` value, and the document re-encodes
+    byte-identically, pretty and canonical, with the instance's
+    `resourceType` sorted among its siblings;
+  - a `contained` resource, a `Bundle.entry.resource` and a
+    `Parameters.parameter.resource`. Each still has its marker skipped and
+    dispatched on, and a reader asking a resource for a child `resourceType`
+    gets nothing;
+  - a `Patient.name` object carrying `resourceType`. Lenient mode gives the
+    unrecognised-property diagnostic at `Patient.name.resourceType`, and
+    strict mode an error naming that path.
+  The behaviour already holds in code at `adaecd3`, so these tests should
+  pass at once. A test that fails goes back to the implementer, or to the
+  proposer if a stated value is wrong; neither the test nor the scenario is
+  bent to fit. Until this lands, `scenario-coverage.sh --change
+  add-fhirpath-and-codegen-r4` reports `model.json.026` as uncovered.
+  `codegen.roundtrip.001` (task 56, over the full package) grades it
+  additionally.
+  Satisfies the tests for `model.json.026`.
+
 ---
 
 ## Phase B — `frevo-codegen`

@@ -347,6 +347,50 @@ scenario govern each of the ten is recorded in
 - **WHEN** a `HumanName` carries `"id": "n1"` and an `extension` array
 - **THEN** both are readable on that element and round-trip unchanged
 
+#### Scenario: [model.json.026] `resourceType` is the type marker only on a resource's own object, and an ordinary property everywhere else
+
+- **WHEN** an `ExampleScenario` whose `instance` entries each carry an element
+  named `resourceType` is decoded, such as
+  `{"resourceId": "iherx001", "resourceType": "MedicationRequest"}` in
+  `ExampleScenario-example.json` of `hl7.fhir.r4.examples#4.0.1`
+- **THEN** HAPI skips a `resourceType` key only when the object being parsed is
+  a resource: `JsonParser.java:1341-1344` (`hapi-fhir-base`) tests
+  `ParserState.isToplevelResourceElement` (`ParserState.java:157-159`). That
+  is true for `ResourceStateHl7Org`, the state every resource object is
+  parsed in, top level or nested (`:1135`). Elsewhere the key is handled as
+  an ordinary property
+- **AND** so the decode succeeds with no diagnostic, and each
+  `ExampleScenario.instance.resourceType` holds its `code` value. Reading
+  `instance[0].resourceType` through the lazy reader gives
+  `MedicationRequest`, as the R4 model declares that element
+  (`ExampleScenarioInstanceComponent.resourceType`, parsed at
+  `org.hl7.fhir.r4` `formats/JsonParser.java:13050-13054`). A
+  `_resourceType` sibling on that element decodes as its primitive extension,
+  as `model.primext.001` states for any primitive
+- **AND** a resource nested anywhere still has its own marker skipped and used
+  for type dispatch, not read as an element. That covers a `contained`
+  resource, `Bundle.entry.resource` and `Parameters.parameter.resource`
+  (`model.json.006`, `model.json.007`). No R4 resource declares an element
+  called `resourceType`, so asking the reader for a resource's child
+  `resourceType` yields nothing
+- **AND** the document re-encodes byte-identically. In canonical form the
+  instance's `resourceType` is an ordinary member of the instance object,
+  sorted among its siblings (`model.canonical.001`). Each resource object's
+  own marker is written once, as that resource's type
+- **AND** in any other object that does not declare `resourceType`, the key is
+  an undeclared property (`model.json.004`). The `Patient`
+  `{"resourceType": "Patient", "name": [{"resourceType": "x", "family": "F"}]}`
+  is accepted in lenient mode with an unrecognised-property diagnostic naming
+  `Patient.name.resourceType`. It fails in strict mode with an error naming
+  that path. This bullet is derived from `parseChildren` falling through to
+  the unknown-element path (`JsonParser.java:1339-1344`), not observed
+- **AND** the oracle is the unit tests in
+  `crates/frevo-model/tests/model_decode.rs`, one hand-built document per
+  bullet (task 5b). `codegen.roundtrip.001` over the full
+  `hl7.fhir.r4.examples#4.0.1` package grades it additionally, through
+  `ExampleScenario-example.json`. No differential grades it, because the
+  in-process HAPI probe evaluates FHIRPath only
+
 ### Requirement: Primitive extensions — the `_field` form
 
 A primitive element's `id` and `extension` live in a sibling property named
