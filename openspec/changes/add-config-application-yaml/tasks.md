@@ -62,6 +62,25 @@ reads `APPROVED`.
   is written to `tasks/blockers.md` and the delta is corrected before task 3
   (findings O-1 to O-13 of 2026-11-22, folded into the delta the same day;
   proposal.md, "Oracle findings of 2026-11-22 and the owner's rulings").
+  Every case the probe fails is recorded from the unchanged image's own
+  `Application` (config.oracle.001, two runners; done, and folded into the
+  delta after the fourth review). Still owed before task 3:
+  - compare the `WARN`/`INFO` logger field, which `run.py` `mask` still
+    replaces with `<logger>` in `config_lines` (config.oracle.003 now
+    compares it), and drop the `Error creating bean with name` prefix rule
+    from the comparison (config.unknown.005, .008 are compared in full);
+  - add and record cases for what config.error.008 and config.read.007 say
+    is not yet in the record: a type error in each of `CrProperties`,
+    `CareGapsProperties`, `CqlCompilerProperties` and `CdsHooksProperties`
+    (for example `hapi.fhir.cr.enabled: maybe`,
+    `hapi.fhir.cdshooks.enabled: maybe`); `${nope}` in each of the reads
+    `hapi.fhir.fhir_version`, `hapi.fhir.cr.enabled`,
+    `hapi.fhir.cdshooks.enabled`, `hapi.fhir.custom-bean-packages` and
+    `scheduling_disabled`; and one configuration with both a missing
+    version and an `AppProperties` binding failure, and one with an
+    `AppProperties` and a `spring.elasticsearch.*` binding failure, to fix
+    the order in which refresh-time failures surface. Each recorded result
+    goes to `tasks/blockers.md` for the proposer to state in the delta.
 - [ ] **3. Write the failing Rust tests.** `crates/frevo-config/tests/`, one
   file per area, every scenario tagged `// covers: config.<area>.<nnn>`:
   each config case runs `frevo-config effective` in a temporary directory
@@ -71,7 +90,12 @@ reads `APPROVED`.
   status) with the recorded HAPI result. Scenarios with no HAPI counterpart
   (config.dump.*, config.unknown.007, config.perf.*) assert the spec text
   directly. `harness/scripts/scenario-coverage.sh --change
-  add-config-application-yaml` reports 0 uncovered.
+  add-config-application-yaml` reports 0 uncovered. The test edits the
+  oracle-builder could not make while `review.md` read `CHANGES_REQUESTED`
+  (`tasks/blockers.md`, entry "re-recorded from HAPI's real `Application`",
+  items 1 to 5: the tab-led frame rule in `tests/common/mod.rs` and
+  `tests/error.rs`, the config.oracle.003 sample, the config.oracle.001
+  runner assertions, and the THEN-clause tests) are part of this task.
 
 ## Phase B — prerequisites outside this branch
 
@@ -81,15 +105,14 @@ reads `APPROVED`.
   `docs/adr/0007-yaml-event-parser.md`; add `yaml-rust2` to
   `[workspace.dependencies]`, remove `serde_yaml_ng`, and confirm
   `cargo deny check` passes. Blocks task 7.
-- [ ] **5. [chore] Pin the Spring sources** — `spring-projects/spring-boot`
+- [x] **5. [chore] Pin the Spring sources** — `spring-projects/spring-boot`
   `v3.5.14`, `spring-projects/spring-framework` `v6.2.19`, SnakeYAML
   `snakeyaml-2.4` — in `reference/PINS.md` and `reference/clone.sh`, on a
-  `chore/*` branch (ruling of 2026-11-22). #38 pinned Spring Framework at
-  `v6.2.18`; the owner ruled on 2026-11-22 that the reference is 6.2.19, the
-  version the pinned image ships, so the Spring Framework pin is moved to
-  `v6.2.19` (Spring Boot and SnakeYAML unchanged). A prerequisite recorded
-  here, not work of this change; does not block implementation, since the
-  oracle is the standard either way.
+  `chore/*` branch (ruling of 2026-11-22). #38 pinned Spring Boot, SnakeYAML
+  and Spring Framework at `v6.2.18`; the owner ruled on 2026-11-22 that the
+  reference is 6.2.19, the version the pinned image ships, and #40 moved the
+  Spring Framework pin to `v6.2.19` (`6214eae8…`). Done; a prerequisite
+  recorded here, not work of this change.
 - [ ] **6. [chore] Correct the inventory.** Fix
   `harness/scripts/gen-inventory.py` to read bean properties (getters and
   setters) instead of fields, to see `TerminologyServerClientSettings` and
@@ -180,7 +203,9 @@ reads `APPROVED`.
   config.placeholder.011.
 - [ ] **19. Failure output and early exit.** Design.md section 6a: standard
   output, the logback console line form, the failure-analysis and run-failed
-  forms per failure kind, the preceding `WARN`/`INFO` lines, no stack frames,
+  forms per failure kind, the preceding `WARN` line with HAPI's exception
+  text and the `INFO` line for exactly the kinds of config.error.008's table,
+  no stack frames,
   no logback status line and no non-config log line (`DEV-0033`, approved by the owner on 2026-11-22), origins, exit status `1`, nothing
   started before configuration succeeds. Satisfies config.error.001-.010,
   config.dump.006.

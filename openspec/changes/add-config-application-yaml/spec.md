@@ -127,13 +127,45 @@ The notation comment at the top of the delta now says that failure output is
 on standard output, and how a scenario that replaces the default locations
 without a version is to be read.
 
+## Revision after the fourth review (`831c5ba`) and the re-record from HAPI's real `Application`
+
+No ID was added or removed; the count stays 232. Every failing case of the
+`config-roundtrip` record now comes from the image's own
+`ca.uhn.fhir.jpa.starter.Application` (runner `application`; 80 of 419
+cases), and the delta was diffed against the whole record. **20 scenarios
+were rewritten in place**, keeping their subject (proposal.md, "Fourth review
+(`831c5ba`) and the re-record from HAPI's real `Application`"):
+
+- refresh-time log lines, per failure kind: `config.error.002`, `.008`
+  (a per-kind table of the `WARN` exception and whether the `INFO` line
+  appears), `config.dump.006`, `config.collection.002`, `config.gate.024`;
+- the missing version: `config.gate.005` and the "fails as config.gate.005
+  does" definition in the notation comment, `config.env.014`;
+- strict and lenient placeholders: `config.placeholder.007`, `.011`,
+  `config.read.007`;
+- the CQL beans: `config.unknown.005`, `.008`;
+- Jackson's location line and tab-led frames: `config.args.007`, `.009`,
+  `config.error.007`, `.009`, `config.oracle.003`;
+- the two runners: `config.oracle.001`;
+- other clauses the record contradicted or sharpened: `config.source.016`
+  (the action line), `config.source.020` (the `x.txt` cause differs from the
+  `configserver:` one);
+- the notation comment's reading rule (which cases set the version in
+  their arguments, which in the named file), touching the text that
+  `config.source.007`, `.009`, `.010`, `.011`, `.013` and `config.key.001`
+  rely on without changing those scenarios' clauses.
+
+config.oracle.003 no longer exempts the `WARN`/`INFO` logger field or
+shortens the bean-creation wrapper: both rules existed only because the
+record was the probe's. The `Bindable@<hex>` mask stays.
+
 ## Scenarios that carry a register entry
 
 | Entry | Scenarios |
 |---|---|
 | `DEV-0031` — `configtree:`, `.xml`, `on-cloud-platform` (narrowed) | `config.source.020`, `config.profile.014` |
 | `DEV-0032` — two non-kebab spellings in one source | `config.relaxed.007` |
-| `DEV-0033` — failure output keeps only the config-related lines (no stack frames, no other log lines, no logback status lines); owner approved 2026-11-22 | `config.dump.006`, `config.error.007`, `config.error.008`, `config.error.009`, `config.oracle.003` |
+| `DEV-0033` — failure output keeps only the config-related lines (no stack frames, no other log lines, no logback status lines); owner approved 2026-11-22; replacement text restated after the fourth review, still to be applied to `docs/deviations.md` | `config.dump.006`, `config.error.007`, `config.error.008`, `config.error.009`, `config.oracle.003` |
 | `DEBT-0022` — named reads split from binding | `config.read.002`, `config.read.005`, `config.gate.006`, `config.gate.007` |
 | `DEBT-0023` — empty `fhir_version` selects DSTU2 | `config.gate.003` |
 | `DEBT-0024` — environment variables expand into the request-log templates | `config.placeholder.009` |

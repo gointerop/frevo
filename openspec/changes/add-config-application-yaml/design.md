@@ -82,15 +82,15 @@ recorded behaviour wins; the delta now says:
 
 | Finding | What the record shows | Where the delta says it |
 |---|---|---|
-| O-1 | logback prints its own status lines on every run, on both streams, because the packaged `logback.xml` sets `scan="true"` inside a jar | config.dump.006, .error.007, .error.009, .oracle.003; `DEV-0033` extended (`register-entries.md`) |
+| O-1 | logback prints its own status lines because the packaged `logback.xml` sets `scan="true"` inside a jar: on standard output on every run (57 lines), on standard error on every run except the 23 that fail before the application context exists (2 lines in the other 396) | config.dump.006, .error.007, .error.009, .oracle.003; `DEV-0033` extended (`register-entries.md`) |
 | O-2 | lower-case `hapi_fhir_default_page_size` binds on Linux; mixed case does not | config.env.004, section 3.4 |
 | O-3 | an environment variable named `--spring.config.location` is applied as the location | config.env.014, section 3.4 |
 | O-4 | invalid JSON is reported through Jackson's `JsonParseException` | config.args.007, .009 |
 | O-5 | SnakeYAML errors print without a class prefix, source lines indented four spaces plus their own | config.yaml.003, .016, config.error.007 |
 | O-6 | replacing the default locations without a version fails as config.gate.005 does | config.source.007, .009, .010, .011, .013, config.key.001, .003, and the notation comment |
-| O-7 | the class a strict-placeholder gate failure names is the probe's condition site, not measured in HAPI's real context | config.placeholder.011, section 7 |
+| O-7 | the class a strict-placeholder gate failure names was the probe's condition site; superseded by the re-record below | config.placeholder.011, section 7 |
 | O-8 | `Bindable@<hex>` is an identity hash that changes between runs | config.collection.002, config.oracle.002, .003 |
-| O-9 | the bean-creation wrapper's wording after `Error creating bean with name` is the probe context's | config.unknown.005, .008, config.oracle.003 |
+| O-9 | the bean-creation wrapper's wording after `Error creating bean with name` was the probe context's; superseded by the re-record below | config.unknown.005, .008, config.oracle.003 |
 | O-10 | `4.0` and `4.0.1` fail to bind before any gate is reported | config.gate.002 |
 | O-11 | `docs/inventory.md` has 220 configuration rows after #39 | config.key.011, `keys.md` section 7 |
 | O-12 | HAPI picks the snake-case spelling in config.relaxed.007's second run, as stated | config.relaxed.007 (a note) |
@@ -99,6 +99,37 @@ recorded behaviour wins; the delta now says:
 The record also shows the action text of an enum conversion failure (`The
 following values are valid:` and the constants), which the first draft did not
 quote; config.error.002 now states it.
+
+### Re-record from HAPI's real `Application` (review of `831c5ba`)
+
+The fourth review found that the probe is not HAPI's application context: it
+does not run the starter's component scan, so a failure during context
+refresh is wrapped differently, or is a different failure, in the real
+`ca.uhn.fhir.jpa.starter.Application`. The lead ruled on 2026-11-22 that the
+HAPI reference is the image's real `Application`, and the oracle-builder
+re-recorded (`tasks/blockers.md`, entry "re-recorded from HAPI's real
+`Application`"): every case the probe fails (80 of 419) is recorded from a
+second run of the unchanged image (config.oracle.001). 23 of the 80 fail
+before the context exists and print the same config lines in both runners;
+the other 57 differ, and the delta now quotes the real `Application`:
+
+| What the real `Application` prints | Scenarios |
+|---|---|
+| a refresh-time failure is wrapped in `BeanDefinitionStoreException: Failed to read candidate component class: URL [jar:file:/app/main.war!/WEB-INF/classes!/…]`, naming the class whose condition the component scan was evaluating: `common/PartitionModeConfigurer.class` for every `AppProperties` binding failure, `common/FhirServerConfigDstu2.class` for a missing version, `elastic/ElasticsearchBootSvcImpl.class` for `spring.elasticsearch.*`, the configurer itself for a strict placeholder | config.error.008 (table), config.error.002, config.gate.005 and its family, config.gate.024, config.placeholder.011, config.collection.002, config.dump.006 |
+| the `ConditionEvaluationReportLogger` `INFO` line appears only for the `spring.elasticsearch.*`, strict-placeholder and CQL-bean failures, never for an `AppProperties` binding failure or a missing version | config.error.008 |
+| five of config.placeholder.011's eight keys never reach a gate: `AppProperties` binds `${nope}` leniently first and fails to convert it | config.placeholder.011, config.read.007 |
+| the CQL beans are `cqlProperties`, `cqlData` and `cqlTerminologyProperties`, and a bean's description names its CGLIB proxy class (`CqlData$$SpringCGLIB$$0`) | config.unknown.005, .008 |
+| the `WARN` logger is `ConfigServletWebServerApplicationContext` in all 57 refresh-time runs, and the `INFO` logger `.s.b.a.l.ConditionEvaluationReportLogger` in all 13 that have one | config.error.008, config.oracle.003 |
+
+Review finding 2 is folded in at the same time: Jackson's ` at [Source:
+REDACTED …; line: 1, column: 2]` line is a message line (led by a space), and
+a stack frame is tab-led only, including `\t... N common frames omitted`
+(config.args.007, .009, config.error.009, config.oracle.003). With the
+record now HAPI's own, the two comparison rules that existed only because
+the probe was not HAPI's context are dropped: the `WARN`/`INFO` logger field
+is compared, and the bean-creation wrapper is compared in full. The
+`Bindable@<hex>` mask stays: the hash differs between the probe and
+application runs of config.collection.002 (`15f47664`, `19b89d4`).
 
 ## 3. Loading
 
@@ -355,9 +386,11 @@ Measured with the starter's `logback.xml` (which includes Spring Boot's
 startup failure goes to **standard output** as log lines; nothing goes to
 standard error except the JVM-option notices and logback's own status lines.
 Those status lines (`HH:MM:SS,mmm |-<LEVEL> in …`, among them `Missing
-watchable .xml or .properties files.`) appear on every HAPI run, on both
-streams, because the packaged `logback.xml` sets `scan="true"` while it is
-read from inside a jar; they say nothing about the configuration. Frevo
+watchable .xml or .properties files.`) appear because the packaged
+`logback.xml` sets `scan="true"` while it is read from inside a jar: on
+standard output on every HAPI run, and on standard error on every run except
+those that fail before the application context exists (23 of the record's
+419 runs have none there). They say nothing about the configuration. Frevo
 writes none of them; the oracle strips and counts them (section 7), and
 `DEV-0033`'s scope covers them. Two forms:
 
@@ -369,34 +402,48 @@ writes none of them; the oracle strips and counts them (section 7), and
 - **Run failed** (config.error.007): one `ERROR` line from
   `o.s.boot.SpringApplication` with `Application run failed`, a blank line,
   and the exception chain (`<class>: <message>`, `Caused by: …`). Used for
-  everything else, including HAPI's own `NullPointerException` when no
-  version is configured (config.gate.005). A SnakeYAML error's chain is its
-  message lines alone: no class prefix, no `Caused by:`, echoed source lines
-  indented four spaces plus their own indentation, and a trailing blank line
-  (config.yaml.003). Invalid JSON is Jackson's `JsonParseException`, because
-  the image ships Jackson (config.args.007).
+  everything else, including the missing version (config.gate.005:
+  `BeanDefinitionStoreException` naming `FhirServerConfigDstu2.class`, then
+  `Caused by:` HAPI's `NullPointerException`) and the strict placeholders of
+  config.placeholder.011 (three exception lines). A SnakeYAML error's chain is
+  its message lines alone: no class prefix, no `Caused by:`, echoed source
+  lines indented four spaces plus their own indentation, and a trailing blank
+  line (config.yaml.003). Invalid JSON is Jackson's `JsonParseException`,
+  because the image ships Jackson 2, with Jackson's ` at [Source: REDACTED …;
+  line: 1, column: 2]` location line as the cause's second message line
+  (config.args.007).
 
-Before either, a failure during context refresh is preceded by HAPI's `WARN`
-line from the application context and, for binding and gate-placeholder
-failures, an `INFO` line from `ConditionEvaluationReportLogger`
-(config.error.008). Log lines use the console pattern; the process id and
-application name are absent when the failure precedes logging
-initialisation. Java stack frames and every non-config log line (the
+Which log lines Frevo writes, exactly, per failure kind (config.error.008):
+
+| Failure kind | Lines Frevo writes, in order |
+|---|---|
+| environment preparation: invalid JSON, `--=x`, profile names and profile keys, missing or unloadable locations and imports, wildcards, YAML errors | the `ERROR` line with no process id and no application name, then the block or chain |
+| `AppProperties` binding | `WARN` (`BeanDefinitionStoreException … common/PartitionModeConfigurer.class`), `ERROR` (`LoggingFailureAnalysisReporter`), the analysis block |
+| no `hapi.fhir.fhir_version` | `WARN` (`… common/FhirServerConfigDstu2.class`), `ERROR` (`SpringApplication`), two exception lines |
+| `ElasticsearchProperties` binding | `WARN` (`… elastic/ElasticsearchBootSvcImpl.class`), `INFO`, `ERROR` (`LoggingFailureAnalysisReporter`), the analysis block |
+| strict placeholder in `app_content_path`, `custom_content_path`, `spring.ai.mcp.server.enabled` | `WARN` (`… web/WebAppFilesConfigurer.class`, `… web/CustomContentFilesConfigurer.class`, `… mcp/McpServerConfig.class`), `INFO`, `ERROR` (`SpringApplication`), three exception lines |
+| `CqlProperties`, `CqlData`, `CqlTerminologyProperties` binding | `WARN` (`ConfigurationPropertiesBindException: Error creating bean with name 'cqlProperties'` / `'cqlData'` / `'cqlTerminologyProperties'` …), `INFO`, `ERROR` (`LoggingFailureAnalysisReporter`), the analysis block |
+
+Log lines use the console pattern; the process id and application name are
+absent when the failure precedes the application context, and the
+application name is absent whenever the effective configuration does not set
+`spring.application.name` (the gate.005 family). The `WARN` logger is
+`ConfigServletWebServerApplicationContext` and the `INFO` logger
+`.s.b.a.l.ConditionEvaluationReportLogger`, fixed strings, as HAPI's
+`Application` prints them; Frevo has no servlet context of its own, and
+writing HAPI's names is part of `DEV-0033`'s chosen behaviour. The class-file
+URLs are HAPI's (`jar:file:/app/main.war!/WEB-INF/classes!/…`), fixed
+strings per failure kind. Java stack frames (tab-led only: `\tat …`, `\t... N
+more`, `\t... N common frames omitted`) and every non-config log line (the
 startup-info lines `Starting Application …` and `No active profile set …`,
-Tomcat, the servlet context, HAPI components) are not reproduced; Frevo
-writes none of them (`DEV-0033`, approved by the owner on 2026-11-22, scope
-extended the same day, and extended again to logback's status lines). The
-`WARN` line carries HAPI's servlet-context logger name,
-`ConfigServletWebServerApplicationContext`. When a properties bean fails to
-bind, the `WARN` line's exception is the bean-creation wrapper,
-`ConfigurationPropertiesBindException: Error creating bean with name
-'<prefix>-<class>': Could not bind properties to '<SimpleClass>' :
-prefix=<prefix>, ignoreInvalidFields=false, ignoreUnknownFields=true`, as the
-oracle's probe context words it; HAPI's servlet context may reach the bean
-through another dependency chain, so only the text through `Error creating
-bean with name` is compared (config.unknown.005, config.oracle.003).
-A table maps each failure kind to its exception class names and messages,
-generated from the oracle's record.
+Tomcat, the servlet context, HAPI components and libraries, the shutdown
+lines between `WARN` and `INFO`) are not reproduced; Frevo writes none of
+them (`DEV-0033`, approved by the owner on 2026-11-22, scope extended the
+same day, and extended again to logback's status lines). A table maps each
+failure kind to its exception class names and messages, generated from the
+oracle's record. A binding failure of `CrProperties`, `CareGapsProperties`,
+`CqlCompilerProperties` or `CdsHooksProperties`, and the order of several
+kinds in one configuration, are not yet recorded (tasks.md task 2).
 
 ## 7. The `config-roundtrip` oracle
 
@@ -419,13 +466,19 @@ New, in `harness/config-roundtrip/` (oracle-builder), shaped like
   `System.getProperties()` for section 3.6, asserts that no `WEB-INF/lib`
   jar carries an application file, and refuses to record unless
   `spring-boot`, `spring-core` and `snakeyaml` are 3.5.14, 6.2.19 and 2.4.
-- **Gate site names.** Each starter condition is evaluated on the starter's
-  own annotation metadata, so a strict-placeholder failure names the class
-  (or `Class.method`) of the site the probe evaluates (config.placeholder.011).
-  For the three gates with several sites — repository validation,
-  implementation-guide upload, binary storage — the site is the probe's
-  choice. Which site HAPI's real `Application` context evaluates first, and so
-  which class its failure names, was not measured.
+- **Two runners** (lead ruling of 2026-11-22, after review finding 1). The
+  probe evaluates each starter condition on the starter's own annotation
+  metadata, which is enough for documents, reads and gates but is not HAPI's
+  component scan. So every case the probe fails is run again in a fresh
+  container of the unchanged image, whose launcher then starts the war's own
+  `Start-Class`, `ca.uhn.fhir.jpa.starter.Application`; that run is the
+  case's record (`"runner": "application"`), the probe's run is kept under
+  `"probe"`, and a case where the real `Application` starts the server
+  instead would be listed in `runner_disagreements` (none is). A case the
+  probe does not fail is recorded from the probe (config.oracle.001). The
+  probe's gate site names (for example `MdmConfig` for `mdm_enabled`) are
+  therefore no longer quoted anywhere: config.placeholder.011 quotes the real
+  `Application`.
 - **Cases:** one directory per case: `files/` (copied into an empty working
   directory), `root/` (copied to `/`, for absolute paths), `env` (one
   `NAME=value` per line, nothing inherited), `args`, and `covers:` tags. The
@@ -433,7 +486,11 @@ New, in `harness/config-roundtrip/` (oracle-builder), shaped like
   `keys.md` so that a key added there cannot be missed. A scenario that
   replaces the default locations without a version has a case exactly as
   stated (it fails as config.gate.005 does) and a `-v` case with
-  `--hapi.fhir.fhir_version=R4` added.
+  `--hapi.fhir.fhir_version=R4` added (config.source.007, .009, .010,
+  config.key.001); config.source.011 and .013 have only the version-set
+  case, and the other location-replacing cases set the version in their
+  arguments or their named file (the notation comment of the delta lists
+  them).
 - **Recording:** the HAPI side's documents are recorded in
   `harness/config-roundtrip/hapi-8.12.0-results.json` with the image digest,
   so CI compares Frevo against the record without Docker, and a scheduled job
@@ -442,15 +499,16 @@ New, in `harness/config-roundtrip/` (oracle-builder), shaped like
 - **Comparison:** member for member; sets sorted; nothing else normalised
   (config.oracle.004). A failing HAPI case passes only if Frevo also fails and
   the config-related lines of the two standard outputs are equal: the `ERROR`
-  line and everything after it with stack frames removed, and the
-  `WARN`/`INFO` lines above it without their logger field; timestamps and
-  process ids masked; every other HAPI line stripped (config.oracle.003).
-  Three further normalisations, each because the HAPI side varies or is not
-  HAPI's servlet context: logback status lines are removed from both HAPI
-  streams and counted; the hexadecimal identity hash in `Bindable@<hex>` is
-  masked on both sides (config.collection.002); and a `WARN` line whose
-  exception message begins `Error creating bean with name` is compared only
-  through that prefix (config.unknown.005, .008).
+  line and everything after it with stack frames (tab-led lines only)
+  removed, and the `WARN`/`INFO` lines above it, logger field included;
+  timestamps and process ids masked; every other HAPI line stripped
+  (config.oracle.003). Two further normalisations, each because the HAPI side
+  varies: logback status lines are removed from both HAPI streams and
+  counted, and the hexadecimal identity hash in `Bindable@<hex>` is masked on
+  both sides (config.collection.002). The record's `config_lines` still mask
+  the `WARN`/`INFO` logger field as `<logger>` (`run.py` `mask`); comparing
+  it, as config.oracle.003 now requires, is owed by the oracle-builder
+  (tasks.md task 2).
 
 ## 8. The effective-configuration document
 

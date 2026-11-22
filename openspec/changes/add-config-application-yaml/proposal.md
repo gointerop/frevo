@@ -88,7 +88,11 @@ same cases against the jars inside the pinned image on Linux; it, not this
 text, is the standard. Its first full run (419 cases) produced thirteen
 findings against the first draft; the owner ruled on 2026-11-22 that the
 recorded HAPI behaviour wins, and the delta now quotes the record
-(design.md section 2, "Oracle findings of 2026-11-22").
+(design.md section 2, "Oracle findings of 2026-11-22"). Since the fourth
+review, every case that fails is recorded from the image's own
+`ca.uhn.fhir.jpa.starter.Application`, not from the probe, so the failure
+output the delta quotes is what HAPI's real application context prints
+(design.md section 2, "Re-record from HAPI's real `Application`").
 
 The probe found that the configuration surface is not what the inventory says:
 
@@ -122,7 +126,7 @@ Pins are from [`reference/PINS.md`](../../../reference/PINS.md).
 | Version gate predicate | `hapifhir/hapi-fhir` | `hapi-fhir-base/src/main/java/ca/uhn/fhir/context/FhirVersionEnum.java:283-315` | `7ab4c7c7c49281496faa1b3c2498a652457669ae` | **derived** |
 | Implementation-guide entry fields | same | `hapi-fhir-storage/src/main/java/ca/uhn/fhir/jpa/packages/PackageInstallationSpec.java` | same | **derived** (descriptor) |
 | Enum domains for lenient conversion | same; `hapifhir/org.hl7.fhir.core`; `cqframework/clinical-reasoning`; `cqframework/clinical_quality_language` | `JpaStorageSettings` (`ClientIdStrategyEnum`, `IdStrategyEnum`, `StoreMetaSourceInformationEnum`), `NormalizedQuantitySearchLevel`, `EncodingEnum`, `FhirVersionEnum`; `org.hl7.fhir.r4.model.Bundle.BundleType`; `RetrieveSettings`, `TerminologySettings`, `TerminologyServerClientSettings` (cqf-fhir-cql, cqf-fhir-utility); `CqlCompilerException.ErrorSeverity`, `LibraryBuilder.SignatureLevel`, `CqlTranslator.Format` | `7ab4c7c7…`, `73c432b5…`, `ccba474a…`, `c41c21f5…` | **derived** (constant lists) |
-| Loading, binding, conversion and YAML resolution rules | `spring-projects/spring-boot` 3.5.14, `spring-projects/spring-framework` 6.2.19 (what the pinned image ships; owner ruling of 2026-11-22), `snakeyaml` 2.4 | `ConfigDataEnvironment`, `StandardConfigDataLocationResolver`, `OriginTrackedYamlLoader`, `OriginTrackedPropertiesLoader`, `Binder`, `JavaBeanBinder`, `MapBinder`, `IndexedElementsBinder`, `ConfigurationPropertyName`, `SystemEnvironmentPropertyMapper`, `DefaultPropertyMapper`, `LenientStringToEnumConverterFactory`, `BindFailureAnalyzer`; Spring's `YamlProcessor`, `SystemEnvironmentPropertySource`, `PropertyPlaceholderHelper`, `NumberUtils`, `StringToBooleanConverter`; SnakeYAML's `Resolver` | `reference/PINS.md` pins `v3.5.14`, `snakeyaml-2.4` and, for Spring Framework, `v6.2.18` (#38); the re-pin to `v6.2.19` is owed on a `chore/*` branch (task 5) | **derived behaviour** — measured by the probe, judged by the oracle; no source is ported |
+| Loading, binding, conversion and YAML resolution rules | `spring-projects/spring-boot` 3.5.14, `spring-projects/spring-framework` 6.2.19 (what the pinned image ships; owner ruling of 2026-11-22), `snakeyaml` 2.4 | `ConfigDataEnvironment`, `StandardConfigDataLocationResolver`, `OriginTrackedYamlLoader`, `OriginTrackedPropertiesLoader`, `Binder`, `JavaBeanBinder`, `MapBinder`, `IndexedElementsBinder`, `ConfigurationPropertyName`, `SystemEnvironmentPropertyMapper`, `DefaultPropertyMapper`, `LenientStringToEnumConverterFactory`, `BindFailureAnalyzer`; Spring's `YamlProcessor`, `SystemEnvironmentPropertySource`, `PropertyPlaceholderHelper`, `NumberUtils`, `StringToBooleanConverter`; SnakeYAML's `Resolver` | `reference/PINS.md` pins `v3.5.14` and `snakeyaml-2.4` (#38) and, for Spring Framework, `v6.2.19` (`6214eae8…`, #40, re-pinned from #38's `v6.2.18`; task 5 done) | **derived behaviour** — measured by the probe, judged by the oracle; no source is ported |
 
 ## Oracles
 
@@ -151,9 +155,9 @@ There is no HL7 suite pass rate to meet for this change.
    because it adds to what "correct" refers to. Ruled 2026-11-22: it happens
    on a `chore/*` branch, not in this change, and does not block it. #38
    pinned Spring Framework `v6.2.18`; the owner ruled on 2026-11-22 that the
-   reference is **6.2.19**, the version the pinned image ships, so
-   `reference/PINS.md` and `reference/clone.sh` are re-pinned to `v6.2.19` on
-   a `chore/*` branch.
+   reference is **6.2.19**, the version the pinned image ships, and #40
+   re-pinned `reference/PINS.md` and `reference/clone.sh` to `v6.2.19`.
+   Done.
 3. **`docs/inventory.md` needs correcting** (`keys.md` section 7) on a
    `chore/*` branch: `harness/scripts/gen-inventory.py` is not this branch's to
    edit.
@@ -196,8 +200,8 @@ test infrastructure. No PostgreSQL schema change.
    runs; Spring Boot 3.5.14 and SnakeYAML 2.4 are unchanged. The residual
    risk is a 6.2.18-to-6.2.19 difference the cache probe could not show: the
    oracle's record, taken against 6.2.19, is the standard, so any such
-   difference already shows up as a recorded result, and `reference/` is
-   re-pinned to `v6.2.19` (task 5).
+   difference already shows up as a recorded result, and `reference/` was
+   re-pinned to `v6.2.19` in #40 (task 5).
 2. **The probe ran on Windows.** Environment-variable names are
    case-insensitive there. The first draft expected the lower-case
    `hapi_fhir_default_page_size` not to bind on Linux; the oracle's Linux run
@@ -260,7 +264,7 @@ readable.
 | 9 setter-less derived properties, `packageContents` | bound as HAPI binds them | config.unknown.008, config.key.009, .012 |
 | 10 `ElasticsearchProperties` | a tenth descriptor, with `Duration` | config.gate.020 (rewritten), .024, config.unknown.004 |
 | 11 `cr.enabled: yes` | corrected: the quoted text turns the gate off, the YAML boolean turns it on | config.gate.006 (rewritten), .023; `DEBT-0022` replacement text |
-| 12 failure output | measured with the starter's `logback.xml`: standard output, log header lines, failure analysis or `Application run failed` by kind; `config.gate.005` is HAPI's `NullPointerException`; `config.placeholder.011` is the condition's own failure | config.error.002 (rewritten), .007-.010, config.dump.006, config.gate.005, config.placeholder.011, config.yaml.003, .016, config.args.007, config.profile.012 (rewritten) |
+| 12 failure output | measured with the starter's `logback.xml`: standard output, log header lines, failure analysis or `Application run failed` by kind; `config.gate.005` is HAPI's `NullPointerException` (since the re-record, wrapped in the component scan's `BeanDefinitionStoreException`); `config.placeholder.011` is the condition's own failure for three keys and a binding failure for five | config.error.002 (rewritten), .007-.010, config.dump.006, config.gate.005, config.placeholder.011, config.yaml.003, .016, config.args.007, config.profile.012 (rewritten) |
 | 13 untestable text | the escape and the fixture are in the change | config.properties.004, config.yaml.016 (rewritten), `probe/fixtures/` |
 
 ### Oracle findings of 2026-11-22 and the owner's rulings
@@ -277,13 +281,39 @@ of 2026-11-22). The owner ruled the same day:
 | O-2, O-3 | follow HAPI: lower-case names bind on Linux; a variable named `--spring.config.location` is applied | config.env.004, .014; design.md section 3.4 |
 | O-4, O-5 | quote the recorded Jackson cause lines and the unprefixed, indented SnakeYAML lines | config.args.007, .009, config.yaml.003, .016, config.error.007 |
 | O-6 | state the no-version failure and the version-set variant, as recorded | config.source.007, .009, .010, .011, .013, config.key.001, .003 |
-| O-7 | the gate site names are the probe's choice, not measured in a real context | config.placeholder.011; design.md section 7 |
+| O-7 | the gate site names were the probe's choice; superseded: the real `Application` is now recorded (below) | config.placeholder.011; design.md section 7 |
 | O-8 | the identity hash of `Bindable@<hex>` is masked on both sides | config.collection.002, config.oracle.002, .003 |
-| O-9 | compare the bean-creation wrapper only through `Error creating bean with name` | config.unknown.005, .008, config.oracle.003 |
+| O-9 | compared the bean-creation wrapper only through `Error creating bean with name`; superseded: HAPI's bean names are now recorded and compared in full (below) | config.unknown.005, .008, config.oracle.003 |
 | O-10 | reworded: `4.0`/`4.0.1` fail to bind first | config.gate.002 |
 | O-11 | 220 inventory rows | config.key.011 |
 | O-12, O-13 | clarifying notes | config.relaxed.007, config.key.007 |
 | Test contracts | accepted: `FREVO_CONFIG_TEST_ROOT` (test-only), embedded copies in `crates/frevo-config/packaged/`, binary target `frevo-config` | design.md section 11 |
+
+No scenario was added or removed; the count stays 232.
+
+### Fourth review (`831c5ba`) and the re-record from HAPI's real `Application`
+
+The review found that refresh-time failures in the record were the probe's,
+not HAPI's (finding 1), that Jackson's location line was dropped as a frame
+(finding 2), and that `DEV-0033`'s status-line extension was not yet in
+`docs/deviations.md` (finding 3). The lead ruled on 2026-11-22 that the HAPI
+reference is the image's real `Application`, with no `DEV` entry; the
+oracle-builder re-recorded (`tasks/blockers.md`, entry "re-recorded from
+HAPI's real `Application`"), and the delta was rewritten to the record:
+
+| Item | Resolution | Scenarios and text |
+|---|---|---|
+| Finding 1a, `AppProperties` binding | the `WARN` exception is the component scan's `BeanDefinitionStoreException` naming `PartitionModeConfigurer.class`; no `INFO` line | config.error.008 (per-kind table), config.error.002, config.dump.006, config.collection.002 |
+| Finding 1b, no version | `WARN` and first exception line name `FhirServerConfigDstu2.class`, then `Caused by:` the `NullPointerException`; no `INFO` line; "fails as config.gate.005 does" redefined | config.gate.005, the notation comment, config.source.007, .009, .010, config.key.001, config.env.014 |
+| Finding 1c, strict placeholders | three keys fail strictly with a three-line chain and the `INFO` line; five fail the lenient binding first, as config.error.002 | config.placeholder.011, config.read.007 |
+| Finding 1d, 1e, CQL beans | bean names `cqlProperties`, `cqlData`, `cqlTerminologyProperties`; descriptions with `$$SpringCGLIB$$0`; `INFO` line present; the delta's `CrProperties` wrapper removed | config.unknown.005, .008 |
+| `spring.elasticsearch.*` | `WARN` naming `ElasticsearchBootSvcImpl.class`, then the `INFO` line | config.gate.024 |
+| Finding 2 | Jackson's ` at [Source: …]` line quoted; a frame is tab-led only, including `\t... N common frames omitted` | config.args.007, .009, config.error.007, .009, config.oracle.003 |
+| Comparison rules without a cause | the `WARN`/`INFO` logger field is compared; the bean-creation wrapper is compared in full; the `Bindable@<hex>` mask stays | config.oracle.003 |
+| Two runners | stated, with the record's `runner` fields | config.oracle.001 |
+| Not in the record | a binding failure of `CrProperties`, `CareGapsProperties`, `CqlCompilerProperties`, `CdsHooksProperties`; an unresolvable placeholder in the five other reads; the order of several refresh-time failures in one configuration | owed by task 2 before task 3; config.error.008, config.read.007 |
+| Also corrected | the `x.txt` cause of config.source.020; the action line of config.source.016; the full reason of config.placeholder.007; the status-line counts (23 of 419 runs have none on standard error); the notation comment's list of how each location-replacing case sets the version | config.source.020, .016, config.placeholder.007, config.dump.006, the notation comment |
+| Finding 3 | the `DEV-0033` replacement text in `register-entries.md` is updated (frames, Jackson line, logger field, status-line counts); appending it to `docs/deviations.md` is the coordinator's | `register-entries.md` |
 
 No scenario was added or removed; the count stays 232.
 
