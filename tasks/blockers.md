@@ -3873,3 +3873,66 @@ scenario is owed, plus a unit test decoding and re-encoding a non-resource
 object with a `resourceType` member, such as
 `ExampleScenario.instance.resourceType`. The spec was not edited.
 
+## 2026-11-21 — `add-fhirpath-and-codegen-r4` — task 62: `openspec archive` is refused by the guard, twice over
+
+**Raised by** the implementer asked to do task 62. The gates are green at
+`cac9e28` (`gates/add-fhirpath-and-codegen-r4/report.json`, committed in
+`b8e3aba`). `openspec archive add-fhirpath-and-codegen-r4 --yes` was refused by
+`.claude/hooks/guard-bash.sh` before it ran. Nothing was archived, so
+`tasks/graph.yaml` still says `in_progress` and task 62 is unticked. The guard
+was not worked around.
+
+1. **The guard judges the wrong worktree.** It answered "openspec/changes/
+   add-fhirpath-and-codegen-r4/tasks.md does not exist". The Bash payload's
+   `cwd` is the session's directory, `C:/gointerop/git/frevo` on `main`. A `cd`
+   inside the command is invisible to `use_input_root` (`_lib.sh:257-320`), and
+   a Bash call carries no file path, so `REPO_ROOT` stays the main worktree and
+   the change's files are looked up there. A session whose cwd cannot move into
+   the change worktree (this one: `cd` does not persist) cannot archive at all.
+2. **The staleness check cannot pass once the report is committed.**
+   `guard-bash.sh:62-89` requires the report's `head_sha` to equal `HEAD`.
+   Committing the report makes a new `HEAD`. The report says `cac9e28`, and
+   `HEAD` is `b8e3aba`, the commit that carries it. So even from the right
+   worktree the archive would be blocked as stale. No change has been archived
+   yet (`openspec/changes/archive/` is empty), so no precedent shows how this
+   was meant to work.
+
+**Decision needed (owner, on a `chore/governance-*` branch).** For (1), let the
+archive rule take its root from a named change's worktree, for example
+`git worktree list` matching `change/<id>`, or from a `cd <dir> &&` prefix. Or
+run the archive from a session whose cwd is the change worktree. For (2),
+accept a report whose `head_sha` is `HEAD`'s parent when `HEAD` changes only
+`gates/<id>/report.json`. Or have the gatekeeper leave the report uncommitted
+until the archive commit. Then rerun task 62: archive, set the graph node to
+`done`, tick 62, and update `docs/inventory.md`'s note for this change. That
+note is final-state only: since task 61, quantity navigation
+(`path.quantity.025`-`.027`), unbounded decimals (`path.literal.017`,
+`DEBT-0011` paid), `+ - *` over a no-value operand (`path.math.018`) and
+`model.json.026`, with 534 scenarios.
+
+**Still owed by this change, carried with an owner.** All are blocked on the
+same protect-paths rule, which treats `design.md` as `@generated` because its
+section 1 table names the marker within the first 20 lines (2026-11-12 entry,
+item (c)). Owner: the owner, via that hook fix; then the proposer writes the
+text.
+- `design.md` section 4.6 and a section 10 bullet on narrowing, and the
+  `documentFunctions` 111-of-115 wording (`design.md:519-521`), from the
+  2026-11-12 entry and its 2026-11-14 addition;
+- the `r4_classes.tsv` rows in sections 1 and 9 (2026-11-21, "owed
+  `design.md` text: the generated class table");
+- the section 4.1 quantity-navigation paragraph and the section 6
+  unbounded-decimal sentence (2026-11-21, "resolved by the owner: the
+  differential's 18 diffs"). Since then, section 4.1 should also mention
+  `children()` listing the set elements (`path.quantity.027`).
+
+Once the change is archived, its `design.md` moves under
+`openspec/changes/archive/`. The owner should decide whether to edit it
+before the archive or record the text elsewhere.
+
+Resolved and needing nothing further:
+- the 2026-11-08 `REPO_ROOT` entry, for file edits (`769b7a5`, PR 22);
+- the 2026-11-14 `zz_tmp_verify.rs` scratch file, which is gone;
+- the harness README count, which now says 62;
+- task 44b's stale tests (`50da39e`);
+- the `model.json.026` scenario and tests (tasks 5b and 5c, `cac9e28`).
+
