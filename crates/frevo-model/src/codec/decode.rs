@@ -1289,7 +1289,15 @@ impl Decoder<'_> {
             // (`JsonParser.java:1342-1345`, `isToplevelResourceElement()`),
             // so in any other object it is an ordinary property, as
             // `ExampleScenario.instance.resourceType` is (`codegen.roundtrip.001`).
-            if is_resource && key_bytes == b"resourceType" {
+            //
+            // Its `_resourceType` sibling is dropped there too, silently and
+            // in both modes: `parseChildren` `continue`s on the marker before
+            // the alternate-name lookup, and its unhandled-underscore loop
+            // finds `resourceType` present and `continue`s, so
+            // `unknownElement` is never called (`:1356-1358`, `:1363-1366`,
+            // `:1387-1400`; `model.json.026`). On an element that declares
+            // `resourceType` it stays an ordinary primitive-extension sibling.
+            if is_resource && matches!(key_bytes, b"resourceType" | b"_resourceType") {
                 continue;
             }
             // The quote-inclusive start of the property name, which is where a

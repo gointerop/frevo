@@ -277,7 +277,7 @@ checkpoint because it changes what a gate measures.
   of 6, covering `model.json.024`, `model.json.025` and
   `model.canonical.007`.
 
-- [ ] **5b. Write the tests for `model.json.026`.** The implementer's
+- [x] **5b. Write the tests for `model.json.026`.** The implementer's
   `adaecd3` fixed the codec to skip `resourceType` only on a resource's own
   object, as HAPI's `JsonParser.java:1341-1344` does (`tasks/blockers.md`,
   2026-11-21, "resolved: `ExampleScenario-example.json`"). No scenario stated
@@ -309,7 +309,7 @@ checkpoint because it changes what a gate measures.
   additionally.
   Satisfies the tests for `model.json.026`.
 
-- [ ] **5c. Drop `_resourceType` on a resource's own object silently, as HAPI
+- [x] **5c. Drop `_resourceType` on a resource's own object silently, as HAPI
   does.** Found by the sixty-fifth review (owner ruling: HAPI wins, no new
   deviation). HAPI's `parseChildren` never handles a resource's
   `_resourceType` and never reports it (`hapi-fhir-base`
@@ -324,6 +324,9 @@ checkpoint because it changes what a gate measures.
   that declares `resourceType` (`ExampleScenario.instance`). Depends on task
   5b.
   Satisfies the `_resourceType` bullet of `model.json.026`.
+  **Ticked 2026-11-21:** `shape_members` skips `_resourceType` exactly where
+  it skips the bare marker, on a resource object only. `model_decode` is 41 of
+  41, and `codegen_r4` stays 57 of 57.
 
 ---
 
