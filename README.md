@@ -63,12 +63,12 @@ Anything that cannot be made to pass is recorded in
 <!-- PARITY-TABLE:BEGIN -->
 | Area | Done | Parity |
 |---|---|---|
-| Configuration keys | 0 / 209 | `..........` 0% |
+| Configuration keys | 0 / 220 | `..........` 0% |
 | Operations | 0 / 67 | `..........` 0% |
 | REST interactions | 0 / 24 | `..........` 0% |
 | Search features | 0 / 42 | `..........` 0% |
 | Interceptor pointcuts | 0 / 112 | `..........` 0% |
-| **Total** | **0 / 454** | `..........` **0%** |
+| **Total** | **0 / 465** | `..........` **0%** |
 
 _Generated from [`docs/inventory.md`](docs/inventory.md) by `harness/scripts/parity-table.sh`. A row counts as done only when its status names scenario ids that resolve to passing tests._
 <!-- PARITY-TABLE:END -->
