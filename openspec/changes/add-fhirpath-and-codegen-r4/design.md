@@ -12,7 +12,8 @@ and which generator produces them; record the PostgreSQL schema changes.
 | `crates/frevo-model/src/r4/**` — resource and datatype types, their JSON property maps, element-order tables, required-binding enumerations | `frevo-codegen` | `hl7.fhir.r4.core#4.0.1` StructureDefinitions | `@generated` |
 | `crates/frevo-model/src/r4/searchparam.rs` — the R4 search-parameter table | `frevo-codegen` | the same package's `SearchParameter` resources | `@generated` |
 | `crates/frevo-model/src/codec/**` — the lazy, byte-preserving codec | hand-written | — | not generated |
-| `crates/frevo-path/**` | hand-written | derived from `FHIRPathEngine.java`; see [`proposal.md`](proposal.md) for the provenance table | not generated |
+| `crates/frevo-path/src/eval/r4_classes.tsv` — the R4 model class table (`codegen.ancestry.*`) | `frevo-codegen class-table --version r4` | `hl7.fhir.r4.core#4.0.1` StructureDefinitions and `crates/frevo-codegen/data/r4-class-table-exceptions.toml` | `@generated` |
+| `crates/frevo-path/**`, except `src/eval/r4_classes.tsv` | hand-written | derived from `FHIRPathEngine.java`; see [`proposal.md`](proposal.md) for the provenance table | not generated |
 
 Generated output is **checked in**, not produced by `build.rs`. Three reasons:
 `openspec-guard` looks for the `@generated` marker in committed files;
@@ -150,9 +151,13 @@ bytes and, at each recorded span, emits the new encoding instead of the original
 bytes. Everything else is `copy_from_slice`. So:
 
 - no write at all — output is the input, by `Arc` clone (`model.bytes.001`);
-- a `meta` update on a 64 KiB resource — one small encode plus two memcpys, which
-  is why `model.perf.004` can require that the 4 KiB and 64 KiB cases be within
-  25% of each other;
+- a `meta` update on a 64 KiB resource — one small encode plus the copy of the
+  unchanged runs into the output buffer. That copy is not negligible: producing
+  a contiguous 64 KiB output costs more than the 4 KiB edit itself (about 3.9 µs
+  of the 5.5 µs recorded at `8e50594`), so `model.perf.004` sets absolute
+  budgets, at most 5 µs at 4 KiB and at most 12 µs at 64 KiB, rather than a
+  ratio between the two (owner decision 2026-11-21). What it still requires is
+  that the edit stays proportional to `meta` and never re-parses the document;
 - a write inside `contained[0]` — splices at that resource's boundary
   (`model.mutate.006`).
 
@@ -313,6 +318,15 @@ Each primitive variant also carries the optional `_field` sibling, so a value
 that came from a primitive element keeps its `id` and `extension` reachable —
 this is the same thing `helios-fhirpath-support`'s `PrimitiveElement` does, and
 ADR 0004 cites it approvingly for exactly this reason.
+
+A `Quantity` value is navigable as the FHIR `Quantity` HAPI builds for a
+literal or for a `*` or `/` result: `value` (`decimal`), `unit`
+(`string`), `system` (`uri`) and `code` (`code`), each empty when the
+engine did not set it (`path.quantity.025`). An empty quoted unit sets no
+code (`path.quantity.026`). `children()` and `descendants()` of such a value
+list its set elements in the order `Quantity` declares them (`id`,
+`extension`, `value`, `comparator`, `unit`, `system`, `code`), an unset element
+contributing nothing (`path.quantity.027`).
 
 ### 4.2 `Node` — navigation
 
@@ -502,6 +516,51 @@ for the trait definitions. That is also what lets `model.nav.012` compare
 evaluation over `frevo-model` with evaluation over the harness's XML-backed test
 node and require equal results.
 
+### 4.6 The check pass does not narrow on a type guard
+
+The pinned R4 engine has no type-guard narrowing. `executeType` types every
+operand of `implies`, `and`, `or` and `xor` against the same focus
+(`FHIRPathEngine.java:1621-1637`); `is` and `is()` type to `Boolean`
+(`:2013-2015`, `:3401-3404`); and every `iif` argument is typed against the
+same `$this` (`:3261-3271`). The R4B and R5 engines at the same SHA do not
+narrow either.
+
+Options considered:
+
+1. **Narrow**, as the suite's `isSemanticChecks` note describes: an `is` test
+   narrows the type the other operand of `implies`, `and`, `or` or `iif` is
+   checked against, and makes it unreachable when the narrowed set is empty.
+   Frevo would pass 14 suite cases HAPI 8.12.0 fails, and its check would
+   accept invariants HAPI's check rejects — a behaviour ahead of the reference
+   that no consumer has asked for.
+2. **Match HAPI**: check every operand against the unnarrowed focus.
+
+**Decision: option 2**, by the owner's ruling of 2026-11-12
+(`tasks/blockers.md`, 2026-11-12, "task 50", finding 3). `path.check.005` to
+`.012` state the non-narrowing behaviour; task 51 confirms it rather than
+building narrowing.
+
+Consequences:
+
+- The 14 cases of `isSemanticChecks` that expect success (`isEffectOnLogic3`,
+  `isGuardFnImplies`, `isGuardImpliesEmpty`, `isGuardOrTypesImplies`,
+  `isGuardAndOtherImplies`, `isGuardOtherAndImplies`, `isGuardOrInnerImplies`,
+  `isGuardAnd`, `isGuardOr`, `isGuardOrBoth`, `isGuardNotImplies`,
+  `isGuardIifTrue`, `isGuardIifElse`, `isGuardNested`) fail the check for
+  Frevo as they do for HAPI. That is parity, so nothing goes to
+  `docs/known-gaps.md`.
+- No `DEV` entry: the FHIRPath specification defines no check pass, so there
+  is no specification behaviour to deviate from. `docs/deviations.md` records
+  the reasoning under "Considered and not recorded as deviations".
+- An invariant written with a guard, such as
+  `$this is dateTime implies $this.toString().length() > 10` over a
+  `Period`-typed context, is rejected by the check with HAPI's diagnostic
+  (`path.check.005`), so a profile author sees the same failure on both
+  servers. The cost is a check stricter than the suite's note describes.
+
+Revisit when the `org.hl7.fhir.core` pin moves to an engine that narrows
+(section 10).
+
 ### Answering the capability's open questions
 
 `docs/capabilities/path.md` asks two:
@@ -517,7 +576,8 @@ node and require equal results.
    `children`, `descendants`, `extension` and `resolve`. It does **not** add
    `section`, `entry`, `entryIn`, `resources`, `resourcesIn`, `sameSubject` or
    `hasCoding` — the R5 engine adds only the first two — which is why the
-   `documentFunctions` group — 115 of the 1,191 cases — is out of scope
+   `documentFunctions` group — 115 of the 1,191 cases, of which 111 fail for
+   HAPI and its 4 syntax-invalid cases pass — is out of scope
    (`path.oracle.014`).
 2. *Is evaluation needed over the lazy model without full materialisation, and
    at what cost?* Yes, and the cost is the `Arc<dyn Node>` indirection plus a
@@ -532,25 +592,36 @@ need UCUM canonical form. `FHIRPathEngine` delegates to
 takes a different branch — so "no UCUM" is an observable behaviour, not a
 degradation we may choose.
 
-Decision: implement the unit algebra inside `frevo-path` as a private module,
-driven by `ucum-essence.xml`.
+Decision: port the parts of `org.fhir:ucum` 1.0.10 that `FHIRPathEngine`
+calls (`reference/Ucum-java`, `db9d22ad`, BSD-3-Clause) into `frevo-path` as
+a private module: `Decimal` (also used by `/`, `div` and `mod` over
+numbers), `Lexer`, `ExpressionParser`, `Converter`, `ExpressionComposer`, the
+special-unit `Registry` and handlers, `XmlDefinitionsParser` and the
+`UcumEssenceService` operations `getCanonicalForm`, `multiply`, `divideBy`,
+`getCanonicalUnits` and `isComparable`. It is a port, not original work:
+each file carries the section 10 header naming the upstream path and SHA,
+`docs/provenance.md` records it, and `NOTICE` carries the BSD-3-Clause text.
+No crate is added.
 
-- **Not a new runtime dependency** in the sense the constitution restricts: it
-  is our own code plus a data file, not a service. No crate is added.
+- The data file is the one the suite worker loads,
+  `org.hl7.fhir.r4/src/test/resources/ucum/ucum-essence.xml` at `73c432b5`
+  (version `2.0.1`; byte-identical to the fetched copy), not the `2.2` file
+  `Ucum-java` bundles.
 - No Rust UCUM crate is on `deny.toml`'s allow-list today, and adding one would
   need its own ADR; the oracle needs only canonical-form conversion,
   commensurability and unit multiplication/division, which is a bounded piece of
   work.
 - `ucum-essence.xml` is **fetched**, not vendored
-  (`oracles/fhir-test-cases/fetched/ucum/ucum-essence.xml`), and needs a
-  `NOTICE` entry for Regenstrief's UCUM copyright. That is a task here and a
-  `chore/oracles-*` change, per [`proposal.md`](proposal.md).
+  (`oracles/fhir-test-cases/fetched/ucum/ucum-essence.xml`), and is read at run
+  time from a caller-supplied path, never embedded. `NOTICE` carries
+  Regenstrief's UCUM notice for it beside the `Ucum-java` BSD-3-Clause text.
 - If `frevo-terminology` later needs the same algebra for `$validate-code`
   against UCUM, extracting it is a follow-up change, not a reason to put it in
   the wrong crate now.
 
 `path.quantity.016` makes the file's presence and version a reported, failing
-condition rather than a silent fallback.
+condition rather than a silent fallback. The load-failure conditions and
+the reported version are stated there; the failure text is not graded.
 
 ## 6. Dependencies
 
@@ -558,14 +629,38 @@ Against the PostgreSQL-only rule and `deny.toml`:
 
 | Dependency | Where | Justification |
 |---|---|---|
-| none new, runtime | — | `frevo-path` needs no crate beyond the workspace's existing `thiserror`; `frevo-model` needs none beyond an arbitrary-precision decimal, below |
-| arbitrary-precision decimal | `frevo-model`, `frevo-path` | required by `model.json.009`, `model.canonical.003` and `path.literal.006`: a decimal must keep its lexical precision, which `f64` cannot. The crate chosen must be on `deny.toml`'s allow-list; if none is, the fallback is a lexical-form-plus-integer-mantissa representation written here, and that choice is recorded in `tasks.md` |
+| one new, runtime: `regex` | `frevo-path` | ADR 0005, approved by the owner on 2026-11-17: the engine behind `matches`, `matchesFull` and `replaceMatches`, under a layer that translates Java pattern syntax or refuses what it cannot translate (`DEV-0023`, `DEBT-0015`). The lockfile gains that one package; its own dependencies were already in the graph. Its limits are below the table. `frevo-path` depends on nothing else, and `frevo-model` only on `frevo-path` |
+| arbitrary-precision decimal | `frevo-model`, `frevo-path` | required by `model.json.009`, `model.canonical.003` and `path.literal.006`: a decimal must keep its lexical precision, which `f64` cannot. It is unbounded in significant digits: a literal, operator or UCUM canonical value never fails on its width (`path.literal.017`, `path.quantity.020`; `DEBT-0011`, paid by task 44b). **No crate**: the fallback this row named is the one built. `frevo-model`'s codec keeps a decimal as its lexical text and the digits moved from it, never as a number; a FHIRPath `Decimal` is that lexical form plus a base-ten arbitrary-precision mantissa (`Unscaled`) and a non-negative scale. Its one bound is on a shift, not on a width: a value shifted by more than 10,000 places to align or round a scale (`MAX_SHIFT`; an exponent such as `1e20000` read from data, or `round(20000)`) is an unsupported-operation error where `BigDecimal` keeps one digit and a negative scale (`DEBT-0014`, open) |
 | `helios-fhirpath` 0.2.7 (MIT) | **dev-dependency of the comparison harness only** | ADR 0004 decision 3. Never in a shipped crate's graph (`path.oracle.013`) |
 | `haste-fhirpath` 0.129.3 | **not added to the workspace at all** | it declares wildcard versions (`0.*`) for three dependencies, and `deny.toml` sets `wildcards = "deny"`. Measuring it (task 2) happens in `harness/fhirpath-compare/`, a crate listed in `[workspace] exclude`, so the product's dependency graph and the `cargo deny` gate are untouched. This is the only way to get ADR 0004's missing number without relaxing a rule |
-| criterion or divan | dev-dependency of the benched crates | needed for `bench/micro/`; dev-only, not in the shipped binary |
+| none for the benchmarks | — | the `bench/micro/` workloads are plain `main` programs (`harness = false`) timed with `std::time::Instant`; neither criterion nor divan is added |
 
 No broker, no cache, no search engine, no second database. Nothing here touches
 that rule.
+
+### The regular-expression layer's limits
+
+ADR 0005 decision 7 asks for these to be recorded here. They are the values
+`crates/frevo-path/src/eval/strregex.rs` sets:
+
+- **Compiled-program size: 2 MiB** (`RegexBuilder::size_limit`) and **group
+  nesting: 100** (`nest_limit`). A pattern over either fails to compile, and
+  the function raises the evaluation error
+  `Invalid regular expression <pattern>: <reason>`, never a panic
+  (`path.errors.003`).
+- **A per-thread cache of the 64 most recently compiled patterns**, keyed by
+  the pattern and by which of the three functions compiled it, oldest evicted
+  first. A pattern that failed to compile is cached as that failure.
+- **No wall-clock timeout.** HAPI runs every call under `RegexTimeout`
+  (500 ms, `Timeout evaluating regex: <pattern>`) on a fresh thread. `regex`
+  searches in worst-case O(m·n), so there is no catastrophic backtracking to
+  time out and Frevo never raises that error; `replaceMatches`' iteration over
+  all matches can degrade to O(m·n²) on an adversarial pattern (ADR 0005).
+- **No workload of its own in this change.** A search parameter whose
+  expression calls `matches` or `replaceMatches` would be measured inside
+  `path-extract-patient`'s per-resource budget for its resource type
+  (`path.perf.003`); the change that enables extracting one adds a
+  `bench/micro/` workload and budget for that path.
 
 ## 7. PostgreSQL
 
@@ -625,25 +720,41 @@ for the compound expressions, and it is deliberately not generous.
 
 ### The workloads
 
-New file `bench/micro/` with these, each a criterion/divan benchmark in the
-crate it measures:
+New directory `bench/micro/` declares these workloads (`workloads.yaml`),
+holds their fixtures and the shared recorder (`record.rs`), and records their
+medians in `results.json` against `baseline.json`. The bench programs
+themselves are plain `main`s (`harness = false`, section 6) in three bench
+targets:
 
-| Workload | Crate | Measures | Budget | Scenario |
+| Workload | Bench target | Measures | Budget | Scenario |
 |---|---|---|---|---|
-| `model-passthrough` | `frevo-model` | load from bytes, serialise unchanged, 4 KiB `Patient` | median ≤ 1 µs, zero tokens scanned | `model.perf.001` |
-| `model-lazy-read` | `frevo-model` | read `Patient.birthDate` from 4 KiB bytes | median ≤ 2 µs, ≤ 10% of `model-full-parse` | `model.perf.002` |
-| `model-full-parse` | `frevo-model` | decode a 4 KiB `Patient` completely | median ≤ 20 µs | `model.perf.003` |
-| `model-meta-update` | `frevo-model` | set `meta.versionId` and `meta.lastUpdated`, serialise, at 4 KiB and 64 KiB | the two medians within 25% | `model.perf.004` |
-| `model-canonical-encode` | `frevo-model` | canonically serialise a constructed 4 KiB `Patient` | median ≤ 25 µs | `model.perf.005` |
-| `path-compile` | `frevo-path` | parse and check a typical search-parameter expression | median ≤ 20 µs | `path.perf.001` |
-| `path-eval-compiled` | `frevo-path` | evaluate a pre-parsed simple path over a 4 KiB `Patient`, 1,000 times | median ≤ 5 µs per evaluation, no reparse | `path.perf.002` |
-| `path-extract-patient` | `frevo-path` | evaluate every enabled `Patient` search-parameter expression over one 4 KiB `Patient` | median total ≤ 300 µs | `path.perf.003` |
-| `path-suite-wallclock` | harness | the full 1,191-case oracle run | ≤ 10 s | `path.perf.005` |
+| `model-passthrough` | `frevo-model`, `model_micro` | load from bytes, serialise unchanged, 4 KiB `Patient` | median ≤ 1 µs, zero tokens scanned | `model.perf.001` |
+| `model-lazy-read` | `frevo-model`, `model_micro` | read `Patient.birthDate` from 4 KiB bytes | median ≤ 2 µs, ≤ 10% of `model-full-parse` | `model.perf.002` |
+| `model-full-parse` | `frevo-model`, `model_micro` | decode a 4 KiB `Patient` completely | median ≤ 20 µs | `model.perf.003` |
+| `model-meta-update` | `frevo-model`, `model_micro` | set `meta.versionId` and `meta.lastUpdated`, serialise, at 4 KiB and 64 KiB | median ≤ 5 µs at 4 KiB and ≤ 12 µs at 64 KiB | `model.perf.004` |
+| `model-canonical-encode` | `frevo-model`, `model_micro` | canonically serialise a constructed 4 KiB `Patient` | median ≤ 25 µs | `model.perf.005` |
+| `path-compile` | `frevo-path`, `path_micro` | parse and check a typical search-parameter expression | median ≤ 20 µs | `path.perf.001` |
+| `path-eval-compiled` | `frevo-model`, `path_bytes` | evaluate a pre-parsed simple path over a 4 KiB `Patient`, 1,000 times | median ≤ 5 µs per evaluation, no reparse | `path.perf.002` |
+| `path-extract-patient` | `frevo-model`, `path_bytes` | evaluate every enabled `Patient` search-parameter expression over one 4 KiB `Patient` | median total ≤ 300 µs; no untouched element materialised | `path.perf.003`, `path.perf.004` |
+| `path-suite-wallclock` | `frevo-path`, `path_micro` | the full 1,191-case oracle run, median of five cold runs | ≤ 10 s | `path.perf.005` |
 
-The 4 KiB `Patient` is a fixed fixture, committed with the benchmark, so the
-numbers are comparable across commits. The reference environment is the one
-`bench/targets.md` states: Docker Desktop on Windows, a Linux VM with 12 CPUs and
-8 GiB RAM.
+`path-eval-compiled` and `path-extract-patient` measure `frevo-path` but are
+built in `frevo-model`: they evaluate over the byte-backed resource, which
+needs `frevo-model`'s span-based node (`path.perf.004`), and `frevo-path` may
+not name `frevo-model` (`path.api.008`).
+
+The fixtures are fixed, so the numbers are comparable across commits. The
+model workloads' 4 KiB and 64 KiB `Patient`s are committed in
+`bench/micro/fixtures/` (`patient-4kib.json`, `patient-64kib.json`), and the
+bench fails if they drift from the generator the tests in
+`crates/frevo-model/tests/` use, so the bench and the tests time the same
+bytes. `model-canonical-encode` constructs its `Patient` in memory. The path
+workloads' 4 KiB `Patient` is the pinned `fhir-test-cases`
+`patient-example.json` (`oracles/PINS.md`), canonicalised before timing: the
+JSON form of the `patient-example.xml` the tests measure over, fetched rather
+than committed, like the tests' own fixture. The reference environment is the
+one `bench/targets.md` states: Docker Desktop on Windows, a Linux VM with 12
+CPUs and 8 GiB RAM.
 
 `path-extract-patient` runs **with an application context and the extraction
 host service installed**, because that is the configuration the write path uses
@@ -657,9 +768,17 @@ fire.
 
 ### Regression policy
 
-`bench/targets.md`'s policy applies unchanged: a regression of more than 10% on
-any workload fails the performance gate (`model.perf.006`, `path.perf.006`), and
-a regression that cannot be resolved is an owner checkpoint, not something to
+For the path workloads `bench/targets.md`'s policy applies unchanged: a
+regression of more than 10% fails the performance gate (`path.perf.006`).
+
+The model workloads are graded on the **median of five bench runs** (each
+run's per-workload median, then the median of the five), on both sides, and
+fail at more than **15%** (`model.perf.006`; owner decision 2026-11-21,
+because single runs of one binary on the development host moved by up to 20%).
+Their authoritative baseline is recorded on CI or on the reference
+environment; a local recording is advisory.
+
+A regression that cannot be resolved is an owner checkpoint, not something to
 absorb.
 
 ### One budget that is not about requests
@@ -679,11 +798,14 @@ all depend on the crate would be expensive.
 ```
 crates/frevo-codegen/            generator binary
 crates/frevo-model/src/r4/       @generated output
+crates/frevo-path/src/eval/r4_classes.tsv  @generated R4 class table (frevo-codegen class-table)
 crates/frevo-model/src/codec/    hand-written lazy codec
 crates/frevo-path/src/           lexer, parser, check pass, evaluator, ucum
 crates/frevo-path/tests/         the oracle harness and its per-case report
 harness/fhirpath-compare/        NOT a workspace member; helios + haste measurement
-bench/micro/                     the workloads in section 8
+crates/frevo-model/benches/      model_micro, path_bytes: the bench programs of section 8
+crates/frevo-path/benches/       path_micro: the bench program of section 8
+bench/micro/                     the workloads in section 8: declarations, fixtures, recorder, results
 ```
 
 `harness/fhirpath-compare/` being outside the workspace is the point: it is the
@@ -704,3 +826,8 @@ Recorded so the next session does not have to infer it:
   specification of our own engine. The ADR says so; this is where it lands.
 - **The compile-time budget missed.** Pushes the codec from generated code to
   interpreted tables, which changes section 3's representation. New ADR.
+- **A re-pinned engine that narrows.** If the `org.hl7.fhir.core` pin moves to
+  an engine whose check pass narrows on a type guard, section 4.6's decision
+  reverses: `path.check.005` to `.012` are restated to that engine's
+  behaviour, the 14 `isSemanticChecks` cases that expect success become
+  reachable, and the check pass gains narrowing. Until then nothing narrows.

@@ -3936,7 +3936,7 @@ Resolved and needing nothing further:
 - task 44b's stale tests (`50da39e`);
 - the `model.json.026` scenario and tests (tasks 5b and 5c, `cac9e28`).
 
-## 2026-11-22 — `add-fhirpath-and-codegen-r4` — owed `design.md` text: prepared, still refused by the hook the session runs
+## 2026-11-22 — `add-fhirpath-and-codegen-r4` — owed `design.md` text: refused by a stale hook copy, then applied (resolved)
 
 **Raised by** the proposer, asked to write the owed `design.md` text now that
 `a3988e8` (#36) fixed `protect-paths.sh` on `main`. The edit is **still
@@ -3951,7 +3951,15 @@ not. The hook was not bypassed: no shell write to `design.md` was made.
 worktree. Then rerun the proposer. Changing which hook copy runs is a
 governance change, so the proposer did not do it.
 
-**Prepared, ready to apply.** The text was checked against `spec.md`, the
+**Resolved 2026-11-22 (proposer).** The coordinator fast-forwarded the main
+checkout to `a3988e8`, so the session now runs the fixed hook. The prepared
+text below was applied to `design.md` with the edit tool, and the hook
+accepted it; it is byte-identical to the prepared copy. This entry's
+`design.md` item, and the `design.md` items the 2026-11-21 task-62 entry
+carried ("Still owed by this change"), are done. What stays owed is the
+`bench/` note at the end of this entry.
+
+**Prepared, then applied.** The text was checked against `spec.md`, the
 `specs/*/spec.md` deltas and the code. All 15 replacements match once in
 `design.md` at `0410452`. They cover every owed item listed in the 2026-11-21
 task-62 entry and in the entries it cites:
@@ -3966,9 +3974,7 @@ task-62 entry and in the entries it cites:
 - the regex limits;
 - a section 10 bullet.
 
-The prepared copy is in the proposer's session scratchpad, which is not
-durable. The durable source is the owed-text blocks in this file plus the list
-below.
+The applied text is now in `design.md` itself.
 
 **Found while preparing, not previously recorded as owed.** `design.md` also
 contradicts the implementation in these places, and the prepared text fixes
@@ -3990,7 +3996,7 @@ each one:
    canonicalised `patient-example.json` (3,912 bytes), not the committed
    `bench/micro/fixtures/patient-4kib.json`.
 
-**Still owed outside the proposer's paths, unchanged.**
+**Still owed outside the proposer's paths, unchanged (open).**
 `bench/micro/workloads.yaml` still gives the `model-meta-update` budget as
 "within 25%" and a 10% regression limit for every row. `bench/targets.md` says
 the same. Both are for a `chore/` branch, per the 2026-11-12 task-27
