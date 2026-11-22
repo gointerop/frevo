@@ -1,71 +1,71 @@
 # Register entries — `add-config-application-yaml`
 
-Append-ready text for the coordinator, following the entry formats of
-`docs/deviations.md` and `docs/tech-debt.md`. The proposer writes nothing
-outside this directory, so these are not yet in the registers. Numbers are the
-next free ones on `main` at `7f1c8e6` (`DEV-0030` and `DEBT-0021` are the last
-used); renumber in place, and in the spec delta, if another branch takes them
-first.
+Text for the coordinator, following the entry formats of `docs/deviations.md`
+and `docs/tech-debt.md`. The proposer writes nothing outside this directory.
 
-The two `DEV` entries carry no `DEBT` entry, because the owner ruled that the
-deferred support is owed only when a deployment needs it; each entry's
-rationale states that condition. The five `DEBT` entries carry no `DEV`
-entry, because each one is HAPI's behaviour, matched (standing ruling: no
-`DEV` entry for matching HAPI).
+Status on this branch after `920a00c` (which appended the first version of
+every entry below) and the review of 2026-11-22:
+
+| Entry | Action |
+|---|---|
+| `DEV-0031` | **replace** the entry in `docs/deviations.md` with the text below (narrowed: `classpath:` now matches HAPI, finding 8) |
+| `DEV-0032` | unchanged; nothing to do |
+| `DEV-0033` | **new, proposed — needs the owner's approval before it is appended** (Java stack frames, finding 12) |
+| `DEBT-0022` | **replace** the entry in `docs/tech-debt.md` with the text below (the `cr.enabled: yes` example corrected, finding 11) |
+| `DEBT-0023` to `DEBT-0026` | unchanged; nothing to do |
+
+The `DEV` entries carry no `DEBT` entry, because the owner ruled that the
+deferred support is owed only when a deployment needs it (`DEV-0031`), or
+because nothing is owed (`DEV-0032`, `DEV-0033`). The five `DEBT` entries carry
+no `DEV` entry, because each one is HAPI's behaviour, matched (standing
+ruling: no `DEV` entry for matching HAPI).
 
 ---
 
-## Append to `docs/deviations.md`
+## `docs/deviations.md`
 
 ```markdown
-### DEV-0031 — configuration locations Frevo does not load fail loudly; `on-cloud-platform` never matches
+### DEV-0031 — `configtree:` and `.xml` configuration locations fail loudly; `on-cloud-platform` never matches
 
 - **Area:** config
-- **Scenario IDs:** config.source.017, config.source.020, config.profile.014
-- **HAPI 8.12.0 behaviour:** Spring Boot 3.5.14 in the starter loads four
-  things Frevo does not. (1) Any `classpath:` resource on the war's class
-  path, which in the distroless image includes `/app/extra-classes/`
-  (`Dockerfile`, `-Dloader.path=main.war!/WEB-INF/classes/,main.war!/WEB-INF/,/app/extra-classes`),
-  so `--spring.config.location=classpath:/another.application.yaml` loads an
-  operator-mounted `/app/extra-classes/another.application.yaml`.
-  (2) `spring.config.import=configtree:<dir>/`, one property per file under
-  the directory. (3) `.xml` files in Java `Properties.loadFromXML` format at
-  any location. (4) Documents with
+- **Scenario IDs:** config.source.020, config.profile.014
+- **HAPI 8.12.0 behaviour:** Spring Boot 3.5.14 in the starter loads three
+  things Frevo does not. (1) `spring.config.import=configtree:<dir>/`, one
+  property per file under the directory. (2) `.xml` files in Java
+  `Properties.loadFromXML` format at any location. (3) Documents with
   `spring.config.activate.on-cloud-platform: kubernetes` (or another
   platform), activated when Spring Boot detects that platform, for Kubernetes
   from `KUBERNETES_SERVICE_HOST` and `KUBERNETES_SERVICE_PORT`.
+  `classpath:` locations are **not** part of this entry: Frevo resolves them
+  as the image does, to the packaged files and then the fixed directory
+  `/app/extra-classes/` (the last entry of the ENTRYPOINT's `loader.path`),
+  for explicitly named and default locations alike (config.source.017, .030).
 - **Specification requirement:** none; this is configuration loading, which
   the FHIR specification does not address. The reference is HAPI's behaviour
   alone.
-- **Chosen behaviour:** Frevo. A `classpath:` location other than the three
-  packaged files (`application.yaml`, `application-cds.yaml`,
-  `application-elastic.yaml`) fails to start with Spring's `Config data
-  resource '…' via location '…' does not exist` report; a `configtree:` or
-  `.xml` location fails to start with a report naming the location and the
-  supported kinds (`file:`, `classpath:` for the packaged files, `.properties`,
-  `.yml`, `.yaml`); `optional:` makes each of them a no-op instead, as it does
-  for a missing file. An `on-cloud-platform` document never activates, on any
-  platform.
+- **Chosen behaviour:** Frevo. A `configtree:` or `.xml` location fails to
+  start with a report naming the location and the supported kinds (`file:`,
+  `classpath:`, `.properties`, `.yml`, `.yaml`); `optional:` makes it a no-op
+  instead, as it does for a missing file. An `on-cloud-platform` document
+  never activates, on any platform.
 - **Configuration flag:** none.
 - **Debt:** none. Owner ruling of 2026-11-22: support is owed when, and only
-  when, a deployment needs one of the four; the failure is loud precisely so
+  when, a deployment needs one of the three; the failure is loud precisely so
   that such a deployment finds out at startup rather than running with
   configuration silently missing.
-- **Rationale:** Frevo is a single binary with no class path, so (1) can only
-  be imitated by guessing a directory layout that is specific to one image.
-  (2) to (4) are rare in starter deployments; the starter's own Helm chart
-  uses `SPRING_CONFIG_IMPORT` with a plain file path, which Frevo supports.
-  Failing loudly turns every case where the two servers would differ into a
-  startup error instead of a silent difference in effective configuration.
-  `on-cloud-platform` cannot fail loudly without failing every Kubernetes
-  deployment that never uses it, so it is the one silent case, and it is
-  listed here for that reason.
-- **Normalizer impact:** none. The `config-roundtrip` cases for these four
+- **Rationale:** (1) and (2) are rare in starter deployments; the starter's
+  own Helm chart uses `SPRING_CONFIG_IMPORT` with a plain file path, which
+  Frevo supports. Failing loudly turns both into a startup error instead of a
+  silent difference in effective configuration. `on-cloud-platform` cannot
+  fail loudly without failing every Kubernetes deployment that never uses it,
+  so it is the one silent case, and it is listed here for that reason.
+- **Normalizer impact:** none. The `config-roundtrip` cases for these three
   record HAPI's result and assert Frevo's documented failure (or, for
   `on-cloud-platform`, its non-activation) instead of equality; no
   normalisation rule is added.
 - **Reviewed:** 2026-11-22, owner: chosen as written (relayed by the
-  coordinator).
+  coordinator); narrowed the same day after review finding 8, by the
+  coordinator's direction that `classpath:` match HAPI.
 
 ### DEV-0032 — two non-kebab spellings of one property in one source fail to start
 
@@ -97,11 +97,40 @@ entry, because each one is HAPI's behaviour, matched (standing ruling: no
   pick and asserts Frevo's failure instead of equality.
 - **Reviewed:** 2026-11-22, owner: chosen as written (relayed by the
   coordinator).
+
+### DEV-0033 — startup-failure output omits Java stack frames
+
+- **Area:** config
+- **Scenario IDs:** config.error.009, config.oracle.003
+- **HAPI 8.12.0 behaviour:** when startup fails with the `Application run
+  failed` form (config.error.007), HAPI's log line is followed by the
+  exception chain with every Java stack frame (`\tat <class>.<method>(<file>:<line>)`
+  lines and `\t... N more`), and the `WARN` line of config.error.008 carries a
+  frame list too. Example: with no `hapi.fhir.fhir_version`, the
+  `NullPointerException` is followed by frames from
+  `ca.uhn.fhir.jpa.starter.annotations.On*Condition.matches` down to
+  `ca.uhn.fhir.jpa.starter.Application.main`.
+- **Specification requirement:** none.
+- **Chosen behaviour:** Frevo. Every other line is reproduced verbatim —
+  stream, log header lines, `Application run failed`, each exception class
+  and message, each `Caused by:` — and the stack-frame lines are omitted.
+- **Configuration flag:** none.
+- **Debt:** none.
+- **Rationale:** the frames describe the JVM call stack of HAPI's own code;
+  a Rust process has no such stack, and fabricating one from a table would be
+  output no operator can act on and that changes with every HAPI build. The
+  lines an operator reads and alerts on (the exception classes and messages)
+  are kept identical.
+- **Normalizer impact:** the `config-roundtrip` failure comparison removes
+  lines matching `^\tat ` and `^\t\.\.\. [0-9]+ more$` from HAPI's output
+  before comparing, and masks each log line's timestamp and process id.
+- **Reviewed:** proposed 2026-11-22 by the proposer after review finding 12;
+  **needs the owner's approval**.
 ```
 
 ---
 
-## Append to `docs/tech-debt.md`
+## `docs/tech-debt.md`
 
 ```markdown
 ### DEBT-0022 — a spelling the starter's named reads do not see splits a feature's gate from its bound value
@@ -111,8 +140,11 @@ entry, because each one is HAPI's behaviour, matched (standing ruling: no
   config.gate.006, config.gate.007), matching HAPI 8.12.0
 - **Owed:** a startup check, behind no flag, that reports when a gate and the
   property it guards disagree — for example `mdm-enabled: true` binding
-  `true` while the `mdm` gate reads the packaged `false`; `cr.enabled: yes`
-  binding `true` while `Boolean.parseBoolean` turns the `cr` gate off;
+  `true` while the `mdm` gate reads the packaged `false`; the quoted
+  `cr.enabled: "yes"` (or `HAPI_FHIR_CR_ENABLED=yes`) binding `true` while the
+  read is the text `yes` and `Boolean.parseBoolean` turns the `cr` gate off
+  (the unquoted YAML `yes` is a boolean, reads `"true"` and turns the gate
+  on, config.gate.023);
   `mdm_enabled: "no"` binding `false` while the `mdm` gate is on;
   `hapi.fhir.fhir-version=R5` binding R5 while the version gates read R4.
 - **Why deferred:** HAPI starts in every one of these cases, with the feature

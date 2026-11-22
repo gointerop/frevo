@@ -25,9 +25,16 @@ reads `APPROVED`.
   `CqlTerminologyProperties` flattening of design.md section 8, and the
   password redaction of config.dump.005), the starter's condition classes
   evaluated as the gates of config.gate.001, and the named reads of
-  config.read.001. Build and run it in a container `FROM
-  hapiproject/hapi:v8.12.0-2@sha256:0ff86aac…` with the class path
-  `/app/main.war!/WEB-INF/lib/*` plus `WEB-INF/classes`; fail the build if
+  config.read.001. Build it into a container `FROM
+  hapiproject/hapi:v8.12.0-2@sha256:0ff86aac…`, with its classes in
+  `/app/extra-classes/`, and run it with the image's own launcher
+  (`PropertiesLauncher`, the ENTRYPOINT's `-Dloader.path`) so the class path,
+  its order, `/app/extra-classes/` and the packaged `logback.xml` are HAPI's
+  (config.oracle.001); capture standard output and standard error
+  separately; record `System.getProperties()` for design.md section 3.6;
+  assert that no `WEB-INF/lib` jar carries
+  `application*.{properties,xml,yml,yaml}` or `config/application*`; fail the
+  build if
   `spring-boot`, `spring-core` or `snakeyaml` in that directory is not
   3.5.14, 6.2.18, 2.4 (proposal Risk 1). Extract the three packaged YAML files
   from the war and assert them byte-equal to the copies Frevo embeds
@@ -42,7 +49,10 @@ reads `APPROVED`.
   add the cases whose recorded HAPI result settles a clause: lower-case and
   mixed-case environment names on Linux (config.env.004), an environment
   variable named `--spring.config.location` (config.env.014), and the
-  `JAVA_TOOL_OPTIONS`/`JDK_JAVA_OPTIONS` precedence (config.source.023). Record
+  `JAVA_TOOL_OPTIONS`/`JDK_JAVA_OPTIONS` precedence (config.source.023), the
+  `/app/extra-classes/` class-path order (config.source.017, .030), and every
+  failure output of config.error.002 and .007-.010 with its exact log lines.
+  The fixtures in `probe/fixtures/` are copied verbatim. Record
   `hapi-8.12.0-results.json` with the image digest. Implement the comparison
   of config.oracle.003 and .004, and the coverage check of config.oracle.005.
   Any recorded HAPI result that contradicts a THEN clause in the spec delta
@@ -97,23 +107,30 @@ reads `APPROVED`.
   (repeats joined, bare `--name`), `SPRING_APPLICATION_JSON`, the environment
   with both mappers on a case-sensitive environment, the uniform-form name
   model, kebab-first lookup within a source, the ambiguity failure of
-  config.relaxed.007 (`DEV-0032`), and the `-D` tokens of `JAVA_TOOL_OPTIONS`
-  and `JDK_JAVA_OPTIONS` as the system-properties source. Satisfies
-  config.env.001-.014, config.args.001-.007, config.relaxed.001-.003,
-  .005-.008, config.source.023, .024.
+  config.relaxed.007 (`DEV-0032`), the system-properties source (the JVM's
+  own properties per design.md 3.6, then the `-D` tokens of
+  `JAVA_TOOL_OPTIONS` and `JDK_JAVA_OPTIONS` with the JVM's quoting, and the
+  JVM's notices), `spring.application.json` from any source, and the
+  argument parser's `--=x`, `--` and `a=b` rules. Satisfies
+  config.env.001-.014, config.args.001-.012, config.relaxed.001-.003,
+  .005-.008, config.source.023-.025.
 - [ ] **11. Config data locations and imports.** Default locations and
   wildcard subdirectories, `location`, `additional-location`, `import` (from
   sources and from documents, relative resolution), `name`, `optional:`,
-  extension precedence, `classpath:` as the embedded files only, the
-  not-found and unsupported-location failures including `configtree:` and
-  `.xml` (`DEV-0031`). Satisfies config.source.001-.022.
+  extension precedence, `classpath:` as the embedded files then
+  `/app/extra-classes/`, profile variants of named files, extension hints,
+  directory imports, one-level wildcards, the not-found and
+  unsupported-location failures including `configtree:` and `.xml`
+  (`DEV-0031`). Satisfies config.source.001-.022, .026-.030.
 - [ ] **12. Profiles.** `active`, `include`, `group`, `default`; profile files
   and `on-profile` documents with `!`, `&`, `|` expressions; ordering; the
   invalid-in-profile-resource failure; `on-cloud-platform` never matching
-  (`DEV-0031`). Satisfies config.profile.001-.014.
+  (`DEV-0031`); profile-name validation and `spring.profiles.validate`; the
+  legacy `spring.profiles` key; profile-control keys in profile-specific
+  files. Satisfies config.profile.001-.018.
 - [ ] **13. Placeholders.** Lenient and strict resolution, defaults, nesting,
-  escaping, circular detection, `random.*`. Satisfies
-  config.placeholder.001-.011.
+  escaping, circular detection, `random.*`, the JVM's system properties.
+  Satisfies config.placeholder.001-.013.
 - [ ] **14. Conversion.** Boolean, Integer, Long, String, enum (exact,
   lenient, boolean-to-`ON`/`OFF`, ordinal), comma lists, sets, empty handling,
   and every failure text the spec quotes, verbatim with Java type names.
@@ -129,23 +146,30 @@ reads `APPROVED`.
   clinical-reasoning `ccba474a`), `CareGapsProperties`, `CqlProperties`,
   `CqlCompilerProperties`, `CqlRuntimeProperties`,
   `CqlTerminologyProperties`, `CqlData`, and `PackageInstallationSpec` from
-  `hapi-fhir` `7ab4c7c7`; enum constant lists for every enum-typed property.
-  Satisfies config.key.003, .009, .010, config.relaxed.004,
-  config.unknown.005.
+  `hapi-fhir` `7ab4c7c7` (with `packageContents`), Spring Boot 3.5.14's
+  `ElasticsearchProperties` with `Duration` conversion, the setter-less
+  derived getters; enum constant lists for every enum-typed property.
+  Satisfies config.key.003, .009, .010, .012, config.relaxed.004,
+  config.unknown.005, .008, config.gate.024.
 - [ ] **17. The binder.** Design.md section 5.2: lookup, collections whole
   from one source, maps merged, objects created only when something beneath
   binds, scalar-for-object handling, setter-less check, index gaps, two beans
   on overlapping prefixes. Satisfies config.collection.001-.005,
   config.object.001-.005, config.unknown.001-.004, config.key.004-.007,
   config.dump.002.
-- [ ] **18. Named reads and gates.** The twelve reads with their lookup rules
-  and strict placeholders; the twenty-four gates with the starter's
-  predicates, including `forVersionString` and the raw tester prefix scan.
-  Satisfies config.read.001-.007, config.gate.001-.020,
+- [ ] **18. Named reads and gates.** The thirteen reads with their lookup
+  rules and strict placeholders; the twenty-five gates with the starter's and
+  HAPI's predicates, including `forVersionString`, the raw tester prefix scan
+  over every enumerable source (system properties included), the
+  `ElasticsearchProperties` bind and `scheduling_disabled`'s case-sensitive
+  test. Satisfies config.read.001-.008, config.gate.001-.024,
   config.placeholder.011.
-- [ ] **19. Failure reports and early exit.** The `APPLICATION FAILED TO
-  START` block, origins, exit status `1`, nothing started before
-  configuration succeeds. Satisfies config.error.001-.006.
+- [ ] **19. Failure output and early exit.** Design.md section 6a: standard
+  output, the logback console line form, the failure-analysis and run-failed
+  forms per failure kind, the preceding `WARN`/`INFO` lines, no stack frames
+  (`DEV-0033`, once the owner approves it), origins, exit status `1`, nothing
+  started before configuration succeeds. Satisfies config.error.001-.010,
+  config.dump.006.
 - [ ] **20. `frevo-config effective`.** The binary, the document of
   config.dump.001-.006, redaction of the e-mail password.
 - [ ] **21. Silent acceptance of keys this build does not act on.** A test

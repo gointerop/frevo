@@ -1,0 +1,5 @@
+hapi:
+  fhir:
+    server_address: http://x/fhir
+    upliftedRefchains_enabled: false
+    supported_resource_types: [${nope3}]

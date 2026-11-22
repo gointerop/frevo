@@ -52,3 +52,22 @@ java -cp "<classes>:<packaged-resources-dir>:<jars>" probe.Probe [--name=value .
 
 A failing configuration prints Spring Boot's failure analysis on standard
 error and exits `1`.
+
+## Second round (review of 2026-11-22)
+
+| File | What it is |
+|---|---|
+| `Gates.java` | one marker bean per starter gate, each guarded by the starter's **own** condition class or `@ConditionalOnProperty` (copied unchanged from `annotations/`, `common/`, `cr/`, `cdshooks/`, `elastic/`, `util/EnvironmentHelper.java`); `Probe.java` now imports it and prints `GATES = [...]`, and reads `scheduling_disabled` |
+| `Es.java` | binds `ElasticsearchProperties` directly with Spring Boot's `Binder` and prints its defaults and the `Duration` conversions of config.gate.024 |
+| `experiments-review.sh`, `out-experiments-review.txt` | the batch run for findings 1-11 (set `PROBE_DIR`); personal paths in the output are redacted |
+| `experiments-failure-output.sh` | the failure-output batch for finding 12, run with logback on the class path |
+| `fixtures/config.yaml.016.yaml`, `fixtures/config.properties.004.properties` | the exact fixtures of those two scenarios |
+
+The second round adds to the class path `spring-boot-autoconfigure` 3.5.14
+(for `@ConditionalOnProperty`, `AnyNestedCondition` and
+`ElasticsearchProperties`) and, for the failure-output runs, the starter's
+`src/main/resources/logback.xml` plus `logback-classic` and `logback-core`
+1.5.18, `slf4j-api` and `jul-to-slf4j` 2.0.17. With logback present every
+startup failure is printed on standard output; without it, through
+`java.util.logging` on standard error, which is why the first round's
+stream observations were wrong.

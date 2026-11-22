@@ -1,0 +1,581 @@
+=== f1a
+AppProperties.getCustom_content_path = null
+AppProperties.getDefault_page_size = Integer:20
+AppProperties.getMax_page_size = Integer:2147483647
+AppProperties.getServer_address = null
+Cr.getEnabled = Boolean:false
+ENV[hapi.fhir.cr.enabled] = false
+ENV[hapi.fhir.app_content_path] = null
+ENV[scheduling_disabled] = true
+GATES = [binary-storage-database, cors, fhir-any, fhir-r4, mcp, tester]
+PROFILES = []
+exit=0
+=== f1b
+AppProperties.getCustom_content_path = null
+AppProperties.getDefault_page_size = Integer:20
+AppProperties.getMax_page_size = Integer:2147483647
+AppProperties.getServer_address = null
+Cr.getEnabled = Boolean:false
+ENV[hapi.fhir.cr.enabled] = false
+ENV[hapi.fhir.app_content_path] = null
+ENV[scheduling_disabled] = true
+GATES = [binary-storage-database, cors, fhir-any, fhir-r4, mcp, tester]
+PROFILES = []
+exit=0
+=== f1c
+AppProperties.getCustom_content_path = null
+AppProperties.getDefault_page_size = Integer:20
+AppProperties.getMax_page_size = Integer:2147483647
+AppProperties.getServer_address = null
+Cr.getEnabled = Boolean:false
+ENV[hapi.fhir.cr.enabled] = false
+ENV[hapi.fhir.app_content_path] = null
+ENV[scheduling_disabled] = true
+GATES = [binary-storage-database, cors, fhir-any, fhir-r4, mcp, tester]
+PROFILES = []
+exit=0
+=== f1d
+AppProperties.getCustom_content_path = null
+AppProperties.getDefault_page_size = Integer:20
+AppProperties.getMax_page_size = Integer:2147483647
+AppProperties.getServer_address = null
+Cr.getEnabled = Boolean:false
+ENV[hapi.fhir.cr.enabled] = false
+ENV[hapi.fhir.app_content_path] = null
+ENV[scheduling_disabled] = null
+GATES = [binary-storage-database, cors, fhir-any, fhir-r4, mcp, tester]
+PROFILES = []
+exit=0
+=== f2
+AppProperties.getCustom_content_path = null
+AppProperties.getDefault_page_size = Integer:20
+AppProperties.getMax_page_size = Integer:2147483647
+AppProperties.getServer_address = "<java.io.tmpdir>|<user.dir>|35272|Windows 11||none|25.0.1|<user.name>"   (personal paths redacted)
+Cr.getEnabled = Boolean:false
+ENV[hapi.fhir.cr.enabled] = false
+ENV[hapi.fhir.app_content_path] = null
+ENV[scheduling_disabled] = null
+GATES = [binary-storage-database, cors, fhir-any, fhir-r4, mcp, tester]
+PROFILES = []
+exit=0
+=== f2b
+AppProperties.getCustom_content_path = null
+AppProperties.getDefault_page_size = Integer:7
+AppProperties.getMax_page_size = Integer:8
+AppProperties.getServer_address = null
+Cr.getEnabled = Boolean:false
+ENV[hapi.fhir.cr.enabled] = false
+ENV[hapi.fhir.app_content_path] = null
+ENV[scheduling_disabled] = null
+GATES = [binary-storage-database, cors, fhir-any, fhir-r4, mcp, tester]
+PROFILES = []
+exit=0
+=== f2c
+AppProperties.getCustom_content_path = null
+AppProperties.getDefault_page_size = Integer:9
+AppProperties.getMax_page_size = Integer:2147483647
+AppProperties.getServer_address = null
+Cr.getEnabled = Boolean:false
+ENV[hapi.fhir.cr.enabled] = false
+ENV[hapi.fhir.app_content_path] = null
+ENV[scheduling_disabled] = null
+GATES = [binary-storage-database, cors, fhir-any, fhir-r4, mcp, tester]
+PROFILES = []
+exit=0
+=== f2d
+AppProperties.getCustom_content_path = null
+AppProperties.getDefault_page_size = Integer:5
+AppProperties.getMax_page_size = Integer:2147483647
+AppProperties.getServer_address = null
+Cr.getEnabled = Boolean:false
+ENV[hapi.fhir.cr.enabled] = false
+ENV[hapi.fhir.app_content_path] = null
+ENV[scheduling_disabled] = null
+GATES = [binary-storage-database, cors, fhir-any, fhir-r4, mcp, tester]
+PROFILES = []
+exit=0
+=== f2e
+[2026-11-22 14:45:45.251] - 11924 WARNING [main] --- org.springframework.context.annotation.AnnotationConfigApplicationContext: Exception encountered during context initialization - cancelling refresh attempt: org.springframework.boot.context.properties.bind.BindException: Failed to bind properties under 'hapi.fhir.default-page-size' to java.lang.Integer
+APPLICATION FAILED TO START
+Description:
+    Property: hapi.fhir.default-page-size
+    Value: "abc"
+    Origin: "hapi.fhir.default_page_size" from property source "systemProperties"
+    Reason: failed to convert java.lang.String to java.lang.Integer (caused by java.lang.NumberFormatException: For input string: "abc")
+exit=1
+=== f3a
+AppProperties.getCustom_content_path = null
+AppProperties.getDefault_page_size = Integer:7
+AppProperties.getMax_page_size = Integer:2147483647
+AppProperties.getServer_address = null
+Cr.getEnabled = Boolean:false
+ENV[hapi.fhir.cr.enabled] = false
+ENV[hapi.fhir.app_content_path] = null
+ENV[scheduling_disabled] = null
+GATES = [binary-storage-database, cors, fhir-any, fhir-r4, mcp, tester]
+PROFILES = []
+exit=0
+=== f3b
+AppProperties.getCustom_content_path = null
+AppProperties.getDefault_page_size = Integer:8
+AppProperties.getMax_page_size = Integer:2147483647
+AppProperties.getServer_address = null
+Cr.getEnabled = Boolean:false
+ENV[hapi.fhir.cr.enabled] = false
+ENV[hapi.fhir.app_content_path] = null
+ENV[scheduling_disabled] = null
+GATES = [binary-storage-database, cors, fhir-any, fhir-r4, mcp, tester]
+PROFILES = []
+exit=0
+=== f3c
+AppProperties.getCustom_content_path = null
+AppProperties.getDefault_page_size = Integer:7
+AppProperties.getMax_page_size = Integer:2147483647
+AppProperties.getServer_address = null
+Cr.getEnabled = Boolean:false
+ENV[hapi.fhir.cr.enabled] = false
+ENV[hapi.fhir.app_content_path] = null
+ENV[scheduling_disabled] = null
+GATES = [binary-storage-database, cors, fhir-any, fhir-r4, mcp, tester]
+PROFILES = []
+exit=0
+=== f3d
+SEVERE: Application run failed
+org.springframework.boot.json.JsonParseException: Cannot parse JSON
+Caused by: java.lang.IllegalStateException: Expecting double-quotes around field names
+exit=1
+=== f3e
+[2026-11-22 14:45:50.940] - 30564 WARNING [main] --- org.springframework.context.annotation.AnnotationConfigApplicationContext: Exception encountered during context initialization - cancelling refresh attempt: org.springframework.boot.context.properties.bind.BindException: Failed to bind properties under 'hapi.fhir.default-page-size' to java.lang.Integer
+APPLICATION FAILED TO START
+Description:
+    Property: hapi.fhir.default-page-size
+    Value: "abc"
+    Origin: "spring.application.json" from property source "commandLineArgs"
+    Reason: failed to convert java.lang.String to java.lang.Integer (caused by java.lang.NumberFormatException: For input string: "abc")
+exit=1
+=== f3f
+SEVERE: Application run failed
+org.springframework.boot.json.JsonParseException: Cannot parse JSON
+Caused by: java.lang.IllegalStateException: Expecting double-quotes around field names
+exit=1
+=== f3g
+AppProperties.getCustom_content_path = null
+AppProperties.getDefault_page_size = Integer:4
+AppProperties.getMax_page_size = Integer:2147483647
+AppProperties.getServer_address = null
+Cr.getEnabled = Boolean:false
+ENV[hapi.fhir.cr.enabled] = false
+ENV[hapi.fhir.app_content_path] = null
+ENV[scheduling_disabled] = null
+GATES = [binary-storage-database, cors, fhir-any, fhir-r4, mcp, tester]
+PROFILES = []
+exit=0
+=== f4a
+AppProperties.getCustom_content_path = "c d"
+AppProperties.getDefault_page_size = Integer:20
+AppProperties.getMax_page_size = Integer:2147483647
+AppProperties.getServer_address = "a b"
+Cr.getEnabled = Boolean:false
+ENV[hapi.fhir.cr.enabled] = false
+ENV[hapi.fhir.app_content_path] = null
+ENV[scheduling_disabled] = null
+GATES = [binary-storage-database, cors, custom-content, fhir-any, fhir-r4, mcp, tester]
+PROFILES = []
+exit=0
+=== f4b
+AppProperties.getCustom_content_path = null
+AppProperties.getDefault_page_size = Integer:20
+AppProperties.getMax_page_size = Integer:2147483647
+AppProperties.getServer_address = "x y"
+Cr.getEnabled = Boolean:false
+ENV[hapi.fhir.cr.enabled] = false
+ENV[hapi.fhir.app_content_path] = null
+ENV[scheduling_disabled] = null
+GATES = [binary-storage-database, cors, fhir-any, fhir-r4, mcp, tester]
+PROFILES = []
+exit=0
+=== f4c
+AppProperties.getCustom_content_path = null
+AppProperties.getDefault_page_size = Integer:20
+AppProperties.getMax_page_size = Integer:2147483647
+AppProperties.getServer_address = "ab cd"
+Cr.getEnabled = Boolean:false
+ENV[hapi.fhir.cr.enabled] = false
+ENV[hapi.fhir.app_content_path] = null
+ENV[scheduling_disabled] = null
+GATES = [binary-storage-database, cors, fhir-any, fhir-r4, mcp, tester]
+PROFILES = []
+exit=0
+=== f5a
+APPLICATION FAILED TO START
+Description:
+    Property: spring.profiles.active
+    Value: "a b"
+    Origin: System Environment Property "SPRING_PROFILES_ACTIVE"
+    Reason: java.lang.IllegalStateException: Profile 'a b' must contain a letter, digit or allowed char ('-', '_', '.', '+', '@')
+exit=1
+=== f5b
+SEVERE: Application run failed
+java.lang.IllegalStateException: Invalid profile property value found in Environment under 'spring.profiles.active'
+Caused by: java.lang.IllegalStateException: Profile '-x' must start and end with a letter or digit
+exit=1
+=== f5c
+SEVERE: Application run failed
+java.lang.IllegalStateException: Invalid profile property value found in Environment under 'spring.profiles.active'
+Caused by: java.lang.IllegalStateException: Profile 'a/b' must contain a letter, digit or allowed char ('-', '_', '.', '+', '@')
+exit=1
+=== f5d
+SEVERE: Application run failed
+java.lang.IllegalStateException: Invalid profile property value found in Environment under 'spring.profiles.active'
+Caused by: java.lang.IllegalStateException: Profile 'x!' must contain a letter, digit or allowed char ('-', '_', '.', '+', '@')
+exit=1
+=== f5e
+AppProperties.getCustom_content_path = null
+AppProperties.getDefault_page_size = Integer:20
+AppProperties.getMax_page_size = Integer:2147483647
+AppProperties.getServer_address = null
+Cr.getEnabled = Boolean:false
+ENV[hapi.fhir.cr.enabled] = false
+ENV[hapi.fhir.app_content_path] = null
+ENV[scheduling_disabled] = null
+GATES = [binary-storage-database, cors, fhir-any, fhir-r4, mcp, tester]
+PROFILES = [-x]
+exit=0
+=== f5f
+AppProperties.getCustom_content_path = null
+AppProperties.getDefault_page_size = Integer:20
+AppProperties.getMax_page_size = Integer:2147483647
+AppProperties.getServer_address = null
+Cr.getEnabled = Boolean:false
+ENV[hapi.fhir.cr.enabled] = false
+ENV[hapi.fhir.app_content_path] = null
+ENV[scheduling_disabled] = null
+GATES = [binary-storage-database, cors, fhir-any, fhir-r4, mcp, tester]
+PROFILES = [a.b+c@d_e]
+exit=0
+=== f5g
+SEVERE: Application run failed
+org.springframework.boot.context.config.InvalidConfigDataPropertyException: Property 'spring.profiles' imported from location 'file [application.yaml]' is invalid and should be replaced with 'spring.config.activate.on-profile' [origin: URL [file:application.yaml] - 1:18]
+exit=1
+=== f5h
+SEVERE: Application run failed
+org.springframework.boot.context.config.InvalidConfigDataPropertyException: Property 'spring.profiles.include' imported from location 'file [application-q.yaml]' is invalid in a profile specific resource [origin: URL [file:application-q.yaml] - 1:26]
+exit=1
+=== f5i
+SEVERE: Application run failed
+org.springframework.boot.context.config.InvalidConfigDataPropertyException: Property 'spring.profiles.default' imported from location 'file [application-q.yaml]' is invalid in a profile specific resource [origin: URL [file:application-q.yaml] - 1:26]
+exit=1
+=== f5j
+AppProperties.getCustom_content_path = null
+AppProperties.getDefault_page_size = Integer:20
+AppProperties.getMax_page_size = Integer:2147483647
+AppProperties.getServer_address = null
+Cr.getEnabled = Boolean:false
+ENV[hapi.fhir.cr.enabled] = false
+ENV[hapi.fhir.app_content_path] = null
+ENV[scheduling_disabled] = null
+GATES = [binary-storage-database, cors, fhir-any, fhir-r4, mcp, tester]
+PROFILES = [q]
+exit=0
+=== f5k
+AppProperties.getCustom_content_path = null
+AppProperties.getDefault_page_size = Integer:20
+AppProperties.getMax_page_size = Integer:2147483647
+AppProperties.getServer_address = null
+Cr.getEnabled = Boolean:false
+ENV[hapi.fhir.cr.enabled] = false
+ENV[hapi.fhir.app_content_path] = null
+ENV[scheduling_disabled] = null
+GATES = [binary-storage-database, cors, fhir-any, fhir-r4, mcp, tester]
+PROFILES = [a, b]
+exit=0
+=== f5l
+SEVERE: Application run failed
+java.lang.IllegalStateException: Invalid profile property value found in Environment under 'spring.profiles.active'
+Caused by: java.lang.IllegalStateException: Invalid empty profile
+exit=1
+=== f6a
+SEVERE: Application run failed
+java.lang.IllegalArgumentException: Invalid argument syntax: --=x
+exit=1
+=== f6b
+AppProperties.getCustom_content_path = null
+AppProperties.getDefault_page_size = Integer:20
+AppProperties.getMax_page_size = Integer:2147483647
+AppProperties.getServer_address = null
+Cr.getEnabled = Boolean:false
+ENV[hapi.fhir.cr.enabled] = false
+ENV[hapi.fhir.app_content_path] = null
+ENV[scheduling_disabled] = null
+GATES = [binary-storage-database, cors, fhir-any, fhir-r4, mcp, tester]
+PROFILES = []
+exit=0
+=== f6c
+AppProperties.getCustom_content_path = null
+AppProperties.getDefault_page_size = Integer:3
+AppProperties.getMax_page_size = Integer:2147483647
+AppProperties.getServer_address = null
+Cr.getEnabled = Boolean:false
+ENV[hapi.fhir.cr.enabled] = false
+ENV[hapi.fhir.app_content_path] = null
+ENV[scheduling_disabled] = null
+GATES = [binary-storage-database, cors, fhir-any, fhir-r4, mcp, tester]
+PROFILES = []
+exit=0
+=== f6d
+AppProperties.getCustom_content_path = null
+AppProperties.getDefault_page_size = Integer:20
+AppProperties.getMax_page_size = Integer:2147483647
+AppProperties.getServer_address = "a=b"
+Cr.getEnabled = Boolean:false
+ENV[hapi.fhir.cr.enabled] = false
+ENV[hapi.fhir.app_content_path] = null
+ENV[scheduling_disabled] = null
+GATES = [binary-storage-database, cors, fhir-any, fhir-r4, mcp, tester]
+PROFILES = []
+exit=0
+=== f7a
+AppProperties.getCustom_content_path = null
+AppProperties.getDefault_page_size = Integer:6
+AppProperties.getMax_page_size = Integer:2147483647
+AppProperties.getServer_address = null
+Cr.getEnabled = Boolean:false
+ENV[hapi.fhir.cr.enabled] = false
+ENV[hapi.fhir.app_content_path] = null
+ENV[scheduling_disabled] = null
+GATES = [binary-storage-database, cors, fhir-any, fhir-r4, mcp, tester]
+PROFILES = [p]
+exit=0
+=== f7b
+AppProperties.getCustom_content_path = null
+AppProperties.getDefault_page_size = Integer:20
+AppProperties.getMax_page_size = Integer:7
+AppProperties.getServer_address = null
+Cr.getEnabled = Boolean:false
+ENV[hapi.fhir.cr.enabled] = false
+ENV[hapi.fhir.app_content_path] = null
+ENV[scheduling_disabled] = null
+GATES = [binary-storage-database, cors, fhir-any, fhir-r4, mcp, tester]
+PROFILES = []
+exit=0
+=== f7c
+AppProperties.getCustom_content_path = null
+AppProperties.getDefault_page_size = Integer:9
+AppProperties.getMax_page_size = Integer:8
+AppProperties.getServer_address = null
+Cr.getEnabled = Boolean:false
+ENV[hapi.fhir.cr.enabled] = false
+ENV[hapi.fhir.app_content_path] = null
+ENV[scheduling_disabled] = null
+GATES = [binary-storage-database, cors, fhir-any, fhir-r4, mcp, tester]
+PROFILES = [p]
+exit=0
+=== f7d
+AppProperties.getCustom_content_path = null
+AppProperties.getDefault_page_size = Integer:20
+AppProperties.getMax_page_size = Integer:12
+AppProperties.getServer_address = null
+Cr.getEnabled = Boolean:false
+ENV[hapi.fhir.cr.enabled] = false
+ENV[hapi.fhir.app_content_path] = null
+ENV[scheduling_disabled] = null
+GATES = [binary-storage-database, cors, fhir-any, fhir-r4, mcp, tester]
+PROFILES = []
+exit=0
+=== f7e
+AppProperties.getCustom_content_path = null
+AppProperties.getDefault_page_size = Integer:20
+AppProperties.getMax_page_size = Integer:14
+AppProperties.getServer_address = null
+Cr.getEnabled = Boolean:false
+ENV[hapi.fhir.cr.enabled] = false
+ENV[hapi.fhir.app_content_path] = null
+ENV[scheduling_disabled] = null
+GATES = [binary-storage-database, cors, fhir-any, fhir-r4, mcp, tester]
+PROFILES = []
+exit=0
+=== f7f
+SEVERE: Application run failed
+java.lang.IllegalStateException: Unable to load config data from 'conf/noext'
+Caused by: java.lang.IllegalStateException: File extension is not known to any PropertySourceLoader. If the location is meant to reference a directory, it must end in '/' or File.separator
+exit=1
+=== f7g
+AppProperties.getCustom_content_path = null
+AppProperties.getDefault_page_size = Integer:20
+AppProperties.getMax_page_size = Integer:2147483647
+AppProperties.getServer_address = null
+Cr.getEnabled = Boolean:false
+ENV[hapi.fhir.cr.enabled] = false
+ENV[hapi.fhir.app_content_path] = null
+ENV[scheduling_disabled] = null
+GATES = [binary-storage-database, cors, fhir-any, fhir-r4, mcp, tester]
+PROFILES = []
+exit=0
+=== f7h
+APPLICATION FAILED TO START
+Description:
+Config data location 'conf/' does not exist
+exit=1
+=== f7i
+SEVERE: Application run failed
+java.lang.IllegalStateException: Location 'file:./conf/*/*/application.yaml' cannot contain multiple wildcards
+exit=1
+=== f9a
+[2026-11-22 14:46:26.884] - 12092 WARNING [main] --- org.springframework.context.annotation.AnnotationConfigApplicationContext: Exception encountered during context initialization - cancelling refresh attempt: org.springframework.boot.context.properties.ConfigurationPropertiesBindException: Error creating bean with name 'hapi.fhir.cr.cql.data-ca.uhn.fhir.jpa.starter.cr.CqlData': Could not bind properties to 'CqlData' : prefix=hapi.fhir.cr.cql.data, ignoreInvalidFields=false, ignoreUnknownFields=true
+APPLICATION FAILED TO START
+Description:
+    Reason: java.lang.IllegalStateException: No setter found for property: retrieve-settings
+exit=1
+=== f9b
+[2026-11-22 14:46:28.306] - 32684 WARNING [main] --- org.springframework.context.annotation.AnnotationConfigApplicationContext: Exception encountered during context initialization - cancelling refresh attempt: org.springframework.boot.context.properties.ConfigurationPropertiesBindException: Error creating bean with name 'hapi.fhir.cr.cql-ca.uhn.fhir.jpa.starter.cr.CqlProperties': Could not bind properties to 'CqlProperties' : prefix=hapi.fhir.cr.cql, ignoreInvalidFields=false, ignoreUnknownFields=true
+APPLICATION FAILED TO START
+Description:
+    Reason: java.lang.IllegalStateException: No setter found for property: retrieve-settings
+exit=1
+=== f9c
+[2026-11-22 14:46:29.817] - 4188 WARNING [main] --- org.springframework.context.annotation.AnnotationConfigApplicationContext: Exception encountered during context initialization - cancelling refresh attempt: org.springframework.boot.context.properties.ConfigurationPropertiesBindException: Error creating bean with name 'hapi.fhir.cr.cql.terminology-ca.uhn.fhir.jpa.starter.cr.CqlTerminologyProperties': Could not bind properties to 'CqlTerminologyProperties' : prefix=hapi.fhir.cr.cql.terminology, ignoreInvalidFields=false, ignoreUnknownFields=true
+APPLICATION FAILED TO START
+Description:
+    Reason: java.lang.IllegalStateException: No setter found for property: terminology-settings
+exit=1
+=== f9d
+AppProperties.getCustom_content_path = null
+AppProperties.getDefault_page_size = Integer:20
+AppProperties.getImplementationGuides{x}.getName = null
+AppProperties.getImplementationGuides{x}.getPackageContents = bytes
+AppProperties.getImplementationGuides{x}.getPackageUrl = null
+AppProperties.getMax_page_size = Integer:2147483647
+AppProperties.getServer_address = null
+Cr.getEnabled = Boolean:false
+ENV[hapi.fhir.cr.enabled] = false
+ENV[hapi.fhir.app_content_path] = null
+ENV[scheduling_disabled] = null
+GATES = [binary-storage-database, cors, fhir-any, fhir-r4, implementation-guides, mcp, tester]
+PROFILES = []
+exit=0
+=== f9e
+[2026-11-22 14:46:32.469] - 13000 WARNING [main] --- org.springframework.context.annotation.AnnotationConfigApplicationContext: Exception encountered during context initialization - cancelling refresh attempt: org.springframework.boot.context.properties.bind.BindException: Failed to bind properties under 'hapi.fhir.implementationguides.x.package-contents' to byte[]
+APPLICATION FAILED TO START
+Description:
+    Property: hapi.fhir.implementationguides.x.package-contents
+    Value: "abc"
+    Origin: URL [file:application.yaml] - 1:52
+    Reason: failed to convert java.lang.String to byte (caused by java.lang.NumberFormatException: For input string: "abc")
+exit=1
+=== f9f
+[2026-11-22 14:46:33.633] - 29084 WARNING [main] --- org.springframework.context.annotation.AnnotationConfigApplicationContext: Exception encountered during context initialization - cancelling refresh attempt: org.springframework.boot.context.properties.bind.BindException: Failed to bind properties under 'hapi.fhir.implementationguides.x.package-contents' to byte[]
+APPLICATION FAILED TO START
+Description:
+    Property: hapi.fhir.implementationguides.x.package-contents
+    Value: "QUI="
+    Origin: URL [file:application.yaml] - 1:51
+    Reason: failed to convert java.lang.String to byte (caused by java.lang.NumberFormatException: For input string: "QUI=")
+exit=1
+=== f10a
+AppProperties.getCustom_content_path = null
+AppProperties.getDefault_page_size = Integer:20
+AppProperties.getMax_page_size = Integer:2147483647
+AppProperties.getServer_address = null
+Cr.getEnabled = Boolean:false
+ENV[hapi.fhir.cr.enabled] = false
+ENV[hapi.fhir.app_content_path] = null
+ENV[scheduling_disabled] = null
+GATES = [binary-storage-database, cors, elasticsearch, fhir-any, fhir-r4, mcp, tester]
+PROFILES = []
+exit=0
+=== f10b
+AppProperties.getCustom_content_path = null
+AppProperties.getDefault_page_size = Integer:20
+AppProperties.getMax_page_size = Integer:2147483647
+AppProperties.getServer_address = null
+Cr.getEnabled = Boolean:false
+ENV[hapi.fhir.cr.enabled] = false
+ENV[hapi.fhir.app_content_path] = null
+ENV[scheduling_disabled] = null
+GATES = [binary-storage-database, cors, fhir-any, fhir-r4, mcp, tester]
+PROFILES = []
+exit=0
+=== f10c
+AppProperties.getCustom_content_path = null
+AppProperties.getDefault_page_size = Integer:20
+AppProperties.getMax_page_size = Integer:2147483647
+AppProperties.getServer_address = null
+Cr.getEnabled = Boolean:false
+ENV[hapi.fhir.cr.enabled] = false
+ENV[hapi.fhir.app_content_path] = null
+ENV[scheduling_disabled] = null
+GATES = [binary-storage-database, cors, elasticsearch, fhir-any, fhir-r4, mcp, tester]
+PROFILES = []
+exit=0
+=== f10d
+[2026-11-22 14:46:39.032] - 29488 WARNING [main] --- org.springframework.context.annotation.AnnotationConfigApplicationContext: Exception encountered during context initialization - cancelling refresh attempt: org.springframework.boot.context.properties.bind.BindException: Failed to bind properties under 'spring.elasticsearch.connection-timeout' to java.time.Duration
+APPLICATION FAILED TO START
+Description:
+    Property: spring.elasticsearch.connection-timeout
+    Value: "abc"
+    Origin: System Environment Property "spring.elasticsearch.connection-timeout"
+    Reason: failed to convert java.lang.String to java.time.Duration (caused by java.lang.IllegalArgumentException: 'abc' is not a valid duration)
+exit=1
+=== f10e
+[2026-11-22 14:46:40.296] - 14120 WARNING [main] --- org.springframework.context.annotation.AnnotationConfigApplicationContext: Exception encountered during context initialization - cancelling refresh attempt: org.springframework.boot.context.properties.bind.BindException: Failed to bind properties under 'spring.elasticsearch' to org.springframework.boot.autoconfigure.elasticsearch.ElasticsearchProperties
+APPLICATION FAILED TO START
+Description:
+    Reason: org.springframework.core.convert.ConverterNotFoundException: No converter found capable of converting from type [java.lang.String] to type [org.springframework.boot.autoconfigure.elasticsearch.ElasticsearchProperties]
+exit=1
+=== f10f
+AppProperties.getCustom_content_path = null
+AppProperties.getDefault_page_size = Integer:20
+AppProperties.getMax_page_size = Integer:2147483647
+AppProperties.getServer_address = null
+Cr.getEnabled = Boolean:false
+ENV[hapi.fhir.cr.enabled] = false
+ENV[hapi.fhir.app_content_path] = null
+ENV[scheduling_disabled] = null
+GATES = [binary-storage-database, cors, elasticsearch, fhir-any, fhir-r4, mcp, tester]
+PROFILES = []
+exit=0
+=== f10g
+AppProperties.getCustom_content_path = null
+AppProperties.getDefault_page_size = Integer:20
+AppProperties.getMax_page_size = Integer:2147483647
+AppProperties.getServer_address = null
+Cr.getEnabled = Boolean:false
+ENV[hapi.fhir.cr.enabled] = false
+ENV[hapi.fhir.app_content_path] = null
+ENV[scheduling_disabled] = null
+GATES = [binary-storage-database, cors, elasticsearch, fhir-any, fhir-r4, mcp, tester]
+PROFILES = []
+exit=0
+=== f10h
+[2026-11-22 14:46:44.368] - 23312 WARNING [main] --- org.springframework.context.annotation.AnnotationConfigApplicationContext: Exception encountered during context initialization - cancelling refresh attempt: org.springframework.boot.context.properties.bind.BindException: Failed to bind properties under 'spring.elasticsearch.socket-keep-alive' to boolean
+APPLICATION FAILED TO START
+Description:
+    Property: spring.elasticsearch.socket-keep-alive
+    Value: "maybe"
+    Origin: URL [file:application.yaml] - 1:41
+    Reason: failed to convert java.lang.String to boolean (caused by java.lang.IllegalArgumentException: Invalid boolean value 'maybe')
+exit=1
+=== f11a
+AppProperties.getCustom_content_path = null
+AppProperties.getDefault_page_size = Integer:20
+AppProperties.getMax_page_size = Integer:2147483647
+AppProperties.getServer_address = null
+Cr.getEnabled = Boolean:true
+ENV[hapi.fhir.cr.enabled] = true
+ENV[hapi.fhir.app_content_path] = null
+ENV[scheduling_disabled] = null
+GATES = [binary-storage-database, cors, cr, fhir-any, fhir-r4, mcp, tester]
+PROFILES = []
+exit=0
+=== f11b
+AppProperties.getCustom_content_path = null
+AppProperties.getDefault_page_size = Integer:20
+AppProperties.getMax_page_size = Integer:2147483647
+AppProperties.getServer_address = null
+Cr.getEnabled = Boolean:true
+ENV[hapi.fhir.cr.enabled] = yes
+ENV[hapi.fhir.app_content_path] = null
+ENV[scheduling_disabled] = null
+GATES = [binary-storage-database, cors, fhir-any, fhir-r4, mcp, tester]
+PROFILES = []
+exit=0

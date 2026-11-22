@@ -35,8 +35,11 @@ and leaves what each key *does* to the change that implements the behaviour
    files, `on-profile` expressions, `include`, `group` and `default`;
    `.properties`, `.yml` and `.yaml`; environment variables with both of
    Spring's name mappers; `--name=value` arguments; `SPRING_APPLICATION_JSON`;
-   `-D` tokens of `JAVA_TOOL_OPTIONS` and `JDK_JAVA_OPTIONS` as Java system
-   properties;
+   Java system properties — the JVM's own (`user.dir`, `java.io.tmpdir`,
+   `PID`, the image's `loader.path`, …) and the `-D` tokens of
+   `JAVA_TOOL_OPTIONS` and `JDK_JAVA_OPTIONS` with the JVM's quoting;
+   `spring.application.json` from any source; the image's
+   `/app/extra-classes/` as part of `classpath:`;
    `${...}` placeholders, lenient for binding and strict for named reads,
    including `random.*` (config.source, .yaml, .properties, .profile, .env,
    .args, .placeholder).
@@ -53,20 +56,23 @@ and leaves what each key *does* to the change that implements the behaviour
    and from its `Condition` classes, not from the bound properties. Those
    reads are exact-name for names containing `_`, so they can disagree with
    the binding: `mdm-enabled: true` binds `true` while the MDM gate reads the
-   packaged `false`; `cr.enabled: yes` binds `true` while
-   `Boolean.parseBoolean` turns the CR gate off; `fhir_version: ""` keeps
+   packaged `false`; `cr.enabled: "yes"` (quoted, so the read is the text
+   `yes`) binds `true` while `Boolean.parseBoolean` turns the CR gate off; `fhir_version: ""` keeps
    `R4` bound and turns on the **DSTU2** gate. This change computes every gate
    with HAPI's own predicate (config.read, .gate), so later changes wire
    features from the answer HAPI reaches.
-4. **Failure reports** in the starter's `APPLICATION FAILED TO START` form,
-   verbatim including Java type names, and exit status `1`, before anything
-   else starts (config.error).
+4. **Failure output** as HAPI writes it: on standard output through the
+   starter's logback console format, either Spring Boot's failure analysis
+   (`APPLICATION FAILED TO START`, verbatim including Java type names) or
+   `Application run failed` with the exception chain, by failure kind; exit
+   status `1`, before anything else starts (config.error). Java stack frames
+   are the one thing not reproduced (`DEV-0033`, proposed).
 5. **`frevo-config effective`**, a command that prints the effective
    configuration as JSON (`profiles`, `properties` per bean prefix, `reads`,
    `gates`). It is the observable surface for every scenario here and the
    Frevo side of the `config-roundtrip` oracle (config.dump).
 
-Scenario count: **204** across 19 areas (see [`spec.md`](spec.md)).
+Scenario count: **232** across 19 areas (see [`spec.md`](spec.md)).
 
 ### How the behaviour was established
 
@@ -155,7 +161,8 @@ There is no HL7 suite pass rate to meet for this change.
 | Typed binding of `spring.datasource.*`, `spring.jpa.*`, `server.*` (port, context path, `tomcat.relaxed-query-chars`), `management.*`, `spring.flyway.*`, `spring.main.*`, `spring.ai.mcp.server.*` other than `enabled`, `logging.*` | their meaning is the consumer's; this change loads them through the same pipeline and makes them available to reads (config.unknown.004); ruled 2026-11-22 | `add-server-skeleton` (`server.*`, `spring.main.*`), `add-store-schema` (`spring.datasource.*` and the JDBC URL form), `add-observability` (`management.*`, `logging.*`), `add-mcp` |
 | Loading `custom_interceptor_classes`, `custom_provider_classes`, `custom-bean-packages` | they name Java classes and packages; this change binds the lists and the read. HAPI fails to start on a class not on its class path (`StarterJpaConfig.java:572-577`), which is what Frevo's empty class path will give | `add-server-skeleton` |
 | `/actuator/configprops`, `/actuator/env` | not exposed by the packaged `management.*` settings; the document of config.dump is the diagnostic | `add-observability` |
-| Loading `configtree:` imports, `.xml` properties files, non-packaged `classpath:` resources; activating `spring.config.activate.on-cloud-platform` documents | HAPI supports them; Frevo fails loudly on the first three and never activates the fourth (config.source.017, .020, config.profile.014), recorded as `DEV-0031` | none until a deployment needs one (`DEV-0031`'s revisit condition) |
+| Loading `configtree:` imports and `.xml` properties files; activating `spring.config.activate.on-cloud-platform` documents; `classpath:` resources inside `WEB-INF/lib` jars | HAPI supports them; Frevo fails loudly on the first two and never activates the third (config.source.020, config.profile.014), recorded as `DEV-0031`; the oracle asserts that no jar in the pinned image carries an application file, so the fourth cannot differ | none until a deployment needs one (`DEV-0031`'s revisit condition) |
+| Typed binding of Spring Boot's own auto-configuration properties (`server.port`, `spring.datasource.*`, …) | HAPI's auto-configuration binds them at startup, so an invalid `server.port` fails HAPI; here they are loaded and exposed only (config.unknown.004), except `spring.elasticsearch.*`, which a starter condition binds (config.gate.024) | each consuming change, with this change's binder |
 | The Tomcat variant of the image (`catalina.properties`, `server.xml`, JNDI, servlet init parameters) | a deployment form, not a configuration source of the default (distroless) image the harness pins | none |
 | Re-reading configuration while running | Spring Boot does not reload `@ConfigurationProperties` in the starter either | none |
 
@@ -205,19 +212,37 @@ readable.
 | # | Question | Decision | Source | Scenarios | Register |
 |---|---|---|---|---|---|
 | 1 | Observable surface | `frevo-config effective` prints the effective configuration as JSON; `hapi.fhir.subscription.email.password` is redacted | owner | config.dump.001-.006 | none (a diagnostic command, not a configuration key) |
-| 2 | Non-packaged `classpath:` locations | fail loudly with the `does not exist` report | owner | config.source.017 | `DEV-0031` |
+| 2 | Non-packaged `classpath:` locations | first ruled "fail loudly"; revised by the coordinator's direction after review finding 8 to match HAPI: `classpath:` is the packaged files, then the image's fixed `/app/extra-classes/` directory, no setting; a resource in neither fails with the `does not exist` report | owner, then coordinator direction 2026-11-22 | config.source.017, .030 | none (HAPI-matching) |
 | 3 | Hazards that parity reproduces | reproduce them exactly | standing ruling | config.read.005, config.gate.003, .006, .007, config.placeholder.009, config.relaxed.004, config.unknown.005 | `DEBT-0022` to `DEBT-0026` |
 | 4 | Keys this build does not act on yet | silent, exactly as HAPI: bound and reported, no warning | standing ruling | config.unknown.007 | none |
 | 5 | Pinning the Spring sources | on a `chore/*` branch, as a prerequisite task, not in this change | standing ruling | — | none |
-| 6 | Java system properties | honour `-D` tokens of `JAVA_TOOL_OPTIONS` and `JDK_JAVA_OPTIONS`, as the JVM does for HAPI | standing ruling | config.source.019, .023, .024 | none |
+| 6 | Java system properties | honour `-D` tokens of `JAVA_TOOL_OPTIONS` and `JDK_JAVA_OPTIONS` with the JVM's quoting, and provide the JVM's own system properties with the image's values | standing ruling, coordinator direction | config.source.019, .023-.025, config.placeholder.012, .013 | none |
 | 7 | `configtree:`, `.xml`, `on-cloud-platform` | fail loudly on `configtree:` and `.xml`; `on-cloud-platform` documents never activate | owner | config.source.020, config.profile.014 | `DEV-0031` (the same entry as 2) |
 | 8 | Environment-variable case | Linux semantics; the oracle confirms on Linux | standing ruling | config.env.004 | none |
-| 9 | Failure report text | Spring's failure block verbatim, Java type names included | standing ruling | config.error.002 and every quoted `Reason:` | none |
+| 9 | Failure report text | HAPI's failure output verbatim (stream, log lines, analysis block or exception chain, Java type names), except Java stack frames | standing ruling; frames: proposed `DEV-0033`, needs the owner | config.error.002, .007-.010 | `DEV-0033` (proposed) |
 | 10 | Two non-kebab spellings in one source | fail to start, naming both spellings and their origins | owner | config.relaxed.007 | `DEV-0032` |
 | 11 | Inventory denominator | corrected on a `chore/*` branch before archiving, as a prerequisite task | standing ruling | config.key.011 | none |
 | 12 | Non-`hapi.fhir` keys | loaded through the same pipeline and exposed to reads; typed binding left to the consuming changes | standing ruling | config.unknown.004 | none |
 | 13 | YAML parser | ADR 0007 option A: `yaml-rust2` event parser plus Frevo's own SnakeYAML 1.1 resolver; the unused `serde_yaml_ng` workspace entry is dropped | owner (ADR accepted 2026-11-22) | config.yaml.* | ADR 0007 |
 | 14 | README's `-e "--spring.config.location=…"` | match HAPI as the oracle records it (by Spring's mappers: ignored) | standing ruling | config.env.014 | none |
+
+### Review of 2026-11-22 (13 findings) and the coordinator's direction
+
+| Finding | Resolution | Scenarios |
+|---|---|---|
+| 1 `scheduling_disabled` | added as the thirteenth read and a case-sensitive gate; wired by `add-jobs-engine` and `add-subscriptions-resthook` | config.read.001, .008, config.gate.001, .021 |
+| 2 JVM system properties | the JVM's standard properties, `PID` and the image's `loader.path` are a source and resolve in placeholders, with the image's values as the oracle records them; they count for the tester gate | config.placeholder.012, .013, config.gate.022 |
+| 3 `spring.application.json` | as an argument and as a system property, with rank and origin | config.args.008, .009 |
+| 4 JVM option quoting | the JVM's quoting, and its stderr notices | config.source.023, .024, .025 |
+| 5 profile validation and keys | measured messages and forms | config.profile.015-.018 |
+| 6 `--=x`, `--`, `a=b` | measured | config.args.010-.012 |
+| 7 location syntax | profile variants of named files, `[.ext]` hints, directory imports, wildcards | config.source.026-.029 |
+| 8 `/app/extra-classes/` | part of `classpath:` as in HAPI (fixed path, no setting); `DEV-0031` narrowed; the oracle runs the image's launcher | config.source.017 (rewritten), .030, config.oracle.001 |
+| 9 setter-less derived properties, `packageContents` | bound as HAPI binds them | config.unknown.008, config.key.009, .012 |
+| 10 `ElasticsearchProperties` | a tenth descriptor, with `Duration` | config.gate.020 (rewritten), .024, config.unknown.004 |
+| 11 `cr.enabled: yes` | corrected: the quoted text turns the gate off, the YAML boolean turns it on | config.gate.006 (rewritten), .023; `DEBT-0022` replacement text |
+| 12 failure output | measured with the starter's `logback.xml`: standard output, log header lines, failure analysis or `Application run failed` by kind; `config.gate.005` is HAPI's `NullPointerException`; `config.placeholder.011` is the condition's own failure | config.error.002 (rewritten), .007-.010, config.dump.006, config.gate.005, config.placeholder.011, config.yaml.003, .016, config.args.007, config.profile.012 (rewritten) |
+| 13 untestable text | the escape and the fixture are in the change | config.properties.004, config.yaml.016 (rewritten), `probe/fixtures/` |
 
 ## Registers this change touches
 
@@ -226,8 +251,11 @@ coordinator appends it, because the proposer writes nothing outside this
 directory.
 
 - `docs/deviations.md`: `DEV-0031` (unsupported configuration location kinds
-  and `on-cloud-platform`) and `DEV-0032` (two non-kebab spellings of one
-  property in one source).
-- `docs/tech-debt.md`: `DEBT-0022` to `DEBT-0026`.
+  and `on-cloud-platform`; **replacement text** in `register-entries.md`,
+  narrowed after finding 8), `DEV-0032` (two non-kebab spellings of one
+  property in one source; unchanged), and `DEV-0033` (Java stack frames in
+  failure output; **new, proposed, needs the owner's approval**).
+- `docs/tech-debt.md`: `DEBT-0022` (**replacement text**, finding 11) and
+  `DEBT-0023` to `DEBT-0026` (unchanged).
 - `docs/provenance.md`: one row per ported starter, hapi-fhir and
   clinical-reasoning file and for the three packaged YAML files (task 24).

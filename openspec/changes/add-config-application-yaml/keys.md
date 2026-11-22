@@ -527,6 +527,8 @@ are covered by `config.key.001`, `.003`, `.005`, `.006` and `.007`.
 | `hapi.fhir.tester.<id>.name`, `.server_address`, `.refuse_to_fetch_third_party_urls`, `.fhir_version` (generic) | `hapi.fhir.tester.<id>.*` | `AppProperties.Tester` | config.key.002, config.collection.003 | add-tester-ui |
 | `hapi.fhir.remote_terminology_service.<id>.system`, `.url` (generic) | `hapi.fhir.remote-terminology-service.<id>.*` | `AppProperties.RemoteSystem` | `null`, `null` | add-terminology-operations |
 | `hapi.fhir.cr.cql.namespaces.<key>` (generic) | `hapi.fhir.cr.cql.namespaces[<key>]` | `CqlProperties` | none | add-cql-engine |
+| `hapi.fhir.implementationguides.<id>.packageContents` | `hapi.fhir.implementation-guides.<id>.package-contents` | `PackageInstallationSpec.setPackageContents(byte[])` (`PackageInstallationSpec.java:210`); a comma list of byte values (config.key.012) | `null` | add-package-install (HAPI installs from the bytes: `JpaPackageCache.java:586,596`, `AdditionalResourcesParser.java:51`) |
+| `spring.elasticsearch.uris`, `.username`, `.password`, `.connection-timeout`, `.socket-timeout`, `.socket-keep-alive`, `.path-prefix`, `.restclient.sniffer.interval`, `.restclient.sniffer.delay-after-failure`, `.restclient.ssl.bundle` | the same, under the descriptor of `ElasticsearchProperties` | Spring Boot 3.5.14 `ElasticsearchProperties`, bound by `ElasticConfigCondition` (config.gate.024) | `["http://localhost:9200"]`, `null`, `null`, `1s`, `30s`, `false`, `null`, `5m`, `1m`, `null` | add-search-fulltext (gate only; Frevo never connects to Elasticsearch) |
 
 Keys the starter reads by name rather than binding (config.read.001):
 
@@ -534,7 +536,8 @@ Keys the starter reads by name rather than binding (config.read.001):
 |---|---|---|---|
 | `hapi.fhir.custom-bean-packages` | `@ComponentScan(basePackages = {"${hapi.fhir.custom-bean-packages:}"})`, `StarterJpaConfig.java:109` | config.read.001, config.read.003 | add-server-skeleton (Java packages cannot be scanned by Frevo; see proposal, Out of scope) |
 | `spring.ai.mcp.server.enabled` | `@ConditionalOnProperty`, `McpServerConfig.java:30-33` | config.read.001, config.gate.011 | add-mcp |
-| `spring.elasticsearch.*` | `ElasticConfigCondition` (binds `ElasticsearchProperties`) | config.gate.020, config.profile.002 | add-search-fulltext (Frevo never connects to Elasticsearch; `tantivy` replaces it, constitution section 5) |
+| `spring.elasticsearch.*` | `ElasticConfigCondition` (binds `ElasticsearchProperties`) | config.gate.020, config.gate.024, config.profile.002 | add-search-fulltext (Frevo never connects to Elasticsearch; `tantivy` replaces it, constitution section 5) |
+| `scheduling_disabled` | HAPI itself, by exact name: `BaseSchedulerServiceImpl.java:67,319` (`"true".equals(...)` turns off every scheduled job) and `SubscriptionMatcherInterceptorConfig.java:47` (swaps in the synchronous subscription matcher) | config.read.001, config.read.008, config.gate.021 | add-jobs-engine, add-subscriptions-resthook |
 
 Keys the starter defines that fail to start when set:
 
@@ -542,6 +545,8 @@ Keys the starter defines that fail to start when set:
 |---|---|---|
 | `hapi.fhir.remote_terminology_services_map.*` | `getRemoteTerminologyServicesMap()` has no setter and returns `null` | config.unknown.006 |
 | `hapi.fhir.cr.cql.runtime.enable_validation` (any value but `false`) | `CqlRuntimeProperties` declares `EnableValidation(boolean)`, which is not a setter | config.unknown.005 |
+| `hapi.fhir.cr.cql.data.retrieve_settings.*`, `hapi.fhir.cr.cql.retrieve_settings.*` (any value) | `getRetrieveSettings()` has no setter and returns a new object on every call (`cr/CqlData.java:39`, `cr/CqlProperties.java:70`) | config.unknown.008 |
+| `hapi.fhir.cr.cql.terminology.terminology_settings.*` (any value) | `CqlTerminologyProperties.getTerminologySettings()` likewise (`cr/CqlTerminologyProperties.java:35`) | config.unknown.008 |
 
 ## 7. Corrections the inventory needs
 

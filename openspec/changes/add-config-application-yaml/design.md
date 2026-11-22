@@ -70,8 +70,8 @@ Two limits, both handed to the oracle (section 7):
 | # | Source | Name form | Origin text in a report |
 |---|---|---|---|
 | 1 | command-line `--name=value` (config.args) | as written | `"<name>" from property source "commandLineArgs"` |
-| 2 | `SPRING_APPLICATION_JSON`, flattened like YAML | flattened JSON path | `System Environment Property "SPRING_APPLICATION_JSON"` |
-| 3 | Java system properties: the `-D` tokens of `JAVA_TOOL_OPTIONS`, then `JDK_JAVA_OPTIONS` (later wins), whitespace-separated, other tokens ignored (config.source.023, .024) | as written | as the oracle records it |
+| 2 | `spring.application.json` / `SPRING_APPLICATION_JSON` JSON, flattened like YAML, placed just above the source that held it (so `--spring.application.json` ranks with the arguments, `-Dspring.application.json` above `SPRING_APPLICATION_JSON`) (config.args.006, .008, .009) | flattened JSON path | `"spring.application.json" from property source "<source>"` or `System Environment Property "SPRING_APPLICATION_JSON"` |
+| 3 | Java system properties: the JVM's own properties and `PID` (3.6), then the `-D` tokens of `JAVA_TOOL_OPTIONS`, then of `JDK_JAVA_OPTIONS` (later wins), tokenised with the JVM's quoting, other tokens ignored (config.source.023-.025) | as written | `"<name>" from property source "systemProperties"` |
 | 4 | OS environment (config.env) | as set | `System Environment Property "<NAME>"` |
 | 5 | `random.*` (only for placeholders) | `random.int`, … | — |
 | 6.. | configuration documents, in config-data order (3.2) | flattened key | `URL [file:<path>] - L:C` / `class path resource [<name>] - L:C` |
@@ -102,10 +102,22 @@ profiles over earlier (config.profile.004), and a profile *file* over an
 `on-profile` *document* of a base file (config.profile.005).
 
 `classpath:` resolves to the three packaged files embedded in the binary
-(`include_bytes!`), and to nothing else (`DEV-0031`). `configtree:` and
-`.xml` locations fail to start with a message naming the location and the
-supported kinds, and `spring.config.activate.on-cloud-platform` never matches
+(`include_bytes!`), then to the fixed directory `/app/extra-classes/`, the
+last entry of the image's `loader.path`; the first match wins, so a packaged
+name shadows the same name there, while `application.properties`,
+`application.yml`, `config/application.*` and `application-<profile>.*` for
+other profiles are found there (config.source.017, .030). This is not a
+setting: it is where the image's class path is. `configtree:` and `.xml`
+locations fail to start with a message naming the location and the supported
+kinds, and `spring.config.activate.on-cloud-platform` never matches
 (`DEV-0031`).
+
+A named file location or import also loads `<file>-<profile>.<ext>` for each
+active profile (config.source.026); a location may carry an extension hint
+`[.yaml]` (config.source.027); a directory location or import loads
+`<name>.*` and its profile variants (config.source.028); one `*/` wildcard
+expands to the immediate subdirectories in name order, two fail
+(config.source.029).
 
 ### 3.3 Document readers
 
@@ -149,6 +161,24 @@ canonical name is relaxed (config.placeholder.003). The binder resolves
 leniently — an unresolvable placeholder stays as text and may then fail
 conversion (config.placeholder.004, .005). Named reads resolve strictly
 (config.placeholder.011). `random.*` follows `RandomValuePropertySource`.
+
+### 3.6 The JVM's system properties
+
+HAPI's system-properties source holds more than `-D` tokens: every standard
+JVM property, `PID` (set by Spring's `LoggingApplicationListener` before
+binding) and `loader.path` (set by the image's ENTRYPOINT). They resolve in
+placeholders and their names count for the tester gate's prefix scan
+(config.placeholder.012, .013, config.gate.022). Frevo provides the set the
+oracle records from `System.getProperties()` inside the pinned image, by two
+rules: `user.dir` (the working directory), `user.home`, `user.name` (the
+process user) and `PID` (the process id) take the running process's values;
+every other name (`java.version`, `java.vendor`, `java.home`,
+`java.class.path` = `/app/main.war`, `java.io.tmpdir` = `/tmp`, `os.name` =
+`Linux`, `os.arch`, `file.separator` = `/`, `path.separator` = `:`,
+`line.separator`, `loader.path`, …) takes the value recorded from the image,
+as a table generated from the oracle's record. The JVM-option notices
+(`NOTE: Picked up JDK_JAVA_OPTIONS: …`, `Picked up JAVA_TOOL_OPTIONS: …`) go
+to standard error first, as the JVM writes them (config.source.023).
 
 ## 4. YAML: the parser and the resolver (ADR 0007)
 
@@ -208,6 +238,9 @@ The quirks the tables must carry, each with its scenario:
 | setter-only properties | `CqlTerminologyProperties` | config.profile.001 |
 | fluent setters returning `this` | `PackageInstallationSpec`, `TerminologyServerClientSettings` | config.key.009, config.key.003 |
 | object defaults `null` vs instance | `cors`, `partitioning`, `elasticsearch`, `subscription.email`, `tester`, … | config.object.005 |
+| derived getter returning a new object, no setter: binding anything beneath fails with `No setter found` | `CqlData.getRetrieveSettings` (`cr/CqlData.java:39`), `CqlProperties.getRetrieveSettings` (`cr/CqlProperties.java:70`), `CqlTerminologyProperties.getTerminologySettings` (`cr/CqlTerminologyProperties.java:35`) | config.unknown.008 |
+| `byte[]` property bound from a comma list of byte values | `PackageInstallationSpec.setPackageContents` (`PackageInstallationSpec.java:210`) | config.key.012 |
+| a tenth descriptor, bound only for a gate | Spring Boot 3.5.14 `ElasticsearchProperties` (and its `Restclient.Sniffer`, `Restclient.Ssl`), `Duration` typed | config.gate.020, .024 |
 
 ### 5.2 Binder rules
 
@@ -239,7 +272,11 @@ trimmed; no Integer→Boolean conversion. Integers: text with all whitespace
 removed, optional sign, `0x`/`#` hex; YAML numbers narrowed with overflow
 checks and truncation. Enums: exact name, then letters-and-digits
 case-insensitive match; YAML booleans map to constants `ON`/`OFF`; YAML
-integers by ordinal. `String` from any YAML scalar via 4's rendering. All
+integers by ordinal. `Duration` (only in `ElasticsearchProperties`):
+ISO-8601 in any case, or a signed integer with an optional unit
+`ns|us|ms|s|m|h|d` in any case, milliseconds by default (config.gate.024).
+`byte[]`: a comma list of decimal byte values. `String` from any YAML scalar
+via 4's rendering. All
 failure texts as the spec quotes them, verbatim, Java type names included:
 a table from (target type, failure kind) to Spring's text.
 
@@ -258,8 +295,38 @@ starter condition (config.gate.001), with the starter's exact predicate:
 `havingValue` with `equalsIgnoreCase` for `@ConditionalOnProperty`, "present
 and not `false`" when there is no `havingValue`, `forVersionString` for the
 version conditions, non-null/non-empty bound objects for the `On*Present`
-conditions, and a raw string-prefix scan of enumerable source names for
-`FhirTesterConfigCondition`. Later changes read gates, never re-derive them.
+conditions, a raw string-prefix scan of enumerable source names for
+`FhirTesterConfigCondition`, a bind of `ElasticsearchProperties` for
+`ElasticConfigCondition`, and HAPI's own case-sensitive `"true".equals` for
+`scheduling_disabled` (`BaseSchedulerServiceImpl.java:319`,
+`SubscriptionMatcherInterceptorConfig.java:47`). There are thirteen reads and
+twenty-five gates. Later changes read gates, never re-derive them.
+
+## 6a. Failure output
+
+Measured with the starter's `logback.xml` (which includes Spring Boot's
+`console-appender.xml`, a `ConsoleAppender` on standard output). Every
+startup failure goes to **standard output** as log lines; nothing goes to
+standard error except the JVM-option notices. Two forms:
+
+- **Failure analysis** (config.error.002): one `ERROR` line from
+  `o.s.b.d.LoggingFailureAnalysisReporter` with an empty message, then the
+  `APPLICATION FAILED TO START` block. Used for property binding failures and
+  for missing config data resources and locations.
+- **Run failed** (config.error.007): one `ERROR` line from
+  `o.s.boot.SpringApplication` with `Application run failed`, a blank line,
+  and the exception chain (`<class>: <message>`, `Caused by: …`). Used for
+  everything else, including HAPI's own `NullPointerException` when no
+  version is configured (config.gate.005).
+
+Before either, a failure during context refresh is preceded by HAPI's `WARN`
+line from the application context and, for binding and gate-placeholder
+failures, an `INFO` line from `ConditionEvaluationReportLogger`
+(config.error.008). Log lines use the console pattern; the process id and
+application name are absent when the failure precedes logging
+initialisation. Java stack frames are not reproduced (`DEV-0033`, proposed).
+A table maps each failure kind to its exception class names and messages,
+generated from the oracle's record.
 
 ## 7. The `config-roundtrip` oracle
 
@@ -269,9 +336,12 @@ New, in `harness/config-roundtrip/` (oracle-builder), shaped like
 - **HAPI side:** a Maven module containing the probe class, a dumper that maps
   each getter to the canonical path of config.dump.002, the starter's
   condition classes evaluated against the started `Environment`, and a
-  runner. It is built and run in a container `FROM` the pinned HAPI image so
-  that its class path is `/app/main.war!/WEB-INF/lib/*` plus the war's own
-  classes — the exact jars HAPI 8.12.0 runs — and on Linux.
+  runner, packaged into the image's `/app/extra-classes/` and started by the
+  image's own launcher (`PropertiesLauncher` with the ENTRYPOINT's
+  `loader.path`), so the class path and its order, `/app/extra-classes/`, the
+  packaged `logback.xml` and the exact jars HAPI 8.12.0 runs are all HAPI's,
+  on Linux. It also records `System.getProperties()` for section 3.6, and
+  asserts that no `WEB-INF/lib` jar carries an application file.
 - **Cases:** one directory per case: `files/` (copied into an empty working
   directory), `env` (one `NAME=value` per line, nothing inherited), `args`,
   and `covers:` tags. The three whole-surface cases of config.key.005-.007
@@ -283,7 +353,8 @@ New, in `harness/config-roundtrip/` (oracle-builder), shaped like
   `oracles/fhirpath/hapi-8.12.0-results.json`.
 - **Comparison:** member for member; sets sorted; nothing else normalised
   (config.oracle.004). A failing HAPI case passes only if Frevo also fails and
-  names the same property (config.oracle.003).
+  its standard output equals HAPI's line for line after masking timestamps and
+  process ids and removing Java stack frames (config.oracle.003).
 
 ## 8. The effective-configuration document
 
@@ -306,9 +377,11 @@ New, in `harness/config-roundtrip/` (oracle-builder), shaped like
 }
 ```
 
-Derived getters that are not bean properties (`getRetrieveSettings`,
-`getPackageContents`, `CqlTerminologyProperties.getTerminologySettings` as a
-wrapper) are not reported; the last is flattened into its four modes. The
+Derived getters (`getRetrieveSettings`, and
+`CqlTerminologyProperties.getTerminologySettings` as a wrapper) are not
+reported, the last flattened into its four modes; binding beneath them fails
+(config.unknown.008). `package-contents` is a real property and is reported as
+an array of integers or `null` (config.key.012). The
 password redaction of config.dump.005 is applied on both sides of the oracle.
 
 `frevo-config effective` is a binary target of `frevo-config` (owner

@@ -16,6 +16,7 @@ import java.lang.reflect.Modifier;
 import java.util.*;
 
 @Configuration
+@org.springframework.context.annotation.Import(Gates.class)
 @EnableConfigurationProperties({
 	AppProperties.class,
 	CdsHooksProperties.class,
@@ -50,9 +51,11 @@ public class Probe {
 					"hapi.fhir.mdm_enabled", "hapi.fhir.ips_enabled", "hapi.fhir.ig_runtime_upload_enabled",
 					"hapi.fhir.binary_storage_mode", "hapi.fhir.custom_content_path", "hapi.fhir.app_content_path",
 					"hapi.fhir.enable_repository_validating_interceptor", "hapi.fhir.search-coord-core-pool-size",
-					"probe.x"}) {
-				out.add("ENV[" + k + "] = " + env.getProperty(k));
+					"hapi.fhir.custom-bean-packages", "spring.ai.mcp.server.enabled", "scheduling_disabled", "probe.x"}) {
+				String v; try { v = env.getProperty(k); } catch (Exception ex) { v = "THREW " + ex; }
+				out.add("ENV[" + k + "] = " + v);
 			}
+			java.util.TreeSet<String> g = new java.util.TreeSet<>(); for (Gates.Marker m : ctx.getBeansOfType(Gates.Marker.class).values()) g.add(m.name); out.add("GATES = " + g);
 			out.add("PROFILES = " + Arrays.toString(env.getActiveProfiles()));
 			for (String l : out) {
 				if (filter == null || l.matches(".*(" + filter + ").*")) System.out.println(l);
