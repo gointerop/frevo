@@ -66,7 +66,7 @@ and none is renumbered.
    - **The gap.** The HAPI side that defines "HAPI's" output is the probe. The
      probe is a `WebApplicationType.NONE` application with
      `setLogStartupInfo(false)` (`probe/Probe.java`), not the starter's
-     `Application` (`Application.java:45`, `SpringApplication.run` with
+     `Application` (`Application.java:46`, `SpringApplication.run` with
      defaults, servlet web application).
    - **The evidence.** I changed only `setLogStartupInfo(true)` and ran
      `hapi.fhir.cr.cql.runtime.enable_validation: true` with logback. Standard
