@@ -587,3 +587,21 @@ Stated so they are not mistaken for completeness:
 5. **Pointcut counts include client-side and test pointcuts.** Triage happens
    when `frevo-server` is specified.
 
+
+## Notes by change
+
+Hand-maintained; `harness/scripts/gen-inventory.py` regenerates the tables
+above with every status `not started`, so a regeneration must carry these
+statuses and notes forward.
+
+- **`add-fhirpath-and-codegen-r4`** (2026-11-21, task 61). The change builds
+  `frevo-path` (the FHIRPath engine, scenario areas `path.*`), `frevo-model`
+  (`model.*`) and `frevo-codegen` (`codegen.*`). None of them is a row of this
+  checklist: they are the engine, the model and the generator that later rows
+  use. Every `frevo-path` row above therefore stays `not started`, against the
+  later change `proposal.md` names for it:
+  - `hapi.fhir.fhirpath_interceptor_enabled`, with the `_fhirpath` query
+    parameter (`FhirPathFilterInterceptor`), is `add-server-skeleton`'s;
+  - `$diff` is `add-store-diff`'s;
+  - the three patch rows (JSON Patch, FHIRPath Patch, conditional) are
+    `add-store-patch`'s.

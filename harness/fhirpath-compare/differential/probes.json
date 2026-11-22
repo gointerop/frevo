@@ -1,0 +1,5180 @@
+[
+ {
+  "id": "path.boundary.012#01",
+  "scenario": "path.boundary.012",
+  "expr": "1.587 'cm'.lowBoundary(-1)"
+ },
+ {
+  "id": "path.boundary.012#02",
+  "scenario": "path.boundary.012",
+  "expr": "12.5 'cm'.lowBoundary(-1)"
+ },
+ {
+  "id": "path.boundary.012#03",
+  "scenario": "path.boundary.012",
+  "expr": "1.587 'cm'.lowBoundary(-2)",
+  "grade": "error",
+  "note": "StringIndexOutOfBoundsException text is the JDK's"
+ },
+ {
+  "id": "path.boundary.012#04",
+  "scenario": "path.boundary.012",
+  "expr": "1.587 'cm'.highBoundary(-1)"
+ },
+ {
+  "id": "path.boundary.012#05",
+  "scenario": "path.boundary.012",
+  "expr": "12.5 'cm'.highBoundary(-1)"
+ },
+ {
+  "id": "path.boundary.012#06",
+  "scenario": "path.boundary.012",
+  "expr": "1.587 'cm'.highBoundary(-2)",
+  "grade": "error",
+  "note": "StringIndexOutOfBoundsException text is the JDK's"
+ },
+ {
+  "id": "path.boundary.012#07",
+  "scenario": "path.boundary.012",
+  "expr": "1.587 'cm'.lowBoundary(20)"
+ },
+ {
+  "id": "path.boundary.012#08",
+  "scenario": "path.boundary.012",
+  "expr": "1.587.lowBoundary(20)"
+ },
+ {
+  "id": "path.boundary.013#01",
+  "scenario": "path.boundary.013",
+  "expr": "{}.precision()"
+ },
+ {
+  "id": "path.boundary.013#02",
+  "scenario": "path.boundary.013",
+  "expr": "(1.5 | 2.5).precision()"
+ },
+ {
+  "id": "path.boundary.013#03",
+  "scenario": "path.boundary.013",
+  "expr": "{}.lowBoundary()"
+ },
+ {
+  "id": "path.boundary.013#04",
+  "scenario": "path.boundary.013",
+  "expr": "{}.highBoundary()"
+ },
+ {
+  "id": "path.boundary.013#05",
+  "scenario": "path.boundary.013",
+  "expr": "(1.5 | 2.5).lowBoundary()"
+ },
+ {
+  "id": "path.boundary.013#06",
+  "scenario": "path.boundary.013",
+  "expr": "(1.5 | 2.5).highBoundary()"
+ },
+ {
+  "id": "path.boundary.014#01",
+  "scenario": "path.boundary.014",
+  "expr": "1.precision()"
+ },
+ {
+  "id": "path.boundary.014#02",
+  "scenario": "path.boundary.014",
+  "expr": "'abc'.precision()"
+ },
+ {
+  "id": "path.boundary.014#03",
+  "scenario": "path.boundary.014",
+  "expr": "'abc'.lowBoundary()"
+ },
+ {
+  "id": "path.boundary.014#04",
+  "scenario": "path.boundary.014",
+  "expr": "true.highBoundary()"
+ },
+ {
+  "id": "path.boundary.014#05",
+  "scenario": "path.boundary.014",
+  "expr": "1 'cm'.precision()"
+ },
+ {
+  "id": "path.boundary.014#06",
+  "scenario": "path.boundary.014",
+  "expr": "1 'cm'.precision()",
+  "check": "run"
+ },
+ {
+  "id": "path.boundary.014#07",
+  "scenario": "path.boundary.014",
+  "expr": "1.precision()",
+  "check": "run"
+ },
+ {
+  "id": "path.boundary.014#08",
+  "scenario": "path.boundary.014",
+  "expr": "'abc'.lowBoundary()",
+  "check": "run"
+ },
+ {
+  "id": "path.boundary.014#09",
+  "scenario": "path.boundary.014",
+  "expr": "1.lowBoundary()",
+  "check": "run"
+ },
+ {
+  "id": "path.boundary.014#10",
+  "scenario": "path.boundary.014",
+  "expr": "Patient.telecom.rank.first().lowBoundary()",
+  "input": "suite:patient-example.xml"
+ },
+ {
+  "id": "path.boundary.014#11",
+  "scenario": "path.boundary.014",
+  "expr": "Patient.gender.lowBoundary()",
+  "input": "suite:patient-example.xml"
+ },
+ {
+  "id": "path.boundary.014#12",
+  "scenario": "path.boundary.014",
+  "expr": "Patient.meta.lastUpdated.lowBoundary()",
+  "input": "suite:patient-glossy-example.xml"
+ },
+ {
+  "id": "path.boundary.014#13",
+  "scenario": "path.boundary.014",
+  "expr": "ImagingStudy.numberOfSeries.lowBoundary()",
+  "input": "local:imagingstudy-unsignedint.json",
+  "note": "an unsignedInt element"
+ },
+ {
+  "id": "path.boundary.014#14",
+  "scenario": "path.boundary.014",
+  "expr": "Patient.telecom.rank.first().highBoundary()",
+  "input": "suite:patient-example.xml"
+ },
+ {
+  "id": "path.boundary.014#15",
+  "scenario": "path.boundary.014",
+  "expr": "Patient.gender.highBoundary()",
+  "input": "suite:patient-example.xml"
+ },
+ {
+  "id": "path.boundary.014#16",
+  "scenario": "path.boundary.014",
+  "expr": "Patient.meta.lastUpdated.highBoundary()",
+  "input": "suite:patient-glossy-example.xml"
+ },
+ {
+  "id": "path.boundary.014#17",
+  "scenario": "path.boundary.014",
+  "expr": "ImagingStudy.numberOfSeries.highBoundary()",
+  "input": "local:imagingstudy-unsignedint.json",
+  "note": "an unsignedInt element"
+ },
+ {
+  "id": "path.boundary.014#18",
+  "scenario": "path.boundary.014",
+  "expr": "Patient.telecom.rank.first().precision()",
+  "input": "suite:patient-example.xml"
+ },
+ {
+  "id": "path.boundary.014#19",
+  "scenario": "path.boundary.014",
+  "expr": "Patient.gender.precision()",
+  "input": "suite:patient-example.xml"
+ },
+ {
+  "id": "path.boundary.014#20",
+  "scenario": "path.boundary.014",
+  "expr": "Patient.meta.lastUpdated.precision()",
+  "input": "suite:patient-glossy-example.xml"
+ },
+ {
+  "id": "path.boundary.014#21",
+  "scenario": "path.boundary.014",
+  "expr": "ImagingStudy.numberOfSeries.precision()",
+  "input": "local:imagingstudy-unsignedint.json",
+  "note": "an unsignedInt element"
+ },
+ {
+  "id": "path.boundary.015#01",
+  "scenario": "path.boundary.015",
+  "expr": "@2014-01-15.lowBoundary(7)"
+ },
+ {
+  "id": "path.boundary.015#02",
+  "scenario": "path.boundary.015",
+  "expr": "@2014.lowBoundary(10)"
+ },
+ {
+  "id": "path.boundary.015#03",
+  "scenario": "path.boundary.015",
+  "expr": "@2014.lowBoundary(5)"
+ },
+ {
+  "id": "path.boundary.015#04",
+  "scenario": "path.boundary.015",
+  "expr": "@2014.highBoundary(0)"
+ },
+ {
+  "id": "path.boundary.015#05",
+  "scenario": "path.boundary.015",
+  "expr": "@2014-01-01T08.lowBoundary(12)"
+ },
+ {
+  "id": "path.boundary.015#06",
+  "scenario": "path.boundary.015",
+  "expr": "@2014.lowBoundary(20)"
+ },
+ {
+  "id": "path.boundary.015#07",
+  "scenario": "path.boundary.015",
+  "expr": "@2014-01-01T08.lowBoundary(14)"
+ },
+ {
+  "id": "path.boundary.015#08",
+  "scenario": "path.boundary.015",
+  "expr": "@2014-01-01T08.highBoundary(14)"
+ },
+ {
+  "id": "path.boundary.015#09",
+  "scenario": "path.boundary.015",
+  "expr": "@2014-01-01T08:05+08:00.lowBoundary(14)"
+ },
+ {
+  "id": "path.boundary.015#10",
+  "scenario": "path.boundary.015",
+  "expr": "@2014-01-01T08:05-05:00.highBoundary(14)"
+ },
+ {
+  "id": "path.boundary.015#11",
+  "scenario": "path.boundary.015",
+  "expr": "@2014-01-01T08:05-10:00.highBoundary(14)"
+ },
+ {
+  "id": "path.boundary.015#12",
+  "scenario": "path.boundary.015",
+  "expr": "@2014-01-01T08:05Z.lowBoundary(14)"
+ },
+ {
+  "id": "path.boundary.016#01",
+  "scenario": "path.boundary.016",
+  "expr": "@T10:30.lowBoundary(2)"
+ },
+ {
+  "id": "path.boundary.016#02",
+  "scenario": "path.boundary.016",
+  "expr": "@T10:30.lowBoundary(4)"
+ },
+ {
+  "id": "path.boundary.016#03",
+  "scenario": "path.boundary.016",
+  "expr": "@T10:30.lowBoundary(6)"
+ },
+ {
+  "id": "path.boundary.016#04",
+  "scenario": "path.boundary.016",
+  "expr": "@T10:30.highBoundary(2)"
+ },
+ {
+  "id": "path.boundary.016#05",
+  "scenario": "path.boundary.016",
+  "expr": "@T10:30.highBoundary(6)"
+ },
+ {
+  "id": "path.boundary.016#06",
+  "scenario": "path.boundary.016",
+  "expr": "@T10:30.lowBoundary(3)"
+ },
+ {
+  "id": "path.boundary.016#07",
+  "scenario": "path.boundary.016",
+  "expr": "@T10:30.lowBoundary(8)"
+ },
+ {
+  "id": "path.boundary.016#08",
+  "scenario": "path.boundary.016",
+  "expr": "@T10:30.lowBoundary(17)"
+ },
+ {
+  "id": "path.boundary.017#01",
+  "scenario": "path.boundary.017",
+  "expr": "1.587.lowBoundary(1 | 2)"
+ },
+ {
+  "id": "path.boundary.017#02",
+  "scenario": "path.boundary.017",
+  "expr": "1.587.highBoundary(1 | 2)"
+ },
+ {
+  "id": "path.boundary.017#03",
+  "scenario": "path.boundary.017",
+  "expr": "1.587.lowBoundary({})"
+ },
+ {
+  "id": "path.boundary.017#04",
+  "scenario": "path.boundary.017",
+  "expr": "1.587.lowBoundary('2')"
+ },
+ {
+  "id": "path.boundary.017#05",
+  "scenario": "path.boundary.017",
+  "expr": "1.587.lowBoundary(1.5)"
+ },
+ {
+  "id": "path.boundary.018#01",
+  "scenario": "path.boundary.018",
+  "expr": "0.lowBoundary()"
+ },
+ {
+  "id": "path.boundary.018#02",
+  "scenario": "path.boundary.018",
+  "expr": "0.highBoundary()"
+ },
+ {
+  "id": "path.boundary.018#03",
+  "scenario": "path.boundary.018",
+  "expr": "0.lowBoundary(0)"
+ },
+ {
+  "id": "path.boundary.018#04",
+  "scenario": "path.boundary.018",
+  "expr": "0.highBoundary(0)"
+ },
+ {
+  "id": "path.boundary.018#05",
+  "scenario": "path.boundary.018",
+  "expr": "0.0.lowBoundary(1)"
+ },
+ {
+  "id": "path.boundary.018#06",
+  "scenario": "path.boundary.018",
+  "expr": "(-0.0).lowBoundary(1)"
+ },
+ {
+  "id": "path.boundary.018#07",
+  "scenario": "path.boundary.018",
+  "expr": "0.000.highBoundary(1)"
+ },
+ {
+  "id": "path.boundary.019#01",
+  "scenario": "path.boundary.019",
+  "expr": "Observation.value.lowBoundary()",
+  "input": "local:observation-quantity-novalue.json"
+ },
+ {
+  "id": "path.boundary.019#02",
+  "scenario": "path.boundary.019",
+  "expr": "Observation.value.highBoundary()",
+  "input": "local:observation-quantity-novalue.json"
+ },
+ {
+  "id": "path.boundary.019#03",
+  "scenario": "path.boundary.019",
+  "expr": "Observation.value.lowBoundary(2)",
+  "input": "local:observation-quantity-novalue.json"
+ },
+ {
+  "id": "path.boundary.019#04",
+  "scenario": "path.boundary.019",
+  "expr": "Observation.value.highBoundary(20)",
+  "input": "local:observation-quantity-novalue.json"
+ },
+ {
+  "id": "path.collection.010#01",
+  "scenario": "path.collection.010",
+  "expr": "{}.subsetOf(1 | 2)",
+  "check": "run"
+ },
+ {
+  "id": "path.collection.010#02",
+  "scenario": "path.collection.010",
+  "expr": "{}.subsetOf(1 | 2)"
+ },
+ {
+  "id": "path.collection.013#01",
+  "scenario": "path.collection.013",
+  "expr": "Patient.name.given.distinct()",
+  "input": "suite:patient-example.xml"
+ },
+ {
+  "id": "path.collection.013#02",
+  "scenario": "path.collection.013",
+  "expr": "@2012.combine(@2012-01).distinct()",
+  "note": "doEquals answers null for the pair"
+ },
+ {
+  "id": "path.collection.013#03",
+  "scenario": "path.collection.013",
+  "expr": "(1 | 2 | 3).distinct()"
+ },
+ {
+  "id": "path.filter.003#01",
+  "scenario": "path.filter.003",
+  "expr": "Patient.name.where('x')",
+  "input": "suite:patient-example.xml",
+  "check": "run"
+ },
+ {
+  "id": "path.filter.003#02",
+  "scenario": "path.filter.003",
+  "expr": "Patient.name.where('x')",
+  "input": "suite:patient-example.xml"
+ },
+ {
+  "id": "path.filter.009#01",
+  "scenario": "path.filter.009",
+  "expr": "Patient.ofType(FHIR.Patient).type().name",
+  "input": "suite:patient-example.xml"
+ },
+ {
+  "id": "path.filter.009#02",
+  "scenario": "path.filter.009",
+  "expr": "Patient.ofType(System.Patient)",
+  "input": "suite:patient-example.xml"
+ },
+ {
+  "id": "path.compare.007#01",
+  "scenario": "path.compare.007",
+  "expr": "(1 | 2) < 3"
+ },
+ {
+  "id": "path.compare.007#02",
+  "scenario": "path.compare.007",
+  "expr": "(1 | 2) <= 3"
+ },
+ {
+  "id": "path.compare.007#03",
+  "scenario": "path.compare.007",
+  "expr": "(1 | 2) > 3"
+ },
+ {
+  "id": "path.compare.007#04",
+  "scenario": "path.compare.007",
+  "expr": "(1 | 2) >= 3"
+ },
+ {
+  "id": "path.compare.011#01",
+  "scenario": "path.compare.011",
+  "expr": "MedicationRequest.dosageInstruction.timing.repeat.count < MedicationRequest.dosageInstruction.timing.repeat.countMax",
+  "input": "local:medicationrequest-positiveint.json"
+ },
+ {
+  "id": "path.compare.011#02",
+  "scenario": "path.compare.011",
+  "expr": "ImagingStudy.numberOfSeries < ImagingStudy.numberOfInstances",
+  "input": "local:imagingstudy-unsignedint.json"
+ },
+ {
+  "id": "path.compare.011#03",
+  "scenario": "path.compare.011",
+  "expr": "Media.height < Media.width",
+  "input": "local:media-positiveint.json"
+ },
+ {
+  "id": "path.compare.011#04",
+  "scenario": "path.compare.011",
+  "expr": "MedicationRequest.dosageInstruction.timing.repeat.count <= MedicationRequest.dosageInstruction.timing.repeat.countMax",
+  "input": "local:medicationrequest-positiveint.json"
+ },
+ {
+  "id": "path.compare.011#05",
+  "scenario": "path.compare.011",
+  "expr": "ImagingStudy.numberOfSeries <= ImagingStudy.numberOfInstances",
+  "input": "local:imagingstudy-unsignedint.json"
+ },
+ {
+  "id": "path.compare.011#06",
+  "scenario": "path.compare.011",
+  "expr": "Media.height <= Media.width",
+  "input": "local:media-positiveint.json"
+ },
+ {
+  "id": "path.compare.011#07",
+  "scenario": "path.compare.011",
+  "expr": "MedicationRequest.dosageInstruction.timing.repeat.count > MedicationRequest.dosageInstruction.timing.repeat.countMax",
+  "input": "local:medicationrequest-positiveint.json"
+ },
+ {
+  "id": "path.compare.011#08",
+  "scenario": "path.compare.011",
+  "expr": "ImagingStudy.numberOfSeries > ImagingStudy.numberOfInstances",
+  "input": "local:imagingstudy-unsignedint.json"
+ },
+ {
+  "id": "path.compare.011#09",
+  "scenario": "path.compare.011",
+  "expr": "Media.height > Media.width",
+  "input": "local:media-positiveint.json"
+ },
+ {
+  "id": "path.compare.011#10",
+  "scenario": "path.compare.011",
+  "expr": "MedicationRequest.dosageInstruction.timing.repeat.count >= MedicationRequest.dosageInstruction.timing.repeat.countMax",
+  "input": "local:medicationrequest-positiveint.json"
+ },
+ {
+  "id": "path.compare.011#11",
+  "scenario": "path.compare.011",
+  "expr": "ImagingStudy.numberOfSeries >= ImagingStudy.numberOfInstances",
+  "input": "local:imagingstudy-unsignedint.json"
+ },
+ {
+  "id": "path.compare.011#12",
+  "scenario": "path.compare.011",
+  "expr": "Media.height >= Media.width",
+  "input": "local:media-positiveint.json"
+ },
+ {
+  "id": "path.compare.014#01",
+  "scenario": "path.compare.014",
+  "expr": "1 'kg' <= 1 year"
+ },
+ {
+  "id": "path.compare.015#01",
+  "scenario": "path.compare.015",
+  "expr": "(@2012-04-15T10:00:00+02:00).select($this < @2013-01-01T00:00:00Z and $this.toString() = '2012-04-15T08:00:00Z')"
+ },
+ {
+  "id": "path.compare.015#02",
+  "scenario": "path.compare.015",
+  "expr": "(@2012-04-15T10:00:00+02:00).select(($this < @2013-01-01T00:00:00Z) and $this.toString() = '2012-04-15T10:00:00+02:00')"
+ },
+ {
+  "id": "path.compare.015#03",
+  "scenario": "path.compare.015",
+  "expr": "(@2012-04-15T10:00:00+02:00).where($this < @2013-01-01T00:00:00Z)"
+ },
+ {
+  "id": "path.compare.015#04",
+  "scenario": "path.compare.015",
+  "expr": "(@2012-04-15T10:00:00+02:00).where($this < @2013-01-01T00:00:00Z).select($this)"
+ },
+ {
+  "id": "path.compare.015#05",
+  "scenario": "path.compare.015",
+  "expr": "(@2012-04-15T10:00:00+02:00).select($this)"
+ },
+ {
+  "id": "path.compare.015#06",
+  "scenario": "path.compare.015",
+  "expr": "now().where($this > @2000-01-01T00:00:00Z).toString().endsWith('Z')"
+ },
+ {
+  "id": "path.compare.015#07",
+  "scenario": "path.compare.015",
+  "expr": "(@2012-04-15T10:00:00+02:00 + 1 day).where($this < @2013-01-01T00:00:00Z)"
+ },
+ {
+  "id": "path.compare.015#08",
+  "scenario": "path.compare.015",
+  "expr": "@2012-04-15T10:00:00+02:00.lowBoundary().where($this < @2013-01-01T00:00:00Z)"
+ },
+ {
+  "id": "path.compare.015#09",
+  "scenario": "path.compare.015",
+  "expr": "@2014-01-01.lowBoundary(17).where($this < @2015-01-01T00:00:00Z)"
+ },
+ {
+  "id": "path.compare.015#10",
+  "scenario": "path.compare.015",
+  "expr": "@2014-01-01T08.lowBoundary(8).where($this < @2015-01-01T00:00:00Z)"
+ },
+ {
+  "id": "path.compare.015#11",
+  "scenario": "path.compare.015",
+  "expr": "@2014-01-01T08.lowBoundary(14).where($this < @2015-01-01T00:00:00Z)"
+ },
+ {
+  "id": "path.compare.015#12",
+  "scenario": "path.compare.015",
+  "expr": "@2014-01-01T08:05+08:00.lowBoundary(14).where($this < @2015-01-01T00:00:00Z)"
+ },
+ {
+  "id": "path.compare.015#13",
+  "scenario": "path.compare.015",
+  "expr": "@2014-01-01.lowBoundary(14).where($this < @2015-01-01T00:00:00Z)"
+ },
+ {
+  "id": "path.compare.015#14",
+  "scenario": "path.compare.015",
+  "expr": "@2014-01-01T08:05-05:00.highBoundary(14).where($this < @2015-01-01T00:00:00Z)"
+ },
+ {
+  "id": "path.compare.015#15",
+  "scenario": "path.compare.015",
+  "expr": "@2014-01-01T08.highBoundary(14).where($this < @2015-01-01T00:00:00Z)"
+ },
+ {
+  "id": "path.compare.015#16",
+  "scenario": "path.compare.015",
+  "expr": "(@2012-04-15 + 1 day).where($this < @2013-01-01)"
+ },
+ {
+  "id": "path.compare.015#17",
+  "scenario": "path.compare.015",
+  "expr": "today().where($this > @2000-01-01).toString().length()"
+ },
+ {
+  "id": "path.compare.015#18",
+  "scenario": "path.compare.015",
+  "expr": "(@2012-04-15T10:00:00).select($this < @2013-01-01T00:00:00Z and $this.toString() = '2012-04-15T10:00:00Z')"
+ },
+ {
+  "id": "path.compare.015#19",
+  "scenario": "path.compare.015",
+  "expr": "(@2012-04-15).where($this < @2013-01-01)"
+ },
+ {
+  "id": "path.compare.015#20",
+  "scenario": "path.compare.015",
+  "expr": "(@2012-04-15T10:00:00+02:00 < @2013-01-01T00:00:00Z) and @2012-04-15T10:00:00+02:00.toString() = '2012-04-15T10:00:00+02:00'"
+ },
+ {
+  "id": "path.compare.015#21",
+  "scenario": "path.compare.015",
+  "expr": "(@2012-04-15T10:00:00+02:00).select($this.toString() = '2012-04-15T10:00:00+02:00' and $this < @2013-01-01T00:00:00Z)",
+  "repeat": 2
+ },
+ {
+  "id": "path.convert.004#01",
+  "scenario": "path.convert.004",
+  "expr": "'2015'.convertsToDate()"
+ },
+ {
+  "id": "path.convert.004#02",
+  "scenario": "path.convert.004",
+  "expr": "'2015-02'.convertsToDate()"
+ },
+ {
+  "id": "path.convert.004#03",
+  "scenario": "path.convert.004",
+  "expr": "'2015-02-04'.convertsToDate()"
+ },
+ {
+  "id": "path.convert.004#04",
+  "scenario": "path.convert.004",
+  "expr": "'2015-02-04T14'.convertsToDate()"
+ },
+ {
+  "id": "path.convert.004#05",
+  "scenario": "path.convert.004",
+  "expr": "'2015-02-04T14:34'.convertsToDate()"
+ },
+ {
+  "id": "path.convert.004#06",
+  "scenario": "path.convert.004",
+  "expr": "'2015-02-04T14:34:28+10:00'.convertsToDate()"
+ },
+ {
+  "id": "path.convert.004#07",
+  "scenario": "path.convert.004",
+  "expr": "'abc'.convertsToDate()"
+ },
+ {
+  "id": "path.convert.004#08",
+  "scenario": "path.convert.004",
+  "expr": "'2015-13'.convertsToDate()"
+ },
+ {
+  "id": "path.convert.004#09",
+  "scenario": "path.convert.004",
+  "expr": "'2015-02-04T25'.convertsToDate()"
+ },
+ {
+  "id": "path.convert.004#10",
+  "scenario": "path.convert.004",
+  "expr": "@2015.convertsToDate()"
+ },
+ {
+  "id": "path.convert.004#11",
+  "scenario": "path.convert.004",
+  "expr": "@2015-02-04T14:34.convertsToDate()"
+ },
+ {
+  "id": "path.convert.004#12",
+  "scenario": "path.convert.004",
+  "expr": "('2015' | '2016').convertsToDate()"
+ },
+ {
+  "id": "path.convert.004#13",
+  "scenario": "path.convert.004",
+  "expr": "{}.convertsToDate()"
+ },
+ {
+  "id": "path.convert.011#01",
+  "scenario": "path.convert.011",
+  "expr": "@2014.toDateTime()"
+ },
+ {
+  "id": "path.convert.011#02",
+  "scenario": "path.convert.011",
+  "expr": "'2015-02-04'.toDateTime()"
+ },
+ {
+  "id": "path.convert.011#03",
+  "scenario": "path.convert.011",
+  "expr": "{}.toDateTime()"
+ },
+ {
+  "id": "path.convert.011#04",
+  "scenario": "path.convert.011",
+  "expr": "'2015-02-04'.toDateTime()",
+  "check": "run"
+ },
+ {
+  "id": "path.convert.011#05",
+  "scenario": "path.convert.011",
+  "expr": "Patient.toDateTime()",
+  "input": "suite:patient-example.xml",
+  "check": "run"
+ },
+ {
+  "id": "path.convert.011#06",
+  "scenario": "path.convert.011",
+  "expr": "@2014.convertsToDateTime()"
+ },
+ {
+  "id": "path.convert.011#07",
+  "scenario": "path.convert.011",
+  "expr": "'2015-02-04'.convertsToDateTime()"
+ },
+ {
+  "id": "path.convert.011#08",
+  "scenario": "path.convert.011",
+  "expr": "'2015-02-04T14:34'.convertsToDateTime()"
+ },
+ {
+  "id": "path.convert.011#09",
+  "scenario": "path.convert.011",
+  "expr": "'abc'.convertsToDateTime()"
+ },
+ {
+  "id": "path.convert.011#10",
+  "scenario": "path.convert.011",
+  "expr": "(1 | 2).convertsToDateTime()"
+ },
+ {
+  "id": "path.convert.012#01",
+  "scenario": "path.convert.012",
+  "expr": "'2015'.toDate()"
+ },
+ {
+  "id": "path.convert.012#02",
+  "scenario": "path.convert.012",
+  "expr": "'2015'.convertsToDate()"
+ },
+ {
+  "id": "path.convert.013#01",
+  "scenario": "path.convert.013",
+  "expr": "'14:34:28'.toTime()"
+ },
+ {
+  "id": "path.convert.013#02",
+  "scenario": "path.convert.013",
+  "expr": "'abc'.toTime()"
+ },
+ {
+  "id": "path.convert.013#03",
+  "scenario": "path.convert.013",
+  "expr": "{}.toTime()"
+ },
+ {
+  "id": "path.convert.013#04",
+  "scenario": "path.convert.013",
+  "expr": "'14:34:28'.toTime()",
+  "check": "run"
+ },
+ {
+  "id": "path.convert.013#05",
+  "scenario": "path.convert.013",
+  "expr": "Patient.toTime()",
+  "input": "suite:patient-example.xml",
+  "check": "run"
+ },
+ {
+  "id": "path.convert.013#06",
+  "scenario": "path.convert.013",
+  "expr": "'abc'.convertsToTime()"
+ },
+ {
+  "id": "path.convert.013#07",
+  "scenario": "path.convert.013",
+  "expr": "'14'.convertsToTime()"
+ },
+ {
+  "id": "path.convert.013#08",
+  "scenario": "path.convert.013",
+  "expr": "'14:34'.convertsToTime()"
+ },
+ {
+  "id": "path.convert.013#09",
+  "scenario": "path.convert.013",
+  "expr": "'14:34:28'.convertsToTime()"
+ },
+ {
+  "id": "path.convert.013#10",
+  "scenario": "path.convert.013",
+  "expr": "'14:34:28.123'.convertsToTime()"
+ },
+ {
+  "id": "path.datetime.003#01",
+  "scenario": "path.datetime.003",
+  "expr": "now() = now()",
+  "grade": "shape",
+  "note": "two separately read instants; only the type is compared"
+ },
+ {
+  "id": "path.env.015#01",
+  "scenario": "path.env.015",
+  "expr": "%owned",
+  "host": {
+   "constants": [
+    [
+     "owned",
+     "*",
+     [
+      "string:owned-value"
+     ]
+    ]
+   ],
+   "constantTypes": [
+    [
+     "owned",
+     "*",
+     "string"
+    ]
+   ]
+  },
+  "note": "evaluation strips the %: the host is asked for owned, EXPLICIT"
+ },
+ {
+  "id": "path.env.015#02",
+  "scenario": "path.env.015",
+  "expr": "%owned",
+  "host": {
+   "constants": [
+    [
+     "owned",
+     "*",
+     [
+      "string:owned-value"
+     ]
+    ]
+   ],
+   "constantTypes": [
+    [
+     "owned",
+     "*",
+     "string"
+    ]
+   ]
+  },
+  "check": "only",
+  "note": "the check passes %owned with its %: a host keyed owned fails it"
+ },
+ {
+  "id": "path.env.015#03",
+  "scenario": "path.env.015",
+  "expr": "%owned",
+  "host": {
+   "constants": [
+    [
+     "owned",
+     "*",
+     [
+      "string:owned-value"
+     ]
+    ]
+   ],
+   "constantTypes": [
+    [
+     "%owned",
+     "*",
+     "string"
+    ]
+   ]
+  },
+  "check": "run",
+  "note": "a host keyed %owned for types passes the check"
+ },
+ {
+  "id": "path.env.015#04",
+  "scenario": "path.env.015",
+  "expr": "name",
+  "host": {
+   "constantTypes": [
+    [
+     "name",
+     "NOVALUE",
+     "string"
+    ]
+   ]
+  },
+  "check": "only",
+  "note": "check with no focus type: the leading name is offered to the host as NOVALUE"
+ },
+ {
+  "id": "path.env.015#05",
+  "scenario": "path.env.015",
+  "expr": "name.given",
+  "input": "suite:patient-example.xml",
+  "host": {
+   "constantTypes": [
+    [
+     "name",
+     "*",
+     "string"
+    ]
+   ]
+  },
+  "check": "only",
+  "note": "with a focus type the name is not offered to the host"
+ },
+ {
+  "id": "path.env.016#01",
+  "scenario": "path.env.016",
+  "expr": "name",
+  "input": "suite:patient-example.xml",
+  "app": true,
+  "host": {
+   "constants": [
+    [
+     "name",
+     "IMPLICIT_BEFORE",
+     [
+      "string:from-host"
+     ]
+    ]
+   ]
+  }
+ },
+ {
+  "id": "path.env.016#02",
+  "scenario": "path.env.016",
+  "expr": "Patient.name",
+  "input": "suite:patient-example.xml",
+  "app": true,
+  "host": {
+   "constants": [
+    [
+     "Patient",
+     "IMPLICIT_BEFORE",
+     [
+      "string:host-patient"
+     ]
+    ]
+   ]
+  }
+ },
+ {
+  "id": "path.env.016#03",
+  "scenario": "path.env.016",
+  "expr": "Patient",
+  "input": "suite:patient-example.xml",
+  "app": true,
+  "host": {
+   "constants": [
+    [
+     "Patient",
+     "IMPLICIT_BEFORE",
+     [
+      "string:host-patient"
+     ]
+    ]
+   ]
+  }
+ },
+ {
+  "id": "path.env.016#04",
+  "scenario": "path.env.016",
+  "expr": "Patient.name.where(use = 'official').given.trace('t')",
+  "input": "suite:patient-example.xml",
+  "app": true,
+  "host": {
+   "log": false
+  },
+  "note": "records every name the host is offered"
+ },
+ {
+  "id": "path.env.016#05",
+  "scenario": "path.env.016",
+  "expr": "Patient.name.given",
+  "input": "suite:patient-example.xml",
+  "app": true,
+  "host": {},
+  "note": "an empty answer leaves navigation alone"
+ },
+ {
+  "id": "path.env.016#06",
+  "scenario": "path.env.016",
+  "expr": "name",
+  "input": "suite:patient-example.xml",
+  "app": false,
+  "host": {
+   "constants": [
+    [
+     "name",
+     "IMPLICIT_BEFORE",
+     [
+      "string:from-host"
+     ]
+    ]
+   ]
+  },
+  "note": "no application context: the host is not asked"
+ },
+ {
+  "id": "path.env.017#01",
+  "scenario": "path.env.017",
+  "expr": "zzz",
+  "input": "suite:patient-example.xml",
+  "app": true,
+  "host": {
+   "constants": [
+    [
+     "zzz",
+     "IMPLICIT_AFTER",
+     [
+      "string:after"
+     ]
+    ]
+   ]
+  }
+ },
+ {
+  "id": "path.env.017#02",
+  "scenario": "path.env.017",
+  "expr": "zzz",
+  "input": "suite:patient-example.xml",
+  "app": false,
+  "host": {
+   "constants": [
+    [
+     "zzz",
+     "IMPLICIT_AFTER",
+     [
+      "string:after"
+     ]
+    ]
+   ]
+  }
+ },
+ {
+  "id": "path.env.017#03",
+  "scenario": "path.env.017",
+  "expr": "zzz",
+  "input": "suite:patient-example.xml",
+  "app": true,
+  "host": {
+   "constants": [
+    [
+     "zzz",
+     "IMPLICIT_AFTER",
+     [
+      "string:after"
+     ]
+    ]
+   ]
+  },
+  "check": "run"
+ },
+ {
+  "id": "path.errors.006#01",
+  "scenario": "path.errors.006",
+  "expr": "-'a'"
+ },
+ {
+  "id": "path.errors.006#02",
+  "scenario": "path.errors.006",
+  "expr": "- 'a'"
+ },
+ {
+  "id": "path.errors.007#01",
+  "scenario": "path.errors.007",
+  "expr": "(1 | 2).iif(true, 'a')"
+ },
+ {
+  "id": "path.errors.007#02",
+  "scenario": "path.errors.007",
+  "expr": "1.is('x')"
+ },
+ {
+  "id": "path.errors.007#03",
+  "scenario": "path.errors.007",
+  "expr": "1.is(FHIR.toString())"
+ },
+ {
+  "id": "path.literal.016#01",
+  "scenario": "path.literal.016",
+  "expr": "1 'a\\tb'"
+ },
+ {
+  "id": "path.literal.016#02",
+  "scenario": "path.literal.016",
+  "expr": "(1 'a\\tb').code"
+ },
+ {
+  "id": "path.literal.016#03",
+  "scenario": "path.literal.016",
+  "expr": "1 'a\\u0041b'"
+ },
+ {
+  "id": "path.literal.016#04",
+  "scenario": "path.literal.016",
+  "expr": "(1 'a\\u0041b').code"
+ },
+ {
+  "id": "path.literal.016#05",
+  "scenario": "path.literal.016",
+  "expr": "1 'a\\\\b'"
+ },
+ {
+  "id": "path.literal.017#01",
+  "scenario": "path.literal.017",
+  "expr": "0.12345678901234567890123456789012345678901234567890",
+  "note": "more than 38 significant digits (DEBT-0011)"
+ },
+ {
+  "id": "path.literal.017#02",
+  "scenario": "path.literal.017",
+  "expr": "0.12345678901234567890123456789012345678901234567890.toString()",
+  "note": "more than 38 significant digits (DEBT-0011)"
+ },
+ {
+  "id": "path.literal.017#03",
+  "scenario": "path.literal.017",
+  "expr": "0.12345678901234567890123456789012345678901234567890 = 0.12345678901234567890123456789012345678901234567890",
+  "note": "more than 38 significant digits (DEBT-0011)"
+ },
+ {
+  "id": "path.literal.017#04",
+  "scenario": "path.literal.017",
+  "expr": "1234567890123456789012345678901234567890",
+  "note": "more than 38 significant digits (DEBT-0011)"
+ },
+ {
+  "id": "path.literal.017#05",
+  "scenario": "path.literal.017",
+  "expr": "1234567890123456789012345678901234567890.toString()",
+  "note": "more than 38 significant digits (DEBT-0011)"
+ },
+ {
+  "id": "path.math.015#01",
+  "scenario": "path.math.015",
+  "expr": "1 / 2"
+ },
+ {
+  "id": "path.math.015#02",
+  "scenario": "path.math.015",
+  "expr": "1 / 8"
+ },
+ {
+  "id": "path.math.015#03",
+  "scenario": "path.math.015",
+  "expr": "3 / 8"
+ },
+ {
+  "id": "path.math.015#04",
+  "scenario": "path.math.015",
+  "expr": "1 / 64"
+ },
+ {
+  "id": "path.math.015#05",
+  "scenario": "path.math.015",
+  "expr": "1 / 1024"
+ },
+ {
+  "id": "path.math.015#06",
+  "scenario": "path.math.015",
+  "expr": "7 / 2"
+ },
+ {
+  "id": "path.math.015#07",
+  "scenario": "path.math.015",
+  "expr": "19 / 20"
+ },
+ {
+  "id": "path.math.015#08",
+  "scenario": "path.math.015",
+  "expr": "123456789 / 1000"
+ },
+ {
+  "id": "path.math.015#09",
+  "scenario": "path.math.015",
+  "expr": "4 / 2"
+ },
+ {
+  "id": "path.math.015#10",
+  "scenario": "path.math.015",
+  "expr": "1 / 3"
+ },
+ {
+  "id": "path.math.015#11",
+  "scenario": "path.math.015",
+  "expr": "2 / 3"
+ },
+ {
+  "id": "path.math.015#12",
+  "scenario": "path.math.015",
+  "expr": "5 / 6"
+ },
+ {
+  "id": "path.math.015#13",
+  "scenario": "path.math.015",
+  "expr": "1 / 7"
+ },
+ {
+  "id": "path.math.015#14",
+  "scenario": "path.math.015",
+  "expr": "1 / 9"
+ },
+ {
+  "id": "path.math.015#15",
+  "scenario": "path.math.015",
+  "expr": "5 / 9"
+ },
+ {
+  "id": "path.math.015#16",
+  "scenario": "path.math.015",
+  "expr": "1 / 6"
+ },
+ {
+  "id": "path.math.015#17",
+  "scenario": "path.math.015",
+  "expr": "10 / 3"
+ },
+ {
+  "id": "path.math.015#18",
+  "scenario": "path.math.015",
+  "expr": "20 / 3"
+ },
+ {
+  "id": "path.math.015#19",
+  "scenario": "path.math.015",
+  "expr": "22 / 7"
+ },
+ {
+  "id": "path.math.015#20",
+  "scenario": "path.math.015",
+  "expr": "100 / 3"
+ },
+ {
+  "id": "path.math.015#21",
+  "scenario": "path.math.015",
+  "expr": "200 / 3"
+ },
+ {
+  "id": "path.math.015#22",
+  "scenario": "path.math.015",
+  "expr": "1000 / 3"
+ },
+ {
+  "id": "path.math.015#23",
+  "scenario": "path.math.015",
+  "expr": "1 / 11"
+ },
+ {
+  "id": "path.math.015#24",
+  "scenario": "path.math.015",
+  "expr": "1 / 30"
+ },
+ {
+  "id": "path.math.015#25",
+  "scenario": "path.math.015",
+  "expr": "1 / 300"
+ },
+ {
+  "id": "path.math.015#26",
+  "scenario": "path.math.015",
+  "expr": "1 / 3.0"
+ },
+ {
+  "id": "path.math.015#27",
+  "scenario": "path.math.015",
+  "expr": "2 / 3.0"
+ },
+ {
+  "id": "path.math.015#28",
+  "scenario": "path.math.015",
+  "expr": "2 / 3.00"
+ },
+ {
+  "id": "path.math.015#29",
+  "scenario": "path.math.015",
+  "expr": "10 / 3.0"
+ },
+ {
+  "id": "path.math.015#30",
+  "scenario": "path.math.015",
+  "expr": "1 / 8.0"
+ },
+ {
+  "id": "path.math.015#31",
+  "scenario": "path.math.015",
+  "expr": "1 / 0.3"
+ },
+ {
+  "id": "path.math.015#32",
+  "scenario": "path.math.015",
+  "expr": "1 / 0.9"
+ },
+ {
+  "id": "path.math.015#33",
+  "scenario": "path.math.015",
+  "expr": "8 / 0.9"
+ },
+ {
+  "id": "path.math.015#34",
+  "scenario": "path.math.015",
+  "expr": "2 / 0.6"
+ },
+ {
+  "id": "path.math.015#35",
+  "scenario": "path.math.015",
+  "expr": "3 / 1.5"
+ },
+ {
+  "id": "path.math.015#36",
+  "scenario": "path.math.015",
+  "expr": "1 / 0.125"
+ },
+ {
+  "id": "path.math.015#37",
+  "scenario": "path.math.015",
+  "expr": "1.0 / 3"
+ },
+ {
+  "id": "path.math.015#38",
+  "scenario": "path.math.015",
+  "expr": "1.00 / 3"
+ },
+ {
+  "id": "path.math.015#39",
+  "scenario": "path.math.015",
+  "expr": "10.0 / 3"
+ },
+ {
+  "id": "path.math.015#40",
+  "scenario": "path.math.015",
+  "expr": "10.00 / 3"
+ },
+ {
+  "id": "path.math.015#41",
+  "scenario": "path.math.015",
+  "expr": "0.1 / 3"
+ },
+ {
+  "id": "path.math.015#42",
+  "scenario": "path.math.015",
+  "expr": "0.10 / 3"
+ },
+ {
+  "id": "path.math.015#43",
+  "scenario": "path.math.015",
+  "expr": "1.000 / 7"
+ },
+ {
+  "id": "path.math.015#44",
+  "scenario": "path.math.015",
+  "expr": "1.0 / 8"
+ },
+ {
+  "id": "path.math.015#45",
+  "scenario": "path.math.015",
+  "expr": "1.0 / 16"
+ },
+ {
+  "id": "path.math.015#46",
+  "scenario": "path.math.015",
+  "expr": "1.5 / 3"
+ },
+ {
+  "id": "path.math.015#47",
+  "scenario": "path.math.015",
+  "expr": "1.9 / 2"
+ },
+ {
+  "id": "path.math.015#48",
+  "scenario": "path.math.015",
+  "expr": "10.0 / 4"
+ },
+ {
+  "id": "path.math.015#49",
+  "scenario": "path.math.015",
+  "expr": "9.99 / 3"
+ },
+ {
+  "id": "path.math.015#50",
+  "scenario": "path.math.015",
+  "expr": "1.2 / 1.8"
+ },
+ {
+  "id": "path.math.015#51",
+  "scenario": "path.math.015",
+  "expr": "4.0 / 2.0"
+ },
+ {
+  "id": "path.math.015#52",
+  "scenario": "path.math.015",
+  "expr": "10.00 / 3.0"
+ },
+ {
+  "id": "path.math.015#53",
+  "scenario": "path.math.015",
+  "expr": "0.5 / 0.3"
+ },
+ {
+  "id": "path.math.015#54",
+  "scenario": "path.math.015",
+  "expr": "1.5 / 0.5"
+ },
+ {
+  "id": "path.math.015#55",
+  "scenario": "path.math.015",
+  "expr": "7.5 / 2.5"
+ },
+ {
+  "id": "path.math.015#56",
+  "scenario": "path.math.015",
+  "expr": "1.25 / 0.5"
+ },
+ {
+  "id": "path.math.015#57",
+  "scenario": "path.math.015",
+  "expr": "1.9 / 0.2"
+ },
+ {
+  "id": "path.math.015#58",
+  "scenario": "path.math.015",
+  "expr": "0.95 / 0.1"
+ },
+ {
+  "id": "path.math.015#59",
+  "scenario": "path.math.015",
+  "expr": "3.8 / 0.4"
+ },
+ {
+  "id": "path.math.015#60",
+  "scenario": "path.math.015",
+  "expr": "9.99 / 1.0"
+ },
+ {
+  "id": "path.math.015#61",
+  "scenario": "path.math.015",
+  "expr": "99.9 / 1.0"
+ },
+ {
+  "id": "path.math.015#62",
+  "scenario": "path.math.015",
+  "expr": "1.99 / 2.0"
+ },
+ {
+  "id": "path.math.015#63",
+  "scenario": "path.math.015",
+  "expr": "19 / 2.0"
+ },
+ {
+  "id": "path.math.015#64",
+  "scenario": "path.math.015",
+  "expr": "1.9 / 0.20"
+ },
+ {
+  "id": "path.math.015#65",
+  "scenario": "path.math.015",
+  "expr": "95 / 10.0"
+ },
+ {
+  "id": "path.math.015#66",
+  "scenario": "path.math.015",
+  "expr": "(0 - 1) / 3"
+ },
+ {
+  "id": "path.math.015#67",
+  "scenario": "path.math.015",
+  "expr": "(0 - 2) / 3"
+ },
+ {
+  "id": "path.math.015#68",
+  "scenario": "path.math.015",
+  "expr": "(1 / 3).toString()"
+ },
+ {
+  "id": "path.math.015#69",
+  "scenario": "path.math.015",
+  "expr": "1 / 3 = 0.3"
+ },
+ {
+  "id": "path.math.015#70",
+  "scenario": "path.math.015",
+  "expr": "1 / 3 = 0.333"
+ },
+ {
+  "id": "path.math.015#71",
+  "scenario": "path.math.015",
+  "expr": "Parameters.parameter.value / 3",
+  "input": "local:parameters-decimal-1e3.xml"
+ },
+ {
+  "id": "path.math.015#72",
+  "scenario": "path.math.015",
+  "expr": "Parameters.parameter.value / 3",
+  "input": "local:parameters-decimal-1.5e-1.xml"
+ },
+ {
+  "id": "path.math.015#73",
+  "scenario": "path.math.015",
+  "expr": "1 / 3",
+  "worker": "server",
+  "note": "no worker is consulted: the server-facing engine answers the same"
+ },
+ {
+  "id": "path.math.016#01",
+  "scenario": "path.math.016",
+  "expr": "2.2 div 1.8"
+ },
+ {
+  "id": "path.math.016#02",
+  "scenario": "path.math.016",
+  "expr": "7.5 div 2"
+ },
+ {
+  "id": "path.math.016#03",
+  "scenario": "path.math.016",
+  "expr": "(0 - 7.5) div 2"
+ },
+ {
+  "id": "path.math.016#04",
+  "scenario": "path.math.016",
+  "expr": "5.5 div 2"
+ },
+ {
+  "id": "path.math.016#05",
+  "scenario": "path.math.016",
+  "expr": "6.0 div 2"
+ },
+ {
+  "id": "path.math.016#06",
+  "scenario": "path.math.016",
+  "expr": "10 div 3.0"
+ },
+ {
+  "id": "path.math.016#07",
+  "scenario": "path.math.016",
+  "expr": "1 div 0.3"
+ },
+ {
+  "id": "path.math.016#08",
+  "scenario": "path.math.016",
+  "expr": "10 div 0.3"
+ },
+ {
+  "id": "path.math.016#09",
+  "scenario": "path.math.016",
+  "expr": "0.5 div 1"
+ },
+ {
+  "id": "path.math.016#10",
+  "scenario": "path.math.016",
+  "expr": "1 div 3.0"
+ },
+ {
+  "id": "path.math.016#11",
+  "scenario": "path.math.016",
+  "expr": "0.5 div 0.03"
+ },
+ {
+  "id": "path.math.016#12",
+  "scenario": "path.math.016",
+  "expr": "0.5 mod 0.03"
+ },
+ {
+  "id": "path.math.016#13",
+  "scenario": "path.math.016",
+  "expr": "0.15 mod 0.04"
+ },
+ {
+  "id": "path.math.016#14",
+  "scenario": "path.math.016",
+  "expr": "1.9 div 0.2"
+ },
+ {
+  "id": "path.math.016#15",
+  "scenario": "path.math.016",
+  "expr": "0.95 div 0.1"
+ },
+ {
+  "id": "path.math.016#16",
+  "scenario": "path.math.016",
+  "expr": "3000000000.0 div 1"
+ },
+ {
+  "id": "path.math.016#17",
+  "scenario": "path.math.016",
+  "expr": "2.2 mod 1.8"
+ },
+ {
+  "id": "path.math.016#18",
+  "scenario": "path.math.016",
+  "expr": "5.5 mod 2"
+ },
+ {
+  "id": "path.math.016#19",
+  "scenario": "path.math.016",
+  "expr": "(0 - 5.5) mod 2"
+ },
+ {
+  "id": "path.math.016#20",
+  "scenario": "path.math.016",
+  "expr": "5.5 mod (0 - 2)"
+ },
+ {
+  "id": "path.math.016#21",
+  "scenario": "path.math.016",
+  "expr": "7 mod 2.5"
+ },
+ {
+  "id": "path.math.016#22",
+  "scenario": "path.math.016",
+  "expr": "10 mod 3.0"
+ },
+ {
+  "id": "path.math.016#23",
+  "scenario": "path.math.016",
+  "expr": "1 mod 0.3"
+ },
+ {
+  "id": "path.math.016#24",
+  "scenario": "path.math.016",
+  "expr": "1.9 mod 0.2"
+ },
+ {
+  "id": "path.math.016#25",
+  "scenario": "path.math.016",
+  "expr": "0 mod 2.5"
+ },
+ {
+  "id": "path.math.016#26",
+  "scenario": "path.math.016",
+  "expr": "4.0 mod 2"
+ },
+ {
+  "id": "path.math.016#27",
+  "scenario": "path.math.016",
+  "expr": "6.0 mod 2"
+ },
+ {
+  "id": "path.math.016#28",
+  "scenario": "path.math.016",
+  "expr": "0.0 mod 2"
+ },
+ {
+  "id": "path.math.016#29",
+  "scenario": "path.math.016",
+  "expr": "(0 - 4.0) mod 2"
+ },
+ {
+  "id": "path.math.016#30",
+  "scenario": "path.math.016",
+  "expr": "4.0 mod (0 - 2)"
+ },
+ {
+  "id": "path.math.016#31",
+  "scenario": "path.math.016",
+  "expr": "4 mod 2.0"
+ },
+ {
+  "id": "path.math.016#32",
+  "scenario": "path.math.016",
+  "expr": "6 mod 3.0"
+ },
+ {
+  "id": "path.math.016#33",
+  "scenario": "path.math.016",
+  "expr": "(0 - 6) mod 3.0"
+ },
+ {
+  "id": "path.math.016#34",
+  "scenario": "path.math.016",
+  "expr": "4.0 mod 2.0"
+ },
+ {
+  "id": "path.math.016#35",
+  "scenario": "path.math.016",
+  "expr": "5 mod 2.5"
+ },
+ {
+  "id": "path.math.016#36",
+  "scenario": "path.math.016",
+  "expr": "7.5 mod 2.5"
+ },
+ {
+  "id": "path.math.016#37",
+  "scenario": "path.math.016",
+  "expr": "10.0 mod 2.5"
+ },
+ {
+  "id": "path.math.016#38",
+  "scenario": "path.math.016",
+  "expr": "3000000000.0 mod 1"
+ },
+ {
+  "id": "path.math.016#39",
+  "scenario": "path.math.016",
+  "expr": "4.00 mod 2"
+ },
+ {
+  "id": "path.math.016#40",
+  "scenario": "path.math.016",
+  "expr": "4 mod 2.00"
+ },
+ {
+  "id": "path.math.016#41",
+  "scenario": "path.math.016",
+  "expr": "1.25 mod 0.25"
+ },
+ {
+  "id": "path.math.016#42",
+  "scenario": "path.math.016",
+  "expr": "10 mod 2.5"
+ },
+ {
+  "id": "path.math.016#43",
+  "scenario": "path.math.016",
+  "expr": "12 mod 1.5"
+ },
+ {
+  "id": "path.math.016#44",
+  "scenario": "path.math.016",
+  "expr": "1.5 div 0"
+ },
+ {
+  "id": "path.math.016#45",
+  "scenario": "path.math.016",
+  "expr": "1.5 mod 0"
+ },
+ {
+  "id": "path.math.016#46",
+  "scenario": "path.math.016",
+  "expr": "0.05 mod 0.03"
+ },
+ {
+  "id": "path.math.016#47",
+  "scenario": "path.math.016",
+  "expr": "0.08 mod 0.03"
+ },
+ {
+  "id": "path.math.016#48",
+  "scenario": "path.math.016",
+  "expr": "0.05 mod 0.05"
+ },
+ {
+  "id": "path.math.016#49",
+  "scenario": "path.math.016",
+  "expr": "0.099 mod 0.04"
+ },
+ {
+  "id": "path.math.016#50",
+  "scenario": "path.math.016",
+  "expr": "(0 - 0.05) mod 0.03"
+ },
+ {
+  "id": "path.math.016#51",
+  "scenario": "path.math.016",
+  "expr": "0.05 mod (0 - 0.03)"
+ },
+ {
+  "id": "path.math.016#52",
+  "scenario": "path.math.016",
+  "expr": "0.1 mod 0.03"
+ },
+ {
+  "id": "path.math.016#53",
+  "scenario": "path.math.016",
+  "expr": "0.05 mod 0.3"
+ },
+ {
+  "id": "path.math.016#54",
+  "scenario": "path.math.016",
+  "expr": "Parameters.parameter.value mod 7",
+  "input": "local:parameters-decimal-1e3.xml"
+ },
+ {
+  "id": "path.math.016#55",
+  "scenario": "path.math.016",
+  "expr": "Parameters.parameter.value mod 3",
+  "input": "local:parameters-decimal-1e3.xml"
+ },
+ {
+  "id": "path.math.016#56",
+  "scenario": "path.math.016",
+  "expr": "Parameters.parameter.value mod 1",
+  "input": "local:parameters-decimal-1e3.xml"
+ },
+ {
+  "id": "path.math.016#57",
+  "scenario": "path.math.016",
+  "expr": "Parameters.parameter.value mod 7",
+  "input": "local:parameters-decimal-2e3.xml"
+ },
+ {
+  "id": "path.math.016#58",
+  "scenario": "path.math.016",
+  "expr": "Parameters.parameter.value mod 7",
+  "input": "local:parameters-decimal--1e3.xml"
+ },
+ {
+  "id": "path.math.016#59",
+  "scenario": "path.math.016",
+  "expr": "Parameters.parameter.value mod 1",
+  "input": "local:parameters-decimal-3.5e38.xml"
+ },
+ {
+  "id": "path.math.016#60",
+  "scenario": "path.math.016",
+  "expr": "Parameters.parameter.value mod 30",
+  "input": "local:parameters-decimal-1e2.xml"
+ },
+ {
+  "id": "path.math.016#61",
+  "scenario": "path.math.016",
+  "expr": "Parameters.parameter.value mod 400",
+  "input": "local:parameters-decimal-1e3.xml"
+ },
+ {
+  "id": "path.math.016#62",
+  "scenario": "path.math.016",
+  "expr": "Parameters.parameter.value mod 1",
+  "input": "local:parameters-decimal-3.5e1.xml"
+ },
+ {
+  "id": "path.math.017#01",
+  "scenario": "path.math.017",
+  "expr": "Parameters.parameter.value / 2",
+  "input": "local:parameters-decimal-16777216e0.xml"
+ },
+ {
+  "id": "path.math.017#02",
+  "scenario": "path.math.017",
+  "expr": "Parameters.parameter.value div 2",
+  "input": "local:parameters-decimal-16777216e0.xml"
+ },
+ {
+  "id": "path.math.017#03",
+  "scenario": "path.math.017",
+  "expr": "Parameters.parameter.value mod 2",
+  "input": "local:parameters-decimal-16777216e0.xml"
+ },
+ {
+  "id": "path.math.017#04",
+  "scenario": "path.math.017",
+  "expr": "Parameters.parameter.value / 2",
+  "input": "local:parameters-decimal-16777217e0.xml"
+ },
+ {
+  "id": "path.math.017#05",
+  "scenario": "path.math.017",
+  "expr": "Parameters.parameter.value div 2",
+  "input": "local:parameters-decimal-16777217e0.xml"
+ },
+ {
+  "id": "path.math.017#06",
+  "scenario": "path.math.017",
+  "expr": "Parameters.parameter.value mod 2",
+  "input": "local:parameters-decimal-16777217e0.xml"
+ },
+ {
+  "id": "path.math.017#07",
+  "scenario": "path.math.017",
+  "expr": "Parameters.parameter.value / 2",
+  "input": "local:parameters-decimal-16777215.5e0.xml"
+ },
+ {
+  "id": "path.math.017#08",
+  "scenario": "path.math.017",
+  "expr": "Parameters.parameter.value div 2",
+  "input": "local:parameters-decimal-16777215.5e0.xml"
+ },
+ {
+  "id": "path.math.017#09",
+  "scenario": "path.math.017",
+  "expr": "Parameters.parameter.value mod 2",
+  "input": "local:parameters-decimal-16777215.5e0.xml"
+ },
+ {
+  "id": "path.math.017#10",
+  "scenario": "path.math.017",
+  "expr": "Parameters.parameter.value / 2",
+  "input": "local:parameters-decimal--16777220e0.xml"
+ },
+ {
+  "id": "path.math.017#11",
+  "scenario": "path.math.017",
+  "expr": "Parameters.parameter.value div 2",
+  "input": "local:parameters-decimal--16777220e0.xml"
+ },
+ {
+  "id": "path.math.017#12",
+  "scenario": "path.math.017",
+  "expr": "Parameters.parameter.value mod 2",
+  "input": "local:parameters-decimal--16777220e0.xml"
+ },
+ {
+  "id": "path.math.017#13",
+  "scenario": "path.math.017",
+  "expr": "Parameters.parameter.value / 2",
+  "input": "local:parameters-decimal--33554432e0.xml"
+ },
+ {
+  "id": "path.math.017#14",
+  "scenario": "path.math.017",
+  "expr": "Parameters.parameter.value div 2",
+  "input": "local:parameters-decimal--33554432e0.xml"
+ },
+ {
+  "id": "path.math.017#15",
+  "scenario": "path.math.017",
+  "expr": "Parameters.parameter.value mod 2",
+  "input": "local:parameters-decimal--33554432e0.xml"
+ },
+ {
+  "id": "path.math.017#16",
+  "scenario": "path.math.017",
+  "expr": "Parameters.parameter.value / 2",
+  "input": "local:parameters-decimal--1234567890.5e0.xml"
+ },
+ {
+  "id": "path.math.017#17",
+  "scenario": "path.math.017",
+  "expr": "Parameters.parameter.value div 2",
+  "input": "local:parameters-decimal--1234567890.5e0.xml"
+ },
+ {
+  "id": "path.math.017#18",
+  "scenario": "path.math.017",
+  "expr": "Parameters.parameter.value mod 2",
+  "input": "local:parameters-decimal--1234567890.5e0.xml"
+ },
+ {
+  "id": "path.math.017#19",
+  "scenario": "path.math.017",
+  "expr": "Parameters.parameter.value / 2",
+  "input": "local:parameters-decimal-1234567890.5e0.xml"
+ },
+ {
+  "id": "path.math.017#20",
+  "scenario": "path.math.017",
+  "expr": "Parameters.parameter.value div 2",
+  "input": "local:parameters-decimal-1234567890.5e0.xml"
+ },
+ {
+  "id": "path.math.017#21",
+  "scenario": "path.math.017",
+  "expr": "Parameters.parameter.value mod 2",
+  "input": "local:parameters-decimal-1234567890.5e0.xml"
+ },
+ {
+  "id": "path.math.017#22",
+  "scenario": "path.math.017",
+  "expr": "Parameters.parameter.value / 2",
+  "input": "local:parameters-decimal-16777215e0.xml"
+ },
+ {
+  "id": "path.math.017#23",
+  "scenario": "path.math.017",
+  "expr": "Parameters.parameter.value div 2",
+  "input": "local:parameters-decimal-16777215e0.xml"
+ },
+ {
+  "id": "path.math.017#24",
+  "scenario": "path.math.017",
+  "expr": "Parameters.parameter.value mod 2",
+  "input": "local:parameters-decimal-16777215e0.xml"
+ },
+ {
+  "id": "path.math.017#25",
+  "scenario": "path.math.017",
+  "expr": "Parameters.parameter.value / 2",
+  "input": "local:parameters-decimal-16777215.4e0.xml"
+ },
+ {
+  "id": "path.math.017#26",
+  "scenario": "path.math.017",
+  "expr": "Parameters.parameter.value div 2",
+  "input": "local:parameters-decimal-16777215.4e0.xml"
+ },
+ {
+  "id": "path.math.017#27",
+  "scenario": "path.math.017",
+  "expr": "Parameters.parameter.value mod 2",
+  "input": "local:parameters-decimal-16777215.4e0.xml"
+ },
+ {
+  "id": "path.math.017#28",
+  "scenario": "path.math.017",
+  "expr": "Parameters.parameter.value / 2",
+  "input": "local:parameters-decimal-16777218e0.xml"
+ },
+ {
+  "id": "path.math.017#29",
+  "scenario": "path.math.017",
+  "expr": "Parameters.parameter.value div 2",
+  "input": "local:parameters-decimal-16777218e0.xml"
+ },
+ {
+  "id": "path.math.017#30",
+  "scenario": "path.math.017",
+  "expr": "Parameters.parameter.value mod 2",
+  "input": "local:parameters-decimal-16777218e0.xml"
+ },
+ {
+  "id": "path.math.017#31",
+  "scenario": "path.math.017",
+  "expr": "Parameters.parameter.value / 2",
+  "input": "local:parameters-decimal--16777216e0.xml"
+ },
+ {
+  "id": "path.math.017#32",
+  "scenario": "path.math.017",
+  "expr": "Parameters.parameter.value div 2",
+  "input": "local:parameters-decimal--16777216e0.xml"
+ },
+ {
+  "id": "path.math.017#33",
+  "scenario": "path.math.017",
+  "expr": "Parameters.parameter.value mod 2",
+  "input": "local:parameters-decimal--16777216e0.xml"
+ },
+ {
+  "id": "path.math.017#34",
+  "scenario": "path.math.017",
+  "expr": "Parameters.parameter.value / 2",
+  "input": "local:parameters-decimal--16777217e0.xml"
+ },
+ {
+  "id": "path.math.017#35",
+  "scenario": "path.math.017",
+  "expr": "Parameters.parameter.value div 2",
+  "input": "local:parameters-decimal--16777217e0.xml"
+ },
+ {
+  "id": "path.math.017#36",
+  "scenario": "path.math.017",
+  "expr": "Parameters.parameter.value mod 2",
+  "input": "local:parameters-decimal--16777217e0.xml"
+ },
+ {
+  "id": "path.math.017#37",
+  "scenario": "path.math.017",
+  "expr": "Parameters.parameter.value / 2",
+  "input": "local:parameters-decimal--16777218e0.xml"
+ },
+ {
+  "id": "path.math.017#38",
+  "scenario": "path.math.017",
+  "expr": "Parameters.parameter.value div 2",
+  "input": "local:parameters-decimal--16777218e0.xml"
+ },
+ {
+  "id": "path.math.017#39",
+  "scenario": "path.math.017",
+  "expr": "Parameters.parameter.value mod 2",
+  "input": "local:parameters-decimal--16777218e0.xml"
+ },
+ {
+  "id": "path.math.017#40",
+  "scenario": "path.math.017",
+  "expr": "Parameters.parameter.value / 2",
+  "input": "local:parameters-decimal-1.6777216e7.xml"
+ },
+ {
+  "id": "path.math.017#41",
+  "scenario": "path.math.017",
+  "expr": "Parameters.parameter.value div 2",
+  "input": "local:parameters-decimal-1.6777216e7.xml"
+ },
+ {
+  "id": "path.math.017#42",
+  "scenario": "path.math.017",
+  "expr": "Parameters.parameter.value mod 2",
+  "input": "local:parameters-decimal-1.6777216e7.xml"
+ },
+ {
+  "id": "path.math.017#43",
+  "scenario": "path.math.017",
+  "expr": "Parameters.parameter.value / 2",
+  "input": "local:parameters-decimal-1ep3.xml"
+ },
+ {
+  "id": "path.math.017#44",
+  "scenario": "path.math.017",
+  "expr": "Parameters.parameter.value div 2",
+  "input": "local:parameters-decimal-1ep3.xml"
+ },
+ {
+  "id": "path.math.017#45",
+  "scenario": "path.math.017",
+  "expr": "Parameters.parameter.value mod 2",
+  "input": "local:parameters-decimal-1ep3.xml"
+ },
+ {
+  "id": "path.math.017#46",
+  "scenario": "path.math.017",
+  "expr": "Parameters.parameter.value / 2",
+  "input": "local:parameters-decimal-1upperEp3.xml"
+ },
+ {
+  "id": "path.math.017#47",
+  "scenario": "path.math.017",
+  "expr": "Parameters.parameter.value div 2",
+  "input": "local:parameters-decimal-1upperEp3.xml"
+ },
+ {
+  "id": "path.math.017#48",
+  "scenario": "path.math.017",
+  "expr": "Parameters.parameter.value mod 2",
+  "input": "local:parameters-decimal-1upperEp3.xml"
+ },
+ {
+  "id": "path.math.017#49",
+  "scenario": "path.math.017",
+  "expr": "Parameters.parameter.value / 3",
+  "input": "local:parameters-decimal-1.6777216e7.xml"
+ },
+ {
+  "id": "path.math.017#50",
+  "scenario": "path.math.017",
+  "expr": "Parameters.parameter.value / 2",
+  "input": "local:parameters-decimal-1e.xml",
+  "note": "HAPI's own parser may refuse the input"
+ },
+ {
+  "id": "path.math.017#51",
+  "scenario": "path.math.017",
+  "expr": "Parameters.parameter.value mod 2",
+  "input": "local:parameters-decimal-1e.xml",
+  "note": "HAPI's own parser may refuse the input"
+ },
+ {
+  "id": "path.math.017#52",
+  "scenario": "path.math.017",
+  "expr": "Parameters.parameter.value / 2",
+  "input": "local:parameters-decimal-1e-.xml",
+  "note": "HAPI's own parser may refuse the input"
+ },
+ {
+  "id": "path.math.017#53",
+  "scenario": "path.math.017",
+  "expr": "Parameters.parameter.value mod 2",
+  "input": "local:parameters-decimal-1e-.xml",
+  "note": "HAPI's own parser may refuse the input"
+ },
+ {
+  "id": "path.math.017#54",
+  "scenario": "path.math.017",
+  "expr": "Parameters.parameter.value / 2",
+  "input": "local:parameters-decimal-e3.xml",
+  "note": "HAPI's own parser may refuse the input"
+ },
+ {
+  "id": "path.math.017#55",
+  "scenario": "path.math.017",
+  "expr": "Parameters.parameter.value mod 2",
+  "input": "local:parameters-decimal-e3.xml",
+  "note": "HAPI's own parser may refuse the input"
+ },
+ {
+  "id": "path.math.017#56",
+  "scenario": "path.math.017",
+  "expr": "Parameters.parameter.value / 2",
+  "input": "local:parameters-decimal--e3.xml",
+  "note": "HAPI's own parser may refuse the input"
+ },
+ {
+  "id": "path.math.017#57",
+  "scenario": "path.math.017",
+  "expr": "Parameters.parameter.value mod 2",
+  "input": "local:parameters-decimal--e3.xml",
+  "note": "HAPI's own parser may refuse the input"
+ },
+ {
+  "id": "path.math.017#58",
+  "scenario": "path.math.017",
+  "expr": "Parameters.parameter.where(name = 'd').value / 2",
+  "input": "local:parameters-novalue-numbers.xml"
+ },
+ {
+  "id": "path.math.017#59",
+  "scenario": "path.math.017",
+  "expr": "Parameters.parameter.where(name = 'd').value div 2",
+  "input": "local:parameters-novalue-numbers.xml"
+ },
+ {
+  "id": "path.math.017#60",
+  "scenario": "path.math.017",
+  "expr": "Parameters.parameter.where(name = 'd').value mod 2",
+  "input": "local:parameters-novalue-numbers.xml"
+ },
+ {
+  "id": "path.math.017#61",
+  "scenario": "path.math.017",
+  "expr": "Parameters.parameter.where(name = 'i').value div 2",
+  "input": "local:parameters-novalue-numbers.xml",
+  "note": "Integer.parseInt(null): the text is graded (Cannot parse null string, JDK 21 and 25)"
+ },
+ {
+  "id": "path.math.017#62",
+  "scenario": "path.math.017",
+  "expr": "Parameters.parameter.where(name = 'i').value mod 2",
+  "input": "local:parameters-novalue-numbers.xml",
+  "note": "Integer.parseInt(null): the text is graded (Cannot parse null string, JDK 21 and 25)"
+ },
+ {
+  "id": "path.math.017#63",
+  "scenario": "path.math.017",
+  "expr": "Parameters.parameter.value / 1",
+  "input": "local:parameters-decimal-arabic.xml",
+  "documented": "DEV-0030",
+  "note": "Frevo reads ASCII digits only; HAPI raises StringIndexOutOfBoundsException"
+ },
+ {
+  "id": "path.math.017#64",
+  "scenario": "path.math.017",
+  "expr": "Parameters.parameter.value div 1",
+  "input": "local:parameters-decimal-arabic.xml",
+  "documented": "DEV-0030",
+  "note": "Frevo reads ASCII digits only; HAPI raises StringIndexOutOfBoundsException"
+ },
+ {
+  "id": "path.math.017#65",
+  "scenario": "path.math.017",
+  "expr": "Parameters.parameter.value mod 1",
+  "input": "local:parameters-decimal-arabic.xml",
+  "documented": "DEV-0030",
+  "note": "Frevo reads ASCII digits only; HAPI raises StringIndexOutOfBoundsException"
+ },
+ {
+  "id": "path.math.018#01",
+  "scenario": "path.math.018",
+  "expr": "Parameters.parameter.where(name = 'i').value + 1",
+  "input": "local:parameters-novalue-numbers.xml",
+  "note": "integer arm: Integer.parseInt(null)"
+ },
+ {
+  "id": "path.math.018#02",
+  "scenario": "path.math.018",
+  "expr": "1 + Parameters.parameter.where(name = 'i').value",
+  "input": "local:parameters-novalue-numbers.xml",
+  "note": "integer arm: Integer.parseInt(null)"
+ },
+ {
+  "id": "path.math.018#03",
+  "scenario": "path.math.018",
+  "expr": "Parameters.parameter.where(name = 'd').value + 1",
+  "input": "local:parameters-novalue-numbers.xml",
+  "note": "decimal arm: new BigDecimal(null)"
+ },
+ {
+  "id": "path.math.018#04",
+  "scenario": "path.math.018",
+  "expr": "Parameters.parameter.where(name = 'i').value - 1",
+  "input": "local:parameters-novalue-numbers.xml",
+  "note": "integer arm: Integer.parseInt(null)"
+ },
+ {
+  "id": "path.math.018#05",
+  "scenario": "path.math.018",
+  "expr": "1 - Parameters.parameter.where(name = 'i').value",
+  "input": "local:parameters-novalue-numbers.xml",
+  "note": "integer arm: Integer.parseInt(null)"
+ },
+ {
+  "id": "path.math.018#06",
+  "scenario": "path.math.018",
+  "expr": "Parameters.parameter.where(name = 'd').value - 1",
+  "input": "local:parameters-novalue-numbers.xml",
+  "note": "decimal arm: new BigDecimal(null)"
+ },
+ {
+  "id": "path.math.018#07",
+  "scenario": "path.math.018",
+  "expr": "Parameters.parameter.where(name = 'i').value * 1",
+  "input": "local:parameters-novalue-numbers.xml",
+  "note": "integer arm: Integer.parseInt(null)"
+ },
+ {
+  "id": "path.math.018#08",
+  "scenario": "path.math.018",
+  "expr": "1 * Parameters.parameter.where(name = 'i').value",
+  "input": "local:parameters-novalue-numbers.xml",
+  "note": "integer arm: Integer.parseInt(null)"
+ },
+ {
+  "id": "path.math.018#09",
+  "scenario": "path.math.018",
+  "expr": "Parameters.parameter.where(name = 'd').value * 1",
+  "input": "local:parameters-novalue-numbers.xml",
+  "note": "decimal arm: new BigDecimal(null)"
+ },
+ {
+  "id": "path.math.018#10",
+  "scenario": "path.math.018",
+  "expr": "Parameters.parameter.where(name = 'i').value + 1.5",
+  "input": "local:parameters-novalue-numbers.xml",
+  "note": "decimal arm: new BigDecimal(null)"
+ },
+ {
+  "id": "path.math.018#11",
+  "scenario": "path.math.018",
+  "expr": "1.5 * Parameters.parameter.where(name = 'd').value",
+  "input": "local:parameters-novalue-numbers.xml",
+  "note": "decimal arm: new BigDecimal(null)"
+ },
+ {
+  "id": "path.math.018#12",
+  "scenario": "path.math.018",
+  "expr": "Parameters.parameter.where(name = 'i').value + 1",
+  "input": "local:parameters-novalue-numbers.xml",
+  "check": "run",
+  "note": "the check cannot see the missing value"
+ },
+ {
+  "id": "path.math.018#13",
+  "scenario": "path.math.018",
+  "expr": "Parameters.parameter.where(name = 'd').value + 1",
+  "input": "local:parameters-novalue-numbers.xml",
+  "check": "run",
+  "note": "the check cannot see the missing value"
+ },
+ {
+  "id": "path.mathfn.004#01",
+  "scenario": "path.mathfn.004",
+  "expr": "12345.round(-2)"
+ },
+ {
+  "id": "path.mathfn.004#02",
+  "scenario": "path.mathfn.004",
+  "expr": "1234.5.round(-3)"
+ },
+ {
+  "id": "path.mathfn.004#03",
+  "scenario": "path.mathfn.004",
+  "expr": "10000000000.abs()"
+ },
+ {
+  "id": "path.mathfn.004#04",
+  "scenario": "path.mathfn.004",
+  "expr": "0.0000001.abs()"
+ },
+ {
+  "id": "path.mathfn.004#05",
+  "scenario": "path.mathfn.004",
+  "expr": "0.0001.abs()"
+ },
+ {
+  "id": "path.mathfn.004#06",
+  "scenario": "path.mathfn.004",
+  "expr": "12345678.abs()"
+ },
+ {
+  "id": "path.mathfn.010#01",
+  "scenario": "path.mathfn.010",
+  "expr": "{}.exp()"
+ },
+ {
+  "id": "path.mathfn.010#02",
+  "scenario": "path.mathfn.010",
+  "expr": "{}.abs()"
+ },
+ {
+  "id": "path.mathfn.010#03",
+  "scenario": "path.mathfn.010",
+  "expr": "{}.ceiling()"
+ },
+ {
+  "id": "path.mathfn.010#04",
+  "scenario": "path.mathfn.010",
+  "expr": "{}.floor()"
+ },
+ {
+  "id": "path.mathfn.010#05",
+  "scenario": "path.mathfn.010",
+  "expr": "{}.sqrt()"
+ },
+ {
+  "id": "path.mathfn.010#06",
+  "scenario": "path.mathfn.010",
+  "expr": "{}.ln()"
+ },
+ {
+  "id": "path.mathfn.010#07",
+  "scenario": "path.mathfn.010",
+  "expr": "{}.log(2)"
+ },
+ {
+  "id": "path.mathfn.010#08",
+  "scenario": "path.mathfn.010",
+  "expr": "{}.power(2)"
+ },
+ {
+  "id": "path.mathfn.010#09",
+  "scenario": "path.mathfn.010",
+  "expr": "{}.round(2)"
+ },
+ {
+  "id": "path.mathfn.010#10",
+  "scenario": "path.mathfn.010",
+  "expr": "{}.truncate()"
+ },
+ {
+  "id": "path.navigation.025#01",
+  "scenario": "path.navigation.025",
+  "expr": "Patient.text.div",
+  "input": "local:patient-div.json"
+ },
+ {
+  "id": "path.navigation.025#02",
+  "scenario": "path.navigation.025",
+  "expr": "Patient.text.div is string",
+  "input": "local:patient-div.json"
+ },
+ {
+  "id": "path.navigation.025#03",
+  "scenario": "path.navigation.025",
+  "expr": "Patient.text.div is xhtml",
+  "input": "local:patient-div.json"
+ },
+ {
+  "id": "path.navigation.025#04",
+  "scenario": "path.navigation.025",
+  "expr": "Patient.text.div is FHIR.string",
+  "input": "local:patient-div.json"
+ },
+ {
+  "id": "path.navigation.025#05",
+  "scenario": "path.navigation.025",
+  "expr": "Patient.text.div.is(string)",
+  "input": "local:patient-div.json"
+ },
+ {
+  "id": "path.navigation.025#06",
+  "scenario": "path.navigation.025",
+  "expr": "Patient.text.div.is(FHIR.string)",
+  "input": "local:patient-div.json"
+ },
+ {
+  "id": "path.navigation.025#07",
+  "scenario": "path.navigation.025",
+  "expr": "Patient.text.div.is(xhtml)",
+  "input": "local:patient-div.json"
+ },
+ {
+  "id": "path.navigation.025#08",
+  "scenario": "path.navigation.025",
+  "expr": "Patient.text.div.ofType(string)",
+  "input": "local:patient-div.json"
+ },
+ {
+  "id": "path.navigation.025#09",
+  "scenario": "path.navigation.025",
+  "expr": "Patient.text.div.toString()",
+  "input": "local:patient-div.json"
+ },
+ {
+  "id": "path.navigation.025#10",
+  "scenario": "path.navigation.025",
+  "expr": "Patient.text.div = '<div xmlns=\"http://www.w3.org/1999/xhtml\">hi</div>'",
+  "input": "local:patient-div.json"
+ },
+ {
+  "id": "path.navigation.025#11",
+  "scenario": "path.navigation.025",
+  "expr": "Patient.text.div.contains('>hi<')",
+  "input": "local:patient-div.json"
+ },
+ {
+  "id": "path.navigation.025#12",
+  "scenario": "path.navigation.025",
+  "expr": "Patient.text.children().count()",
+  "input": "local:patient-div.json"
+ },
+ {
+  "id": "path.navigation.025#13",
+  "scenario": "path.navigation.025",
+  "expr": "Patient.text.children().ofType(xhtml).count()",
+  "input": "local:patient-div.json"
+ },
+ {
+  "id": "path.navigation.025#14",
+  "scenario": "path.navigation.025",
+  "expr": "Patient.text.descendants().ofType(xhtml).count()",
+  "input": "local:patient-div.json"
+ },
+ {
+  "id": "path.navigation.025#15",
+  "scenario": "path.navigation.025",
+  "expr": "Patient.text.div.contains('>hi<')",
+  "input": "local:patient-div.json",
+  "check": "run"
+ },
+ {
+  "id": "path.navigation.025#16",
+  "scenario": "path.navigation.025",
+  "expr": "Patient.text.div",
+  "input": "local:patient-div-quote.json"
+ },
+ {
+  "id": "path.navigation.025#17",
+  "scenario": "path.navigation.025",
+  "expr": "Patient.text.div",
+  "input": "local:patient-div-ul.json"
+ },
+ {
+  "id": "path.navigation.025#18",
+  "scenario": "path.navigation.025",
+  "expr": "Patient.text.div",
+  "input": "local:patient-nodiv.json"
+ },
+ {
+  "id": "path.navigation.025#19",
+  "scenario": "path.navigation.025",
+  "expr": "Patient.text.children().count()",
+  "input": "local:patient-nodiv.json"
+ },
+ {
+  "id": "path.quantity.015#01",
+  "scenario": "path.quantity.015",
+  "expr": "1 'cm' < 1 's'"
+ },
+ {
+  "id": "path.quantity.017#01",
+  "scenario": "path.quantity.017",
+  "expr": "1 'zzz' = 1 'zzz'"
+ },
+ {
+  "id": "path.quantity.017#02",
+  "scenario": "path.quantity.017",
+  "expr": "1 'zzz' = 1 'cm'"
+ },
+ {
+  "id": "path.quantity.017#03",
+  "scenario": "path.quantity.017",
+  "expr": "1 'zzz' = 2 'zzz'"
+ },
+ {
+  "id": "path.quantity.017#04",
+  "scenario": "path.quantity.017",
+  "expr": "1 'zzz' != 1 'cm'"
+ },
+ {
+  "id": "path.quantity.017#05",
+  "scenario": "path.quantity.017",
+  "expr": "1 'cm' = 1 'zzz'"
+ },
+ {
+  "id": "path.quantity.017#06",
+  "scenario": "path.quantity.017",
+  "expr": "1 'zzz' ~ 1 'zzz'"
+ },
+ {
+  "id": "path.quantity.017#07",
+  "scenario": "path.quantity.017",
+  "expr": "1 'zzz' ~ 1 'cm'"
+ },
+ {
+  "id": "path.quantity.017#08",
+  "scenario": "path.quantity.017",
+  "expr": "1 'zzz' < 2 'zzz'"
+ },
+ {
+  "id": "path.quantity.017#09",
+  "scenario": "path.quantity.017",
+  "expr": "1 'zzz' < 1 'cm'"
+ },
+ {
+  "id": "path.quantity.017#10",
+  "scenario": "path.quantity.017",
+  "expr": "1 'cm' < 1 'zzz'"
+ },
+ {
+  "id": "path.quantity.017#11",
+  "scenario": "path.quantity.017",
+  "expr": "2 'zzz' > 1 'cm'"
+ },
+ {
+  "id": "path.quantity.017#12",
+  "scenario": "path.quantity.017",
+  "expr": "1 'zzz' >= 1 'cm'"
+ },
+ {
+  "id": "path.quantity.017#13",
+  "scenario": "path.quantity.017",
+  "expr": "1 'zzz' <= 2 'cm'"
+ },
+ {
+  "id": "path.quantity.017#14",
+  "scenario": "path.quantity.017",
+  "expr": "1 'zzz'.comparable(1 'cm')"
+ },
+ {
+  "id": "path.quantity.017#15",
+  "scenario": "path.quantity.017",
+  "expr": "1 'zzz' * 1 'm'"
+ },
+ {
+  "id": "path.quantity.017#16",
+  "scenario": "path.quantity.017",
+  "expr": "1 'm' * 1 'zzz'"
+ },
+ {
+  "id": "path.quantity.017#17",
+  "scenario": "path.quantity.017",
+  "expr": "1 'zzz' / 1 'm'"
+ },
+ {
+  "id": "path.quantity.018#01",
+  "scenario": "path.quantity.018",
+  "expr": "1 year < 2 'a'"
+ },
+ {
+  "id": "path.quantity.018#02",
+  "scenario": "path.quantity.018",
+  "expr": "1 year > 1 'a'"
+ },
+ {
+  "id": "path.quantity.018#03",
+  "scenario": "path.quantity.018",
+  "expr": "1 year < 2 years"
+ },
+ {
+  "id": "path.quantity.018#04",
+  "scenario": "path.quantity.018",
+  "expr": "1 year <= 2 'a'"
+ },
+ {
+  "id": "path.quantity.018#05",
+  "scenario": "path.quantity.018",
+  "expr": "1 year * 1 'm'"
+ },
+ {
+  "id": "path.quantity.018#06",
+  "scenario": "path.quantity.018",
+  "expr": "1 'm' * 1 year"
+ },
+ {
+  "id": "path.quantity.018#07",
+  "scenario": "path.quantity.018",
+  "expr": "1 year / 1 'm'"
+ },
+ {
+  "id": "path.quantity.018#08",
+  "scenario": "path.quantity.018",
+  "expr": "1 'm' / 1 year"
+ },
+ {
+  "id": "path.quantity.018#09",
+  "scenario": "path.quantity.018",
+  "expr": "1 year.comparable(1 'a')"
+ },
+ {
+  "id": "path.quantity.018#10",
+  "scenario": "path.quantity.018",
+  "expr": "1 year = 1 year"
+ },
+ {
+  "id": "path.quantity.018#11",
+  "scenario": "path.quantity.018",
+  "expr": "1 week = 7 days"
+ },
+ {
+  "id": "path.quantity.018#12",
+  "scenario": "path.quantity.018",
+  "expr": "2 months.comparable(2 months)"
+ },
+ {
+  "id": "path.quantity.018#13",
+  "scenario": "path.quantity.018",
+  "expr": "Parameters.parameter.where(name = 'q1').value = Parameters.parameter.where(name = 'q2').value",
+  "input": "local:parameters-quantities-nonucum.xml"
+ },
+ {
+  "id": "path.quantity.018#14",
+  "scenario": "path.quantity.018",
+  "expr": "Parameters.parameter.where(name = 'q1').value = Parameters.parameter.where(name = 'q3').value",
+  "input": "local:parameters-quantities-nonucum.xml"
+ },
+ {
+  "id": "path.quantity.018#15",
+  "scenario": "path.quantity.018",
+  "expr": "Parameters.parameter.where(name = 'q1').value = Parameters.parameter.where(name = 'q4').value",
+  "input": "local:parameters-quantities-nonucum.xml"
+ },
+ {
+  "id": "path.quantity.018#16",
+  "scenario": "path.quantity.018",
+  "expr": "Parameters.parameter.where(name = 'q1').value ~ Parameters.parameter.where(name = 'q2').value",
+  "input": "local:parameters-quantities-nonucum.xml"
+ },
+ {
+  "id": "path.quantity.018#17",
+  "scenario": "path.quantity.018",
+  "expr": "Parameters.parameter.where(name = 'q1').value ~ Parameters.parameter.where(name = 'q3').value",
+  "input": "local:parameters-quantities-nonucum.xml"
+ },
+ {
+  "id": "path.quantity.018#18",
+  "scenario": "path.quantity.018",
+  "expr": "Parameters.parameter.where(name = 'q1').value < Parameters.parameter.where(name = 'q3').value",
+  "input": "local:parameters-quantities-nonucum.xml"
+ },
+ {
+  "id": "path.quantity.018#19",
+  "scenario": "path.quantity.018",
+  "expr": "Parameters.parameter.where(name = 'q1').value > Parameters.parameter.where(name = 'q3').value",
+  "input": "local:parameters-quantities-nonucum.xml"
+ },
+ {
+  "id": "path.quantity.018#20",
+  "scenario": "path.quantity.018",
+  "expr": "Parameters.parameter.where(name = 'q1').value < Parameters.parameter.where(name = 'q4').value",
+  "input": "local:parameters-quantities-nonucum.xml"
+ },
+ {
+  "id": "path.quantity.018#21",
+  "scenario": "path.quantity.018",
+  "expr": "Parameters.parameter.where(name = 'q1').value.comparable(Parameters.parameter.where(name = 'q2').value)",
+  "input": "local:parameters-quantities-nonucum.xml"
+ },
+ {
+  "id": "path.quantity.018#22",
+  "scenario": "path.quantity.018",
+  "expr": "Parameters.parameter.where(name = 'q1').value.comparable(Parameters.parameter.where(name = 'q3').value)",
+  "input": "local:parameters-quantities-nonucum.xml"
+ },
+ {
+  "id": "path.quantity.018#23",
+  "scenario": "path.quantity.018",
+  "expr": "Parameters.parameter.where(name = 'q1').value.comparable(1 'cm')",
+  "input": "local:parameters-quantities-nonucum.xml"
+ },
+ {
+  "id": "path.quantity.018#24",
+  "scenario": "path.quantity.018",
+  "expr": "Parameters.parameter.where(name = 'q1').value * 1 'm'",
+  "input": "local:parameters-quantities-nonucum.xml"
+ },
+ {
+  "id": "path.quantity.018#25",
+  "scenario": "path.quantity.018",
+  "expr": "Parameters.parameter.where(name = 'q1').value / 1 'm'",
+  "input": "local:parameters-quantities-nonucum.xml"
+ },
+ {
+  "id": "path.quantity.019#01",
+  "scenario": "path.quantity.019",
+  "expr": "1 'mg' = 1 'mg'",
+  "worker": "server",
+  "documented": "DEV-0029"
+ },
+ {
+  "id": "path.quantity.019#02",
+  "scenario": "path.quantity.019",
+  "expr": "1 'mg' ~ 1 'mg'",
+  "worker": "server",
+  "documented": "DEV-0029"
+ },
+ {
+  "id": "path.quantity.019#03",
+  "scenario": "path.quantity.019",
+  "expr": "1 'mg' != 2 'mg'",
+  "worker": "server",
+  "documented": "DEV-0029"
+ },
+ {
+  "id": "path.quantity.019#04",
+  "scenario": "path.quantity.019",
+  "expr": "6 days < 1 week",
+  "worker": "server",
+  "documented": "DEV-0029"
+ },
+ {
+  "id": "path.quantity.019#05",
+  "scenario": "path.quantity.019",
+  "expr": "8 days > 1 week",
+  "worker": "server",
+  "documented": "DEV-0029"
+ },
+ {
+  "id": "path.quantity.019#06",
+  "scenario": "path.quantity.019",
+  "expr": "1 'cm' < 1 's'",
+  "worker": "server",
+  "documented": "DEV-0029"
+ },
+ {
+  "id": "path.quantity.019#07",
+  "scenario": "path.quantity.019",
+  "expr": "2.0 'cm' * 2.0 'm'",
+  "worker": "server",
+  "documented": "DEV-0029"
+ },
+ {
+  "id": "path.quantity.019#08",
+  "scenario": "path.quantity.019",
+  "expr": "4.0 'g' / 2.0 'm'",
+  "worker": "server",
+  "documented": "DEV-0029"
+ },
+ {
+  "id": "path.quantity.019#09",
+  "scenario": "path.quantity.019",
+  "expr": "1 'cm'.comparable(1 '[in_i]')",
+  "worker": "server",
+  "documented": "DEV-0029"
+ },
+ {
+  "id": "path.quantity.019#10",
+  "scenario": "path.quantity.019",
+  "expr": "1 'zzz' = 1 'cm'",
+  "worker": "server",
+  "documented": "DEV-0029"
+ },
+ {
+  "id": "path.quantity.019#11",
+  "scenario": "path.quantity.019",
+  "expr": "1 'cm'.comparable(2 'cm')",
+  "worker": "server",
+  "note": "never consults the worker: same answer under both workers"
+ },
+ {
+  "id": "path.quantity.019#12",
+  "scenario": "path.quantity.019",
+  "expr": "1 'cm'.comparable(1 'cm')",
+  "worker": "server",
+  "note": "never consults the worker: same answer under both workers"
+ },
+ {
+  "id": "path.quantity.019#13",
+  "scenario": "path.quantity.019",
+  "expr": "1 year.comparable(1 'a')",
+  "worker": "server",
+  "note": "never consults the worker: same answer under both workers"
+ },
+ {
+  "id": "path.quantity.019#14",
+  "scenario": "path.quantity.019",
+  "expr": "1 'cm' <= 2 'cm'",
+  "worker": "server",
+  "note": "never consults the worker: same answer under both workers"
+ },
+ {
+  "id": "path.quantity.019#15",
+  "scenario": "path.quantity.019",
+  "expr": "2 'cm' > 1 'cm'",
+  "worker": "server",
+  "note": "never consults the worker: same answer under both workers"
+ },
+ {
+  "id": "path.quantity.019#16",
+  "scenario": "path.quantity.019",
+  "expr": "1 'cm' < 2 'cm'",
+  "worker": "server",
+  "note": "never consults the worker: same answer under both workers"
+ },
+ {
+  "id": "path.quantity.019#17",
+  "scenario": "path.quantity.019",
+  "expr": "1 'kg' <= 1 year",
+  "worker": "server",
+  "note": "never consults the worker: same answer under both workers"
+ },
+ {
+  "id": "path.quantity.019#18",
+  "scenario": "path.quantity.019",
+  "expr": "Parameters.parameter[0].value <= Parameters.parameter[2].value",
+  "input": "suite:parameters-example-quantities.xml",
+  "worker": "server"
+ },
+ {
+  "id": "path.quantity.020#01",
+  "scenario": "path.quantity.020",
+  "expr": "(4.0000 'g' * 1 '1').toString()"
+ },
+ {
+  "id": "path.quantity.020#02",
+  "scenario": "path.quantity.020",
+  "expr": "(4000.0 'mg' * 1 '1').toString()"
+ },
+ {
+  "id": "path.quantity.020#03",
+  "scenario": "path.quantity.020",
+  "expr": "(4 'g' * 1 '1').toString()"
+ },
+ {
+  "id": "path.quantity.020#04",
+  "scenario": "path.quantity.020",
+  "expr": "(4000 'mg' * 1 '1').toString()"
+ },
+ {
+  "id": "path.quantity.020#05",
+  "scenario": "path.quantity.020",
+  "expr": "(4040 'mg' * 1 '1').toString()"
+ },
+ {
+  "id": "path.quantity.020#06",
+  "scenario": "path.quantity.020",
+  "expr": "(1 'kg' * 1 '1').toString()"
+ },
+ {
+  "id": "path.quantity.020#07",
+  "scenario": "path.quantity.020",
+  "expr": "(1 '[lb_av]' * 1 '1').toString()"
+ },
+ {
+  "id": "path.quantity.020#08",
+  "scenario": "path.quantity.020",
+  "expr": "(185 '[lb_av]' * 1 '1').toString()"
+ },
+ {
+  "id": "path.quantity.020#09",
+  "scenario": "path.quantity.020",
+  "expr": "(1 '[in_i]' * 1 '1').toString()"
+ },
+ {
+  "id": "path.quantity.020#10",
+  "scenario": "path.quantity.020",
+  "expr": "(2.54 'cm' * 1 '1').toString()"
+ },
+ {
+  "id": "path.quantity.020#11",
+  "scenario": "path.quantity.020",
+  "expr": "(1 '[ft_i]' * 1 '1').toString()"
+ },
+ {
+  "id": "path.quantity.020#12",
+  "scenario": "path.quantity.020",
+  "expr": "(12 '[in_i]' * 1 '1').toString()"
+ },
+ {
+  "id": "path.quantity.020#13",
+  "scenario": "path.quantity.020",
+  "expr": "(1.5 'km' * 1 '1').toString()"
+ },
+ {
+  "id": "path.quantity.020#14",
+  "scenario": "path.quantity.020",
+  "expr": "(7 'd' * 1 '1').toString()"
+ },
+ {
+  "id": "path.quantity.020#15",
+  "scenario": "path.quantity.020",
+  "expr": "(1 'wk' * 1 '1').toString()"
+ },
+ {
+  "id": "path.quantity.020#16",
+  "scenario": "path.quantity.020",
+  "expr": "(1 'h' * 1 '1').toString()"
+ },
+ {
+  "id": "path.quantity.020#17",
+  "scenario": "path.quantity.020",
+  "expr": "(1 'a' * 1 '1').toString()"
+ },
+ {
+  "id": "path.quantity.020#18",
+  "scenario": "path.quantity.020",
+  "expr": "(1 'mo' * 1 '1').toString()"
+ },
+ {
+  "id": "path.quantity.020#19",
+  "scenario": "path.quantity.020",
+  "expr": "(1 'mo_s' * 1 '1').toString()"
+ },
+ {
+  "id": "path.quantity.020#20",
+  "scenario": "path.quantity.020",
+  "expr": "(1 'L' * 1 '1').toString()"
+ },
+ {
+  "id": "path.quantity.020#21",
+  "scenario": "path.quantity.020",
+  "expr": "(1 'l' * 1 '1').toString()"
+ },
+ {
+  "id": "path.quantity.020#22",
+  "scenario": "path.quantity.020",
+  "expr": "(1 'mL' * 1 '1').toString()"
+ },
+ {
+  "id": "path.quantity.020#23",
+  "scenario": "path.quantity.020",
+  "expr": "(1 'mg/dL' * 1 '1').toString()"
+ },
+ {
+  "id": "path.quantity.020#24",
+  "scenario": "path.quantity.020",
+  "expr": "(1 'mm[Hg]' * 1 '1').toString()"
+ },
+ {
+  "id": "path.quantity.020#25",
+  "scenario": "path.quantity.020",
+  "expr": "(1 '/min' * 1 '1').toString()"
+ },
+ {
+  "id": "path.quantity.020#26",
+  "scenario": "path.quantity.020",
+  "expr": "(1 '%' * 1 '1').toString()"
+ },
+ {
+  "id": "path.quantity.020#27",
+  "scenario": "path.quantity.020",
+  "expr": "(1 '[pi]' * 1 '1').toString()"
+ },
+ {
+  "id": "path.quantity.020#28",
+  "scenario": "path.quantity.020",
+  "expr": "(1 'mol/L' * 1 '1').toString()"
+ },
+ {
+  "id": "path.quantity.020#29",
+  "scenario": "path.quantity.020",
+  "expr": "(60 '/min' * 1 '1').toString()"
+ },
+ {
+  "id": "path.quantity.020#30",
+  "scenario": "path.quantity.020",
+  "expr": "(60.0 '/min' * 1 '1').toString()"
+ },
+ {
+  "id": "path.quantity.020#31",
+  "scenario": "path.quantity.020",
+  "expr": "(1 'g/m' * 1 '1').toString()"
+ },
+ {
+  "id": "path.quantity.020#32",
+  "scenario": "path.quantity.020",
+  "expr": "(1 'kg.m/s2' * 1 '1').toString()"
+ },
+ {
+  "id": "path.quantity.020#33",
+  "scenario": "path.quantity.020",
+  "expr": "(1 '10*3/uL' * 1 '1').toString()"
+ },
+ {
+  "id": "path.quantity.020#34",
+  "scenario": "path.quantity.020",
+  "expr": "(1 '[ppth]' * 1 '1').toString()"
+ },
+ {
+  "id": "path.quantity.020#35",
+  "scenario": "path.quantity.020",
+  "expr": "(1 '10*-3' * 1 '1').toString()"
+ },
+ {
+  "id": "path.quantity.020#36",
+  "scenario": "path.quantity.020",
+  "expr": "(1 '{tablets}' * 1 '1').toString()"
+ },
+ {
+  "id": "path.quantity.020#37",
+  "scenario": "path.quantity.020",
+  "expr": "(1 '[iU]' * 1 '1').toString()"
+ },
+ {
+  "id": "path.quantity.020#38",
+  "scenario": "path.quantity.020",
+  "expr": "(1 'm/s.s' * 1 '1').toString()"
+ },
+ {
+  "id": "path.quantity.020#39",
+  "scenario": "path.quantity.020",
+  "expr": "(1 'm/(s.s)' * 1 '1').toString()"
+ },
+ {
+  "id": "path.quantity.020#40",
+  "scenario": "path.quantity.020",
+  "expr": "(1 '1' * 1 '1').toString()"
+ },
+ {
+  "id": "path.quantity.020#41",
+  "scenario": "path.quantity.020",
+  "expr": "(-5.5 'mg' * 1 '1').toString()"
+ },
+ {
+  "id": "path.quantity.020#42",
+  "scenario": "path.quantity.020",
+  "expr": "1 '[pi]' * 1 'm'",
+  "note": "the [pi] factor carries 65 significant digits"
+ },
+ {
+  "id": "path.quantity.020#43",
+  "scenario": "path.quantity.020",
+  "expr": "2 '[pi]' * 1 '1'",
+  "note": "the [pi] factor carries 65 significant digits"
+ },
+ {
+  "id": "path.quantity.020#44",
+  "scenario": "path.quantity.020",
+  "expr": "1 '[pi]' = 1 '1'",
+  "note": "the [pi] factor carries 65 significant digits"
+ },
+ {
+  "id": "path.quantity.020#45",
+  "scenario": "path.quantity.020",
+  "expr": "1 '[pi]' / 1 '1'",
+  "note": "the [pi] factor carries 65 significant digits"
+ },
+ {
+  "id": "path.quantity.020#46",
+  "scenario": "path.quantity.020",
+  "expr": "(1 '[pi]' * 1 '1').value",
+  "note": "the [pi] factor carries 65 significant digits"
+ },
+ {
+  "id": "path.quantity.020#47",
+  "scenario": "path.quantity.020",
+  "expr": "1 '[pi]' < 4 '1'",
+  "note": "the [pi] factor carries 65 significant digits"
+ },
+ {
+  "id": "path.quantity.021#01",
+  "scenario": "path.quantity.021",
+  "expr": "2.0 'cm' * 2.0 'm'"
+ },
+ {
+  "id": "path.quantity.021#02",
+  "scenario": "path.quantity.021",
+  "expr": "2 'cm' * 2 'm'"
+ },
+ {
+  "id": "path.quantity.021#03",
+  "scenario": "path.quantity.021",
+  "expr": "2 'm' * 3 'm'"
+ },
+ {
+  "id": "path.quantity.021#04",
+  "scenario": "path.quantity.021",
+  "expr": "2 'm/s' * 3 's'"
+ },
+ {
+  "id": "path.quantity.021#05",
+  "scenario": "path.quantity.021",
+  "expr": "2 'g' * 3 '1'"
+ },
+ {
+  "id": "path.quantity.021#06",
+  "scenario": "path.quantity.021",
+  "expr": "2 'm' * 3 '{tablets}'"
+ },
+ {
+  "id": "path.quantity.021#07",
+  "scenario": "path.quantity.021",
+  "expr": "2 'kg' * 3 '[lb_av]'"
+ },
+ {
+  "id": "path.quantity.021#08",
+  "scenario": "path.quantity.021",
+  "expr": "2 'mm[Hg]' * 3 'm2'"
+ },
+ {
+  "id": "path.quantity.021#09",
+  "scenario": "path.quantity.021",
+  "expr": "2 '%' * 3 '%'"
+ },
+ {
+  "id": "path.quantity.021#10",
+  "scenario": "path.quantity.021",
+  "expr": "4.0 'g' / 2.0 'm'"
+ },
+ {
+  "id": "path.quantity.021#11",
+  "scenario": "path.quantity.021",
+  "expr": "1.0 'm' / 1.0 'm'"
+ },
+ {
+  "id": "path.quantity.021#12",
+  "scenario": "path.quantity.021",
+  "expr": "(1.0 'm' / 1.0 'm').toString()"
+ },
+ {
+  "id": "path.quantity.021#13",
+  "scenario": "path.quantity.021",
+  "expr": "2 'g' / 4 'g'"
+ },
+ {
+  "id": "path.quantity.021#14",
+  "scenario": "path.quantity.021",
+  "expr": "1 'm' / 3 's'"
+ },
+ {
+  "id": "path.quantity.021#15",
+  "scenario": "path.quantity.021",
+  "expr": "6 'km' / 2 'h'"
+ },
+ {
+  "id": "path.quantity.021#16",
+  "scenario": "path.quantity.021",
+  "expr": "6 'kg.m' / 2 's'"
+ },
+ {
+  "id": "path.quantity.021#17",
+  "scenario": "path.quantity.021",
+  "expr": "6 'g/m' / 2 'm/s'"
+ },
+ {
+  "id": "path.quantity.021#18",
+  "scenario": "path.quantity.021",
+  "expr": "6 'g/m' / 3 's'"
+ },
+ {
+  "id": "path.quantity.021#19",
+  "scenario": "path.quantity.021",
+  "expr": "6 'm' / 3 's/m'"
+ },
+ {
+  "id": "path.quantity.021#20",
+  "scenario": "path.quantity.021",
+  "expr": "6 'm.s' / 3 'g'"
+ },
+ {
+  "id": "path.quantity.021#21",
+  "scenario": "path.quantity.021",
+  "expr": "6 '1' / 3 'm'"
+ },
+ {
+  "id": "path.quantity.021#22",
+  "scenario": "path.quantity.021",
+  "expr": "6 '10*3' / 3 '1'"
+ },
+ {
+  "id": "path.quantity.021#23",
+  "scenario": "path.quantity.021",
+  "expr": "2.0 'cm' * 2.0 'm' = 0.040 'm2'"
+ },
+ {
+  "id": "path.quantity.021#24",
+  "scenario": "path.quantity.021",
+  "expr": "4.0 'g' / 2.0 'm' = 2 'g/m'"
+ },
+ {
+  "id": "path.quantity.021#25",
+  "scenario": "path.quantity.021",
+  "expr": "1.0 'm' / 1.0 'm' = 1 '1'"
+ },
+ {
+  "id": "path.quantity.021#26",
+  "scenario": "path.quantity.021",
+  "expr": "1 'm' / 0 's'"
+ },
+ {
+  "id": "path.quantity.021#27",
+  "scenario": "path.quantity.021",
+  "expr": "0 'm' / 0 's'"
+ },
+ {
+  "id": "path.quantity.021#28",
+  "scenario": "path.quantity.021",
+  "expr": "1 'm' * 2"
+ },
+ {
+  "id": "path.quantity.021#29",
+  "scenario": "path.quantity.021",
+  "expr": "1 'm' / 2"
+ },
+ {
+  "id": "path.quantity.021#30",
+  "scenario": "path.quantity.021",
+  "expr": "2 * 1 'm'"
+ },
+ {
+  "id": "path.quantity.021#31",
+  "scenario": "path.quantity.021",
+  "expr": "Parameters.parameter.where(name = 'u1').value * 1 'm'",
+  "input": "local:parameters-quantities-nonucum.xml"
+ },
+ {
+  "id": "path.quantity.021#32",
+  "scenario": "path.quantity.021",
+  "expr": "Parameters.parameter.where(name = 'u1').value / 1 'm'",
+  "input": "local:parameters-quantities-nonucum.xml"
+ },
+ {
+  "id": "path.quantity.021#33",
+  "scenario": "path.quantity.021",
+  "expr": "1 'm' / Parameters.parameter.where(name = 'u1').value",
+  "input": "local:parameters-quantities-nonucum.xml"
+ },
+ {
+  "id": "path.quantity.021#34",
+  "scenario": "path.quantity.021",
+  "expr": "Parameters.parameter.where(name = 'u1').value / 0 'm'",
+  "input": "local:parameters-quantities-nonucum.xml"
+ },
+ {
+  "id": "path.quantity.021#35",
+  "scenario": "path.quantity.021",
+  "expr": "Parameters.parameter.where(name = 'u0').value / 0 'm'",
+  "input": "local:parameters-quantities-nonucum.xml"
+ },
+ {
+  "id": "path.quantity.021#36",
+  "scenario": "path.quantity.021",
+  "expr": "Parameters.parameter.where(name = 'u1').value = 1 '1'",
+  "input": "local:parameters-quantities-nonucum.xml"
+ },
+ {
+  "id": "path.quantity.021#37",
+  "scenario": "path.quantity.021",
+  "expr": "1 '' = 1 '1'",
+  "note": "an empty unit literal"
+ },
+ {
+  "id": "path.quantity.021#38",
+  "scenario": "path.quantity.021",
+  "expr": "1 '' / 1 'm'",
+  "note": "an empty unit literal"
+ },
+ {
+  "id": "path.quantity.021#39",
+  "scenario": "path.quantity.021",
+  "expr": "1 ''.toString()",
+  "note": "an empty unit literal"
+ },
+ {
+  "id": "path.quantity.021#40",
+  "scenario": "path.quantity.021",
+  "expr": "1 ''.comparable(1 '1')",
+  "note": "an empty unit literal"
+ },
+ {
+  "id": "path.quantity.021#41",
+  "scenario": "path.quantity.021",
+  "expr": "(1 'cm').code",
+  "note": "a quantity literal's elements"
+ },
+ {
+  "id": "path.quantity.021#42",
+  "scenario": "path.quantity.021",
+  "expr": "(1 'cm').value",
+  "note": "a quantity literal's elements"
+ },
+ {
+  "id": "path.quantity.021#43",
+  "scenario": "path.quantity.021",
+  "expr": "(1 'cm').unit",
+  "note": "a quantity literal's elements"
+ },
+ {
+  "id": "path.quantity.021#44",
+  "scenario": "path.quantity.021",
+  "expr": "(1 'cm').system",
+  "note": "a quantity literal's elements"
+ },
+ {
+  "id": "path.quantity.021#45",
+  "scenario": "path.quantity.021",
+  "expr": "(1 year).unit",
+  "note": "a quantity literal's elements"
+ },
+ {
+  "id": "path.quantity.021#46",
+  "scenario": "path.quantity.021",
+  "expr": "(2 'cm' * 1 'm').code",
+  "note": "a quantity literal's elements"
+ },
+ {
+  "id": "path.quantity.022#01",
+  "scenario": "path.quantity.022",
+  "expr": "1 'cm' = 1 's'"
+ },
+ {
+  "id": "path.quantity.022#02",
+  "scenario": "path.quantity.022",
+  "expr": "1 'g' != 1 'm'"
+ },
+ {
+  "id": "path.quantity.022#03",
+  "scenario": "path.quantity.022",
+  "expr": "1 'cm' ~ 1 's'"
+ },
+ {
+  "id": "path.quantity.022#04",
+  "scenario": "path.quantity.022",
+  "expr": "4.0000 'g' = 4000.0 'mg'"
+ },
+ {
+  "id": "path.quantity.022#05",
+  "scenario": "path.quantity.022",
+  "expr": "4 'g' = 4000 'mg'"
+ },
+ {
+  "id": "path.quantity.022#06",
+  "scenario": "path.quantity.022",
+  "expr": "1 '[in_i]' = 2.54 'cm'"
+ },
+ {
+  "id": "path.quantity.022#07",
+  "scenario": "path.quantity.022",
+  "expr": "1 'L' = 1000 'mL'"
+ },
+ {
+  "id": "path.quantity.022#08",
+  "scenario": "path.quantity.022",
+  "expr": "1 'h' = 60 'min'"
+ },
+ {
+  "id": "path.quantity.022#09",
+  "scenario": "path.quantity.022",
+  "expr": "1 'a' = 365.25 'd'"
+ },
+ {
+  "id": "path.quantity.022#10",
+  "scenario": "path.quantity.022",
+  "expr": "1 'kg' = 1000 'g'"
+ },
+ {
+  "id": "path.quantity.022#11",
+  "scenario": "path.quantity.022",
+  "expr": "1 'g/L' = 1000 'mg/L'"
+ },
+ {
+  "id": "path.quantity.022#12",
+  "scenario": "path.quantity.022",
+  "expr": "185 '[lb_av]' = 83914.58845 'g'"
+ },
+ {
+  "id": "path.quantity.022#13",
+  "scenario": "path.quantity.022",
+  "expr": "100 '%' = 1 '1'"
+ },
+ {
+  "id": "path.quantity.022#14",
+  "scenario": "path.quantity.022",
+  "expr": "1 '10*3' = 1000 '1'"
+ },
+ {
+  "id": "path.quantity.022#15",
+  "scenario": "path.quantity.022",
+  "expr": "60 '/min' = 1 '/s'"
+ },
+ {
+  "id": "path.quantity.022#16",
+  "scenario": "path.quantity.022",
+  "expr": "4 'g' = 4040 'mg'"
+ },
+ {
+  "id": "path.quantity.022#17",
+  "scenario": "path.quantity.022",
+  "expr": "1 'mo' = 30 'd'"
+ },
+ {
+  "id": "path.quantity.022#18",
+  "scenario": "path.quantity.022",
+  "expr": "1 'mg/dL' = 10 'mg/L'"
+ },
+ {
+  "id": "path.quantity.022#19",
+  "scenario": "path.quantity.022",
+  "expr": "10 'mg/L' = 1 'mg/dL'"
+ },
+ {
+  "id": "path.quantity.022#20",
+  "scenario": "path.quantity.022",
+  "expr": "60.0 '/min' = 1 '/s'"
+ },
+ {
+  "id": "path.quantity.022#21",
+  "scenario": "path.quantity.022",
+  "expr": "1 'kg' < 2000 'g'"
+ },
+ {
+  "id": "path.quantity.022#22",
+  "scenario": "path.quantity.022",
+  "expr": "4 'g' < 4040 'mg'"
+ },
+ {
+  "id": "path.quantity.022#23",
+  "scenario": "path.quantity.022",
+  "expr": "1 'mo' < 30 'd'"
+ },
+ {
+  "id": "path.quantity.022#24",
+  "scenario": "path.quantity.022",
+  "expr": "6 days < 1 week"
+ },
+ {
+  "id": "path.quantity.022#25",
+  "scenario": "path.quantity.022",
+  "expr": "1 'cm' < 1 's'"
+ },
+ {
+  "id": "path.quantity.022#26",
+  "scenario": "path.quantity.022",
+  "expr": "1 'kg' ~ 1000 'g'"
+ },
+ {
+  "id": "path.quantity.022#27",
+  "scenario": "path.quantity.022",
+  "expr": "1 'kg' > 999 'g'"
+ },
+ {
+  "id": "path.quantity.022#28",
+  "scenario": "path.quantity.022",
+  "expr": "1 'kg' >= 1000 'g'"
+ },
+ {
+  "id": "path.quantity.022#29",
+  "scenario": "path.quantity.022",
+  "expr": "1 'kg' <= 1000 'g'"
+ },
+ {
+  "id": "path.quantity.023#01",
+  "scenario": "path.quantity.023",
+  "expr": "1 'Cel' * 1 'm'"
+ },
+ {
+  "id": "path.quantity.023#02",
+  "scenario": "path.quantity.023",
+  "expr": "1 '[degF]' * 1 'm'"
+ },
+ {
+  "id": "path.quantity.023#03",
+  "scenario": "path.quantity.023",
+  "expr": "1 '[degRe]' * 1 'm'"
+ },
+ {
+  "id": "path.quantity.023#04",
+  "scenario": "path.quantity.023",
+  "expr": "1 '[hp\\'_X]' * 1 'm'"
+ },
+ {
+  "id": "path.quantity.023#05",
+  "scenario": "path.quantity.023",
+  "expr": "1 '[hp\\'_C]' * 1 'm'"
+ },
+ {
+  "id": "path.quantity.023#06",
+  "scenario": "path.quantity.023",
+  "expr": "1 '[hp\\'_M]' * 1 'm'"
+ },
+ {
+  "id": "path.quantity.023#07",
+  "scenario": "path.quantity.023",
+  "expr": "1 '[hp\\'_Q]' * 1 'm'"
+ },
+ {
+  "id": "path.quantity.023#08",
+  "scenario": "path.quantity.023",
+  "expr": "1 'B[10.nV]' * 1 'm'"
+ },
+ {
+  "id": "path.quantity.023#09",
+  "scenario": "path.quantity.023",
+  "expr": "1 '[m/s2/Hz^(1/2)]' * 1 'm'"
+ },
+ {
+  "id": "path.quantity.023#10",
+  "scenario": "path.quantity.023",
+  "expr": "1 '[pH]' = 1 'mol/L'"
+ },
+ {
+  "id": "path.quantity.023#11",
+  "scenario": "path.quantity.023",
+  "expr": "1 'B' = 1 '1'"
+ },
+ {
+  "id": "path.quantity.023#12",
+  "scenario": "path.quantity.023",
+  "expr": "1 'Np' = 1 '1'"
+ },
+ {
+  "id": "path.quantity.023#13",
+  "scenario": "path.quantity.023",
+  "expr": "1 'B[SPL]' = 2 '10*-5.Pa'"
+ },
+ {
+  "id": "path.quantity.023#14",
+  "scenario": "path.quantity.023",
+  "expr": "1 '%[slope]' = 1 'deg'"
+ },
+ {
+  "id": "path.quantity.023#15",
+  "scenario": "path.quantity.023",
+  "expr": "1 '[p\\'diop]' = 1 'deg'"
+ },
+ {
+  "id": "path.quantity.023#16",
+  "scenario": "path.quantity.023",
+  "expr": "1 'bit_s' = 1 '1'"
+ },
+ {
+  "id": "path.quantity.023#17",
+  "scenario": "path.quantity.023",
+  "expr": "1 'B[V]' = 1 'V'"
+ },
+ {
+  "id": "path.quantity.023#18",
+  "scenario": "path.quantity.023",
+  "expr": "1 'B[kW]' = 1 'kW'"
+ },
+ {
+  "id": "path.quantity.023#19",
+  "scenario": "path.quantity.023",
+  "expr": "1 'Cel' = 1 'Cel'"
+ },
+ {
+  "id": "path.quantity.023#20",
+  "scenario": "path.quantity.023",
+  "expr": "1 'Cel' = 274.15 'K'"
+ },
+ {
+  "id": "path.quantity.023#21",
+  "scenario": "path.quantity.023",
+  "expr": "1 'Cel' ~ 274.15 'K'"
+ },
+ {
+  "id": "path.quantity.023#22",
+  "scenario": "path.quantity.023",
+  "expr": "1 'Cel' < 2 'K'"
+ },
+ {
+  "id": "path.quantity.023#23",
+  "scenario": "path.quantity.023",
+  "expr": "1 'Cel'.comparable(1 'K')"
+ },
+ {
+  "id": "path.quantity.023#24",
+  "scenario": "path.quantity.023",
+  "expr": "1 'Cel' / 1 'm'"
+ },
+ {
+  "id": "path.quantity.023#25",
+  "scenario": "path.quantity.023",
+  "expr": "(1 '[hp\\'_X]').code",
+  "note": "what the literal's code is"
+ },
+ {
+  "id": "path.quantity.023#26",
+  "scenario": "path.quantity.023",
+  "expr": "Parameters.parameter.where(name = 'hx').value.code",
+  "input": "local:parameters-quantities-special.xml"
+ },
+ {
+  "id": "path.quantity.023#27",
+  "scenario": "path.quantity.023",
+  "expr": "Parameters.parameter.where(name = 'hx').value * 1 'm'",
+  "input": "local:parameters-quantities-special.xml"
+ },
+ {
+  "id": "path.quantity.023#28",
+  "scenario": "path.quantity.023",
+  "expr": "Parameters.parameter.where(name = 'pd').value = 1 'deg'",
+  "input": "local:parameters-quantities-special.xml"
+ },
+ {
+  "id": "path.quantity.024#01",
+  "scenario": "path.quantity.024",
+  "expr": "1 'zzz' * 1 'm'"
+ },
+ {
+  "id": "path.quantity.024#02",
+  "scenario": "path.quantity.024",
+  "expr": "1 'm' * 1 'zzz'"
+ },
+ {
+  "id": "path.quantity.024#03",
+  "scenario": "path.quantity.024",
+  "expr": "1 'm(s' * 1 'm'"
+ },
+ {
+  "id": "path.quantity.024#04",
+  "scenario": "path.quantity.024",
+  "expr": "1 'm' * 1 'm(s'"
+ },
+ {
+  "id": "path.quantity.024#05",
+  "scenario": "path.quantity.024",
+  "expr": "1 '.m' * 1 'm'"
+ },
+ {
+  "id": "path.quantity.024#06",
+  "scenario": "path.quantity.024",
+  "expr": "1 'm' * 1 '.m'"
+ },
+ {
+  "id": "path.quantity.024#07",
+  "scenario": "path.quantity.024",
+  "expr": "1 'm.)' * 1 'm'"
+ },
+ {
+  "id": "path.quantity.024#08",
+  "scenario": "path.quantity.024",
+  "expr": "1 'm' * 1 'm.)'"
+ },
+ {
+  "id": "path.quantity.024#09",
+  "scenario": "path.quantity.024",
+  "expr": "1 '{abc' * 1 'm'"
+ },
+ {
+  "id": "path.quantity.024#10",
+  "scenario": "path.quantity.024",
+  "expr": "1 'm' * 1 '{abc'"
+ },
+ {
+  "id": "path.quantity.024#11",
+  "scenario": "path.quantity.024",
+  "expr": "1 '+' * 1 'm'"
+ },
+ {
+  "id": "path.quantity.024#12",
+  "scenario": "path.quantity.024",
+  "expr": "1 'm' * 1 '+'"
+ },
+ {
+  "id": "path.quantity.024#13",
+  "scenario": "path.quantity.024",
+  "expr": "1 'm+' * 1 'm'"
+ },
+ {
+  "id": "path.quantity.024#14",
+  "scenario": "path.quantity.024",
+  "expr": "1 'm' * 1 'm+'"
+ },
+ {
+  "id": "path.quantity.024#15",
+  "scenario": "path.quantity.024",
+  "expr": "1 'm-x' * 1 'm'"
+ },
+ {
+  "id": "path.quantity.024#16",
+  "scenario": "path.quantity.024",
+  "expr": "1 'm' * 1 'm-x'"
+ },
+ {
+  "id": "path.quantity.024#17",
+  "scenario": "path.quantity.024",
+  "expr": "1 'm+.' * 1 'm'"
+ },
+ {
+  "id": "path.quantity.024#18",
+  "scenario": "path.quantity.024",
+  "expr": "1 'm' * 1 'm+.'"
+ },
+ {
+  "id": "path.quantity.024#19",
+  "scenario": "path.quantity.024",
+  "expr": "1 '[[m]]' * 1 'm'"
+ },
+ {
+  "id": "path.quantity.024#20",
+  "scenario": "path.quantity.024",
+  "expr": "1 'm' * 1 '[[m]]'"
+ },
+ {
+  "id": "path.quantity.024#21",
+  "scenario": "path.quantity.024",
+  "expr": "1 '[m[' * 1 'm'"
+ },
+ {
+  "id": "path.quantity.024#22",
+  "scenario": "path.quantity.024",
+  "expr": "1 'm' * 1 '[m['"
+ },
+ {
+  "id": "path.quantity.024#23",
+  "scenario": "path.quantity.024",
+  "expr": "1 'm[[g]]' * 1 'm'"
+ },
+ {
+  "id": "path.quantity.024#24",
+  "scenario": "path.quantity.024",
+  "expr": "1 'm' * 1 'm[[g]]'"
+ },
+ {
+  "id": "path.quantity.024#25",
+  "scenario": "path.quantity.024",
+  "expr": "1 'm]' * 1 'm'"
+ },
+ {
+  "id": "path.quantity.024#26",
+  "scenario": "path.quantity.024",
+  "expr": "1 'm' * 1 'm]'"
+ },
+ {
+  "id": "path.quantity.024#27",
+  "scenario": "path.quantity.024",
+  "expr": "1 'm)m' * 1 'm'"
+ },
+ {
+  "id": "path.quantity.024#28",
+  "scenario": "path.quantity.024",
+  "expr": "1 'm' * 1 'm)m'"
+ },
+ {
+  "id": "path.quantity.024#29",
+  "scenario": "path.quantity.024",
+  "expr": "1 'm)' * 1 'm'"
+ },
+ {
+  "id": "path.quantity.024#30",
+  "scenario": "path.quantity.024",
+  "expr": "1 'm' * 1 'm)'"
+ },
+ {
+  "id": "path.quantity.024#31",
+  "scenario": "path.quantity.024",
+  "expr": "1 'm#' * 1 'm'"
+ },
+ {
+  "id": "path.quantity.024#32",
+  "scenario": "path.quantity.024",
+  "expr": "1 'm' * 1 'm#'"
+ },
+ {
+  "id": "path.quantity.024#33",
+  "scenario": "path.quantity.024",
+  "expr": "1 '' * 1 'm'"
+ },
+ {
+  "id": "path.quantity.024#34",
+  "scenario": "path.quantity.024",
+  "expr": "1 'm' * 1 ''"
+ },
+ {
+  "id": "path.quantity.024#35",
+  "scenario": "path.quantity.024",
+  "expr": "1 'm2' * 1 'm'"
+ },
+ {
+  "id": "path.quantity.024#36",
+  "scenario": "path.quantity.024",
+  "expr": "1 'm' * 1 'm2'"
+ },
+ {
+  "id": "path.quantity.024#37",
+  "scenario": "path.quantity.024",
+  "expr": "1 '10*3' * 1 'm'"
+ },
+ {
+  "id": "path.quantity.024#38",
+  "scenario": "path.quantity.024",
+  "expr": "1 'm' * 1 '10*3'"
+ },
+ {
+  "id": "path.quantity.024#39",
+  "scenario": "path.quantity.024",
+  "expr": "1 'm10000000000' * 1 'm'"
+ },
+ {
+  "id": "path.quantity.024#40",
+  "scenario": "path.quantity.024",
+  "expr": "1 'm' * 1 'm10000000000'"
+ },
+ {
+  "id": "path.quantity.024#41",
+  "scenario": "path.quantity.024",
+  "expr": "1 '10000000000' * 1 'm'"
+ },
+ {
+  "id": "path.quantity.024#42",
+  "scenario": "path.quantity.024",
+  "expr": "1 'm' * 1 '10000000000'"
+ },
+ {
+  "id": "path.quantity.024#43",
+  "scenario": "path.quantity.024",
+  "expr": "1 '10000000000' = 1 'm'"
+ },
+ {
+  "id": "path.quantity.024#44",
+  "scenario": "path.quantity.024",
+  "expr": "1 '10000000000' = 1 '10000000000'"
+ },
+ {
+  "id": "path.quantity.024#45",
+  "scenario": "path.quantity.024",
+  "expr": "1 '10000000000' ~ 1 'm'"
+ },
+ {
+  "id": "path.quantity.024#46",
+  "scenario": "path.quantity.024",
+  "expr": "1 '10000000000' < 1 'm'"
+ },
+ {
+  "id": "path.quantity.024#47",
+  "scenario": "path.quantity.024",
+  "expr": "1 'm10000000000' / 1 'm'"
+ },
+ {
+  "id": "path.quantity.024#48",
+  "scenario": "path.quantity.024",
+  "expr": "1 '10000000000'.comparable(1 'm')"
+ },
+ {
+  "id": "path.quantity.024#49",
+  "scenario": "path.quantity.024",
+  "expr": "1 'cm'.comparable(1 '[s]')"
+ },
+ {
+  "id": "path.quantity.024#50",
+  "scenario": "path.quantity.024",
+  "expr": "1 'cm'.comparable(1 '[in_i]')"
+ },
+ {
+  "id": "path.quantity.024#51",
+  "scenario": "path.quantity.024",
+  "expr": "1 'm(s' = 1 'm'"
+ },
+ {
+  "id": "path.quantity.024#52",
+  "scenario": "path.quantity.024",
+  "expr": "1 'm(s' ~ 1 'm'"
+ },
+ {
+  "id": "path.quantity.024#53",
+  "scenario": "path.quantity.024",
+  "expr": "1 'm(s'.comparable(1 'm')"
+ },
+ {
+  "id": "path.quantity.024#54",
+  "scenario": "path.quantity.024",
+  "expr": "1 'm(s' / 1 'm'"
+ },
+ {
+  "id": "path.quantity.024#55",
+  "scenario": "path.quantity.024",
+  "expr": "1 'm(s' < 1 'm'"
+ },
+ {
+  "id": "path.quantity.024#56",
+  "scenario": "path.quantity.024",
+  "expr": "1 'm)' = 1 'm'"
+ },
+ {
+  "id": "path.quantity.025#01",
+  "scenario": "path.quantity.025",
+  "expr": "(1 week).unit",
+  "note": "a quantity the engine builds: its elements"
+ },
+ {
+  "id": "path.quantity.025#02",
+  "scenario": "path.quantity.025",
+  "expr": "(1 week).code",
+  "note": "a quantity the engine builds: its elements"
+ },
+ {
+  "id": "path.quantity.025#03",
+  "scenario": "path.quantity.025",
+  "expr": "(1 week).system",
+  "note": "a quantity the engine builds: its elements"
+ },
+ {
+  "id": "path.quantity.025#04",
+  "scenario": "path.quantity.025",
+  "expr": "(1 year).code",
+  "note": "a quantity the engine builds: its elements"
+ },
+ {
+  "id": "path.quantity.025#05",
+  "scenario": "path.quantity.025",
+  "expr": "(1 year).system",
+  "note": "a quantity the engine builds: its elements"
+ },
+ {
+  "id": "path.quantity.025#06",
+  "scenario": "path.quantity.025",
+  "expr": "(2 'cm' * 1 'm').unit",
+  "note": "a quantity the engine builds: its elements"
+ },
+ {
+  "id": "path.quantity.025#07",
+  "scenario": "path.quantity.025",
+  "expr": "(1 '%' * 1 '1').code",
+  "note": "a quantity the engine builds: its elements"
+ },
+ {
+  "id": "path.quantity.025#08",
+  "scenario": "path.quantity.025",
+  "expr": "(1 'cm').code",
+  "input": "suite:patient-example.xml",
+  "check": "run",
+  "note": "the check rejects navigation on a System.Quantity or untyped result"
+ },
+ {
+  "id": "path.quantity.025#09",
+  "scenario": "path.quantity.025",
+  "expr": "(2 'cm' * 1 'm').code",
+  "input": "suite:patient-example.xml",
+  "check": "run",
+  "note": "the check rejects navigation on a System.Quantity or untyped result"
+ },
+ {
+  "id": "path.quantity.025#10",
+  "scenario": "path.quantity.025",
+  "expr": "(Observation.value as Quantity).code",
+  "input": "suite:observation-example.xml",
+  "check": "run",
+  "note": "a Quantity read from a resource passes the check"
+ },
+ {
+  "id": "path.quantity.026#01",
+  "scenario": "path.quantity.026",
+  "expr": "1 ''",
+  "note": "an empty unit literal: Quantity.setCode(\"\") leaves no code"
+ },
+ {
+  "id": "path.quantity.026#02",
+  "scenario": "path.quantity.026",
+  "expr": "(1 '').code",
+  "note": "an empty unit literal: Quantity.setCode(\"\") leaves no code"
+ },
+ {
+  "id": "path.quantity.026#03",
+  "scenario": "path.quantity.026",
+  "expr": "(1 '').system",
+  "note": "an empty unit literal: Quantity.setCode(\"\") leaves no code"
+ },
+ {
+  "id": "path.quantity.026#04",
+  "scenario": "path.quantity.026",
+  "expr": "(1 '').code",
+  "input": "suite:patient-example.xml",
+  "check": "run",
+  "note": "the check rejects navigation on a System.Quantity, (@char 9)"
+ },
+ {
+  "id": "path.quantity.026#05",
+  "scenario": "path.quantity.026",
+  "expr": "(1 '').system",
+  "input": "suite:patient-example.xml",
+  "check": "run",
+  "note": "the check rejects navigation on a System.Quantity, (@char 9)"
+ },
+ {
+  "id": "path.quantity.027#01",
+  "scenario": "path.quantity.027",
+  "expr": "(1 'cm').children()",
+  "note": "Quantity.listChildren order: value, comparator, unit, system, code"
+ },
+ {
+  "id": "path.quantity.027#02",
+  "scenario": "path.quantity.027",
+  "expr": "(1 'cm').descendants()",
+  "note": "Quantity.listChildren order: value, comparator, unit, system, code"
+ },
+ {
+  "id": "path.quantity.027#03",
+  "scenario": "path.quantity.027",
+  "expr": "(1 'cm').children().count()",
+  "note": "Quantity.listChildren order: value, comparator, unit, system, code"
+ },
+ {
+  "id": "path.quantity.027#04",
+  "scenario": "path.quantity.027",
+  "expr": "(1 'cm').descendants().count()",
+  "note": "Quantity.listChildren order: value, comparator, unit, system, code"
+ },
+ {
+  "id": "path.quantity.027#05",
+  "scenario": "path.quantity.027",
+  "expr": "(1 year).children()",
+  "note": "Quantity.listChildren order: value, comparator, unit, system, code"
+ },
+ {
+  "id": "path.quantity.027#06",
+  "scenario": "path.quantity.027",
+  "expr": "(1 year).descendants()",
+  "note": "Quantity.listChildren order: value, comparator, unit, system, code"
+ },
+ {
+  "id": "path.quantity.027#07",
+  "scenario": "path.quantity.027",
+  "expr": "(1 year).children().count()",
+  "note": "Quantity.listChildren order: value, comparator, unit, system, code"
+ },
+ {
+  "id": "path.quantity.027#08",
+  "scenario": "path.quantity.027",
+  "expr": "(1 year).descendants().count()",
+  "note": "Quantity.listChildren order: value, comparator, unit, system, code"
+ },
+ {
+  "id": "path.quantity.027#09",
+  "scenario": "path.quantity.027",
+  "expr": "(1 week).children()",
+  "note": "Quantity.listChildren order: value, comparator, unit, system, code"
+ },
+ {
+  "id": "path.quantity.027#10",
+  "scenario": "path.quantity.027",
+  "expr": "(1 week).descendants()",
+  "note": "Quantity.listChildren order: value, comparator, unit, system, code"
+ },
+ {
+  "id": "path.quantity.027#11",
+  "scenario": "path.quantity.027",
+  "expr": "(1 week).children().count()",
+  "note": "Quantity.listChildren order: value, comparator, unit, system, code"
+ },
+ {
+  "id": "path.quantity.027#12",
+  "scenario": "path.quantity.027",
+  "expr": "(1 week).descendants().count()",
+  "note": "Quantity.listChildren order: value, comparator, unit, system, code"
+ },
+ {
+  "id": "path.quantity.027#13",
+  "scenario": "path.quantity.027",
+  "expr": "(1 '').children()",
+  "note": "Quantity.listChildren order: value, comparator, unit, system, code"
+ },
+ {
+  "id": "path.quantity.027#14",
+  "scenario": "path.quantity.027",
+  "expr": "(1 '').descendants()",
+  "note": "Quantity.listChildren order: value, comparator, unit, system, code"
+ },
+ {
+  "id": "path.quantity.027#15",
+  "scenario": "path.quantity.027",
+  "expr": "(1 '').children().count()",
+  "note": "Quantity.listChildren order: value, comparator, unit, system, code"
+ },
+ {
+  "id": "path.quantity.027#16",
+  "scenario": "path.quantity.027",
+  "expr": "(1 '').descendants().count()",
+  "note": "Quantity.listChildren order: value, comparator, unit, system, code"
+ },
+ {
+  "id": "path.quantity.027#17",
+  "scenario": "path.quantity.027",
+  "expr": "(2 'cm' * 1 'm').children()",
+  "note": "Quantity.listChildren order: value, comparator, unit, system, code"
+ },
+ {
+  "id": "path.quantity.027#18",
+  "scenario": "path.quantity.027",
+  "expr": "(2 'cm' * 1 'm').descendants()",
+  "note": "Quantity.listChildren order: value, comparator, unit, system, code"
+ },
+ {
+  "id": "path.quantity.027#19",
+  "scenario": "path.quantity.027",
+  "expr": "(2 'cm' * 1 'm').children().count()",
+  "note": "Quantity.listChildren order: value, comparator, unit, system, code"
+ },
+ {
+  "id": "path.quantity.027#20",
+  "scenario": "path.quantity.027",
+  "expr": "(2 'cm' * 1 'm').descendants().count()",
+  "note": "Quantity.listChildren order: value, comparator, unit, system, code"
+ },
+ {
+  "id": "path.quantity.027#21",
+  "scenario": "path.quantity.027",
+  "expr": "(1 'cm').children().count()",
+  "input": "suite:patient-example.xml",
+  "check": "run",
+  "note": "the check passes children() untyped"
+ },
+ {
+  "id": "path.quantity.027#22",
+  "scenario": "path.quantity.027",
+  "expr": "(1 'cm').children().first()",
+  "input": "suite:patient-example.xml",
+  "check": "run",
+  "note": "rejected at (@char 22)"
+ },
+ {
+  "id": "path.quantity.027#23",
+  "scenario": "path.quantity.027",
+  "expr": "(1 'cm').children().code",
+  "input": "suite:patient-example.xml",
+  "check": "run",
+  "note": "rejected at (@char 22)"
+ },
+ {
+  "id": "path.strictness.005#01",
+  "scenario": "path.strictness.005",
+  "expr": "Patient.gender.as(Code)",
+  "input": "suite:patient-example.xml",
+  "worker": "server"
+ },
+ {
+  "id": "path.strictness.005#02",
+  "scenario": "path.strictness.005",
+  "expr": "Patient.gender.as(Code)",
+  "input": "suite:patient-example.xml",
+  "worker": "server",
+  "settings": {
+   "asCaseSensitive": true
+  }
+ },
+ {
+  "id": "path.strictness.005#03",
+  "scenario": "path.strictness.005",
+  "expr": "Patient.gender as Code",
+  "input": "suite:patient-example.xml",
+  "worker": "server"
+ },
+ {
+  "id": "path.strictness.005#04",
+  "scenario": "path.strictness.005",
+  "expr": "Patient.gender as Code",
+  "input": "suite:patient-example.xml",
+  "worker": "server",
+  "settings": {
+   "asCaseSensitive": true
+  }
+ },
+ {
+  "id": "path.strictness.005#05",
+  "scenario": "path.strictness.005",
+  "expr": "Patient.gender.ofType(Code)",
+  "input": "suite:patient-example.xml",
+  "worker": "server"
+ },
+ {
+  "id": "path.strictness.005#06",
+  "scenario": "path.strictness.005",
+  "expr": "Patient.gender.ofType(Code)",
+  "input": "suite:patient-example.xml",
+  "worker": "server",
+  "settings": {
+   "asCaseSensitive": true
+  }
+ },
+ {
+  "id": "path.strictness.005#07",
+  "scenario": "path.strictness.005",
+  "expr": "Observation.value.as(quantity)",
+  "input": "suite:observation-example.xml",
+  "worker": "server"
+ },
+ {
+  "id": "path.strictness.005#08",
+  "scenario": "path.strictness.005",
+  "expr": "Observation.value.as(quantity)",
+  "input": "suite:observation-example.xml",
+  "worker": "server",
+  "settings": {
+   "asCaseSensitive": true
+  }
+ },
+ {
+  "id": "path.strictness.005#09",
+  "scenario": "path.strictness.005",
+  "expr": "Patient.gender.as(Code)",
+  "input": "suite:patient-example.xml",
+  "worker": "suite",
+  "documented": "DEV-0026"
+ },
+ {
+  "id": "path.strictness.005#10",
+  "scenario": "path.strictness.005",
+  "expr": "Patient.gender.as(Code)",
+  "input": "suite:patient-example.xml",
+  "worker": "suite",
+  "settings": {
+   "asCaseSensitive": true
+  },
+  "documented": "DEV-0026"
+ },
+ {
+  "id": "path.strictness.005#11",
+  "scenario": "path.strictness.005",
+  "expr": "Patient.gender as Code",
+  "input": "suite:patient-example.xml",
+  "worker": "suite",
+  "documented": "DEV-0026"
+ },
+ {
+  "id": "path.strictness.005#12",
+  "scenario": "path.strictness.005",
+  "expr": "Patient.gender as Code",
+  "input": "suite:patient-example.xml",
+  "worker": "suite",
+  "settings": {
+   "asCaseSensitive": true
+  },
+  "documented": "DEV-0026"
+ },
+ {
+  "id": "path.strictness.005#13",
+  "scenario": "path.strictness.005",
+  "expr": "Patient.gender.ofType(Code)",
+  "input": "suite:patient-example.xml",
+  "worker": "suite",
+  "documented": "DEV-0026"
+ },
+ {
+  "id": "path.strictness.005#14",
+  "scenario": "path.strictness.005",
+  "expr": "Patient.gender.ofType(Code)",
+  "input": "suite:patient-example.xml",
+  "worker": "suite",
+  "settings": {
+   "asCaseSensitive": true
+  },
+  "documented": "DEV-0026"
+ },
+ {
+  "id": "path.strictness.005#15",
+  "scenario": "path.strictness.005",
+  "expr": "Observation.value.as(quantity)",
+  "input": "suite:observation-example.xml",
+  "worker": "suite"
+ },
+ {
+  "id": "path.strictness.005#16",
+  "scenario": "path.strictness.005",
+  "expr": "Observation.value.as(quantity)",
+  "input": "suite:observation-example.xml",
+  "worker": "suite",
+  "settings": {
+   "asCaseSensitive": true
+  }
+ },
+ {
+  "id": "path.strictness.006#01",
+  "scenario": "path.strictness.006",
+  "expr": "Observation.valueQuantity.exists()",
+  "input": "suite:observation-example.xml",
+  "check": "run"
+ },
+ {
+  "id": "path.strictness.006#02",
+  "scenario": "path.strictness.006",
+  "expr": "Observation.valueQuantity.exists()",
+  "input": "suite:observation-example.xml",
+  "check": "run",
+  "settings": {
+   "polymorphic": true
+  }
+ },
+ {
+  "id": "path.strictness.006#03",
+  "scenario": "path.strictness.006",
+  "expr": "Observation.value",
+  "input": "suite:observation-example.xml",
+  "settings": {
+   "polymorphic": true
+  }
+ },
+ {
+  "id": "path.strictness.006#04",
+  "scenario": "path.strictness.006",
+  "expr": "Observation.value.exists()",
+  "input": "suite:observation-example.xml",
+  "settings": {
+   "polymorphic": true
+  }
+ },
+ {
+  "id": "path.strictness.006#05",
+  "scenario": "path.strictness.006",
+  "expr": "Observation.value",
+  "input": "suite:observation-example.xml"
+ },
+ {
+  "id": "path.string.019#01",
+  "scenario": "path.string.019",
+  "expr": "'a b&c=d/\u00e9~'.escape('url')"
+ },
+ {
+  "id": "path.string.019#02",
+  "scenario": "path.string.019",
+  "expr": "'a+b%20c'.unescape('url')"
+ },
+ {
+  "id": "path.string.019#03",
+  "scenario": "path.string.019",
+  "expr": "'a*b&c#d[e>f<g`h'.escape('md')"
+ },
+ {
+  "id": "path.string.019#04",
+  "scenario": "path.string.019",
+  "expr": "'a]b_c(d)e\\\\f'.escape('md')"
+ },
+ {
+  "id": "path.string.019#05",
+  "scenario": "path.string.019",
+  "expr": "'a\\\\*b'.unescape('md')"
+ },
+ {
+  "id": "path.string.019#06",
+  "scenario": "path.string.019",
+  "expr": "'a\\\\xb'.unescape('md')"
+ },
+ {
+  "id": "path.string.019#07",
+  "scenario": "path.string.019",
+  "expr": "'a\\\\'.unescape('md')"
+ },
+ {
+  "id": "path.string.019#08",
+  "scenario": "path.string.019",
+  "expr": "'\\\\\\\\*'.unescape('md')"
+ },
+ {
+  "id": "path.string.019#09",
+  "scenario": "path.string.019",
+  "expr": "'a'.escape('xyz')"
+ },
+ {
+  "id": "path.string.019#10",
+  "scenario": "path.string.019",
+  "expr": "'a'.unescape('xyz')"
+ },
+ {
+  "id": "path.string.019#11",
+  "scenario": "path.string.019",
+  "expr": "'\\\\x'.unescape('json')"
+ },
+ {
+  "id": "path.string.019#12",
+  "scenario": "path.string.019",
+  "expr": "'\\\\\\\"1<2\\\\\\\"'.unescape('json')"
+ },
+ {
+  "id": "path.string.019#13",
+  "scenario": "path.string.019",
+  "expr": "'\\\\u0041B'.unescape('json')"
+ },
+ {
+  "id": "path.string.019#14",
+  "scenario": "path.string.019",
+  "expr": "'\\\"1<2\\\"'.escape('json')"
+ },
+ {
+  "id": "path.string.019#15",
+  "scenario": "path.string.019",
+  "expr": "'%zz'.unescape('url')",
+  "grade": "error"
+ },
+ {
+  "id": "path.string.019#16",
+  "scenario": "path.string.019",
+  "expr": "'a\\\\'.unescape('json')",
+  "grade": "error"
+ },
+ {
+  "id": "path.string.025#01",
+  "scenario": "path.string.025",
+  "expr": "'a'.matches('(?u)a')",
+  "documented": "DEV-0023"
+ },
+ {
+  "id": "path.string.025#02",
+  "scenario": "path.string.025",
+  "expr": "'a'.matchesFull('(?u)a')",
+  "documented": "DEV-0023"
+ },
+ {
+  "id": "path.string.025#03",
+  "scenario": "path.string.025",
+  "expr": "'a'.replaceMatches('(?u)a', 'b')",
+  "documented": "DEV-0023"
+ },
+ {
+  "id": "path.string.025#04",
+  "scenario": "path.string.025",
+  "expr": "'a'.matches('(?U)a')",
+  "documented": "DEV-0023"
+ },
+ {
+  "id": "path.string.025#05",
+  "scenario": "path.string.025",
+  "expr": "'a'.matchesFull('(?U)a')",
+  "documented": "DEV-0023"
+ },
+ {
+  "id": "path.string.025#06",
+  "scenario": "path.string.025",
+  "expr": "'a'.replaceMatches('(?U)a', 'b')",
+  "documented": "DEV-0023"
+ },
+ {
+  "id": "path.string.025#07",
+  "scenario": "path.string.025",
+  "expr": "'a'.matches('(?x)a')",
+  "documented": "DEV-0023"
+ },
+ {
+  "id": "path.string.025#08",
+  "scenario": "path.string.025",
+  "expr": "'a'.matchesFull('(?x)a')",
+  "documented": "DEV-0023"
+ },
+ {
+  "id": "path.string.025#09",
+  "scenario": "path.string.025",
+  "expr": "'a'.replaceMatches('(?x)a', 'b')",
+  "documented": "DEV-0023"
+ },
+ {
+  "id": "path.string.025#10",
+  "scenario": "path.string.025",
+  "expr": "'a'.matches('\\\\v')",
+  "documented": "DEV-0023"
+ },
+ {
+  "id": "path.string.025#11",
+  "scenario": "path.string.025",
+  "expr": "'a'.matchesFull('\\\\v')",
+  "documented": "DEV-0023"
+ },
+ {
+  "id": "path.string.025#12",
+  "scenario": "path.string.025",
+  "expr": "'a'.replaceMatches('\\\\v', 'b')",
+  "documented": "DEV-0023"
+ },
+ {
+  "id": "path.string.025#13",
+  "scenario": "path.string.025",
+  "expr": "'a'.matches('a*+')",
+  "documented": "DEV-0023"
+ },
+ {
+  "id": "path.string.025#14",
+  "scenario": "path.string.025",
+  "expr": "'a'.matchesFull('a*+')",
+  "documented": "DEV-0023"
+ },
+ {
+  "id": "path.string.025#15",
+  "scenario": "path.string.025",
+  "expr": "'a'.replaceMatches('a*+', 'b')",
+  "documented": "DEV-0023"
+ },
+ {
+  "id": "path.string.025#16",
+  "scenario": "path.string.025",
+  "expr": "'a'.matches('\\\\p{Alpha}')",
+  "documented": "DEV-0023"
+ },
+ {
+  "id": "path.string.025#17",
+  "scenario": "path.string.025",
+  "expr": "'a'.matchesFull('\\\\p{Alpha}')",
+  "documented": "DEV-0023"
+ },
+ {
+  "id": "path.string.025#18",
+  "scenario": "path.string.025",
+  "expr": "'a'.replaceMatches('\\\\p{Alpha}', 'b')",
+  "documented": "DEV-0023"
+ },
+ {
+  "id": "path.string.025#19",
+  "scenario": "path.string.025",
+  "expr": "'a'.matches('[a-z--b]')",
+  "documented": "DEV-0023"
+ },
+ {
+  "id": "path.string.025#20",
+  "scenario": "path.string.025",
+  "expr": "'a'.matchesFull('[a-z--b]')",
+  "documented": "DEV-0023"
+ },
+ {
+  "id": "path.string.025#21",
+  "scenario": "path.string.025",
+  "expr": "'a'.replaceMatches('[a-z--b]', 'b')",
+  "documented": "DEV-0023"
+ },
+ {
+  "id": "path.string.025#22",
+  "scenario": "path.string.025",
+  "expr": "'a'.matches('[a-z~~b]')",
+  "documented": "DEV-0023"
+ },
+ {
+  "id": "path.string.025#23",
+  "scenario": "path.string.025",
+  "expr": "'a'.matchesFull('[a-z~~b]')",
+  "documented": "DEV-0023"
+ },
+ {
+  "id": "path.string.025#24",
+  "scenario": "path.string.025",
+  "expr": "'a'.replaceMatches('[a-z~~b]', 'b')",
+  "documented": "DEV-0023"
+ },
+ {
+  "id": "path.string.025#25",
+  "scenario": "path.string.025",
+  "expr": "'-'.matches('[a-z--b]')",
+  "documented": "DEV-0023"
+ },
+ {
+  "id": "path.string.025#26",
+  "scenario": "path.string.025",
+  "expr": "'b'.matches('[a-z--b]')",
+  "documented": "DEV-0023"
+ },
+ {
+  "id": "path.string.025#27",
+  "scenario": "path.string.025",
+  "expr": "'aa'.matches('(a)\\\\1')",
+  "documented": "DEV-0023"
+ },
+ {
+  "id": "path.string.025#28",
+  "scenario": "path.string.025",
+  "expr": "'ab'.matches('a(?=b)')",
+  "documented": "DEV-0023"
+ },
+ {
+  "id": "path.string.025#29",
+  "scenario": "path.string.025",
+  "expr": "'a'.matches('(?>a)')",
+  "documented": "DEV-0023"
+ },
+ {
+  "id": "path.string.025#30",
+  "scenario": "path.string.025",
+  "expr": "'a.'.matches('\\\\Qa.\\\\E')",
+  "documented": "DEV-0023"
+ },
+ {
+  "id": "path.string.025#31",
+  "scenario": "path.string.025",
+  "expr": "'a'.matches('[a--b]')",
+  "grade": "error",
+  "note": "an error on both sides; the message is java.util.regex's"
+ },
+ {
+  "id": "path.string.025#32",
+  "scenario": "path.string.025",
+  "expr": "'a'.matches('(a')",
+  "grade": "error",
+  "note": "an error on both sides; the message is java.util.regex's"
+ },
+ {
+  "id": "path.string.026#01",
+  "scenario": "path.string.026",
+  "expr": "'\u0663'.matches('\\\\d')"
+ },
+ {
+  "id": "path.string.026#02",
+  "scenario": "path.string.026",
+  "expr": "'\u00e9'.matches('\\\\w')"
+ },
+ {
+  "id": "path.string.026#03",
+  "scenario": "path.string.026",
+  "expr": "'\u00e9'.matches('\\\\W')"
+ },
+ {
+  "id": "path.string.026#04",
+  "scenario": "path.string.026",
+  "expr": "'a\u00a0b'.matches('a\\\\sb')"
+ },
+ {
+  "id": "path.string.026#05",
+  "scenario": "path.string.026",
+  "expr": "'7'.matches('\\\\d')"
+ },
+ {
+  "id": "path.string.026#06",
+  "scenario": "path.string.026",
+  "expr": "'_'.matches('\\\\w')"
+ },
+ {
+  "id": "path.string.026#07",
+  "scenario": "path.string.026",
+  "expr": "'a b'.matches('a\\\\sb')"
+ },
+ {
+  "id": "path.string.026#08",
+  "scenario": "path.string.026",
+  "expr": "'ab'.matches('\\\\bab\\\\b')"
+ },
+ {
+  "id": "path.string.026#09",
+  "scenario": "path.string.026",
+  "expr": "'\u00e9'.matches('[\\\\w]')"
+ },
+ {
+  "id": "path.string.026#10",
+  "scenario": "path.string.026",
+  "expr": "'\u0663'.matches('\\\\D')"
+ },
+ {
+  "id": "path.string.026#11",
+  "scenario": "path.string.026",
+  "expr": "'a\u00a0b'.matches('a\\\\Sb')"
+ },
+ {
+  "id": "path.string.026#12",
+  "scenario": "path.string.026",
+  "expr": "'ab'.matches('a\\\\Bb')"
+ },
+ {
+  "id": "path.string.026#13",
+  "scenario": "path.string.026",
+  "expr": "'\u00e9'.matches('\\\\b')"
+ },
+ {
+  "id": "path.string.026#14",
+  "scenario": "path.string.026",
+  "expr": "'7'.matches('\\\\D')"
+ },
+ {
+  "id": "path.string.028#01",
+  "scenario": "path.string.028",
+  "expr": "'abc'.replaceMatches('x*', '-')"
+ },
+ {
+  "id": "path.string.028#02",
+  "scenario": "path.string.028",
+  "expr": "'abc'.replaceMatches('b*', '-')"
+ },
+ {
+  "id": "path.string.028#03",
+  "scenario": "path.string.028",
+  "expr": "'\ud83d\ude00'.replaceMatches('x*', '-').length()"
+ },
+ {
+  "id": "path.string.028#04",
+  "scenario": "path.string.028",
+  "expr": "'a\ud83d\ude00'.replaceMatches('x*', '-').length()"
+ },
+ {
+  "id": "path.string.028#05",
+  "scenario": "path.string.028",
+  "expr": "'\ud83d\ude00'.replaceMatches('x*', '-').substring(0, 1)"
+ },
+ {
+  "id": "path.string.028#06",
+  "scenario": "path.string.028",
+  "expr": "'\ud83d\ude00'.replaceMatches('x*', '-').substring(2, 1)"
+ },
+ {
+  "id": "path.string.028#07",
+  "scenario": "path.string.028",
+  "expr": "'\ud83d\ude00'.replaceMatches('x*', '-').substring(4)"
+ },
+ {
+  "id": "path.string.028#08",
+  "scenario": "path.string.028",
+  "expr": "'\ud83d\ude00'.replaceMatches('x*', '-').substring(1, 1) = '\ud83d\ude00'.substring(0, 1)"
+ },
+ {
+  "id": "path.string.028#09",
+  "scenario": "path.string.028",
+  "expr": "'abc'.replaceMatches('', 'x')"
+ },
+ {
+  "id": "path.string.029#01",
+  "scenario": "path.string.029",
+  "expr": "'a'.matches('(?:a{1000}){1000}')",
+  "documented": "DEV-0023"
+ },
+ {
+  "id": "path.string.029#02",
+  "scenario": "path.string.029",
+  "expr": "'a'.matches('((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((a))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))')",
+  "documented": "DEV-0023"
+ },
+ {
+  "id": "path.string.029#03",
+  "scenario": "path.string.029",
+  "expr": "'a'.matches('((((((((((((((((((((((((((((((((((((((((((((((((((a))))))))))))))))))))))))))))))))))))))))))))))))))')"
+ },
+ {
+  "id": "path.string.029#04",
+  "scenario": "path.string.029",
+  "expr": "'a'.matches('a{3}')"
+ },
+ {
+  "id": "path.subset.003#01",
+  "scenario": "path.subset.003",
+  "expr": "Patient.name.prefix.single()",
+  "input": "suite:patient-example.xml"
+ },
+ {
+  "id": "path.subset.013#01",
+  "scenario": "path.subset.013",
+  "expr": "Patient.children()[0]",
+  "input": "suite:patient-example.xml",
+  "check": "only"
+ },
+ {
+  "id": "path.subset.013#02",
+  "scenario": "path.subset.013",
+  "expr": "Patient.children().first()",
+  "input": "suite:patient-example.xml",
+  "check": "only"
+ },
+ {
+  "id": "path.subset.013#03",
+  "scenario": "path.subset.013",
+  "expr": "Patient.children().last()",
+  "input": "suite:patient-example.xml",
+  "check": "only"
+ },
+ {
+  "id": "path.subset.013#04",
+  "scenario": "path.subset.013",
+  "expr": "Patient.children().tail()",
+  "input": "suite:patient-example.xml",
+  "check": "only"
+ },
+ {
+  "id": "path.subset.013#05",
+  "scenario": "path.subset.013",
+  "expr": "Patient.children().skip(1)",
+  "input": "suite:patient-example.xml",
+  "check": "only"
+ },
+ {
+  "id": "path.subset.013#06",
+  "scenario": "path.subset.013",
+  "expr": "Patient.children().take(1)",
+  "input": "suite:patient-example.xml",
+  "check": "only"
+ },
+ {
+  "id": "path.subset.013#07",
+  "scenario": "path.subset.013",
+  "expr": "Patient.name.first()",
+  "input": "suite:patient-example.xml",
+  "check": "only",
+  "note": "an ordered focus passes"
+ },
+ {
+  "id": "path.utility.017#01",
+  "scenario": "path.utility.017",
+  "expr": "Observation.subject.resolve().id",
+  "input": "local:observation-contained.json"
+ },
+ {
+  "id": "path.utility.017#02",
+  "scenario": "path.utility.017",
+  "expr": "Observation.subject.resolve().active",
+  "input": "local:observation-contained.json"
+ },
+ {
+  "id": "path.utility.017#03",
+  "scenario": "path.utility.017",
+  "expr": "'#p1'.resolve().id",
+  "input": "local:observation-contained.json"
+ },
+ {
+  "id": "path.utility.017#04",
+  "scenario": "path.utility.017",
+  "expr": "Observation.performer.resolve()",
+  "input": "local:observation-contained.json"
+ },
+ {
+  "id": "path.utility.017#05",
+  "scenario": "path.utility.017",
+  "expr": "Observation.performer.count()",
+  "input": "local:observation-contained.json"
+ },
+ {
+  "id": "path.utility.017#06",
+  "scenario": "path.utility.017",
+  "expr": "Observation.subject.resolve()",
+  "input": "local:observation-no-contained.json"
+ },
+ {
+  "id": "path.utility.022#01",
+  "scenario": "path.utility.022",
+  "expr": "Patient.conformsTo('http://hl7.org/fhir/StructureDefinition/Patient')",
+  "input": "suite:patient-example.xml"
+ },
+ {
+  "id": "path.utility.022#02",
+  "scenario": "path.utility.022",
+  "expr": "Patient.conformsTo('http://hl7.org/fhir/StructureDefinition/Patient')",
+  "input": "suite:patient-example.xml",
+  "host": {
+   "conformsTo": true
+  }
+ },
+ {
+  "id": "path.utility.022#03",
+  "scenario": "path.utility.022",
+  "expr": "Patient.name.conformsTo('http://hl7.org/fhir/StructureDefinition/Patient')",
+  "input": "suite:patient-example.xml",
+  "host": {
+   "conformsTo": true
+  }
+ },
+ {
+  "id": "path.utility.022#04",
+  "scenario": "path.utility.022",
+  "expr": "{}.conformsTo('http://hl7.org/fhir/StructureDefinition/Patient')",
+  "input": "suite:patient-example.xml",
+  "host": {
+   "conformsTo": true
+  }
+ },
+ {
+  "id": "path.utility.023#01",
+  "scenario": "path.utility.023",
+  "expr": "Patient.extension('http://example.org/x').value",
+  "input": "local:patient-modifierextension.json"
+ },
+ {
+  "id": "path.utility.023#02",
+  "scenario": "path.utility.023",
+  "expr": "Patient.extension('http://example.org/y').value",
+  "input": "local:patient-modifierextension.json"
+ },
+ {
+  "id": "path.utility.023#03",
+  "scenario": "path.utility.023",
+  "expr": "Patient.extension.count()",
+  "input": "local:patient-modifierextension.json"
+ },
+ {
+  "id": "path.utility.024#01",
+  "scenario": "path.utility.024",
+  "expr": "Patient.name.use memberOf 'http://hl7.org/fhir/ValueSet/name-use'",
+  "input": "suite:patient-example.xml",
+  "host": {
+   "valueSets": "worker"
+  }
+ },
+ {
+  "id": "path.utility.024#02",
+  "scenario": "path.utility.024",
+  "expr": "Patient.name.use.memberOf('http://hl7.org/fhir/ValueSet/name-use')",
+  "input": "suite:patient-example.xml",
+  "host": {
+   "valueSets": "worker"
+  }
+ },
+ {
+  "id": "path.utility.024#03",
+  "scenario": "path.utility.024",
+  "expr": "Patient.name.first().use.memberOf('http://hl7.org/fhir/ValueSet/name-use')",
+  "input": "suite:patient-example.xml",
+  "host": {
+   "valueSets": "worker"
+  }
+ },
+ {
+  "id": "path.utility.024#04",
+  "scenario": "path.utility.024",
+  "expr": "Patient.gender memberOf 'http://hl7.org/fhir/ValueSet/name-use'",
+  "input": "suite:patient-example.xml",
+  "host": {
+   "valueSets": "worker"
+  }
+ },
+ {
+  "id": "path.utility.027#01",
+  "scenario": "path.utility.027",
+  "expr": "Patient.custom()",
+  "input": "suite:patient-example.xml",
+  "host": {
+   "functions": [
+    {
+     "name": "custom",
+     "min": 0,
+     "max": 1,
+     "type": "string",
+     "result": [
+      "string:custom-result"
+     ]
+    },
+    {
+     "name": "typed",
+     "min": 1,
+     "max": 1,
+     "type": "boolean",
+     "result": [
+      "boolean:true"
+     ],
+     "typeParams": [
+      0
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "id": "path.utility.027#02",
+  "scenario": "path.utility.027",
+  "expr": "Patient.custom(name.given)",
+  "input": "suite:patient-example.xml",
+  "host": {
+   "functions": [
+    {
+     "name": "custom",
+     "min": 0,
+     "max": 1,
+     "type": "string",
+     "result": [
+      "string:custom-result"
+     ]
+    },
+    {
+     "name": "typed",
+     "min": 1,
+     "max": 1,
+     "type": "boolean",
+     "result": [
+      "boolean:true"
+     ],
+     "typeParams": [
+      0
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "id": "path.utility.027#03",
+  "scenario": "path.utility.027",
+  "expr": "Patient.custom(name.given)",
+  "input": "suite:patient-example.xml",
+  "host": {
+   "functions": [
+    {
+     "name": "custom",
+     "min": 0,
+     "max": 1,
+     "type": "string",
+     "result": [
+      "string:custom-result"
+     ]
+    },
+    {
+     "name": "typed",
+     "min": 1,
+     "max": 1,
+     "type": "boolean",
+     "result": [
+      "boolean:true"
+     ],
+     "typeParams": [
+      0
+     ]
+    }
+   ]
+  },
+  "check": "run"
+ },
+ {
+  "id": "path.utility.027#04",
+  "scenario": "path.utility.027",
+  "expr": "Patient.typed(Patient)",
+  "input": "suite:patient-example.xml",
+  "host": {
+   "functions": [
+    {
+     "name": "custom",
+     "min": 0,
+     "max": 1,
+     "type": "string",
+     "result": [
+      "string:custom-result"
+     ]
+    },
+    {
+     "name": "typed",
+     "min": 1,
+     "max": 1,
+     "type": "boolean",
+     "result": [
+      "boolean:true"
+     ],
+     "typeParams": [
+      0
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "id": "path.utility.027#05",
+  "scenario": "path.utility.027",
+  "expr": "Patient.custom(1, 2)",
+  "input": "suite:patient-example.xml",
+  "host": {
+   "functions": [
+    {
+     "name": "custom",
+     "min": 0,
+     "max": 1,
+     "type": "string",
+     "result": [
+      "string:custom-result"
+     ]
+    },
+    {
+     "name": "typed",
+     "min": 1,
+     "max": 1,
+     "type": "boolean",
+     "result": [
+      "boolean:true"
+     ],
+     "typeParams": [
+      0
+     ]
+    }
+   ]
+  },
+  "note": "more arguments than the host declares"
+ },
+ {
+  "id": "path.utility.027#06",
+  "scenario": "path.utility.027",
+  "expr": "Patient.custom()",
+  "input": "suite:patient-example.xml",
+  "note": "no host service: the name is not a function"
+ },
+ {
+  "id": "path.utility.028#01",
+  "scenario": "path.utility.028",
+  "expr": "Patient.name.given.trace('n').count()",
+  "input": "suite:patient-example.xml",
+  "host": {
+   "log": true
+  }
+ },
+ {
+  "id": "path.utility.028#02",
+  "scenario": "path.utility.028",
+  "expr": "Patient.name.given.trace('n').count()",
+  "input": "suite:patient-example.xml",
+  "host": {
+   "log": false
+  }
+ },
+ {
+  "id": "path.utility.028#03",
+  "scenario": "path.utility.028",
+  "expr": "Patient.name.given.trace('n').count()",
+  "input": "suite:patient-example.xml"
+ },
+ {
+  "id": "path.utility.028#04",
+  "scenario": "path.utility.028",
+  "expr": "Patient.name.given.trace('n', $this.length()).count()",
+  "input": "suite:patient-example.xml",
+  "host": {
+   "log": true
+  }
+ },
+ {
+  "id": "path.utility.028#05",
+  "scenario": "path.utility.028",
+  "expr": "2.log(2)",
+  "host": {
+   "log": true
+  },
+  "note": "the math log() never reaches the hook"
+ }
+]

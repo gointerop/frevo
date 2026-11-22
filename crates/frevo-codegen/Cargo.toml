@@ -9,3 +9,20 @@ repository.workspace = true
 description = "Code generator: FHIR StructureDefinitions to Rust models, codecs and search-parameter tables."
 
 [dependencies]
+# JSON is the authoritative form of the input package. serde_json is already a
+# workspace dependency (frevo-server uses it) and is already in Cargo.lock, so
+# this adds nothing to the graph the owner has not already sanctioned.
+# Everything else this crate needs -- SHA-256, a cross-check-only XML reader,
+# the command line -- is written here rather than pulled in, because the
+# constitution's dependency rule would otherwise want an ADR per crate.
+serde_json.workspace = true
+
+[dev-dependencies]
+# Test-only edges, for the `codegen-r4` oracle (tests/codegen_r4.rs). The
+# generator itself never links either crate: its output is frevo-model's
+# source, so a normal dependency would run the wrong way. The oracle needs
+# both to grade that output -- the codec over the checked-in tables for the
+# decode/encode and round-trip scenarios (tasks 21, 56) and frevo-path's
+# parser for every generated search-parameter expression (task 57).
+frevo-model.workspace = true
+frevo-path.workspace = true

@@ -1,0 +1,22 @@
+{
+  "resourceType": "MedicationRequest",
+  "id": "pi",
+  "status": "active",
+  "intent": "order",
+  "subject": {
+    "reference": "Patient/example"
+  },
+  "medicationCodeableConcept": {
+    "text": "x"
+  },
+  "dosageInstruction": [
+    {
+      "timing": {
+        "repeat": {
+          "count": 2,
+          "countMax": 3
+        }
+      }
+    }
+  ]
+}

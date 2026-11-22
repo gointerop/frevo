@@ -1,6 +1,11 @@
 [workspace]
 resolver = "3"
 members = ["crates/*"]
+# The FHIRPath differential reference (task 2 of add-fhirpath-and-codegen-r4,
+# ADR 0004): dev-only crates with workspaces of their own, so neither
+# reference engine nor haste-fhirpath's wildcard dependencies ever enter the
+# product graph or the cargo deny gate.
+exclude = ["harness/fhirpath-compare", "harness/fhirpath-compare-haste"]
 
 [workspace.package]
 version = "0.0.0"
@@ -49,6 +54,9 @@ tower-http = { version = "0.6", default-features = false }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1" }
 serde_yaml_ng = { version = "0.10" }
+
+# Text
+regex = { version = "1.13", default-features = false, features = ["std", "perf", "unicode"] }
 
 # Errors / logging
 thiserror = "2"

@@ -9,3 +9,12 @@ repository.workspace = true
 description = "FHIRPath parser and evaluation engine."
 
 [dependencies]
+regex.workspace = true
+
+# The `bench/micro/` path workloads that need no stored resource
+# (`path-compile`, `path-suite-wallclock`; design.md section 8). A plain `main`
+# timed with `std::time::Instant` over the committed oracle harness, so the
+# workspace adds no dependency for it. See bench/micro/README.md.
+[[bench]]
+name = "path_micro"
+harness = false

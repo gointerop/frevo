@@ -1,0 +1,180 @@
+# The R4 model class table's exception file (codegen.ancestry.004).
+#
+# Every place HAPI's R4 model class tree differs from what the rules of
+# codegen.ancestry.002 and .003 derive from the StructureDefinitions. Each
+# entry names its kind, its target and its effect, and cites the line of the
+# pinned model source it rests on:
+# reference/org.hl7.fhir.core/org.hl7.fhir.r4/src/main/java/org/hl7/fhir/r4/model/
+# at 73c432b5f43ddbce979978a760ec4aa81e929094. The generator never reads that
+# source; a spec-reviewer checks each citation. A difference found later is a
+# new reviewed entry here, never an edit to the generated table.
+#
+# Effects, by kind:
+#   superclass     extends = "<FHIR type>"  the class inherits from that type's
+#                                           class instead of its baseDefinition's
+#   element-class  class = "<FHIR type>"    the element's value is that type's
+#                                           class, by name and through `*`
+#   runtime-class  by_name = "<FHIR type>"  navigating by name yields that type's
+#                                           class; `*` keeps the declared one
+#   class-name     class_name = "<name>"    the nested component's class name
+#
+# The generator refuses an entry with no source, a target that is not in the
+# package, or no effect.
+
+# --- superclass --------------------------------------------------------------
+
+[[exception]]
+kind = "superclass"
+target = "id"
+extends = "uri"
+source = "IdType.java:120"
+
+[[exception]]
+kind = "superclass"
+target = "Dosage"
+extends = "Element"
+source = "Dosage.java:50; BackboneType.java:49"
+
+[[exception]]
+kind = "superclass"
+target = "ElementDefinition"
+extends = "Element"
+source = "ElementDefinition.java:57; BackboneType.java:49"
+
+[[exception]]
+kind = "superclass"
+target = "MarketingStatus"
+extends = "Element"
+source = "MarketingStatus.java:48; BackboneType.java:49"
+
+[[exception]]
+kind = "superclass"
+target = "Population"
+extends = "Element"
+source = "Population.java:46; BackboneType.java:49"
+
+[[exception]]
+kind = "superclass"
+target = "ProdCharacteristic"
+extends = "Element"
+source = "ProdCharacteristic.java:49; BackboneType.java:49"
+
+[[exception]]
+kind = "superclass"
+target = "ProductShelfLife"
+extends = "Element"
+source = "ProductShelfLife.java:48; BackboneType.java:49"
+
+[[exception]]
+kind = "superclass"
+target = "SubstanceAmount"
+extends = "Element"
+source = "SubstanceAmount.java:55; BackboneType.java:49"
+
+[[exception]]
+kind = "superclass"
+target = "Timing"
+extends = "Element"
+source = "Timing.java:56; BackboneType.java:49"
+
+# --- element-class -----------------------------------------------------------
+
+[[exception]]
+kind = "element-class"
+target = "Resource.id"
+class = "id"
+source = "Resource.java:53; Element.java:56"
+
+[[exception]]
+kind = "element-class"
+target = "ImplementationGuide.definition.parameter.code"
+class = "string"
+source = "ImplementationGuide.java:14580"
+
+# --- runtime-class -----------------------------------------------------------
+
+[[exception]]
+kind = "runtime-class"
+target = "Narrative.div"
+by_name = "string"
+source = "Narrative.java:232; Narrative.java:364; Narrative.java:343"
+
+# --- class-name --------------------------------------------------------------
+
+[[exception]]
+kind = "class-name"
+target = "CodeSystem.concept.designation"
+class_name = "ConceptDefinitionDesignationComponent"
+source = "CodeSystem.java:2590"
+
+[[exception]]
+kind = "class-name"
+target = "Consent.provision.actor"
+class_name = "provisionActorComponent"
+source = "Consent.java:2287"
+
+[[exception]]
+kind = "class-name"
+target = "Consent.provision.data"
+class_name = "provisionDataComponent"
+source = "Consent.java:2572"
+
+[[exception]]
+kind = "class-name"
+target = "InsurancePlan.coverage.benefit.limit"
+class_name = "CoverageBenefitLimitComponent"
+source = "InsurancePlan.java:1159"
+
+[[exception]]
+kind = "class-name"
+target = "InsurancePlan.plan.specificCost.benefit.cost"
+class_name = "PlanBenefitCostComponent"
+source = "InsurancePlan.java:2978"
+
+[[exception]]
+kind = "class-name"
+target = "MeasureReport.group.stratifier.stratum.component"
+class_name = "StratifierGroupComponentComponent"
+source = "MeasureReport.java:1867"
+
+[[exception]]
+kind = "class-name"
+target = "TestReport.setup.action.operation"
+class_name = "SetupActionOperationComponent"
+source = "TestReport.java:1506"
+
+[[exception]]
+kind = "class-name"
+target = "TestReport.setup.action.assert"
+class_name = "SetupActionAssertComponent"
+source = "TestReport.java:1878"
+
+[[exception]]
+kind = "class-name"
+target = "TestScript.setup.action.operation"
+class_name = "SetupActionOperationComponent"
+source = "TestScript.java:4619"
+
+[[exception]]
+kind = "class-name"
+target = "TestScript.setup.action.operation.requestHeader"
+class_name = "SetupActionOperationRequestHeaderComponent"
+source = "TestScript.java:6199"
+
+[[exception]]
+kind = "class-name"
+target = "TestScript.setup.action.assert"
+class_name = "SetupActionAssertComponent"
+source = "TestScript.java:6484"
+
+[[exception]]
+kind = "class-name"
+target = "ValueSet.compose.include.concept.designation"
+class_name = "ConceptReferenceDesignationComponent"
+source = "ValueSet.java:1842"
+
+[[exception]]
+kind = "class-name"
+target = "ValueSet.compose.include.filter"
+class_name = "ConceptSetFilterComponent"
+source = "ValueSet.java:2183"

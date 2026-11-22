@@ -9,3 +9,22 @@ repository.workspace = true
 description = "Generated FHIR resource and datatype models with a lazy, byte-preserving JSON codec."
 
 [dependencies]
+# The evaluation seam: the `Value`, `Node`, `Model` and `HostServices`
+# definitions. The edge runs this way and never the other (`path.api.008`).
+frevo-path = { workspace = true }
+
+# The `bench/micro/` model workloads (design.md section 8). A plain `main`
+# timed with `std::time::Instant`, not criterion or divan: the workspace adds no
+# dependency for it, and the medians it writes to `bench/micro/results.json`
+# are what `model.perf.001` .. `model.perf.006` grade. See bench/micro/README.md.
+[[bench]]
+name = "model_micro"
+harness = false
+
+# The `bench/micro/` FHIRPath workloads that run over a byte-backed resource
+# (`path-eval-compiled`, `path-extract-patient`). They are
+# measured from this crate because `frevo-path` may not name `frevo-model`
+# (`path.api.008`) and `path.perf.004` needs this crate's span-based node.
+[[bench]]
+name = "path_bytes"
+harness = false

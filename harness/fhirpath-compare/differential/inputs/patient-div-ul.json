@@ -1,0 +1,8 @@
+{
+  "resourceType": "Patient",
+  "id": "u",
+  "text": {
+    "status": "generated",
+    "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\">x<ul><li>a</li><li>b</li></ul></div>"
+  }
+}

@@ -34,9 +34,9 @@ against the specification and the oracles, not from upstream source), `empty`
 
 | Crate | Status | Upstream repo | Upstream module(s) | Pinned SHA |
 |---|---|---|---|---|
-| `frevo-codegen` | empty | — | — | — |
-| `frevo-model` | empty | — | (will be `generated` from R4 StructureDefinitions) | — |
-| `frevo-path` | empty | — | — | — |
+| `frevo-codegen` | independent | — | — | — |
+| `frevo-model` | generated (`src/r4/`, by `frevo-codegen` from the `hl7.fhir.r4.core#4.0.1` package, archive SHA-256 `ebd7731df7d36b5b7d39d5fb6c9d77b44bb7fe5742f1a2e87f164738c3289d44`, content SHA-256 `8af9fe30008c2a02c351728c198759141b05482f91dee63475777aa23f06354c`, `crates/frevo-codegen/packages/PINS.md`); derived (`src/codec/{decode,built,nav,pretty}.rs`) | `hapi-fhir`; `org.hl7.fhir.core` | `hapi-fhir-base/.../parser/{ParserState,JsonParser,LenientErrorHandler,StrictErrorHandler,ParseLocation,IParserErrorHandler,BaseParser}.java`, `hapi-fhir-base/.../util/{FhirTerser,UrlUtil}.java`, `hapi-fhir-base/.../context/FhirContext.java` at `7ab4c7c7c49281496faa1b3c2498a652457669ae`; `org.hl7.fhir.r4/.../r4/formats/{JsonParser,JsonParserBase,JsonCreatorCanonical,JsonCreatorDirect}.java` at `73c432b5f43ddbce979978a760ec4aa81e929094` (HL7 BSD-3-Clause-style) | `7ab4c7c7c49281496faa1b3c2498a652457669ae`, `73c432b5f43ddbce979978a760ec4aa81e929094` |
+| `frevo-path` | derived | `org.hl7.fhir.core` | `org.hl7.fhir.r4/.../r4/fhirpath/{FHIRLexer,ExpressionNode,FHIRPathEngine,FHIRPathConstant,TypeDetails}.java`, `org.hl7.fhir.r4/.../r4/model/{IdType,Base,BaseDateTimeType,TimeType}.java`, `org.hl7.fhir.r4/.../r4/terminologies/ValueSetCheckerSimple.java`, `org.hl7.fhir.utilities/.../{Utilities,SourceLocation}.java`, `org.hl7.fhir.utilities/.../exceptions/PathEngineException.java`, `org.hl7.fhir.r4/.../r4/model/{Narrative,XhtmlType}.java`, `org.hl7.fhir.utilities/.../xhtml/{XhtmlParser,XhtmlComposer,XhtmlNode}.java`; `hapi-fhir` `hapi-fhir-base/.../model/primitive/XhtmlDt.java` and `hapi-fhir-structures-r4/.../hapi/fluentpath/FhirPathR4.java` at `7ab4c7c7c49281496faa1b3c2498a652457669ae`; `Ucum-java` `src/main/java/org/fhir/ucum/{Decimal,Utilities,Lexer,ExpressionParser,Converter,Canonical,ExpressionComposer,UcumEssenceService,UcumModel}.java`, `.../ucum/definitions/XmlDefinitionsParser.java`, `.../ucum/utils/XmlUtils.java`, `.../ucum/special/{Registry,HoldingHandler,CelsiusHandler,FahrenheitHandler}.java` at `db9d22ade3f0f4a667b45817b85a9ac4534e4224` (BSD-3-Clause) | `73c432b5f43ddbce979978a760ec4aa81e929094` |
 | `frevo-convert` | empty | — | — | — |
 | `frevo-package` | empty | — | — | — |
 | `frevo-validator` | empty | — | — | — |
@@ -57,9 +57,164 @@ against the specification and the oracles, not from upstream source), `empty`
 | `frevo-config` | empty | — | — | — |
 | `frevo-server` | independent | — | — | — |
 
-No crate contains derived upstream logic yet. Each row is updated by the change
-that first ports into that crate; `openspec-guard` checks that a crate whose
-sources gained a provenance header also gained a row here.
+`frevo-path`'s front end — `src/syntax/{lexer,literal,parser,ast,error,source}.rs`
+— is the first derived code in the repository, and its evaluator core —
+`src/eval/{mod,navigate}.rs`, from `FHIRPathEngine.java`'s `execute`,
+`getChildrenByName`, `filterIdType`, `funcItem`, `funcChildren` and
+`funcDescendants` and from `IdType.java`'s `setValue` — the second. Its
+collection predicates and subsetting — `src/eval/{collection,equality,filter}.rs`
+(`funcWhere`, `funcSelect`, `funcRepeat`, `funcOfType`, `isKnownType`,
+`funcSingle`, `funcFirst`, `funcLast`, `funcTail`, `funcSkip`, `funcTake`,
+`funcIntersect`, `funcExclude`), and combining and membership —
+`src/eval/combine.rs` (`opUnion`, `funcUnion`, `funcCombine`, `opIn`,
+`opContains`, `doContains`) — and the predicates from
+`FHIRPathEngine.java`'s `funcEmpty`, `funcExists`, `funcNot`, `funcAll`, the
+four boolean folds, `funcSubsetOf`, `funcSupersetOf`, `funcIsDistinct`,
+`funcDistinct`, `funcCount`, `asBool`, `doEquals`, `opEquals` and
+`opNotEquals`, from `Base.java`'s `compareDeep` and `isEmpty`, and from
+`ca.uhn.fhir.util.ElementUtil.isEmpty` in `hapi-fhir` at
+`7ab4c7c7c49281496faa1b3c2498a652457669ae` — extend it. Its static
+check pass — `src/check/{mod,pass,signature,types}.rs`, from
+`FHIRPathEngine.java`'s `check`, `checkOnTypes`, `executeType`,
+`operateTypes`, `resolveConstantType`, `evaluateFunctionType`,
+`checkParamTypes`, the `checkContext*` family and `getChildTypesByName`, and
+from `TypeDetails.java` — the third. Equality, equivalence and ordered
+comparison — `src/eval/{equality,compare,operand,temporal}.rs`
+(`opEquivalent`, `opNotEquivalent`, `doEquivalent`, `qtyEqual`,
+`qtyEquivalent`, `opLessThan`, `opGreater`, `opLessOrEqual`,
+`opGreaterOrEqual`, `compareDateTimeElements`, `compareTimeElements`,
+`funcHasValue`, `funcComparable` (its branches that need no UCUM service),
+`FHIR_TYPES_STRING`, `Base.java`'s `hasType` and
+`isPrimitive`, `BaseDateTimeType.java`'s `equalsUsingFhirPathRules`,
+`compareTimes` and `getHighEdge`, `TimeType.java`'s field readers, and
+`Utilities.java`'s `equivalent` and `equivalentNumber`) — extend the first
+two, and boolean logic — `src/eval/logic.rs` (`preOperate`, `opAnd`,
+`opOr`, `opXor`, `opImplies`, `isBoolean`, `funcIif`) — extends the same,
+and arithmetic — `src/eval/arith.rs` (`opPlus`, `opMinus`, `opTimes`,
+`opDivideBy`, `opDiv`, `opMod`, `opConcatenate`) — extends it again, with
+the decimal arithmetic of `/`, `div` and `mod` in `src/eval/ucum_decimal.rs`,
+a port of `Ucum-java`'s `org.fhir.ucum.Decimal` (`Decimal(String)`,
+`setValueDecimal`, `setValueScientific`, `asDecimal`, `trunc`, `subtract`,
+`doAdd`, `doSubtract`, `multiply`, `divide`, `divInt`, `modulo` and their
+string helpers) and `Utilities` (`isDecimal`, `isInteger`, `noString`,
+`padLeft`) at `db9d22ade3f0f4a667b45817b85a9ac4534e4224` (tag `1.0.10`),
+under the BSD 3-Clause notice the file and `NOTICE` reproduce, and the
+UCUM unit algebra over it — `src/eval/ucum.rs` (`XmlDefinitionsParser`'s
+`parse`, `parseUnit`, `parseValue`, `parseBaseUnit` and `parsePrefix`,
+`XmlUtils`' DOM helpers and `UcumModel.getUnit`) and
+`src/eval/ucum_algebra.rs` (`Lexer`, `ExpressionParser`, `Converter`,
+`Canonical`, `ExpressionComposer.compose(Canonical, false)`, the
+`special/Registry` handlers, and `UcumEssenceService`'s
+`getCanonicalForm`, `getCanonicalUnits`, `multiply`, `divideBy` and
+`isComparable`), at the same SHA and under the same notice, with the
+engine's side of the service in `src/eval/quantity.rs`
+(`qtyToCanonicalPair`, `qtyToCanonicalDecimal`, `pairToQty` and
+`qtyToPair` of `FHIRPathEngine.java`, at `73c432b5`, ADR 0006), and
+date arithmetic and the clock — `src/eval/temporal.rs` (`dateAdd`,
+`funcToday`, `funcNow`, and `BaseDateTimeType.java`'s `add`, `copy`
+precision check and string rendering), and the math functions —
+`src/eval/mathfn.rs` (`funcAbs`, `funcCeiling`, `funcFloor`, `funcRound`,
+`funcTruncate`, `funcSqrt`, `funcExp`, `funcLn`, `funcLog`, `funcPower` and
+`DecimalType(double)`), and the base string functions — `src/eval/strfn.rs`
+(`funcUpper`, `funcLower`, `funcToChars`, `funcIndexOf`, `funcSubstring`,
+`funcStartsWith`, `funcEndsWith`, `funcContains`, `funcLength`), and the
+regular-expression functions — `src/eval/strregex.rs` (`funcMatches`,
+`funcMatchesFull`, `funcReplaceMatches`; the `regex` crate stands in for
+`java.util.regex`, ADR 0005), and the
+string functions that need no regular-expression engine —
+`src/eval/strext.rs` (`funcReplace`, `funcTrim`, `funcSplit`, `funcJoin`,
+`funcEncode`, `funcDecode`, `funcEscape`, `funcUnescape`, `bytesToHex`,
+`hexStringToByteArray`, and `Utilities.java`'s `escapeXml`, `unescapeXml`,
+`escapeJson`, `unescapeJson`, `simpleSplit`, `URLEncode`, `URLDecode` and
+`isWhitespace`, `CommaSeparatedStringBuilder.java` and
+`MarkDownProcessor.java`'s markdown escaping), and type
+conversion — `src/eval/convert.rs` (`funcToInteger`, `funcToDecimal`,
+`funcToString`, `funcToBoolean`, `funcToQuantity`, `funcToDateTime`,
+`funcToTime`, the `funcIsX` family, `parseQuantityString`, and
+`Utilities.java`'s `isInteger`, `isDecimal` and `checkDecimal` and
+`RegexConstants.java`'s `DATE_TIME_REGEX`), and the type operators and
+reflection — `src/eval/types.rs` (`executeTypeName`, `opIs`, `opAs`,
+`compareTypeNames`, `isKnownType`, `funcIs`, `funcAs`, `funcType` and
+`FHIRPathUtilityClasses.ClassTypeInfo`), the environment variables —
+`src/eval/env.rs` (`resolveConstant` in both forms, `isSystemVariable`, the
+name-step overload of `execute` with its two implicit host-service lookups,
+`funcDefineVariable` and `ExecutionContext.setDefinedVariable`), the utility
+functions — `src/eval/utility.rs` (`log`, `hasLog`, `takeLog`, `funcTrace`,
+`funcCheck`, `funcAggregate`, `funcExtension`, `funcSort`,
+`FHIRPathBaseSorter` and `convertToBoolean`), the boundary functions —
+`src/eval/boundary.rs` (`funcLowBoundary`, `funcHighBoundary`,
+`funcPrecision`, `Utilities.java`'s `lowBoundaryForDecimal`,
+`highBoundaryForDecimal`, `applyPrecision`, `minusOne`, `isZero` and
+`getDecimalPrecision`, and `DateTimeUtil.java`'s `lowBoundaryForDate`,
+`highBoundaryForDate`, `lowBoundaryForTime`, `highBoundaryForTime`,
+`applyDatePrecision`, `applyTimePrecision`, `splitTimezone`,
+`getDatePrecision`, `getTimePrecision` and `dayCount`), the host-service
+functions — `src/eval/hostfn.rs` (`funcConformsTo`, `funcMemberOf`,
+`opMemberOf`, `funcResolve`, `makeIdentifier` and the `Custom` arm of
+`evaluateFunction`, with the check pass's `Custom` arm of
+`evaluateFunctionType` in `src/check/pass.rs`), the in-memory code
+validation behind `memberOf` — `src/eval/terminology.rs` (the
+include/exclude loop, `findCodeInConcept` and `checkExpansion` of
+`org.hl7.fhir.r4/.../r4/terminologies/ValueSetCheckerSimple.java`), the
+ordered comparison's in-place Zulu rewrite of a `dateTime` operand —
+`src/eval/rewrite.rs` (`compareDateTimeElements`' `setTimeZoneZulu(true)`, and
+`BaseDateTimeType.java`'s `setTimeZoneZulu` and `encode`, kept as a
+per-evaluation overlay rather than a write to the input, reaching the items
+each step returns, and for a `@` literal keyed by an occurrence number standing
+for the new object `resolveConstant`/`processDateConstant` build per node
+evaluation) — and the
+server-facing host service, `src/seam/server.rs`, from `hapi-fhir`'s
+`FhirPathR4.setEvaluationContext` at `7ab4c7c7c49281496faa1b3c2498a652457669ae`,
+and the narrative's recomposition for `Narrative.div` —
+`src/eval/{xhtml,xhtml_entities}.rs` and the `div` arms of
+`src/eval/navigate.rs` (`XhtmlNode.setValueAsString`, the default
+`XhtmlParser` path it reaches, with `DEFINED_ENTITIES` and the
+`parseLiteral` fallback names transcribed into one sorted table, the XML-mode
+non-pretty `XhtmlComposer`, `Narrative.getProperty` and `listChildren`,
+`XhtmlType`, and `hapi-fhir`'s `XhtmlDt.setValueAsString` and
+`preprocessXhtmlNamespaceDeclaration` at the same `hapi-fhir` SHA). The
+`org.hl7.fhir.utilities` `xhtml` sources and the R4 model sources carry
+HL7's BSD-style licence rather than Apache-2.0; `xhtml.rs` and
+`xhtml_entities.rs` reproduce that notice in full.
+Each file
+carries the required header naming the upstream path, the pinned SHA and what
+was modified. Every
+other row is updated by the change that first ports into that crate;
+`openspec-guard` checks that a crate whose sources gained a provenance header
+also gained a row here.
+
+`frevo-model`'s generated tables (`src/r4/`) are not derived, as above. Its
+hand-written codec has two derived files. `src/codec/decode.rs` re-implements
+the lenient and strict decode behaviour of `hapi-fhir`'s parser at
+`7ab4c7c7c49281496faa1b3c2498a652457669ae`: `ParserState`'s
+`PrimitiveState.attributeValue`, `enteringNewElement`,
+`ContainedResourcesStateHl7Org.wereBack` and `weaveContainedResources`;
+`JsonParser`'s `parseChildren` branches, its `resourceType` check and the
+not-contained guard in `encodeResourceToJsonStreamWriter`; the fatal-condition
+rule and message texts of `LenientErrorHandler`; the `Msg.code`s and message
+texts of `StrictErrorHandler`; `ParseLocation.toString`; the condition set of
+`IParserErrorHandler`; the default handler in `FhirContext`; the encode-side
+check in `BaseParser`'s `determineReferenceText` and
+`isValidInternalReference` and `FhirTerser`'s
+`ContainedResources.referenceMatchesAContainedResource`; and
+`UrlUtil.sanitizeUrlPart` and `isNeedsSanitization`, transcribed. It also
+derives, by owner decision of 2026-11-21, from `org.hl7.fhir.core`'s
+`org.hl7.fhir.r4.formats.JsonParser` (with `JsonParserBase` and
+`JsonCreatorCanonical`) at `73c432b5f43ddbce979978a760ec4aa81e929094` too:
+the decoded shape (`resourceType` dispatch, choice property names,
+`contained`, the `_field` sibling, the composed element order) and the
+canonical form. Those sources carry HL7's BSD-3-Clause-style notice, which
+`NOTICE` reproduces; the same derivation is recorded in `src/codec/nav.rs`
+(reading an element from the JSON form) and `src/codec/pretty.rs` (the
+indented layout of `JsonCreatorDirect`), and in `src/codec/built.rs`'s
+element-order serialisation. From `hapi-fhir`, `src/codec/built.rs` derives
+only its encode-side `#` reference check, from the same `BaseParser`, `FhirTerser` (`containResources` included)
+and `JsonParser` sources. All of these `hapi-fhir-base` sources are Apache-2.0,
+Copyright (C) 2014 - 2026 Smile CDR, Inc., which the existing HAPI FHIR
+section of `NOTICE` already covers. The other
+codec files (`doc`, `mod`, `nav`, `path`, `pretty`, `scan`, `stored`,
+`tables`, `provisional_r4`) are independent: they cite HAPI only for a
+`Msg.code` or a layout convention they match, not for logic they port.
 
 ## Derived harness files
 

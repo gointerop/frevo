@@ -1,0 +1,139 @@
+# In-process micro-benchmark workloads (design.md section 8 of
+# openspec/changes/add-fhirpath-and-codegen-r4).
+#
+# There is no server yet, so these are the leading indicators for the HTTP
+# targets in bench/targets.md: `model-passthrough` for read-by-id, the others
+# for the ingest path. Each names what it stresses, as bench/workloads.yaml
+# does, plus the budget its scenario states. They are gate conditions.
+#
+# Run them with
+#
+#   cargo bench -p frevo-model --bench model_micro   # the model-* rows
+#   cargo bench -p frevo-model --bench path_bytes    # path-eval-compiled, path-extract-patient
+#   cargo bench -p frevo-path  --bench path_micro    # path-compile, path-suite-wallclock
+#
+# Each measures its workloads in the release (bench) profile and merges its
+# rows into bench/micro/results.json through bench/micro/record.rs, keeping
+# every other bench's rows. bench/micro/baseline.json is the same file
+# recorded for the previous commit on main; model.perf.006 and path.perf.006
+# compare the two. See bench/micro/README.md for the method and for how the
+# baseline moves.
+#
+# Fixtures are committed in bench/micro/fixtures/ and checked by the bench
+# against the generator the tests in crates/frevo-model/tests/ use, so the
+# recorded medians and the tests' in-process ratios describe the same bytes.
+
+defaults:
+  crate: frevo-model
+  bench: model_micro
+  warmup_ms: 300
+  samples: 201
+  min_batch_us: 500
+  statistic: median
+
+workloads:
+  - name: model-passthrough
+    scenario: model.perf.001
+    fixture: fixtures/patient-4kib.json
+    stresses: >
+      Load a stored 4 KiB Patient from bytes and serialise it unchanged. The
+      buffer is taken by Arc clone, nothing is scanned, and the output is one
+      copy of the input. This is the model's whole contribution to read-by-id.
+    budget: median <= 1 us, zero tokens scanned
+
+  - name: model-lazy-read
+    scenario: model.perf.002
+    fixture: fixtures/patient-4kib.json
+    stresses: >
+      Load the 4 KiB Patient and read Patient.birthDate, which comes before the
+      address array; nothing after it is scanned.
+    budget: median <= 2 us, and at most 10% of model-full-parse
+
+  - name: model-full-parse
+    scenario: model.perf.003
+    fixture: fixtures/patient-4kib.json
+    stresses: >
+      Load the 4 KiB Patient and materialise every element (the
+      untracked meter: the decode, not the materialised-path log).
+    budget: median <= 20 us
+
+  # model-meta-update is recorded as two rows, one per document size.
+  - name: model-meta-update
+    rows: [model-meta-update-4kib, model-meta-update-64kib]
+    scenario: model.perf.004
+    fixture: [fixtures/patient-4kib.json, fixtures/patient-64kib.json]
+    stresses: >
+      Set meta.versionId and meta.lastUpdated and serialise in the stored form,
+      on a 4 KiB and a 64 KiB Patient. Every byte outside meta is spliced from
+      the input, so the cost should follow meta, not the document.
+    budget: the 4 KiB and 64 KiB medians within 25% of each other
+
+  - name: model-canonical-encode
+    scenario: model.perf.005
+    fixture: constructed in memory (see constructed_properties in the bench)
+    stresses: >
+      Canonically serialise a Patient constructed from properties -- id,
+      active, gender, birthDate and address repetitions of city, district,
+      state, country and postalCode -- with as many repetitions as make the
+      canonical output at least 4 KiB. Construction is set-up and is not
+      timed.
+    budget: median <= 25 us
+
+  # The path workloads. Each names its own crate and bench, overriding the
+  # defaults above.
+  - name: path-compile
+    crate: frevo-path
+    bench: path_micro
+    scenario: path.perf.001
+    fixture: the expression Patient.name, checked in the context Patient
+    stresses: >
+      Parse a typical search-parameter expression from text and run the static
+      check pass over it, both through the committed oracle harness's stages
+      (Expression::parse, then oracle::engine::check_types over the pinned R4
+      package's StructureDefinitions), every operation. The compound
+      Patient.telecom.where(system='phone' or system='email') is recorded
+      beside it as compound_median_us, not graded.
+    budget: median <= 20 us
+
+  - name: path-eval-compiled
+    crate: frevo-model
+    bench: path_bytes
+    scenario: path.perf.002
+    fixture: oracles/fhir-test-cases/fetched/r4/examples/patient-example.json, canonicalised
+    stresses: >
+      Evaluate the pre-parsed Patient.name over the stored Patient through
+      frevo-model's span-based node, with the R4 type tables, the server host
+      service and an application context. One parse; the row records it as
+      parses, and the whole 1,000-evaluation run as thousand_evaluations_us.
+    budget: median <= 5 us per evaluation, no reparse
+
+  - name: path-extract-patient
+    crate: frevo-model
+    bench: path_bytes
+    scenario: [path.perf.003, path.perf.004]
+    fixture: oracles/fhir-test-cases/fetched/r4/examples/patient-example.json, canonicalised
+    stresses: >
+      Load the stored Patient (an Arc clone) and evaluate all 25 enabled
+      Patient search-parameter expressions of path_perf.rs, compiled once,
+      with the configuration the write path uses. A second, tracked pass
+      records every element the evaluation materialised;
+      untouched_elements_materialised counts those that no expression names on
+      a path and that lie inside no value an expression returned.
+    budget: median total <= 300 us; untouched_elements_materialised = 0
+
+  - name: path-suite-wallclock
+    crate: frevo-path
+    bench: path_micro
+    scenario: path.perf.005
+    fixture: oracles/fhirpath/tests-fhir-r4.xml and its fetched inputs
+    stresses: >
+      The full 1,191-case oracle run (oracle::run::run_pinned_suite), cold:
+      each of five runs is a fresh process that loads the suite, its inputs
+      and the R4 package and runs every case once. median_s is the median;
+      the run's per-status counts are recorded beside it, because a run with
+      cases that did not run is not the run the budget describes.
+    budget: <= 10 s on the reference environment, recorded as median_s
+
+# model.perf.006 and path.perf.006: no row in results.json more than 10%
+# slower than the same row in baseline.json (bench/targets.md, regression
+# policy).

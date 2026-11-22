@@ -1,0 +1,44 @@
+{
+  "change": "add-fhirpath-and-codegen-r4",
+  "head_sha": "461d5081eb3b639a4bb19213d98bf158b7ab8ed4",
+  "generated_at": "2026-11-22T11:33:52Z",
+  "evidence": {
+    "ci": "PR #28 (draft), head 461d508: CI run 45016686336 (success) and OpenSpec Guard run 45016686257 (success); all CI jobs pass -- Format and lint, Tests (cargo nextest run --workspace: 731 tests run, 731 passed (1 slow), 0 skipped; doc tests ok, frevo_codegen 0 passed / 3 ignored), Licences and advisories, Build (release profile), Container image builds, Hook self-tests, Repository consistency. The Tests job restores and digest-checks the oracle data ('fhir-test-cases already fetched at c95adbee09', 'r4-example-roundtrip already fetched at sha256:e18b31e7a'); codegen_r4 every_r4_specification_example_round_trips_byte_identically PASS 55.9 s. CI runs no differential job and no bench/micro job.",
+    "local": "Windows 11 dev host, worktree C:/gointerop/git/frevo-change, CARGO_TARGET_DIR=C:/gointerop/git/frevo-gate-target; oracle data, the R4 type package and the full R4 example package fetched. The host was under unrelated load (about 54% then 32% CPU, a foreign python3.13 process). Advisory only (constitution rule 2).",
+    "since_last_report": "Previous report: cac9e28. Since then: 36c2b08/cde2963 tasks/blockers.md, 9641b30 design.md text, 0410452/fba5bf0 merges of main (a3988e8, ff48729: .claude/hooks, harness/hook-tests/run.sh, docs/adr/0002), 461d508 tasks/graph.yaml. git diff cac9e28..HEAD touches nothing under crates/, bench/, oracles/, Cargo.toml or Cargo.lock; the only harness change is harness/hook-tests/run.sh (hook self-tests, CI pass)."
+  },
+  "results": {
+    "fmt": {
+      "green": true,
+      "detail": "cargo fmt --all --check: clean (local exit 0; CI 'Format and lint' pass at 461d508)"
+    },
+    "clippy": {
+      "green": true,
+      "detail": "cargo clippy --workspace --all-targets -- -D warnings: 0 warnings (local exit 0; CI pass at 461d508)"
+    },
+    "tests": {
+      "green": true,
+      "detail": "CI (authoritative) at 461d508: nextest 731/731 passed, 0 skipped; doc tests ok. Local cargo test --workspace --no-fail-fast (nextest not installed): 731 passed, 0 failed across every test binary on the first run, including path_perf (6/6, the ratio test and no_regression_against_the_recorded_baseline) and model_bytes_lazy_perf. The local run exited 101 only because the frevo-codegen doc-test target failed. cargo test -p frevo-codegen --doc failed in 6 of 14 local runs (the full run included), whether the temp dir was the default or under the target dir. In each failing run the merged doctest binary printed nothing (no 'running 3 tests' line) and rustdoc reported 'doctest failed'. Every passing run prints 'running 3 tests ... 0 passed; 0 failed; 3 ignored'. All three are ignore-fenced macro examples in crates/frevo-codegen/src/bind.rs, so no doctest body executes in either case. The failure is the doctest binary failing to start on this host. That is consistent with the Application Control policy (os error 4551) seen on this host in the same session, which also blocked a build script (see differential), but its cause was not proven. CI's doc-test step passes at 461d508. Integrity: crates/ is byte-identical to cac9e28, whose integrity audit since 5493135 stands. A fresh grep under crates/ finds no #[ignore], bare #[should_panic], todo!() or unimplemented!().",
+      "failures": []
+    },
+    "coverage": {
+      "green": true,
+      "detail": "At 461d508: harness/scripts/scenario-coverage.sh --change add-fhirpath-and-codegen-r4: 534 scenarios in scope, 534 covered, 0 uncovered, 0 unresolved tags (exit 0). openspec validate add-fhirpath-and-codegen-r4 --strict: valid (exit 0). harness/scripts/check-registries.sh: registers agree (27 deviations, 21 debt entries; exit 0). review.md first line: APPROVED. OpenSpec Guard run 45016686257: success."
+    },
+    "oracle": {
+      "green": true,
+      "detail": "FHIRPath suite oracles/fhirpath/tests-fhir-r4.xml, 1191 cases at 461d508 (path-suite-wallclock bench rows): Frevo 984 passed / 207 failed / 0 did-not-run / 0 skipped-for-licence; HAPI 8.12.0 recorded run 968 passed / 210 failed / 13 hapi-cannot-pass. path_oracle::the_gate_is_pass_rate_at_or_above_hapis_on_the_same_cases passes locally and in CI; 0 cases behind HAPI. Round-trip oracle (codegen.roundtrip.001-.003) over the full hl7.fhir.r4.examples#4.0.1 package (EXPECTED_FULL_EXAMPLES = 5308, fetched and digest-checked): every_r4_specification_example_round_trips_byte_identically, the_round_trip_covers_every_resource_type_that_has_an_example and round_tripping_an_xml_example_through_the_json_codec_is_not_claimed pass locally and in CI. In-process oracles path_check_warnings and model_parser_errors pass.",
+      "frevo_behind_hapi": []
+    },
+    "differential": {
+      "green": true,
+      "detail": "Graded by the in-process HAPI probe, per the owner ruling in tasks/blockers.md (2026-11-21) and harness/hapi-fhirpath-differential/README.md. At 461d508 the Rust differential binary was rebuilt (frevo-path and fhirpath-compare recompiled) and run: cargo run --release --manifest-path harness/fhirpath-compare/Cargo.toml --bin differential. Building it in the gate target dir failed three times: the host's Application Control policy blocked encoding_rs's build-script-build (os error 4551, 'never executed'). It was therefore built in the harness's default target dir (harness/fhirpath-compare/target), from the same sources. Output: probes 809 agree, 51 disagree-documented, 8 hapi-unreachable, 0 disagree; scenarios 57 agree, 5 disagree-documented. It rewrote harness/fhirpath-compare/differential-results.json byte-identically to the committed file (git status clean). The 51 documented disagreements reference only owner-accepted entries present in docs/deviations.md: DEV-0023 x32 (path.string.025#01-#30, path.string.029#01-#02), DEV-0026 x6 (path.strictness.005#09-#14), DEV-0029 x10 (path.quantity.019#01-#10), DEV-0030 x3 (path.math.017#63-#65). hapi-unreachable x8: path.math.017#50-#57, inputs that HAPI's XmlParser refuses. HAPI side: probes.py, probes.json, inputs/, hapi-observed.json and the probe sources are unchanged since 7a72377, where hapi-observed.json was reproduced byte-identically; the JVM probe was not rerun. Scenario set graded: 62. WHAT THIS IS NOT: not harness/run.sh and not a live HAPI 8.12.0 server over HTTP. It compares FHIRPath engine outcomes in-process, and CI does not run it. model.json.025, model.json.026 and model.canonical.007 are graded by in-process unit oracles, and codegen.ancestry.001's choice-typed classes by nothing in this change (DEBT-0021), as the spec states.",
+      "diffs": []
+    },
+    "performance": {
+      "green": true,
+      "detail": "bench/micro at 461d508 with --no-write, on the local host under unrelated load (advisory). Budgets were met in every run. Figures from the alternating rounds, median of three HEAD runs (each itself a median of five cold runs): model-passthrough 0.196 us (<=1), model-lazy-read 0.982 us (<=2), model-full-parse 15.21 us (<=20), model-meta-update 4KiB 1.860 / 64KiB 5.879 us (<=5 / <=12), model-canonical-encode 13.73 us (<=25), path-compile 7.94 us (<=20), path-eval-compiled 4.04 us (<=5, parses=1), path-extract-patient 167.5 us (<=300, untouched_elements_materialised=0), path-suite-wallclock 0.250 s (<=10 s), 984/207/0. The first two loaded runs were 13-45% above bench/micro/baseline.json (ccfb14c), for example lazy-read 1.165 then 1.006 us against 0.843. crates/ and bench/ are byte-identical to cac9e28, which measured at or below baseline. To separate load from code, an alternating control was run: the baseline commit ccfb14c was built in a temporary worktree and its benches run alternately with HEAD's in the same session, three rounds each. HEAD/control ratios of medians: passthrough 1.005, lazy-read 1.039, full-parse 0.975, meta 4KiB 1.001, meta 64KiB 0.991, canonical-encode 1.051, eval-compiled 1.049, extract-patient 1.014, compile 0.985, suite-wallclock 0.936. The largest is +5.1%, inside the 10% policy of bench/targets.md, so the absolute excess over the recorded baseline is host load, not a regression. No baseline exists yet from CI or the reference environment, so none is authoritative."
+    }
+  },
+  "green": true
+}

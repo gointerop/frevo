@@ -1,0 +1,677 @@
+//! Reading the pinned FHIR definition package.
+//!
+//! The package is a directory of one-resource-per-file JSON, as published by
+//! the FHIR package registry. This module locates it, verifies its digest, and
+//! parses the four resource types the generator takes as input:
+//! `StructureDefinition`, `SearchParameter`, `ValueSet` and `CodeSystem`.
+//!
+//! The last two are read for one purpose only: the codes behind a `required`
+//! binding (`codegen.binding.001`). A `ValueSet` is reduced to its `compose`
+//! and a `CodeSystem` to the codes of its concept tree **in depth-first
+//! pre-order**, which is what `ValueSet` order means here --
+//! `observation-status` nests `corrected` under `amended`, and the eight codes
+//! `codegen.naming.005` lists are that traversal.
+//!
+//! Three properties matter beyond "it parses":
+//!
+//! 1. **The digest covers the whole directory**, not the subset the generator
+//!    happens to read today. A pin that moved every time a later task started
+//!    reading `ValueSet-*.json` would pin nothing.
+//! 2. **Loading is memoised per directory.** The oracle performs more than
+//!    twenty full runs in one process; re-hashing 31 MB and re-parsing 26 MB of
+//!    JSON on each of them would turn a test run into a benchmark of
+//!    `serde_json`.
+//! 3. **Nothing under `reference/` is opened** (`codegen.inputs.004`). The only
+//!    directory this module reads is the one it was given.
+
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex, OnceLock};
+
+use serde_json::Value;
+
+use crate::error::{CodegenError, FailureKind, Result};
+use crate::pin::{self, FETCH_COMMAND, PACKAGE_NAME, PACKAGE_VERSION};
+use crate::sha256::Sha256;
+
+/// One snapshot element, in snapshot order.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SnapshotElement {
+    /// `ElementDefinition.path`, `[x]` included.
+    pub path: String,
+    /// `ElementDefinition.min`, absent when the snapshot omits it.
+    pub min: Option<u32>,
+    /// `ElementDefinition.max`, as the literal `"0"`, `"1"` or `"*"`.
+    pub max: Option<String>,
+    /// `ElementDefinition.type.code`, in declared order, verbatim — which for
+    /// a primitive's `id` and `value` is a `http://hl7.org/fhirpath/System.*`
+    /// URI rather than a FHIR type name. This is the form the cross-check
+    /// compares against HAPI's XML copy, so it is kept exactly as published.
+    pub types: Vec<String>,
+    /// The same list with every `System.*` code resolved to the FHIR type the
+    /// `structuredefinition-fhir-type` extension beside it names, which is the
+    /// form the generated model navigates by.
+    pub fhir_types: Vec<String>,
+    /// The `structuredefinition-regex` extension on the element's first type:
+    /// the lexical form a primitive's value must match. Every R4 primitive but
+    /// `xhtml` declares one on its `value`.
+    pub value_regex: Option<String>,
+    /// `ElementDefinition.contentReference`.
+    pub content_reference: Option<String>,
+    /// `ElementDefinition.binding.strength` and `.valueSet`.
+    pub binding: Option<ElementBinding>,
+    /// The `structuredefinition-explicit-type-name` extension on a backbone
+    /// element: the name its nested type is given (`Contact` for
+    /// `Patient.contact`).
+    pub explicit_type_name: Option<String>,
+    /// Whether a declared type is a `System.*` code with no
+    /// `structuredefinition-fhir-type` extension beside it, so that its FHIR
+    /// type in [`SnapshotElement::fhir_types`] is the reader's fallback. In the
+    /// 4.0.1 package that is only `xhtml.id`.
+    pub untyped_system_type: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ElementBinding {
+    pub strength: String,
+    pub value_set: String,
+    /// The `elementdefinition-bindingName` extension on the binding
+    /// (`AdministrativeGender`, `ResourceType`).
+    pub binding_name: Option<String>,
+}
+
+/// One `StructureDefinition`, reduced to what the generator and the
+/// cross-check need.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Definition {
+    pub url: String,
+    pub id: String,
+    pub name: String,
+    /// `primitive-type`, `complex-type`, `resource` or `logical`.
+    pub kind: String,
+    pub is_abstract: bool,
+    /// `specialization`, `constraint`, or absent.
+    pub derivation: Option<String>,
+    pub base_definition: Option<String>,
+    /// `StructureDefinition.type`.
+    pub type_name: Option<String>,
+    pub fhir_version: Option<String>,
+    /// Whether the definition carries the
+    /// `structuredefinition-standards-status` extension, which is what the
+    /// specification stamps on every artifact it defines itself. See
+    /// [`crate::inventory`] for why that is the scoping rule.
+    pub standards_status: Option<String>,
+    pub snapshot: Vec<SnapshotElement>,
+}
+
+impl Definition {
+    /// `true` when the specification marks this definition as one of its own.
+    pub fn has_standards_status(&self) -> bool {
+        self.standards_status.is_some()
+    }
+}
+
+/// One composite search parameter component.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SearchParamComponent {
+    pub definition: String,
+    pub expression: String,
+}
+
+/// One `SearchParameter`, reduced the same way.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SearchParameter {
+    pub id: String,
+    pub url: String,
+    pub code: String,
+    pub search_type: String,
+    pub bases: Vec<String>,
+    /// `None` when the resource declares no `expression` at all, which is
+    /// distinct from an empty one (`codegen.searchparam.005`).
+    pub expression: Option<String>,
+    pub components: Vec<SearchParamComponent>,
+    pub targets: Vec<String>,
+    pub multiple_or: Option<bool>,
+    pub multiple_and: Option<bool>,
+    pub comparator: Option<Vec<String>>,
+    pub modifier: Option<Vec<String>>,
+    pub chain: Option<Vec<String>>,
+    pub standards_status: Option<String>,
+}
+
+impl SearchParameter {
+    pub fn has_standards_status(&self) -> bool {
+        self.standards_status.is_some()
+    }
+}
+
+/// One `ValueSet.compose.include`, reduced to what an expansion from the
+/// package alone can use.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ValueSetInclude {
+    /// `include.system`, absent when the include only imports other value
+    /// sets.
+    pub system: Option<String>,
+    /// `include.concept.code`, in declared order. Empty means "every code the
+    /// system declares".
+    pub concepts: Vec<String>,
+    /// `include.filter`, which needs a terminology server rather than a
+    /// package to evaluate.
+    pub has_filter: bool,
+    /// `include.valueSet`, which imports another value set.
+    pub imports: Vec<String>,
+}
+
+/// One `ValueSet`, reduced to its composition.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ValueSetDefinition {
+    pub url: String,
+    pub version: Option<String>,
+    /// `false` when the resource declares no `compose` at all.
+    pub has_compose: bool,
+    pub includes: Vec<ValueSetInclude>,
+    /// `compose.exclude`, which subtracts codes an include brought in.
+    pub has_exclude: bool,
+}
+
+/// One `CodeSystem`, reduced to the codes it declares.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CodeSystemDefinition {
+    pub url: String,
+    /// `CodeSystem.content`: only `complete` means the codes below are all of
+    /// them.
+    pub content: Option<String>,
+    /// Every `concept.code`, depth-first pre-order.
+    pub codes: Vec<String>,
+}
+
+/// A loaded, digest-verified package.
+#[derive(Debug)]
+pub struct Package {
+    /// The directory the definitions were read from, after resolution.
+    pub dir: PathBuf,
+    /// The digest of [`Package::dir`], over the canonical manifest.
+    pub digest: String,
+    /// How many files the digest covers.
+    pub digest_file_count: usize,
+    /// How many bytes the digest covers.
+    pub digest_byte_count: u64,
+    /// Every path the load opened, sorted, absolute.
+    pub files_read: Vec<PathBuf>,
+    /// Every `StructureDefinition` in the directory, in canonical-URL order.
+    pub definitions: Vec<Definition>,
+    /// Every `SearchParameter` in the directory, in canonical-URL order.
+    pub search_parameters: Vec<SearchParameter>,
+    /// Every `ValueSet` in the directory, in canonical-URL order.
+    pub value_sets: Vec<ValueSetDefinition>,
+    /// Every `CodeSystem` in the directory, in canonical-URL order.
+    pub code_systems: Vec<CodeSystemDefinition>,
+}
+
+/// The canonical content digest of a directory.
+///
+/// For every regular file below `dir`, sorted by its relative path's bytes:
+///
+/// ```text
+/// update(relative path, with / separators, as UTF-8)
+/// update(b"\n")
+/// update(byte length, as 8 big-endian bytes)
+/// update(contents)
+/// ```
+///
+/// The length prefix is what stops a rename plus a concatenation from
+/// colliding with the original. The path separator is normalised so that the
+/// digest is the same on Windows and on Linux, which `codegen.output.002`
+/// cares about for the output and this module cares about for the input.
+///
+/// Returns the digest, the file count and the byte count.
+pub fn content_digest(dir: &Path) -> Result<(String, Vec<PathBuf>, u64)> {
+    let mut files = Vec::new();
+    collect_files(dir, dir, &mut files)?;
+    files.sort_by(|a, b| a.0.as_bytes().cmp(b.0.as_bytes()));
+
+    let mut hasher = Sha256::new();
+    let mut bytes = 0u64;
+    let mut paths = Vec::with_capacity(files.len());
+    for (relative, absolute) in files {
+        let contents = std::fs::read(&absolute)
+            .map_err(|e| CodegenError::other(format!("reading {}: {e}", absolute.display())))?;
+        hasher.update(relative.as_bytes());
+        hasher.update(b"\n");
+        hasher.update(&(contents.len() as u64).to_be_bytes());
+        hasher.update(&contents);
+        bytes += contents.len() as u64;
+        paths.push(absolute);
+    }
+    Ok((hasher.hex(), paths, bytes))
+}
+
+fn collect_files(root: &Path, dir: &Path, out: &mut Vec<(String, PathBuf)>) -> Result<()> {
+    let entries = std::fs::read_dir(dir)
+        .map_err(|e| CodegenError::other(format!("reading {}: {e}", dir.display())))?;
+    for entry in entries {
+        let entry =
+            entry.map_err(|e| CodegenError::other(format!("reading {}: {e}", dir.display())))?;
+        let path = entry.path();
+        let kind = entry
+            .file_type()
+            .map_err(|e| CodegenError::other(format!("stat {}: {e}", path.display())))?;
+        if kind.is_dir() {
+            collect_files(root, &path, out)?;
+        } else if kind.is_file() {
+            let relative = path
+                .strip_prefix(root)
+                .unwrap_or(&path)
+                .to_string_lossy()
+                .replace('\\', "/");
+            out.push((relative, path));
+        }
+    }
+    Ok(())
+}
+
+/// Resolve a directory to the one that holds the definitions.
+///
+/// A fetched FHIR package extracts to a root containing `package/`, so both
+/// the extraction root and the `package/` directory itself are accepted. Any
+/// other directory, or one that does not exist, is a `PackageMissing` refusal
+/// naming the package, the version and the command that fetches it
+/// (`codegen.inputs.003`).
+pub fn resolve_dir(dir: &Path) -> Result<PathBuf> {
+    let missing = |detail: &str| {
+        CodegenError::failed(
+            FailureKind::PackageMissing,
+            format!(
+                "the input package {PACKAGE_NAME}#{PACKAGE_VERSION} is not present at {}: \
+                 {detail}. Fetch it with `{FETCH_COMMAND}`.",
+                dir.display()
+            ),
+        )
+    };
+    if !dir.exists() {
+        return Err(missing("the directory does not exist"));
+    }
+    if !dir.is_dir() {
+        return Err(missing("that path is not a directory"));
+    }
+    let nested = dir.join("package");
+    if nested.join("package.json").is_file() {
+        return Ok(nested);
+    }
+    if dir.join("package.json").is_file() {
+        return Ok(dir.to_path_buf());
+    }
+    Err(missing(
+        "neither it nor its package/ subdirectory carries a package.json",
+    ))
+}
+
+/// Load the package at `dir`, memoised per resolved directory.
+pub fn load(dir: &Path) -> Result<Arc<Package>> {
+    static CACHE: OnceLock<Mutex<HashMap<PathBuf, Arc<Package>>>> = OnceLock::new();
+    let resolved = resolve_dir(dir)?;
+    let key = std::fs::canonicalize(&resolved).unwrap_or_else(|_| resolved.clone());
+
+    let cache = CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+    if let Some(hit) = cache.lock().expect("package cache").get(&key).cloned() {
+        return Ok(hit);
+    }
+    let loaded = Arc::new(read(&resolved)?);
+    cache
+        .lock()
+        .expect("package cache")
+        .insert(key, Arc::clone(&loaded));
+    Ok(loaded)
+}
+
+fn read(dir: &Path) -> Result<Package> {
+    let (digest, files_read, digest_byte_count) = content_digest(dir)?;
+    let digest_file_count = files_read.len();
+
+    let mut definitions = Vec::new();
+    let mut search_parameters = Vec::new();
+    let mut value_sets = Vec::new();
+    let mut code_systems = Vec::new();
+    for path in &files_read {
+        let name = path
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_default();
+        let wanted = [
+            "StructureDefinition-",
+            "SearchParameter-",
+            "ValueSet-",
+            "CodeSystem-",
+        ]
+        .iter()
+        .any(|prefix| name.starts_with(prefix));
+        if !wanted || !name.ends_with(".json") {
+            continue;
+        }
+        let text = std::fs::read_to_string(path)
+            .map_err(|e| CodegenError::other(format!("reading {}: {e}", path.display())))?;
+        let value: Value = serde_json::from_str(&text)
+            .map_err(|e| CodegenError::other(format!("parsing {}: {e}", path.display())))?;
+        match string_at(&value, "resourceType").unwrap_or_default() {
+            "StructureDefinition" => definitions.push(definition(&value, path)?),
+            "SearchParameter" => search_parameters.push(search_parameter(&value, path)?),
+            "ValueSet" => value_sets.push(value_set(&value, path)?),
+            "CodeSystem" => code_systems.push(code_system(&value, path)?),
+            other => {
+                return Err(CodegenError::other(format!(
+                    "{} declares resourceType {other:?}, which its file name contradicts",
+                    path.display()
+                )));
+            }
+        }
+    }
+    definitions.sort_by(|a, b| a.url.cmp(&b.url));
+    search_parameters.sort_by(|a, b| a.url.cmp(&b.url));
+    value_sets.sort_by(|a, b| a.url.cmp(&b.url));
+    code_systems.sort_by(|a, b| a.url.cmp(&b.url));
+
+    Ok(Package {
+        dir: dir.to_path_buf(),
+        digest,
+        digest_file_count,
+        digest_byte_count,
+        files_read,
+        definitions,
+        search_parameters,
+        value_sets,
+        code_systems,
+    })
+}
+
+/// The `structuredefinition-standards-status` extension url.
+pub const STANDARDS_STATUS_EXTENSION: &str =
+    "http://hl7.org/fhir/StructureDefinition/structuredefinition-standards-status";
+
+fn definition(value: &Value, path: &Path) -> Result<Definition> {
+    let required = |field: &str| -> Result<String> {
+        string_at(value, field).map(str::to_string).ok_or_else(|| {
+            CodegenError::other(format!(
+                "{} is a StructureDefinition with no {field}",
+                path.display()
+            ))
+        })
+    };
+    let snapshot = value
+        .get("snapshot")
+        .and_then(|s| s.get("element"))
+        .and_then(Value::as_array)
+        .map(|elements| elements.iter().map(snapshot_element).collect())
+        .unwrap_or_default();
+
+    Ok(Definition {
+        url: required("url")?,
+        id: required("id")?,
+        name: required("name")?,
+        kind: required("kind")?,
+        is_abstract: value
+            .get("abstract")
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
+        derivation: string_at(value, "derivation").map(str::to_string),
+        base_definition: string_at(value, "baseDefinition").map(str::to_string),
+        type_name: string_at(value, "type").map(str::to_string),
+        fhir_version: string_at(value, "fhirVersion").map(str::to_string),
+        standards_status: extension_value_code(value, STANDARDS_STATUS_EXTENSION),
+        snapshot,
+    })
+}
+
+/// `ElementDefinition.type.extension` naming the FHIR type behind a FHIRPath
+/// system type.
+pub const FHIR_TYPE_EXTENSION: &str =
+    "http://hl7.org/fhir/StructureDefinition/structuredefinition-fhir-type";
+/// `ElementDefinition.extension` naming a backbone element's nested type.
+pub const EXPLICIT_TYPE_NAME_EXTENSION: &str =
+    "http://hl7.org/fhir/StructureDefinition/structuredefinition-explicit-type-name";
+/// `ElementDefinition.binding.extension` naming the binding.
+pub const BINDING_NAME_EXTENSION: &str =
+    "http://hl7.org/fhir/StructureDefinition/elementdefinition-bindingName";
+/// `ElementDefinition.type.extension` giving a primitive's lexical form.
+pub const REGEX_EXTENSION: &str = "http://hl7.org/fhir/StructureDefinition/regex";
+/// The prefix every FHIRPath system type code carries.
+pub const SYSTEM_TYPE_PREFIX: &str = "http://hl7.org/fhirpath/System.";
+
+/// The FHIR type one `ElementDefinition.type` names.
+///
+/// A primitive's `id` and `value` declare a FHIRPath system type —
+/// `http://hl7.org/fhirpath/System.String` — and name the FHIR type beside it
+/// in the `structuredefinition-fhir-type` extension. `xhtml.id` declares the
+/// system type and no extension, which is why there is a fallback rather than
+/// a default of the raw URI: a type name no definition declares would navigate
+/// nowhere.
+fn fhir_type_of(ty: &Value) -> String {
+    let code = string_at(ty, "code").unwrap_or_default();
+    let Some(system) = code.strip_prefix(SYSTEM_TYPE_PREFIX) else {
+        return code.to_string();
+    };
+    if let Some(named) = type_extension(ty, FHIR_TYPE_EXTENSION, "valueUrl") {
+        return named;
+    }
+    match system {
+        "String" => "string",
+        "Boolean" => "boolean",
+        "Integer" => "integer",
+        "Decimal" => "decimal",
+        "Date" => "date",
+        "DateTime" => "dateTime",
+        "Time" => "time",
+        other => other,
+    }
+    .to_string()
+}
+
+fn type_extension(ty: &Value, url: &str, field: &str) -> Option<String> {
+    ty.get("extension")?
+        .as_array()?
+        .iter()
+        .find(|e| string_at(e, "url") == Some(url))
+        .and_then(|e| string_at(e, field))
+        .map(str::to_string)
+}
+
+fn snapshot_element(value: &Value) -> SnapshotElement {
+    let declared: Vec<&Value> = value
+        .get("type")
+        .and_then(Value::as_array)
+        .map(|types| types.iter().collect())
+        .unwrap_or_default();
+    SnapshotElement {
+        path: string_at(value, "path").unwrap_or_default().to_string(),
+        min: value
+            .get("min")
+            .and_then(Value::as_u64)
+            .map(|m| m.min(u32::MAX as u64) as u32),
+        max: string_at(value, "max").map(str::to_string),
+        types: declared
+            .iter()
+            .map(|t| string_at(t, "code").unwrap_or_default().to_string())
+            .collect(),
+        fhir_types: declared.iter().map(|t| fhir_type_of(t)).collect(),
+        value_regex: declared
+            .first()
+            .and_then(|t| type_extension(t, REGEX_EXTENSION, "valueString")),
+        content_reference: string_at(value, "contentReference").map(str::to_string),
+        binding: value.get("binding").map(|b| ElementBinding {
+            strength: string_at(b, "strength").unwrap_or_default().to_string(),
+            value_set: string_at(b, "valueSet").unwrap_or_default().to_string(),
+            binding_name: type_extension(b, BINDING_NAME_EXTENSION, "valueString"),
+        }),
+        explicit_type_name: type_extension(value, EXPLICIT_TYPE_NAME_EXTENSION, "valueString"),
+        untyped_system_type: declared.iter().any(|t| {
+            string_at(t, "code").is_some_and(|c| c.starts_with(SYSTEM_TYPE_PREFIX))
+                && type_extension(t, FHIR_TYPE_EXTENSION, "valueUrl").is_none()
+        }),
+    }
+}
+
+fn search_parameter(value: &Value, path: &Path) -> Result<SearchParameter> {
+    let required = |field: &str| -> Result<String> {
+        string_at(value, field).map(str::to_string).ok_or_else(|| {
+            CodegenError::other(format!(
+                "{} is a SearchParameter with no {field}",
+                path.display()
+            ))
+        })
+    };
+    Ok(SearchParameter {
+        id: required("id")?,
+        url: required("url")?,
+        code: required("code")?,
+        search_type: required("type")?,
+        bases: string_array(value, "base"),
+        expression: string_at(value, "expression").map(str::to_string),
+        components: value
+            .get("component")
+            .and_then(Value::as_array)
+            .map(|components| {
+                components
+                    .iter()
+                    .map(|c| SearchParamComponent {
+                        definition: string_at(c, "definition").unwrap_or_default().to_string(),
+                        expression: string_at(c, "expression").unwrap_or_default().to_string(),
+                    })
+                    .collect()
+            })
+            .unwrap_or_default(),
+        targets: string_array(value, "target"),
+        multiple_or: value.get("multipleOr").and_then(Value::as_bool),
+        multiple_and: value.get("multipleAnd").and_then(Value::as_bool),
+        comparator: optional_string_array(value, "comparator"),
+        modifier: optional_string_array(value, "modifier"),
+        chain: optional_string_array(value, "chain"),
+        standards_status: extension_value_code(value, STANDARDS_STATUS_EXTENSION),
+    })
+}
+
+fn value_set(value: &Value, path: &Path) -> Result<ValueSetDefinition> {
+    let url = string_at(value, "url").map(str::to_string).ok_or_else(|| {
+        CodegenError::other(format!("{} is a ValueSet with no url", path.display()))
+    })?;
+    let compose = value.get("compose");
+    Ok(ValueSetDefinition {
+        url,
+        version: string_at(value, "version").map(str::to_string),
+        has_compose: compose.is_some(),
+        includes: compose
+            .and_then(|c| c.get("include"))
+            .and_then(Value::as_array)
+            .map(|includes| includes.iter().map(value_set_include).collect())
+            .unwrap_or_default(),
+        has_exclude: compose
+            .and_then(|c| c.get("exclude"))
+            .and_then(Value::as_array)
+            .is_some_and(|exclude| !exclude.is_empty()),
+    })
+}
+
+fn value_set_include(value: &Value) -> ValueSetInclude {
+    ValueSetInclude {
+        system: string_at(value, "system").map(str::to_string),
+        concepts: value
+            .get("concept")
+            .and_then(Value::as_array)
+            .map(|concepts| {
+                concepts
+                    .iter()
+                    .map(|c| string_at(c, "code").unwrap_or_default().to_string())
+                    .collect()
+            })
+            .unwrap_or_default(),
+        has_filter: value
+            .get("filter")
+            .and_then(Value::as_array)
+            .is_some_and(|filters| !filters.is_empty()),
+        imports: string_array(value, "valueSet"),
+    }
+}
+
+fn code_system(value: &Value, path: &Path) -> Result<CodeSystemDefinition> {
+    let url = string_at(value, "url").map(str::to_string).ok_or_else(|| {
+        CodegenError::other(format!("{} is a CodeSystem with no url", path.display()))
+    })?;
+    let mut codes = Vec::new();
+    concept_codes(value, &mut codes);
+    Ok(CodeSystemDefinition {
+        url,
+        content: string_at(value, "content").map(str::to_string),
+        codes,
+    })
+}
+
+/// Every `concept.code` below `value`, depth-first pre-order.
+///
+/// Pre-order is not a preference: `observation-status` declares `corrected` as
+/// a child of `amended`, and the eight codes in the order
+/// `codegen.naming.005` lists them are exactly this traversal.
+fn concept_codes(value: &Value, out: &mut Vec<String>) {
+    let Some(concepts) = value.get("concept").and_then(Value::as_array) else {
+        return;
+    };
+    for concept in concepts {
+        if let Some(code) = string_at(concept, "code") {
+            out.push(code.to_string());
+        }
+        concept_codes(concept, out);
+    }
+}
+
+fn string_at<'a>(value: &'a Value, field: &str) -> Option<&'a str> {
+    value.get(field).and_then(Value::as_str)
+}
+
+fn string_array(value: &Value, field: &str) -> Vec<String> {
+    optional_string_array(value, field).unwrap_or_default()
+}
+
+fn optional_string_array(value: &Value, field: &str) -> Option<Vec<String>> {
+    Some(
+        value
+            .get(field)?
+            .as_array()?
+            .iter()
+            .filter_map(Value::as_str)
+            .map(str::to_string)
+            .collect(),
+    )
+}
+
+fn extension_value_code(value: &Value, url: &str) -> Option<String> {
+    value
+        .get("extension")?
+        .as_array()?
+        .iter()
+        .find(|e| string_at(e, "url") == Some(url))
+        .and_then(|e| string_at(e, "valueCode"))
+        .map(str::to_string)
+}
+
+/// Verify a loaded package against a digest, which is the recorded one unless
+/// a run overrides it (`codegen.inputs.002`).
+pub fn verify_digest(package: &Package, expected: &str) -> Result<()> {
+    if package.digest == expected {
+        return Ok(());
+    }
+    Err(CodegenError::failed(
+        FailureKind::DigestMismatch,
+        format!(
+            "the input package at {} does not match the recorded digest: expected {expected}, \
+             computed {} over {} files. Re-fetch it with `{FETCH_COMMAND}`, or correct the pin \
+             in crates/frevo-codegen/packages/PINS.md if the package itself was re-published.",
+            package.dir.display(),
+            package.digest,
+            package.digest_file_count
+        ),
+    ))
+}
+
+/// The package the recorded pin names, loaded and verified.
+pub fn pinned() -> Result<Arc<Package>> {
+    let package = load(&pin::default_package_dir())?;
+    verify_digest(&package, pin::PACKAGE_CONTENT_SHA256)?;
+    Ok(package)
+}

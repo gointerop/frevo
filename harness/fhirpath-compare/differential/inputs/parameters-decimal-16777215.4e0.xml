@@ -1,0 +1,6 @@
+<Parameters xmlns="http://hl7.org/fhir">
+  <parameter>
+    <name value="a"/>
+    <valueDecimal value="16777215.4e0"/>
+  </parameter>
+</Parameters>

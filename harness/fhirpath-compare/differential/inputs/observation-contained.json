@@ -1,0 +1,32 @@
+{
+  "resourceType": "Observation",
+  "id": "c",
+  "status": "final",
+  "contained": [
+    {
+      "resourceType": "Patient",
+      "id": "p1",
+      "active": true
+    }
+  ],
+  "code": {
+    "text": "x"
+  },
+  "subject": {
+    "reference": "#p1"
+  },
+  "performer": [
+    {
+      "reference": "#missing"
+    },
+    {
+      "identifier": {
+        "system": "http://example.org",
+        "value": "1"
+      }
+    },
+    {
+      "reference": "Patient/example"
+    }
+  ]
+}

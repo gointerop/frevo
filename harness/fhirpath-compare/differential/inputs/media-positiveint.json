@@ -1,0 +1,10 @@
+{
+  "resourceType": "Media",
+  "id": "m",
+  "status": "completed",
+  "content": {
+    "contentType": "image/png"
+  },
+  "height": 2,
+  "width": 3
+}
