@@ -26,6 +26,9 @@ org.hl7.fhir.core	https://github.com/hapifhir/org.hl7.fhir.core.git	6.9.12	73c43
 clinical_quality_language	https://github.com/cqframework/clinical_quality_language.git	v5.4.0	c41c21f5616a0da82d49e32a9cc3a5b3ca299bc2
 clinical-reasoning	https://github.com/cqframework/clinical-reasoning.git	v4.13.0	ccba474a2fba73329353b41d270f9d0001d6cb52
 Ucum-java	https://github.com/FHIR/Ucum-java.git	1.0.10	db9d22ade3f0f4a667b45817b85a9ac4534e4224
+spring-boot	https://github.com/spring-projects/spring-boot.git	v3.5.14	7d7b3ac12735161f9c096ce6cb415bdd9fc4a0f4
+spring-framework	https://github.com/spring-projects/spring-framework.git	v6.2.18	6b117247d383294662e199c6b47d7bf54c49caaa
+snakeyaml	https://bitbucket.org/snakeyaml/snakeyaml.git	snakeyaml-2.4	558c81a4893726c3c03f5c433fed69e79001899e
 TBL
 )
 
