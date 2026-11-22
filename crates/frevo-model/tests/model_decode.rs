@@ -12,7 +12,8 @@
 //! - `model.json.001` .. `model.json.023` (23 -- `.024` and `.025` are graded
 //!   by the committed `model_parser_errors.rs` oracle and are not repeated);
 //! - `model.primext.001` .. `model.primext.009` (9);
-//! - `model.errors.001` .. `model.errors.005` (5).
+//! - `model.errors.001` .. `model.errors.005` (5);
+//! - `model.json.026` (task 5b), added after the first 37.
 //!
 //! ## Why the fixtures are hand-built and compact
 //!
@@ -2080,5 +2081,297 @@ fn adversarially_nested_input_is_bounded() {
     match codec_under_test().decode(CONTAINER_EXAMPLE.as_bytes(), ParseMode::Lenient) {
         Ok(d) => assert_eq!(d.resource_type, "Patient"),
         Err(e) => panic!("an ordinarily nested document must decode: {e}"),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// model.json.026 -- `resourceType` is the type marker only on a resource's own
+// object, and an ordinary property everywhere else
+//
+// HAPI skips a `resourceType` key only when the object being parsed is a
+// resource (`hapi-fhir-base` `JsonParser.java:1341-1344`,
+// `ParserState.isToplevelResourceElement`, `ParserState.java:157-159`, true
+// for `ResourceStateHl7Org`, `:1135`, top level or nested). Fixtures are
+// compact and in generated element order, so the full re-encode must give the
+// input back byte for byte.
+// ---------------------------------------------------------------------------
+
+/// An `ExampleScenario` whose two `instance` entries carry the element
+/// `resourceType`, shaped like `ExampleScenario-example.json` of
+/// `hl7.fhir.r4.examples#4.0.1`; the second also carries a `_resourceType`
+/// primitive-extension sibling. Its `contained` `Patient` keeps its own marker.
+const EXAMPLE_SCENARIO_INSTANCES: &str = concat!(
+    r##"{"resourceType":"ExampleScenario","id":"es","##,
+    r##""contained":[{"resourceType":"Patient","id":"p1","active":true}],"status":"draft","##,
+    r##""instance":[{"resourceId":"iherx001","resourceType":"MedicationRequest","name":"Initial"},"##,
+    r##"{"resourceId":"iheadm001a","resourceType":"MedicationAdministration","##,
+    r##""_resourceType":{"extension":[{"url":"http://example.org/x","valueString":"y"}]}}]}"##
+);
+
+/// [`EXAMPLE_SCENARIO_INSTANCES`] in canonical form (`model.canonical.001`):
+/// every object's names sorted, so the instance's `resourceType` sits among
+/// its siblings, and each resource's own marker written once as its type.
+const EXAMPLE_SCENARIO_INSTANCES_CANONICAL: &str = concat!(
+    r##"{"contained":[{"active":true,"id":"p1","resourceType":"Patient"}],"id":"es","##,
+    r##""instance":[{"name":"Initial","resourceId":"iherx001","resourceType":"MedicationRequest"},"##,
+    r##"{"_resourceType":{"extension":[{"url":"http://example.org/x","valueString":"y"}]},"##,
+    r##""resourceId":"iheadm001a","resourceType":"MedicationAdministration"}],"##,
+    r##""resourceType":"ExampleScenario","status":"draft"}"##
+);
+
+const BUNDLE_WITH_ENTRY_RESOURCE: &str = concat!(
+    r##"{"resourceType":"Bundle","type":"collection","##,
+    r##""entry":[{"resource":{"resourceType":"Patient","id":"a"}}]}"##
+);
+
+const PARAMETERS_WITH_RESOURCE: &str = concat!(
+    r##"{"resourceType":"Parameters","##,
+    r##""parameter":[{"name":"r","resource":{"resourceType":"Patient","id":"a"}}]}"##
+);
+
+/// A `resourceType` key in a `HumanName`, which declares no such element.
+const RESOURCE_TYPE_IN_HUMAN_NAME: &str =
+    r##"{"resourceType":"Patient","name":[{"resourceType":"x","family":"F"}]}"##;
+
+/// The lazy reader's answer for `path` over `bytes`, as `(type, value)` or the
+/// error's message.
+fn lazy_read(bytes: &[u8], path: &str) -> Result<Option<(String, Option<String>)>, String> {
+    frevo_model::Resource::from_stored(bytes.to_vec().into())
+        .read(path)
+        .map_err(|e| e.message)
+}
+
+// covers: model.json.026
+#[test]
+fn resource_type_on_an_example_scenario_instance_is_an_ordinary_code_element() {
+    let input = EXAMPLE_SCENARIO_INSTANCES.as_bytes();
+    for mode in [ParseMode::Lenient, ParseMode::Strict] {
+        let d = must_decode(
+            input,
+            mode,
+            "an ExampleScenario whose instances carry resourceType",
+        );
+        assert_eq!(d.kinds(), [], "{mode:?}: no diagnostic");
+        assert_eq!(d.resource_type, "ExampleScenario");
+        // Each instance's `resourceType` holds its `code` value.
+        for (i, want) in [(0, "MedicationRequest"), (1, "MedicationAdministration")] {
+            let path = format!("ExampleScenario.instance[{i}].resourceType");
+            let e = d
+                .at(&path)
+                .unwrap_or_else(|| panic!("{mode:?}: {path} must decode; got {:?}", d.paths()));
+            assert_eq!(e.type_name, "code", "{path}");
+            assert_eq!(e.value.as_deref(), Some(want), "{path}");
+            assert!(!e.is_resource, "{path} is an element, not a resource");
+        }
+        // A `_resourceType` sibling on that element is its primitive extension
+        // (`model.primext.001`).
+        assert_eq!(
+            d.at("ExampleScenario.instance[1].resourceType")
+                .map(|e| e.extension_urls.clone()),
+            Some(vec!["http://example.org/x".to_string()])
+        );
+        assert!(
+            d.at("ExampleScenario.instance[0].resourceType")
+                .is_some_and(|e| e.extension_urls.is_empty())
+        );
+        // Byte-identical full re-encode.
+        assert_eq!(
+            as_text(&d.reencoded_in_element_order),
+            EXAMPLE_SCENARIO_INSTANCES,
+            "{mode:?}: the full re-encode reproduces the input"
+        );
+    }
+
+    // The lazy reader gives the `code` value (`ExampleScenarioInstanceComponent
+    // .resourceType`, `org.hl7.fhir.r4` `formats/JsonParser.java:13050-13054`).
+    assert_eq!(
+        lazy_read(input, "ExampleScenario.instance[0].resourceType"),
+        Ok(Some((
+            "code".to_string(),
+            Some("MedicationRequest".to_string())
+        )))
+    );
+    assert_eq!(
+        lazy_read(input, "ExampleScenario.instance[1].resourceType"),
+        Ok(Some((
+            "code".to_string(),
+            Some("MedicationAdministration".to_string())
+        )))
+    );
+
+    // Pretty and canonical re-encodes, byte-identical.
+    let eager = codec::decode(input, codec::ParseMode::Lenient)
+        .unwrap_or_else(|e| panic!("the ExampleScenario must decode: {e:?}"));
+    assert_eq!(
+        as_text(&eager.reencoded_pretty()),
+        as_text(&frevo_model::codec::pretty::indent(input)),
+        "the pretty form is the input indented, and nothing else"
+    );
+    assert_eq!(
+        as_text(&eager.reencoded_canonical),
+        EXAMPLE_SCENARIO_INSTANCES_CANONICAL,
+        "canonical: the instance's resourceType sorted among its siblings"
+    );
+    let canonical = EXAMPLE_SCENARIO_INSTANCES_CANONICAL.as_bytes();
+    let again = codec::decode(canonical, codec::ParseMode::Strict)
+        .unwrap_or_else(|e| panic!("the canonical form must decode strictly: {e:?}"));
+    assert_eq!(
+        as_text(&again.reencoded_canonical),
+        EXAMPLE_SCENARIO_INSTANCES_CANONICAL,
+        "the canonical form round-trips byte-identically"
+    );
+    assert_eq!(
+        as_text(&again.reencoded),
+        EXAMPLE_SCENARIO_INSTANCES,
+        "and re-encodes to the element-order form"
+    );
+    let mut written = Vec::new();
+    frevo_model::Resource::from_stored(input.to_vec().into())
+        .write_canonical(&mut written)
+        .expect("the byte-backed resource writes canonically");
+    assert_eq!(as_text(&written), EXAMPLE_SCENARIO_INSTANCES_CANONICAL);
+}
+
+// covers: model.json.026
+#[test]
+fn a_nested_resource_keeps_its_marker_skipped_and_dispatched_on() {
+    // `contained` (`model.json.006`), `Bundle.entry.resource` and
+    // `Parameters.parameter.resource` (`model.json.007`): each marker is the
+    // nested resource's type, not an element.
+    for (what, doc, at) in [
+        (
+            "a contained Patient",
+            EXAMPLE_SCENARIO_INSTANCES,
+            "ExampleScenario.contained[0]",
+        ),
+        (
+            "a Bundle.entry.resource",
+            BUNDLE_WITH_ENTRY_RESOURCE,
+            "Bundle.entry[0].resource",
+        ),
+        (
+            "a Parameters.parameter.resource",
+            PARAMETERS_WITH_RESOURCE,
+            "Parameters.parameter[0].resource",
+        ),
+    ] {
+        for mode in [ParseMode::Lenient, ParseMode::Strict] {
+            let d = must_decode(doc.as_bytes(), mode, what);
+            assert_eq!(d.kinds(), [], "{what} ({mode:?}): no diagnostic");
+            let e = d
+                .at(at)
+                .unwrap_or_else(|| panic!("{what}: {at} must decode; got {:?}", d.paths()));
+            assert_eq!(e.type_name, "Patient", "{what}: dispatched on its marker");
+            assert!(e.is_resource, "{what}: a resource");
+            assert!(
+                d.at(&format!("{at}.resourceType")).is_none(),
+                "{what}: the marker is not read as an element; got {:?}",
+                d.paths()
+            );
+            assert!(
+                d.at(&format!("{}.resourceType", d.resource_type)).is_none(),
+                "{what}: nor is the root's"
+            );
+            // Each resource's marker is written once, as its type.
+            assert_eq!(
+                as_text(&d.reencoded_in_element_order),
+                doc,
+                "{what} ({mode:?}): byte-identical re-encode"
+            );
+        }
+    }
+
+    // No R4 resource declares `resourceType`, so the lazy reader rejects a
+    // path naming a resource's marker as any undeclared name, with an error
+    // rather than an empty answer.
+    let input = EXAMPLE_SCENARIO_INSTANCES.as_bytes();
+    assert_eq!(
+        lazy_read(input, "ExampleScenario.resourceType"),
+        Err("ExampleScenario has no element named \"resourceType\"".to_string())
+    );
+    assert_eq!(
+        lazy_read(input, "ExampleScenario.contained[0].resourceType"),
+        Err("Patient has no element named \"resourceType\"".to_string())
+    );
+}
+
+// covers: model.json.026
+#[test]
+fn resource_type_in_an_object_that_does_not_declare_it_is_an_unknown_property() {
+    // `ElementCompositeState.enteringNewElement` finds no child named
+    // `resourceType` and calls `unknownElement(null, "resourceType")`
+    // (`ParserState.java:640-657`): HAPI's strict text is
+    // `HAPI-1825: Unknown element 'resourceType' found during parse`. The code
+    // is what is compared with HAPI; the path is Frevo's own field, the
+    // indexed element path, as `model.json.004` does.
+    let input = RESOURCE_TYPE_IN_HUMAN_NAME.as_bytes();
+    let d = must_decode(
+        input,
+        ParseMode::Lenient,
+        "a HumanName carrying resourceType",
+    );
+    assert_eq!(d.kinds(), [ReportKind::UnknownProperty]);
+    assert_eq!(d.diagnostics[0].code, Some(1825));
+    assert_eq!(d.diagnostics[0].path, "Patient.name[0].resourceType");
+    assert!(
+        d.diagnostics[0].offset < input.len(),
+        "the offset points inside the input"
+    );
+    assert_eq!(d.value("Patient.name[0].family"), Some("F"));
+    assert_eq!(
+        as_text(&d.reencoded_in_element_order),
+        r##"{"resourceType":"Patient","name":[{"family":"F"}]}"##,
+        "the undeclared property is dropped"
+    );
+
+    let r = must_reject(
+        input,
+        ParseMode::Strict,
+        "a HumanName carrying resourceType",
+    );
+    assert_eq!(r.kind, ReportKind::UnknownProperty);
+    assert_eq!(r.code, Some(1825));
+    assert_eq!(r.path, "Patient.name[0].resourceType");
+}
+
+// covers: model.json.026
+#[test]
+fn underscore_resource_type_on_a_resource_object_is_dropped_silently() {
+    // A resource's `resourceType` `continue`s before the alternate-name lookup
+    // (`JsonParser.java:1342-1344`, `:1363-1366`), and the unhandled-underscore
+    // loop finds `resourceType` present and `continue`s (`:1387-1400`), so
+    // `unknownElement` is never called: no diagnostic, no strict error, and
+    // the key is not re-encoded. At the root and on a nested resource. Fails
+    // until task 5c.
+    let ext = r##"{"extension":[{"url":"http://x","valueString":"y"}]}"##;
+    let root = format!(r##"{{"resourceType":"Patient","_resourceType":{ext}}}"##);
+    let contained = format!(
+        r##"{{"resourceType":"Patient","id":"p","contained":[{{"resourceType":"Organization","_resourceType":{ext},"id":"o"}}],"active":true}}"##
+    );
+    for (what, doc, want) in [
+        (
+            "_resourceType on the root Patient",
+            root.as_str(),
+            r##"{"resourceType":"Patient"}"##,
+        ),
+        (
+            "_resourceType on a contained Organization",
+            contained.as_str(),
+            r##"{"resourceType":"Patient","id":"p","contained":[{"resourceType":"Organization","id":"o"}],"active":true}"##,
+        ),
+    ] {
+        for mode in [ParseMode::Lenient, ParseMode::Strict] {
+            let d = must_decode(doc.as_bytes(), mode, what);
+            assert_eq!(
+                d.kinds(),
+                [],
+                "{what} ({mode:?}): dropped with no diagnostic"
+            );
+            assert_eq!(
+                as_text(&d.reencoded_in_element_order),
+                want,
+                "{what} ({mode:?}): and not re-encoded"
+            );
+        }
     }
 }
