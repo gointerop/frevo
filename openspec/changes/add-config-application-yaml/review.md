@@ -1,5 +1,183 @@
 CHANGES_REQUESTED
 
+Fifth review of `add-config-application-yaml`, at `5c049ba` (the delta
+rewrite) over `64d2e4e` (the re-record with two runners). I checked the 20
+rewritten scenarios against `harness/config-roundtrip/hapi-8.12.0-results.json`.
+I also ran cases of my own choosing on the unchanged pinned image
+`hapiproject/hapi:v8.12.0-2@sha256:0ff86aac…`, through its ENTRYPOINT and
+its own `ca.uhn.fhir.jpa.starter.Application`, with only the case's files
+copied to `/app`. I used fresh containers and removed them afterwards.
+
+## The fourth review's findings
+
+1. **Refresh-time failure output: resolved.**
+   - I grouped the record's 80 failing cases by `WARN` exception, by whether
+     an `INFO` line appears, by `ERROR` form and by application-name field.
+     There are exactly nine groups. They match config.error.008's table row
+     for row:
+     - `PartitionModeConfigurer`: 38 cases, no `INFO`, analysis form.
+     - `FhirServerConfigDstu2`: 6 cases, no `INFO`, run-failed form, no
+       application name.
+     - `ElasticsearchBootSvcImpl`: 6 cases, `INFO`, analysis form.
+     - `WebAppFilesConfigurer`, `CustomContentFilesConfigurer` and
+       `McpServerConfig`: one case each, `INFO`, run-failed form.
+     - The CQL bean wrapper: 4 cases, `INFO`, analysis form.
+     - The pre-context failures: 18 in run-failed form and 5 in analysis
+       form, 23 in all, with neither `WARN` nor `INFO`. They match the list
+       in config.error.008.
+   - Each of these quotes matches the record verbatim:
+     - config.gate.005's two exception lines;
+     - config.placeholder.011's three-line chain, and its five lenient-binding
+       blocks (origin columns 24, 32, 53, 38 and 24, and the
+       `DATABASE`/`FILESYSTEM` action);
+     - config.placeholder.007's full circular-reference reason;
+     - config.unknown.005's and .008's `cqlProperties`, `cqlData` and
+       `cqlTerminologyProperties` wrappers, the `$$SpringCGLIB$$0`
+       descriptions, and `CqlRuntimeProperties` without the suffix;
+     - config.gate.024's `ElasticsearchBootSvcImpl` line, followed by
+       `INFO`;
+     - config.source.016's action line;
+     - config.source.020's two causes.
+   - **Live image.** I ran config.placeholder.011-g, config.unknown.008-c,
+     config.gate.024-h, config.source.010 (with its `args`) and
+     config.args.009-e (with its `JAVA_TOOL_OPTIONS`). Each config-related
+     line, as `run.py` `config_lines` extracts it, equals the record. The
+     only difference is a trailing blank line, which `run.py` pops before it
+     records. The `WARN` and `INFO` logger fields are
+     `ConfigServletWebServerApplicationContext` and
+     `.s.b.a.l.ConditionEvaluationReportLogger`, as the delta states.
+2. **Jackson location line and the tab-led frame definition: resolved in the
+   delta.**
+   - config.args.007 and .009 quote the ` at [Source: …]` line, and the live
+     image prints it (`column: 2` for both).
+   - config.error.009 and config.oracle.003 define a frame as tab-led, with
+     `... N common frames omitted`.
+   - `run.py` `FRAME` follows that definition.
+   - `tests/common/mod.rs` `is_frame` still accepts any leading whitespace.
+     Task 3 owes that fix, which the hook blocked (`tasks/blockers.md`,
+     items 1 to 3). That is acceptable: task 3 precedes any implementation.
+3. **`DEV-0033` text: resolved, judged on `register-entries.md` only.**
+   - The replacement text is consistent with the delta:
+     - frames are tab-led, including `common frames omitted`;
+     - the Jackson line is kept;
+     - the logger field is compared;
+     - the `Bindable` mask is kept;
+     - the `WARN`/`INFO` kinds are those of config.error.008.
+   - It also agrees with the record:
+     - `logback_status_lines` is (57, 2) in 396 runs and (57, 0) in 23;
+     - config.gate.005 has 35 frame lines.
+
+What the delta says is still owed is acceptable as stated in config.error.008,
+proposal.md ("Not in the record") and tasks.md task 2. Task 2 records the
+following before task 3 starts:
+- a binding failure in `CrProperties`, `CareGapsProperties`,
+  `CqlCompilerProperties` and `CdsHooksProperties`;
+- the ordering of several refresh-time failures;
+- comparing the logger field, and dropping the `Error creating bean with
+  name` prefix rule.
+
+Finding 2 below is one place where the delta contradicts that.
+
+## Findings
+
+1. **The oracle does not record HAPI's result for any case the probe starts,
+   and on the live image most of the ones I sampled fail to start.** No
+   artifact says so.
+   - config.oracle.001 records a case "the probe does not fail" from the
+     probe. `runner_disagreements` covers only one direction: the probe fails
+     and the real `Application` starts. The reverse is never measured, and
+     neither design.md section 7 nor the delta notes it.
+   - I ran eight probe-passing cases (`exit: 0` in the record) on the
+     unchanged image's own `Application`. Six of them fail to start:
+
+     | Case | HAPI's real `Application` |
+     |---|---|
+     | config.unknown.004 | `Invalid value 'not-a-number' for configuration property 'server.port'` (failure analysis) |
+     | config.coerce.026 | `Parameter 0 of method restfulServer in ca.uhn.fhir.jpa.starter.common.StarterJpaConfig required a bean of type 'ca.uhn.fhir.context.FhirContext' that could not be found.` (every `fhir-*` gate off, as the scenario says) |
+     | config.collection.006 | `Interceptor class was not found on classpath: a.B` |
+     | config.key.012 | `packageInstaller`: `thePackageId must not be blank` |
+     | config.gate.024-b | `HAPI-1175: Failed to create document index`, `Connection refused` |
+     | all-keys.yaml (config.key.005) | `jpaStorageSettings`: `Invalid path for auto-version reference at path: auto-version-reference-at-paths-a` |
+
+     config.coerce.017-g and config.gate.006-d started the server.
+   - **Most of these are probably out of scope**, and the record still
+     claims to be HAPI 8.12.0's result:
+     - `server.port` is listed in proposal.md "Out of scope", with its
+       failure.
+     - `custom_interceptor_classes` is listed there too.
+     - The package, Elasticsearch-connection and auto-version failures are
+       "what each key does".
+   - **The problem is that the record labels them "HAPI 8.12.0 results" with
+     `exit: 0`.** Nothing guarantees that the other 331 probe-passing cases
+     contain no failure this change owns. For example:
+     - a binding failure in a bean the probe does not bind;
+     - a condition the component scan evaluates that the probe's evaluation
+       does not.
+
+     Such a failure would be an unexplained diff that no gate can see. That
+     is the failure mode of the fourth review's finding 1, in the other
+     direction.
+   - config.coerce.026 shows that a scenario's own `THEN` ("every `fhir-*`
+     gate is off") leads to a startup failure. The delta neither states it
+     nor assigns it to a later change.
+   - **Needed:**
+     - Run every probe-passing case on the `application` runner too. With
+       `APPLICATION_TIMEOUT` it is only wall time. Record that run's outcome
+       beside the probe's (for example `application_exit` and its
+       config-related lines, or `started: true`).
+     - List the cases where the real `Application` fails in a record member,
+       the reverse of `runner_disagreements`.
+     - In config.oracle.001, state the meaning of a probe-recorded `exit: 0`:
+       the configuration layer accepts the case, and it says nothing about
+       whether HAPI starts.
+     - Classify every such case in the delta:
+       - **Out of scope**, with the failing bean and the change that owes the
+         failure (`add-server-skeleton` for `server.port`, the missing
+         `FhirContext` and the interceptor classes; the package, storage and
+         Elasticsearch consumers for the rest).
+       - **In scope**: a scenario is rewritten to HAPI's failure, as was done
+         for the fourth review's finding 1.
+     - The 6 cases above are a measured start.
+
+2. **config.read.007 sends the five other reads out of scope, but every other
+   artifact says they are owed before task 3.**
+   - `specs/config/spec.md:2012-2015` says `${nope}` in `fhir_version`,
+     `cr.enabled`, `cdshooks.enabled`, `custom-bean-packages` and
+     `scheduling_disabled` is "not recorded with a placeholder and are out of
+     this scenario (proposal.md, 'Out of scope')".
+   - proposal.md's "Out of scope" table has no such row. Its "Not in the
+     record" row (`proposal.md:314`), tasks.md task 2 (lines 76-79) and the
+     config.error.008 note all say these cases are owed by task 2 and stated
+     in the delta before task 3.
+   - As written, an implementer and the oracle-builder may read
+     config.read.007 as excluding these reads, and no scenario would then
+     receive their record.
+   - This is a real behaviour, not a wording issue. `fhir_version` and
+     `cr.enabled` are also bound by `AppProperties` and `CrProperties`, so
+     HAPI may hit the lenient-binding failure first, as it does for the five
+     keys of config.placeholder.011. `custom-bean-packages` and
+     `scheduling_disabled` have no bound counterpart and may fail strictly or
+     not at all.
+   - **Needed:** make config.read.007 say these five are owed by task 2 and
+     will be stated from the record before task 3, like config.error.008,
+     instead of out of scope.
+
+## Notes (not blocking)
+
+- **config.oracle.003 against the oracle's current output.** config.oracle.003
+  now says the `WARN`/`INFO` logger field is compared, but `run.py` `mask`
+  still writes `<logger>`, and so does `tests/common/mod.rs` `masked`. Task 2
+  explicitly owes this, and design.md section 7 says so. I confirmed the
+  logger values on the live image, so the scenario is right.
+- **Scenario IDs.** The count is still 232. No ID was added, removed or
+  renumbered by `5c049ba`.
+
+---
+
+## History: fourth review (CHANGES_REQUESTED at `831c5ba`)
+
+CHANGES_REQUESTED
+
 Fourth review of `add-config-application-yaml`, at `ad59a5c` (`c43d5b6`, the
 O-1 to O-13 rewrite, merged with `main`). I checked the rewritten scenarios
 against `harness/config-roundtrip/diagnostic-spring-core-6.2.19.json` and the
