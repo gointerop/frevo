@@ -27,7 +27,7 @@ clinical_quality_language	https://github.com/cqframework/clinical_quality_langua
 clinical-reasoning	https://github.com/cqframework/clinical-reasoning.git	v4.13.0	ccba474a2fba73329353b41d270f9d0001d6cb52
 Ucum-java	https://github.com/FHIR/Ucum-java.git	1.0.10	db9d22ade3f0f4a667b45817b85a9ac4534e4224
 spring-boot	https://github.com/spring-projects/spring-boot.git	v3.5.14	7d7b3ac12735161f9c096ce6cb415bdd9fc4a0f4
-spring-framework	https://github.com/spring-projects/spring-framework.git	v6.2.18	6b117247d383294662e199c6b47d7bf54c49caaa
+spring-framework	https://github.com/spring-projects/spring-framework.git	v6.2.19	6214eae8bd02c2ed7ab382bb8d16a9cc6de49522
 snakeyaml	https://bitbucket.org/snakeyaml/snakeyaml.git	snakeyaml-2.4	558c81a4893726c3c03f5c433fed69e79001899e
 TBL
 )
