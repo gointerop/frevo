@@ -671,3 +671,113 @@ them is the whole reason that decision is safe to make.
   comparison, which needs the differential harness's typed-evaluation probe.
 - **Status:** open
 - **Reviewed:** not yet. Raised 2026-11-21.
+
+### DEBT-0022 — a spelling the starter's named reads do not see splits a feature's gate from its bound value
+
+- **Area:** config
+- **Origin:** `add-config-application-yaml` (config.read.002, config.read.005,
+  config.gate.006, config.gate.007), matching HAPI 8.12.0
+- **Owed:** a startup check, behind no flag, that reports when a gate and the
+  property it guards disagree — for example `mdm-enabled: true` binding
+  `true` while the `mdm` gate reads the packaged `false`; `cr.enabled: yes`
+  binding `true` while `Boolean.parseBoolean` turns the `cr` gate off;
+  `mdm_enabled: "no"` binding `false` while the `mdm` gate is on;
+  `hapi.fhir.fhir-version=R5` binding R5 while the version gates read R4.
+- **Why deferred:** HAPI starts in every one of these cases, with the feature
+  wired by the gate and configured by the bound value; constitution section 1
+  requires Frevo to match.
+- **Cost if unpaid:** an operator who writes a relaxed spelling the starter's
+  `Environment.getProperty` calls do not see gets a feature half on: its
+  beans present or absent by one reading, its settings taken from the other.
+  The symptom appears far from the cause.
+- **Trigger:** an operator report of a feature on or off against its
+  configuration, or a consumer change that cannot define behaviour for the
+  split state.
+- **Size:** small — the gates and the bound values are both in the effective
+  configuration; the check compares them.
+- **Status:** open
+- **Reviewed:** 2026-11-22, owner (standing ruling: reproduce HAPI's hazards
+  exactly)
+
+### DEBT-0023 — an empty `hapi.fhir.fhir_version` selects the DSTU2 configuration
+
+- **Area:** config
+- **Origin:** `add-config-application-yaml` (config.gate.003), matching HAPI
+  8.12.0 (`FhirVersionEnum.forVersionString`, `hapi-fhir-base`
+  `FhirVersionEnum.java:283-315`)
+- **Owed:** fail to start when the version read is empty, instead of turning
+  on `fhir-dstu2` while `hapi.fhir.fhir-version` stays bound to `R4`.
+- **Why deferred:** HAPI does exactly this: the empty string is a prefix of
+  every version string, so the first constant, DSTU2, matches; constitution
+  section 1.
+- **Cost if unpaid:** `fhir_version:` left empty in an override file serves a
+  DSTU2-wired server whose bound version says R4.
+- **Trigger:** any report of it, or the first change that wires DSTU2
+  (`add-dstu3-dstu2`), whichever comes first.
+- **Size:** trivial.
+- **Status:** open
+- **Reviewed:** 2026-11-22, owner (standing ruling)
+
+### DEBT-0024 — environment variables and other properties expand inside the request-log templates
+
+- **Area:** config
+- **Origin:** `add-config-application-yaml` (config.placeholder.009),
+  matching HAPI 8.12.0
+- **Owed:** keep `${requestVerb}`-style tokens of `hapi.fhir.logger.format`
+  and `hapi.fhir.logger.error_format` out of configuration placeholder
+  resolution, so that they reach the request logger intact.
+- **Why deferred:** Spring Boot resolves `${...}` in every bound value; with
+  `requestVerb=GET` in the environment, HAPI's
+  `"ERROR - ${requestVerb} ${requestUrl}"` binds as
+  `"ERROR - GET ${requestUrl}"`. Constitution section 1.
+- **Cost if unpaid:** an unrelated environment variable or property whose name
+  matches a template token (`requestVerb`, `servletPath`,
+  `operationType`, …) silently replaces that field of every access-log line
+  with a constant.
+- **Trigger:** an operator report, or `add-server-skeleton` wiring the request
+  logger and needing the tokens intact.
+- **Size:** small.
+- **Status:** open
+- **Reviewed:** 2026-11-22, owner (standing ruling)
+
+### DEBT-0025 — `hapi.fhir.cr.cql.compiler.error_level` is accepted and ignored
+
+- **Area:** config
+- **Origin:** `add-config-application-yaml` (config.relaxed.004), matching
+  HAPI 8.12.0 (`CqlCompilerProperties` names the property
+  `errorSeverityLevel`; its field is `error_level`)
+- **Owed:** report, at startup, a key that matches a starter field name but no
+  bean property, starting with this one, which the packaged
+  `application.yaml` itself sets (`error_level: Info`).
+- **Why deferred:** HAPI binds with `ignoreUnknownFields=true`, so
+  `error_level: Error` starts and stays `Info`; the bindable key is
+  `error_severity_level`. Constitution section 1.
+- **Cost if unpaid:** an operator who copies the packaged file's spelling and
+  changes the value gets no effect and no message.
+- **Trigger:** an operator report, or `add-cql-translator` needing the
+  severity setting to work as documented.
+- **Size:** trivial.
+- **Status:** open
+- **Reviewed:** 2026-11-22, owner (standing ruling)
+
+### DEBT-0026 — `hapi.fhir.cr.cql.runtime.enable_validation` cannot be enabled
+
+- **Area:** config
+- **Origin:** `add-config-application-yaml` (config.unknown.005), matching
+  HAPI 8.12.0 (`CqlRuntimeProperties` declares `EnableValidation(boolean)`,
+  which is not a JavaBean setter)
+- **Owed:** a working way to enable CQL runtime validation, once a consumer
+  needs it.
+- **Why deferred:** in HAPI, `enable_validation: true` fails to start with
+  `No setter found for property: enable-validation`, and `false` (its
+  current value) is accepted. Constitution section 1.
+- **Cost if unpaid:** CQL runtime validation stays off in every deployment,
+  and an operator who tries to turn it on gets a startup failure that names a
+  setter, not the cause.
+- **Trigger:** `add-cql-engine` or a later change needing runtime validation
+  on, or an operator report.
+- **Size:** trivial in configuration; the feature itself belongs to
+  `add-cql-engine`.
+- **Status:** open
+- **Reviewed:** 2026-11-22, owner (standing ruling)
+```

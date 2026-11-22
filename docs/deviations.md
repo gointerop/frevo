@@ -1308,3 +1308,84 @@ Deviations are expected to concentrate in:
 - validator severity levels on profile-slicing edge cases;
 - `$expand` paging and `ValueSet.expansion.total` on pre-expanded value sets;
 - HAPI's identifier and placeholder-reference handling in transactions.
+
+### DEV-0031 — configuration locations Frevo does not load fail loudly; `on-cloud-platform` never matches
+
+- **Area:** config
+- **Scenario IDs:** config.source.017, config.source.020, config.profile.014
+- **HAPI 8.12.0 behaviour:** Spring Boot 3.5.14 in the starter loads four
+  things Frevo does not. (1) Any `classpath:` resource on the war's class
+  path, which in the distroless image includes `/app/extra-classes/`
+  (`Dockerfile`, `-Dloader.path=main.war!/WEB-INF/classes/,main.war!/WEB-INF/,/app/extra-classes`),
+  so `--spring.config.location=classpath:/another.application.yaml` loads an
+  operator-mounted `/app/extra-classes/another.application.yaml`.
+  (2) `spring.config.import=configtree:<dir>/`, one property per file under
+  the directory. (3) `.xml` files in Java `Properties.loadFromXML` format at
+  any location. (4) Documents with
+  `spring.config.activate.on-cloud-platform: kubernetes` (or another
+  platform), activated when Spring Boot detects that platform, for Kubernetes
+  from `KUBERNETES_SERVICE_HOST` and `KUBERNETES_SERVICE_PORT`.
+- **Specification requirement:** none; this is configuration loading, which
+  the FHIR specification does not address. The reference is HAPI's behaviour
+  alone.
+- **Chosen behaviour:** Frevo. A `classpath:` location other than the three
+  packaged files (`application.yaml`, `application-cds.yaml`,
+  `application-elastic.yaml`) fails to start with Spring's `Config data
+  resource '…' via location '…' does not exist` report; a `configtree:` or
+  `.xml` location fails to start with a report naming the location and the
+  supported kinds (`file:`, `classpath:` for the packaged files, `.properties`,
+  `.yml`, `.yaml`); `optional:` makes each of them a no-op instead, as it does
+  for a missing file. An `on-cloud-platform` document never activates, on any
+  platform.
+- **Configuration flag:** none.
+- **Debt:** none
+- **Rationale:** Owner ruling of 2026-11-22: support is owed when, and only
+  when, a deployment needs one of the four; the failure is loud precisely so
+  that such a deployment finds out at startup rather than running with
+  configuration silently missing. Frevo is a single binary with no class path, so (1) can only
+  be imitated by guessing a directory layout that is specific to one image.
+  (2) to (4) are rare in starter deployments; the starter's own Helm chart
+  uses `SPRING_CONFIG_IMPORT` with a plain file path, which Frevo supports.
+  Failing loudly turns every case where the two servers would differ into a
+  startup error instead of a silent difference in effective configuration.
+  `on-cloud-platform` cannot fail loudly without failing every Kubernetes
+  deployment that never uses it, so it is the one silent case, and it is
+  listed here for that reason.
+- **Normalizer impact:** none. The `config-roundtrip` cases for these four
+  record HAPI's result and assert Frevo's documented failure (or, for
+  `on-cloud-platform`, its non-activation) instead of equality; no
+  normalisation rule is added.
+- **Reviewed:** 2026-11-22, owner: chosen as written (relayed by the
+  coordinator).
+
+### DEV-0032 — two non-kebab spellings of one property in one source fail to start
+
+- **Area:** config
+- **Scenario IDs:** config.relaxed.007
+- **HAPI 8.12.0 behaviour:** when one configuration source spells the same
+  property two ways, neither of them the canonical kebab-case form — for
+  example one YAML mapping holding both `defaultPageSize: 4` and
+  `default_page_size: 3` — HAPI starts and binds one of them, chosen by the
+  iteration order of a `java.util.HashSet` of the source's names inside
+  Spring Boot's `SpringIterableConfigurationPropertySource`. Measured on
+  Spring Boot 3.5.14: it took `default_page_size` (3) over `defaultPageSize`
+  (4), and `max_page_size` (5) over `maxPageSize` (6), whatever their order in
+  the file. When one of the two spellings is the kebab-case form, that one
+  wins deterministically (`config.relaxed.006`), and Frevo matches that.
+- **Specification requirement:** none; configuration binding is outside the
+  FHIR specification.
+- **Chosen behaviour:** Frevo. Frevo fails to start with a report naming both
+  spellings and their origins (file and `line:column`).
+- **Configuration flag:** none.
+- **Debt:** none.
+- **Rationale:** the configuration is ambiguous, and HAPI's answer is an
+  accident of `String.hashCode` and hash-table capacity, not a rule anyone
+  could rely on or document. Reproducing it would mean porting Java's
+  `HashSet` iteration order into the binder. Refusing to start costs a
+  deployment one edit, made once, with the report saying exactly which two
+  lines collide.
+- **Normalizer impact:** none. The `config-roundtrip` case records HAPI's
+  pick and asserts Frevo's failure instead of equality.
+- **Reviewed:** 2026-11-22, owner: chosen as written (relayed by the
+  coordinator).
+```
