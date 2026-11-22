@@ -413,6 +413,39 @@ expect_block "H5 blocks archive with red gate report" guard-bash.sh "$(json_bash
 write_report add-store true HEAD
 expect_allow "H5 allows archive when done and green" guard-bash.sh "$(json_bash 'openspec archive add-store -y')"
 
+# Committing the report moves HEAD one past the head_sha it records. That one
+# commit is accepted only if it changes nothing but the report (ADR 0002 3f).
+git add -f gates/add-store/report.json >/dev/null 2>&1; git commit -qm "gate report" >/dev/null 2>&1
+expect_allow "H5 allows archive with the report committed on top of its head_sha" guard-bash.sh \
+  "$(json_bash 'openspec archive add-store -y')"
+# ...for the branch's own change only: an archive naming another change is
+# refused even though this change's report is green and current.
+expect_block "H5 blocks archive naming another change on a change branch" guard-bash.sh \
+  "$(json_bash 'openspec archive other-change -y')"
+
+# Two report-only commits on top: head_sha is the grandparent, not the parent.
+rsha_kept="$(git rev-parse 'HEAD^')"
+printf '{"change":"add-store","head_sha":"%s","results":{"note":1},"green":true}\n' "$rsha_kept" \
+  > gates/add-store/report.json
+commit_all "report again"
+expect_block "H5 blocks archive when head_sha is HEAD's grandparent" guard-bash.sh \
+  "$(json_bash 'openspec archive add-store -y')"
+
+# The commit on top changes the report AND code.
+write_report add-store true HEAD
+echo "pub fn y() {}" >> crates/frevo-store/src/lib.rs
+commit_all "report and code"
+expect_block "H5 blocks archive when the commit on top also changes code" guard-bash.sh \
+  "$(json_bash 'openspec archive add-store -y')"
+
+# head_sha is HEAD's parent, but the commit on top changes only code.
+write_report add-store true HEAD
+echo "pub fn z() {}" >> crates/frevo-store/src/lib.rs
+git add crates/frevo-store/src/lib.rs >/dev/null 2>&1; git commit -qm "code only" >/dev/null 2>&1
+expect_block "H5 blocks archive when the commit on top changes only code" guard-bash.sh \
+  "$(json_bash 'openspec archive add-store -y')"
+git checkout -q -- gates/add-store/report.json 2>/dev/null
+
 expect_block "H5 blocks git push --force"       guard-bash.sh "$(json_bash 'git push --force origin HEAD')"
 expect_block "H5 blocks git push -f"            guard-bash.sh "$(json_bash 'git push -f')"
 expect_block "H5 blocks push to main"           guard-bash.sh "$(json_bash 'git push origin main')"
@@ -624,6 +657,56 @@ expect_allow_at "$SB" "cross-tree: a path in an unrelated repository matches no 
 rm -rf "$OTHER"
 git worktree remove --force "$WT_OK" >/dev/null 2>&1
 git worktree remove --force "$WT_CR" >/dev/null 2>&1
+
+# ==========================================================================
+# openspec archive is judged in the worktree that holds the named change
+# ==========================================================================
+# The orchestrator's session sits on main in the primary tree and runs
+# 'openspec archive <id>', or 'cd <worktree> && openspec archive <id>', for a
+# change that lives in a sibling worktree on change/<id>. H5 used to judge it
+# in the session's tree: no tasks.md there, so a finished, green change could
+# never be archived -- and a change in the primary tree would have been judged
+# by whatever happened to be checked out there (ADR 0002 3f).
+setup_sandbox; on_branch main; commit_all "base"
+add_worktree add-store >/dev/null; WT_A="$WT"
+cd "$SB"
+
+expect_block_at "$SB" "archive-tree: still blocks open tasks in the change's worktree" guard-bash.sh \
+  "$(json_bash 'openspec archive add-store -y')"
+
+( cd "$WT_A" && make_change add-store APPROVED done && commit_all "tasks done" )
+expect_block_at "$SB" "archive-tree: still blocks with no report in the change's worktree" guard-bash.sh \
+  "$(json_bash 'openspec archive add-store -y')"
+
+( cd "$WT_A" && write_report add-store true stale )
+expect_block_at "$SB" "archive-tree: still blocks a stale report in the change's worktree" guard-bash.sh \
+  "$(json_bash 'openspec archive add-store -y')"
+
+( cd "$WT_A" && write_report add-store false HEAD )
+expect_block_at "$SB" "archive-tree: still blocks a red report in the change's worktree" guard-bash.sh \
+  "$(json_bash 'openspec archive add-store -y')"
+
+( cd "$WT_A" && write_report add-store true HEAD )
+expect_allow_at "$SB" "archive-tree: allows from the primary tree, judged in the change's worktree" guard-bash.sh \
+  "$(json_bash 'openspec archive add-store -y')"
+expect_allow_at "$SB" "archive-tree: allows 'cd <worktree> && openspec archive'" guard-bash.sh \
+  "$(json_bash "cd \"$WT_A\" && openspec archive add-store -y")"
+
+( cd "$WT_A" && git add -f gates/add-store/report.json >/dev/null 2>&1 && git commit -qm "gate report" >/dev/null 2>&1 )
+expect_allow_at "$SB" "archive-tree: allows the report committed in the change's worktree" guard-bash.sh \
+  "$(json_bash "cd \"$WT_A\" && openspec archive add-store -y")"
+
+expect_block_at "$SB" "archive-tree: an explicit cd wins -- cd to the primary tree is judged there" guard-bash.sh \
+  "$(json_bash "cd \"$SB\" && openspec archive add-store -y")"
+expect_block_at "$SB" "archive-tree: blocks a name that is not the cd worktree's change" guard-bash.sh \
+  "$(json_bash "cd \"$WT_A\" && openspec archive other-change -y")"
+expect_block_at "$SB" "archive-tree: blocks a change that no worktree holds" guard-bash.sh \
+  "$(json_bash 'openspec archive nowhere -y')"
+
+( cd "$WT_A" && echo "pub fn late() {}" >> crates/frevo-store/src/lib.rs && commit_all "late code" )
+expect_block_at "$SB" "archive-tree: blocks once code lands after the committed report" guard-bash.sh \
+  "$(json_bash "cd \"$WT_A\" && openspec archive add-store -y")"
+git worktree remove --force "$WT_A" >/dev/null 2>&1
 
 # ==========================================================================
 # Generated code is src/, not the whole crate

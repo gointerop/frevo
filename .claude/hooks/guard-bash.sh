@@ -24,10 +24,88 @@ FLAT="$(printf '%s' "$CMD" | tr '\n' ' ' | sed 's/\\ / /g; s/[[:space:]][[:space
 # --------------------------------------------------------------------------
 # 1. openspec archive
 # --------------------------------------------------------------------------
-if printf '%s' "$FLAT" | grep -qE '(^|[;&|] *)openspec +archive\b'; then
-  change="$(active_change)"
-  # Allow an explicit change name on a non-change branch only if it matches.
+# Which worktree does an 'openspec archive <named>' run in? The session's tree
+# (REPO_ROOT, from the payload cwd) is the wrong answer whenever the session
+# sits in the primary tree and the change lives in a sibling worktree. In
+# order of precedence:
+#   1. the directory of the last 'cd <dir>' before the archive, if it is a
+#      worktree of this repository -- that is where the command runs;
+#   2. the session's tree, if it holds openspec/changes/<named>;
+#   3. the worktree on change/<named> that holds it, else any worktree that
+#      holds it.
+# Echoes the physical toplevel, or nothing to leave REPO_ROOT as it is. It
+# never moves outside this repository's worktrees (compared by common dir).
+_same_repo_toplevel() {
+  local d="$1" top base cand
+  top="$(_toplevel_for "$d")" || return 1
+  base="$(_git_common_of "$REPO_ROOT")" || return 1
+  cand="$(_git_common_of "$top")" || return 1
+  [ "$(_lower "$cand")" = "$(_lower "$base")" ] || return 1
+  printf '%s' "$top"
+}
+
+archive_root() {
+  local flat="$1" named="$2" cwd="${3:-}" pre dir top line wt="" br any="" own=""
+  pre="$(printf '%s' "$flat" | sed -E 's/openspec +archive.*//')"
+  dir="$(printf '%s' "$pre" \
+    | grep -oE "(^|[;&|(] *)cd +(\"[^\"]*\"|'[^']*'|[^ ;&|()]+)" | tail -1 \
+    | sed -E "s/^[;&|( ]*cd +//; s/^[\"']//; s/[\"']\$//")"
+  if [ -n "$dir" ]; then
+    dir="${dir//\\//}"
+    case "$dir" in
+      /*|[A-Za-z]:/*) ;;
+      *) dir="${cwd:-$REPO_ROOT}/$dir" ;;
+    esac
+    if top="$(_same_repo_toplevel "$dir")"; then printf '%s' "$top"; return 0; fi
+  fi
+
+  [ -n "$named" ] || return 0
+  [ -d "$REPO_ROOT/openspec/changes/$named" ] && return 0
+
+  while IFS= read -r line; do
+    case "$line" in
+      "worktree "*) wt="${line#worktree }"; br="" ;;
+      "branch "*)   br="${line#branch refs/heads/}" ;;
+      "")
+        if [ -n "$wt" ] && [ -d "$wt/openspec/changes/$named" ]; then
+          [ -z "$any" ] && any="$wt"
+          [ "$br" = "change/$named" ] && [ -z "$own" ] && own="$wt"
+        fi
+        wt="" ;;
+    esac
+  done < <(git -C "$REPO_ROOT" worktree list --porcelain 2>/dev/null; printf '\n')
+
+  wt="${own:-$any}"
+  [ -n "$wt" ] || return 0
+  top="$(_same_repo_toplevel "$wt")" || return 0
+  printf '%s' "$top"
+}
+
+if printf '%s' "$FLAT" | grep -qE '(^|[;&|(] *)openspec +archive\b'; then
   named="$(printf '%s' "$FLAT" | sed -nE 's/.*openspec +archive +([a-z0-9][a-z0-9-]*).*/\1/p' | head -1)"
+
+  # Judge the archive in the worktree it will actually run in (ADR 0002 3f),
+  # not the session's tree: the orchestrator sits on main in the primary tree
+  # while the change lives in a sibling worktree on change/<id>.
+  aroot="$(archive_root "$FLAT" "$named" "$(json_get "$INPUT" cwd)")"
+  if [ -n "$aroot" ]; then
+    REPO_ROOT="$aroot"
+    export REPO_ROOT
+    require_repo_root
+  fi
+
+  change="$(active_change)"
+  # An explicit change name on a change branch must be that branch's change.
+  if [ -n "$change" ] && [ -n "$named" ] && [ "$named" != "$change" ]; then
+    block <<EOF
+BLOCKED: 'openspec archive $named' on branch change/$change.
+
+  judged in: $REPO_ROOT
+
+A change is archived from its own branch, so that its tasks and gate report are
+the ones checked. Run it in the worktree on change/$named.
+EOF
+  fi
   [ -z "$change" ] && change="$named"
 
   if [ -z "$change" ]; then
@@ -77,15 +155,34 @@ EOF
   rgreen="$(json_get "$rj" green false)"
   rsha="$(json_get "$rj" head_sha)"
 
-  if [ "$rsha" != "$head_sha" ]; then
+  # The report names the commit the gates ran on, so committing the report
+  # itself necessarily moves HEAD one past it. Accept exactly that: head_sha is
+  # HEAD, or it is HEAD's parent and HEAD changes nothing but this report.
+  report_current=0
+  parent_sha=""
+  if [ -n "$rsha" ] && [ "$rsha" = "$head_sha" ]; then
+    report_current=1
+  else
+    parent_sha="$(git rev-parse -q --verify 'HEAD^' 2>/dev/null)"
+    if [ -n "$rsha" ] && [ -n "$parent_sha" ] && [ "$rsha" = "$parent_sha" ]; then
+      touched="$(git diff --no-renames --name-only "$parent_sha" HEAD 2>/dev/null)"
+      [ "$touched" = "$report" ] && report_current=1
+    fi
+  fi
+
+  if [ "$report_current" -ne 1 ]; then
     block <<EOF
 BLOCKED: cannot archive '$change' -- the gate report is stale.
 
+  judged in       : $REPO_ROOT
   report head_sha : ${rsha:-<missing>}
   actual HEAD     : $head_sha
+  HEAD's parent   : ${parent_sha:-<none>}
 
-The code changed after the gates ran, so the verdict does not describe what you
-are about to archive. Re-run gatekeeper.
+A report is current only if its head_sha is HEAD, or is HEAD's parent and the
+commit on top changes nothing but $report. Here the code changed after the
+gates ran, so the verdict does not describe what you are about to archive.
+Re-run gatekeeper.
 EOF
   fi
 
