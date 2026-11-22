@@ -1,4 +1,21 @@
-CHANGES_REQUESTED
+APPROVED
+
+Sixty-sixth review (commit `691171d`, 2026-11-21, diff against `691171d^`).
+It resolves the sixty-fifth review's three findings:
+- `model.json.026` now states HAPI's silent drop of a resource's own
+  `_resourceType` in both modes, with the four correct `JsonParser`
+  citations. Task 5b tests it, and the new implementer task 5c fixes
+  Frevo's current 1825 diagnostic.
+- The `Patient.name` case gives Frevo's indexed path
+  `Patient.name[0].resourceType`, the `ParserState.java:640-657` citation
+  and HAPI's location-free text.
+- The reader's answer for a resource's own `resourceType` is stated as the
+  decode error I observed.
+
+There are no findings. The detail is in the dated section at the end. The
+earlier record follows.
+
+## Sixty-fifth-review findings as raised (commit `8793755`)
 
 Sixty-fifth review (commit `8793755`, 2026-11-21, diff against `8793755^`;
 implementation `adaecd3`). It checks the new `model.json.026` and task 5b.
@@ -5973,3 +5990,60 @@ no longer special-cases the name. The `_resourceType` divergence predates
 passes, and `harness/scripts/check-registries.sh` reports that the
 registers agree. `model.json.026` is new and does not collide with an
 existing ID.
+
+## Sixty-sixth review - commit `691171d` (2026-11-21)
+
+Scope: `git diff 691171d^..691171d`, covering `specs/model/spec.md` and
+`tasks.md`. I read HAPI at `hapi-fhir` `7ab4c7c`.
+
+**Finding 1: resolved.**
+- **The cited lines.** Each says what the bullet says it does:
+  - `JsonParser.java:1342-1344` is the top-level `resourceType`
+    `continue`.
+  - `:1356-1358` is the `_` branch that only counts
+    (`allUnderscoreNames++`, `:1358`).
+  - `:1363-1366` is the alternate lookup and `handledUnderscoreNames++`,
+    which the skipped `resourceType` never reaches.
+  - `:1387-1400` is the unhandled-underscore loop, whose
+    `nonAlternativeValue != null` `continue` (`:1398-1399`) comes before
+    both the `isObject` test and any `enteringNewElement`.
+- **Silent in every form.** Because of that ordering, `_resourceType` on a
+  resource object is dropped silently whatever its JSON type. The handler
+  is never called, so there is no lenient log and no strict error. "Not
+  re-encoded" follows from the value never entering the model.
+- **Nested resources.** These are parsed by the same `parseChildren` in a
+  `ResourceStateHl7Org` (`ParserState.java:1133-1137`), so "at the root or
+  nested" is right.
+- **Frevo's current answer.** It is recorded as observed by the reviewer,
+  which it was: `UnknownProperty` 1825 at `Patient._resourceType`, and
+  strict rejection.
+- **Tasks.** Task 5b adds the root and contained cases, expected to fail
+  until 5c. Task 5c names the fix site (`shape_members`, beside the bare
+  marker's skip at `decode.rs:1292`). It keeps `_resourceType` an ordinary
+  primitive-extension sibling on `ExampleScenario.instance`, which I
+  observed decoding cleanly. 5c records that the difference predates
+  `adaecd3`, and that no deviation is added.
+
+**Finding 2: resolved.**
+- **Citations.** The unknown-element path is now cited at
+  `ParserState.java:640-657`, with the call at `:655`.
+  `ParseErrorHandler.java:24-30` returns `""` for a `null` location, and
+  `StrictErrorHandler.java:88-90` builds
+  `Msg.code(1825) + "" + "Unknown element 'resourceType' found during parse"`.
+  So the stated text is exact.
+- **Path.** The path is `Patient.name[0].resourceType`, matching my
+  observation and the oracle's indexed-path convention
+  (`model_decode.rs:134`). The code 1825 is what is compared with HAPI, as
+  in `model.json.004`.
+
+**Finding 3: resolved.** The two error texts are character-for-character
+what `Resource::read` returned at `8793755`:
+- `ExampleScenario has no element named "resourceType"`;
+- `Patient has no element named "resourceType"`.
+
+The instance read giving `code` `MedicationRequest` is also as observed.
+Task 5b asserts the errors.
+
+**Checks.** `openspec validate add-fhirpath-and-codegen-r4 --strict`
+passes, and `harness/scripts/check-registries.sh` reports that the
+registers agree. No scenario ID was added, removed or renumbered.
