@@ -159,6 +159,31 @@ config.oracle.003 no longer exempts the `WARN`/`INFO` logger field or
 shortens the bean-creation wrapper: both rules existed only because the
 record was the probe's. The `Bindable@<hex>` mask stays.
 
+## Revision after the fifth review (`71965e8`): every case on the real `Application`
+
+No ID was added or removed; the count stays 232. Every case now also runs on
+HAPI's real `Application` (445 cases; 66 that the probe passes do not start,
+the record's `application_failures`), and task 2's 26 owed cases are
+recorded (proposal.md, "Fifth review (`71965e8`)"). Each new case maps to an
+existing ID (`config.error.008-*` to config.error.008, `config.read.007-*`
+to config.read.007). **4 scenarios were rewritten in place**, keeping their
+subject:
+
+- `config.oracle.001`: every case on both runners; a probe exit 0 means the
+  configuration layer accepts the case, not that HAPI starts; the
+  `application` member and `application_failures`;
+- `config.error.008`: the four other properties beans, the strict reads'
+  rows, the case `hapi.fhir.cr.caregaps: abc` that does not fail, and the
+  recorded failure order;
+- `config.read.007`: the five other reads as recorded, strict and in scope;
+- `config.error.007`: a strict placeholder in a named read is in the
+  run-failed list.
+
+The notation comment now says that "starts" is the configuration layer's
+verdict and points at design.md section 7's classification of the 66 cases
+(all out of scope, each with its owning change), including what the bean
+cycle of group F-20 means for the class-default scenarios.
+
 ## Scenarios that carry a register entry
 
 | Entry | Scenarios |

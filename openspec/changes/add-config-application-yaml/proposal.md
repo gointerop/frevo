@@ -176,6 +176,7 @@ There is no HL7 suite pass rate to meet for this change.
 | `/actuator/configprops`, `/actuator/env` | not exposed by the packaged `management.*` settings; the document of config.dump is the diagnostic | `add-observability` |
 | Loading `configtree:` imports and `.xml` properties files; activating `spring.config.activate.on-cloud-platform` documents; `classpath:` resources inside `WEB-INF/lib` jars | HAPI supports them; Frevo fails loudly on the first two and never activates the third (config.source.020, config.profile.014), recorded as `DEV-0031`; the oracle asserts that no jar in the pinned image carries an application file, so the fourth cannot differ | none until a deployment needs one (`DEV-0031`'s revisit condition) |
 | Typed binding of Spring Boot's own auto-configuration properties (`server.port`, `spring.datasource.*`, …) | HAPI's auto-configuration binds them at startup, so an invalid `server.port` fails HAPI; here they are loaded and exposed only (config.unknown.004), except `spring.elasticsearch.*`, which a starter condition binds (config.gate.024) | each consuming change, with this change's binder |
+| HAPI's startup failures after the configuration layer accepts a case: the record's 66 `application_failures` (an e-mail sender without a host, Elasticsearch unreachable or without hosts, a blank package id or version at IG load, no `FhirContext` without a version gate, `mcpCdsBridge` without a CDS Hooks registry, the bean cycle without `spring.main.allow-circular-references: true`, a class not on the class path, an invalid auto-version path, a non-positive page size, a missing binary-storage directory or bean, a blank tester base URL, the MDM provider without the MDM gate, `server.port` conversion, an unreachable database) | they arise from wiring or an external subsystem, not from the configuration layer (owner ruling of 2026-11-23); `frevo-config effective` reports the configuration layer's result for them, which is the probe's record | the change named per group in design.md section 7 (`add-server-skeleton`, `add-store-transactions`, `add-subscriptions-resthook`, `add-store-binary-and-offload`, `add-search-fulltext`, `add-search-core`, `add-tester-ui`, `add-package-install`, `add-store-schema`, `add-mdm`, `add-mcp`) |
 | The Tomcat variant of the image (`catalina.properties`, `server.xml`, JNDI, servlet init parameters) | a deployment form, not a configuration source of the default (distroless) image the harness pins | none |
 | Re-reading configuration while running | Spring Boot does not reload `@ConfigurationProperties` in the starter either | none |
 
@@ -311,11 +312,38 @@ HAPI's real `Application`"), and the delta was rewritten to the record:
 | Finding 2 | Jackson's ` at [Source: …]` line quoted; a frame is tab-led only, including `\t... N common frames omitted` | config.args.007, .009, config.error.007, .009, config.oracle.003 |
 | Comparison rules without a cause | the `WARN`/`INFO` logger field is compared; the bean-creation wrapper is compared in full; the `Bindable@<hex>` mask stays | config.oracle.003 |
 | Two runners | stated, with the record's `runner` fields | config.oracle.001 |
-| Not in the record | a binding failure of `CrProperties`, `CareGapsProperties`, `CqlCompilerProperties`, `CdsHooksProperties`; an unresolvable placeholder in the five other reads; the order of several refresh-time failures in one configuration | owed by task 2 before task 3; config.error.008, config.read.007 |
+| Not in the record | a binding failure of `CrProperties`, `CareGapsProperties`, `CqlCompilerProperties`, `CdsHooksProperties`; an unresolvable placeholder in the five other reads; the order of several refresh-time failures in one configuration | owed by task 2 before task 3; recorded on 2026-11-23 and stated in config.error.008 and config.read.007 (below) |
 | Also corrected | the `x.txt` cause of config.source.020; the action line of config.source.016; the full reason of config.placeholder.007; the status-line counts (23 of 419 runs have none on standard error); the notation comment's list of how each location-replacing case sets the version | config.source.020, .016, config.placeholder.007, config.dump.006, the notation comment |
 | Finding 3 | the `DEV-0033` replacement text in `register-entries.md` is updated (frames, Jackson line, logger field, status-line counts); appending it to `docs/deviations.md` is the coordinator's | `register-entries.md` |
 
 No scenario was added or removed; the count stays 232.
+
+### Fifth review (`71965e8`): every case on the real `Application`
+
+The review found that the record measured only one direction (finding 1: a
+probe exit 0 was labelled HAPI's result without checking that HAPI starts)
+and that config.read.007 sent five reads out of scope while every other
+artifact said they were owed (finding 2). The oracle-builder ran every case
+on both runners and recorded task 2's owed cases (`tasks/blockers.md`, entry
+of 2026-11-23); 445 cases, 66 of them in the new `application_failures`.
+The owner ruled on 2026-11-23 how to classify them: failures in the
+configuration layer are in scope, failures of wiring or of an external
+subsystem after the configuration layer accepts are owed by the subsystem's
+change.
+
+| Item | Resolution | Scenarios and text |
+|---|---|---|
+| Finding 1, meaning of a probe exit 0 | the configuration layer accepts the case; it says nothing about whether HAPI starts; the `application` member and `application_failures` are described | config.oracle.001, the notation comment, design.md section 7 |
+| Finding 1, the 66 cases (F-1 to F-20) | each group classified with its owning change; every group is a wiring or subsystem failure, so all are out of scope and the scenarios keep the configuration layer's THEN clauses | design.md section 7, "Cases the probe passes and the real `Application` does not start"; "Out of scope" below |
+| F-20, the bean cycle without the packaged file | the class-default THEN clauses are the binder's output for sources that do not set `spring.main.allow-circular-references: true`, not the configuration of a running HAPI server; `add-server-skeleton` decides whether Frevo's server refuses to start the same way | the notation comment, design.md section 7 |
+| Finding 2, the five other reads | recorded: each fails strictly, never the lenient binding, with the `WARN` and `INFO` lines as recorded; `scheduling_disabled` fails after HAPI's JPA layer starts, and is still in scope because the probe rejects it too | config.read.007, config.error.008, config.error.007 |
+| The four other properties beans | `crProperties`, `careGapsProperties`, `cqlCompilerProperties`, `cdsHooksProperties` in the `WARN` line, the `INFO` line present, no CGLIB suffix; `hapi.fhir.cr.caregaps: abc` does not fail | config.error.008 |
+| Failure order | no version, then `AppProperties` binding, then `spring.elasticsearch.*` binding, then strict placeholders, then properties-bean binding; file order irrelevant; only recorded pairs stated | config.error.008, design.md section 6a |
+| Review note, logger field | the record keeps it (`run.py` `mask`); config.oracle.003 unchanged; the Rust tests' mask is fixed in task 3 | config.oracle.003, design.md section 7, tasks.md task 3 |
+
+No scenario was added or removed; the count stays 232. Every new case maps
+to an existing ID: the 21 `config.error.008-*` cases cover config.error.008
+and the five `config.read.007-*` cases cover config.read.007.
 
 ## Registers this change touches
 

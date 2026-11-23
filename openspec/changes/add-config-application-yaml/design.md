@@ -131,6 +131,43 @@ is compared, and the bean-creation wrapper is compared in full. The
 `Bindable@<hex>` mask stays: the hash differs between the probe and
 application runs of config.collection.002 (`15f47664`, `19b89d4`).
 
+### Every case on the real `Application` (review of `71965e8`)
+
+The fifth review found that the record never measured the other direction:
+whether HAPI's real `Application` starts for a case the probe passes. The
+oracle-builder now runs every case on both runners (`tasks/blockers.md`,
+entry of 2026-11-23, "every case on HAPI's real `Application`"): 445 cases,
+of which 274 probe-passing cases start the server, **66 probe-passing cases
+fail to start** (the record's `application_failures`), and 105 fail on both
+runners and are recorded from the real `Application`. `runner_disagreements`
+is still `[]`.
+
+The owner's rule (2026-11-23) decides the 66: `frevo-config` is the
+configuration layer (locations, parsing, binding, placeholders, conversion,
+gates, reads, and the failure output for those). A failure of the real
+`Application` that arises from wiring or from an external subsystem after
+the configuration layer has accepted the case is out of scope here and owed
+by the change that owns that subsystem; a failure that arises in the
+configuration layer is in scope, and its scenario states HAPI's failure.
+Every one of the 66 is a wiring or subsystem failure, so each scenario they
+cover keeps its configuration-layer THEN clause (the probe's document) and
+the startup failure is owed elsewhere; the classification is in section 7,
+"Cases the probe passes and the real `Application` does not start".
+
+The same entry recorded the cases task 2 owed. They extend config.error.008
+(a binding failure in `CrProperties`, `CareGapsProperties`,
+`CqlCompilerProperties` and `CdsHooksProperties`, and the order in which
+failure kinds surface) and rewrite config.read.007 (`${nope}` in the five
+reads `fhir_version`, `cr.enabled`, `cdshooks.enabled`,
+`custom-bean-packages` and `scheduling_disabled`). All of them fail on the
+probe as well, so the configuration layer rejects them and they are in
+scope; their output is the real `Application`'s. `scheduling_disabled`'s
+failure surfaces only after HAPI's JPA layer has started, inside
+`schedulerService`'s init method; it is still a strict-placeholder failure
+that the probe also reports, so it is in scope, and Frevo writes HAPI's
+recorded chain as fixed text (config.read.007), exactly as it does for the
+CQL bean of config.unknown.005, which also fails after the JPA layer starts.
+
 ## 3. Loading
 
 ### 3.1 Sources, highest precedence first
@@ -423,6 +460,21 @@ Which log lines Frevo writes, exactly, per failure kind (config.error.008):
 | `ElasticsearchProperties` binding | `WARN` (`… elastic/ElasticsearchBootSvcImpl.class`), `INFO`, `ERROR` (`LoggingFailureAnalysisReporter`), the analysis block |
 | strict placeholder in `app_content_path`, `custom_content_path`, `spring.ai.mcp.server.enabled` | `WARN` (`… web/WebAppFilesConfigurer.class`, `… web/CustomContentFilesConfigurer.class`, `… mcp/McpServerConfig.class`), `INFO`, `ERROR` (`SpringApplication`), three exception lines |
 | `CqlProperties`, `CqlData`, `CqlTerminologyProperties` binding | `WARN` (`ConfigurationPropertiesBindException: Error creating bean with name 'cqlProperties'` / `'cqlData'` / `'cqlTerminologyProperties'` …), `INFO`, `ERROR` (`LoggingFailureAnalysisReporter`), the analysis block |
+| `CrProperties`, `CareGapsProperties`, `CqlCompilerProperties`, `CdsHooksProperties` binding | `WARN` (`ConfigurationPropertiesBindException: Error creating bean with name 'crProperties'` / `'careGapsProperties'` / `'cqlCompilerProperties'` / `'cdsHooksProperties'` …), `INFO`, `ERROR` (`LoggingFailureAnalysisReporter`), the analysis block, its description naming the bare class (no `$$SpringCGLIB$$0`) |
+| strict placeholder in the read `fhir_version`, `cr.enabled` or `cdshooks.enabled` | `WARN` (`… common/FhirServerConfigDstu2.class`, `… cr/CrCommonConfig.class`, `… cdshooks/StarterCdsHooksConfig.class`), `INFO` for `cr.enabled` only, `ERROR` (`SpringApplication`), two exception lines |
+| strict placeholder in the read `custom-bean-packages` | `WARN` (`BeanDefinitionStoreException: Failed to process import candidates for configuration class [ca.uhn.fhir.jpa.starter.common.FhirServerConfigR4]: …`), `INFO`, `ERROR` (`SpringApplication`), two exception lines |
+| strict placeholder in the read `scheduling_disabled` | `WARN` (`ApplicationContextException: Unable to start web server`), `INFO`, `ERROR` (`SpringApplication`), ten exception lines: through `schedulerService`'s `Invocation of init method failed`, then the `PlaceholderResolutionException` |
+
+When one configuration has several of these failures, the one HAPI reports
+is, as recorded: a missing version first, then an `AppProperties` binding
+failure, then a `spring.elasticsearch.*` binding failure, then a strict
+placeholder (`app_content_path`), then a properties-bean binding failure
+(the CQL bean, `CdsHooksProperties`); the order of the lines in the file does
+not matter. The oracle-builder reads this as the component scan's class-file
+order (`common/FhirServerConfigDstu2` before `common/PartitionModeConfigurer`
+before `elastic/` before `web/`, all before any bean is created); that is a
+reading, not a measurement, so config.error.008 states only the measured
+pairs.
 
 Log lines use the console pattern; the process id and application name are
 absent when the failure precedes the application context, and the
@@ -441,9 +493,8 @@ lines between `WARN` and `INFO`) are not reproduced; Frevo writes none of
 them (`DEV-0033`, approved by the owner on 2026-11-22, scope extended the
 same day, and extended again to logback's status lines). A table maps each
 failure kind to its exception class names and messages, generated from the
-oracle's record. A binding failure of `CrProperties`, `CareGapsProperties`,
-`CqlCompilerProperties` or `CdsHooksProperties`, and the order of several
-kinds in one configuration, are not yet recorded (tasks.md task 2).
+oracle's record. Every failure kind of the table above is in the record
+(tasks.md task 2 owes no further case).
 
 ## 7. The `config-roundtrip` oracle
 
@@ -475,7 +526,14 @@ New, in `harness/config-roundtrip/` (oracle-builder), shaped like
   case's record (`"runner": "application"`), the probe's run is kept under
   `"probe"`, and a case where the real `Application` starts the server
   instead would be listed in `runner_disagreements` (none is). A case the
-  probe does not fail is recorded from the probe (config.oracle.001). The
+  probe does not fail is recorded from the probe (config.oracle.001), and is
+  run on the real `Application` too (review of `71965e8`): that outcome is
+  kept beside the probe's as `"application"` (`started`, `start_signal`,
+  `exit`, `config_lines`), and a case the probe passes but the real
+  `Application` does not start is listed in `application_failures` (66; see
+  "Cases the probe passes and the real `Application` does not start" below).
+  A probe exit 0 therefore means that HAPI's configuration layer accepts the
+  case, not that HAPI starts. The
   probe's gate site names (for example `MdmConfig` for `mdm_enabled`) are
   therefore no longer quoted anywhere: config.placeholder.011 quotes the real
   `Application`.
@@ -505,10 +563,81 @@ New, in `harness/config-roundtrip/` (oracle-builder), shaped like
   (config.oracle.003). Two further normalisations, each because the HAPI side
   varies: logback status lines are removed from both HAPI streams and
   counted, and the hexadecimal identity hash in `Bindable@<hex>` is masked on
-  both sides (config.collection.002). The record's `config_lines` still mask
-  the `WARN`/`INFO` logger field as `<logger>` (`run.py` `mask`); comparing
-  it, as config.oracle.003 now requires, is owed by the oracle-builder
-  (tasks.md task 2).
+  both sides (config.collection.002). The record's `config_lines` keep the
+  `WARN`/`INFO` logger field (`run.py` `mask` masks only the timestamp and
+  the process id, since the re-record of 2026-11-23); the Rust tests'
+  `masked` still replaces it and is fixed in task 3 (`tasks/blockers.md`,
+  2026-11-23, item 6).
+
+### Cases the probe passes and the real `Application` does not start
+
+The record's `application_failures` lists 66 cases. Each group below is one
+distinct output of the real `Application` (`tasks/blockers.md`, 2026-11-23,
+Appendix A). Rule (owner, 2026-11-23): a failure that arises after the
+configuration layer has accepted the case, from wiring or from an external
+subsystem, is out of scope and named as owed by the change that owns that
+subsystem; a failure that arises in locations, parsing, binding,
+placeholders, conversion, gates or reads is in scope. For an out-of-scope
+group, the scenarios the cases cover state the configuration layer's result,
+which Frevo must produce (`frevo-config effective` exits 0 with the probe's
+document); HAPI's startup failure is the owning change's to reproduce or to
+register as a deviation. No group is in scope.
+
+| Group | Cases | Real `Application`'s failure | Arises in | Owed by |
+|---|---|---|---|---|
+| F-1 | config.collection.006 | `Interceptor class was not found on classpath: a.B` (`restfulServer`, `ClassNotFoundException`) | wiring: loading a named Java class | `add-server-skeleton` (already in proposal.md "Out of scope") |
+| F-2 | all-keys.yaml, all-keys.env, all-keys-kebab.yaml (config.key.005-.007) | `jpaStorageSettings`: `Invalid path for auto-version reference at path: auto-version-reference-at-paths-a` | wiring: `JpaStorageSettings` validates the bound list's values | `add-store-transactions` (`keys.md`, `auto_version_reference_at_paths`) |
+| F-3 | config.yaml.008 | `loggingInterceptor`: `Logger name can not be null/empty` (`logger.name: NULL` is the empty string, config.yaml.008) | wiring: `LoggingInterceptor` | `add-server-skeleton` (`keys.md`, `logger.*`) |
+| F-4 | config.coerce.012, config.dump.005 (both cases), config.key.010, config.object.002 | `emailSender`: `SMTP server host missing` (a `subscription.email` member set without `host`) | wiring: the e-mail sender | `add-subscriptions-resthook` (`keys.md`, `subscription.email.*`) |
+| F-5 | config.gate.009-c | `filesystemBinaryStorageSvc`: `binary_storage_filesystem_base_directory must be provided when binary_storage_mode=FILESYSTEM` | wiring: the binary store's own check | `add-store-binary-and-offload` |
+| F-6 | config.gate.020-d | `elasticsearchRestClient`: `hosts must not be null nor empty` (`spring.elasticsearch.uris: []`) | external subsystem: the Elasticsearch client | `add-search-fulltext` |
+| F-7 | config.coerce.007-c | `databaseBackedPagingProvider`: `size must be greater than 0` (`"-0x10"` binds `-16`, config.coerce.007) | wiring: the paging provider's own check | `add-search-core` |
+| F-8 | config.collection.003 | `testerConfig`: `theBaseUrl can not be blank` | wiring: the tester UI | `add-tester-ui` |
+| F-9 | config.coerce.017-e, config.coerce.024, config.key.012, config.relaxed.003 | `packageInstaller`: `thePackageId must not be blank` | wiring: package installation at startup | `add-package-install` |
+| F-10 | config.collection.004, config.env.009 (both cases), config.gate.013-b, config.key.009 (both cases), config.yaml.012, config.yaml.013 | `thePackageVersion must not be blank` | wiring: package installation at startup | `add-package-install` |
+| F-11 | config.gate.020-b, -c, config.gate.024, -b, -c, config.profile.002 | `HAPI-1175: Failed to create document index`, `ConnectException: Connection refused` (the default `localhost:9200`) | external subsystem: Elasticsearch | `add-search-fulltext` (Frevo never connects to Elasticsearch, constitution section 5) |
+| F-12 | config.gate.024-d | `UnknownHostException: b: Name or service not known` | external subsystem: Elasticsearch | `add-search-fulltext` |
+| F-13 | config.env.013 | `UnknownHostException: hapi-db` (the case's PostgreSQL data source) | external subsystem: the database | `add-store-schema` (`spring.datasource.*`) |
+| F-14 | config.gate.020 | `UnknownHostException: x: Name or service not known` | external subsystem: Elasticsearch | `add-search-fulltext` |
+| F-15 | config.read.002 | `restfulServer`: `NoSuchElementException: No value present` (`StarterJpaConfig.java:392` calls `mdmProviderProvider.get()` because the bound `mdm-enabled` is `true` while the MDM gate reads the packaged `false`, `DEBT-0022`) | wiring: the read/binding split the scenario states | `add-mdm` |
+| F-16 | config.gate.009-d | `Field myBinaryStorageSvc in ca.uhn.fhir.jpa.binary.interceptor.BinaryStorageInterceptor required a bean of type 'ca.uhn.fhir.jpa.binary.api.IBinaryStorageSvc' that could not be found.` (`"file-system"` binds `FILESYSTEM`; no storage bean is wired) | wiring | `add-store-binary-and-offload` |
+| F-17 | config.unknown.004 | `Invalid value 'not-a-number' for configuration property 'server.port'` (failure analysis) | typed binding of `server.port` by Spring Boot's auto-configuration | `add-server-skeleton` (owner ruling of 2026-11-22, `tasks/graph.yaml` notes: typed binding of `server.*` and its startup failures; proposal.md "Out of scope") |
+| F-18 | config.coerce.016-b, config.coerce.017-b, -d, config.coerce.026, config.gate.004, -b | `Parameter 0 of method restfulServer in ca.uhn.fhir.jpa.starter.common.StarterJpaConfig required a bean of type 'ca.uhn.fhir.context.FhirContext' that could not be found.` (no version gate is on, as each scenario states) | wiring: no FHIR context without a version gate | `add-server-skeleton` |
+| F-19 | config.gate.006-h, config.gate.011-b, config.gate.017 | `Parameter 1 of method mcpCdsBridge in ca.uhn.fhir.jpa.starter.mcp.McpServerConfig required a bean of type 'ca.uhn.hapi.fhir.cdshooks.api.ICdsServiceRegistry' that could not be found.` (`cdshooks.enabled` on, `cr.enabled` off, MCP on by default) | wiring | `add-mcp` (with `add-cds-hooks`, which owns the registry) |
+| F-20 | config.gate.006-e, config.gate.007-f, config.gate.012, -b, config.gate.016, -b, config.gate.022, config.key.001-v, config.key.002, config.object.005, config.source.007-v, config.source.009-v, config.source.010-p, -v, config.source.011, config.source.013, config.source.017-b, config.source.018, config.source.026-c | `The dependencies of some of the beans in the application context form a cycle:` (`hapiServletRegistration` → `restfulServer` → `mySystemDaoR4` → `searchParamRegistry` ↔ `resourceChangeListenerRegistry` ↔ `inMemoryResourceMatcher`), with the action naming `spring.main.allow-circular-references` | wiring: Spring's bean-cycle check, which `spring.main.allow-circular-references` disables | `add-server-skeleton` (`spring.main.*`) |
+
+**F-20 and the "class defaults" reading.** Every F-20 case replaces the
+default locations (`--spring.config.location=…`) with sources that do not
+set `spring.main.allow-circular-references: true`. Only the packaged
+`application.yaml` (line 96) and `application-cds.yaml` (line 86) set it,
+and config.source.017's run, whose only location is
+`classpath:/application-cds.yaml`, does start. The consequence, precisely:
+
+- The THEN clauses of config.key.001 (with the version set), .002 and .003,
+  of config.object.005, and of the other F-20 scenarios are the
+  configuration layer's output: what HAPI 8.12.0's binder, reads and gates
+  produce for those sources. They stay correct and Frevo must produce them;
+  the probe's record is HAPI's configuration layer, which is this change's
+  surface.
+- They are **not** the configuration of any running HAPI server. A HAPI
+  8.12.0 server that starts with the packaged file replaced always has
+  `spring.main.allow-circular-references: true` from some source; with the
+  class defaults alone it does not start. So a "class defaults" value is
+  meaningful only as the binder's output for the stated sources, never as
+  "what HAPI runs with by default"; "what HAPI runs with by default" is
+  config.key.004 (the packaged files).
+- Adding `spring.main.allow-circular-references: true` to such a case
+  changes no member of the effective-configuration document, because
+  `spring.main.*` is under no bound prefix, is no read and decides no gate
+  (config.unknown.004). This is a reading of the document's definition; the
+  record does not hold such a case. A later change that differentially
+  compares a running server against HAPI under class defaults must add that
+  key to the case.
+- Whether Frevo's server refuses to start without
+  `spring.main.allow-circular-references: true`, as HAPI does, is
+  `add-server-skeleton`'s decision (it owns `spring.main.*`). Frevo has no
+  bean cycle to detect, so it is a deviation question for that change, not
+  for this one.
 
 ## 8. The effective-configuration document
 

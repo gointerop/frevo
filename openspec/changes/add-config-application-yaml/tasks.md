@@ -64,23 +64,17 @@ reads `APPROVED`.
   proposal.md, "Oracle findings of 2026-11-22 and the owner's rulings").
   Every case the probe fails is recorded from the unchanged image's own
   `Application` (config.oracle.001, two runners; done, and folded into the
-  delta after the fourth review). Still owed before task 3:
-  - compare the `WARN`/`INFO` logger field, which `run.py` `mask` still
-    replaces with `<logger>` in `config_lines` (config.oracle.003 now
-    compares it), and drop the `Error creating bean with name` prefix rule
-    from the comparison (config.unknown.005, .008 are compared in full);
-  - add and record cases for what config.error.008 and config.read.007 say
-    is not yet in the record: a type error in each of `CrProperties`,
-    `CareGapsProperties`, `CqlCompilerProperties` and `CdsHooksProperties`
-    (for example `hapi.fhir.cr.enabled: maybe`,
-    `hapi.fhir.cdshooks.enabled: maybe`); `${nope}` in each of the reads
-    `hapi.fhir.fhir_version`, `hapi.fhir.cr.enabled`,
-    `hapi.fhir.cdshooks.enabled`, `hapi.fhir.custom-bean-packages` and
-    `scheduling_disabled`; and one configuration with both a missing
-    version and an `AppProperties` binding failure, and one with an
-    `AppProperties` and a `spring.elasticsearch.*` binding failure, to fix
-    the order in which refresh-time failures surface. Each recorded result
-    goes to `tasks/blockers.md` for the proposer to state in the delta.
+  delta after the fourth review). After the fifth review every case also
+  runs on the real `Application` (the `application` member and
+  `application_failures`, config.oracle.001; the 66 failures are classified
+  in design.md section 7, all out of scope), the logger field is kept in
+  `config_lines`, and the 26 owed cases are recorded (21
+  `config.error.008-*`, five `config.read.007-*`) and stated in
+  config.error.008 and config.read.007 (`tasks/blockers.md`, entry of
+  2026-11-23). **No record gap remains owed by this task.** What is still
+  owed is in `crates/frevo-config/tests/`, which the hook locks while
+  `review.md` reads `CHANGES_REQUESTED`, and moves to task 3: items 1 to 5
+  of the 2026-11-22 entry and item 6 of the 2026-11-23 entry.
 - [ ] **3. Write the failing Rust tests.** `crates/frevo-config/tests/`, one
   file per area, every scenario tagged `// covers: config.<area>.<nnn>`:
   each config case runs `frevo-config effective` in a temporary directory
@@ -95,7 +89,15 @@ reads `APPROVED`.
   (`tasks/blockers.md`, entry "re-recorded from HAPI's real `Application`",
   items 1 to 5: the tab-led frame rule in `tests/common/mod.rs` and
   `tests/error.rs`, the config.oracle.003 sample, the config.oracle.001
-  runner assertions, and the THEN-clause tests) are part of this task.
+  runner assertions, and the THEN-clause tests; and entry "every case on
+  HAPI's real `Application`", item 6: `config_lines` keeps the `WARN`/`INFO`
+  logger field on the Frevo side, per config.oracle.003) are part of this
+  task, together with tests for the extended config.error.008 (the 21
+  `config.error.008-*` cases), the rewritten config.read.007 (the five
+  `config.read.007-*` cases) and config.oracle.001's `application` member
+  and `application_failures`. Item 7 of the 2026-11-23 entry needs no test
+  change: no probe-passing scenario was rewritten to a HAPI failure, so
+  every such case is still graded on the probe's document.
 
 ## Phase B — prerequisites outside this branch
 

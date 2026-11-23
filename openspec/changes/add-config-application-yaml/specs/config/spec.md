@@ -28,6 +28,21 @@ exits 1, prints no document, and writes the failure report of config.error.*
 to standard output (config.error.002, .007), as HAPI's logback console
 appender does.
 
+"Starts" is the configuration layer's verdict, the same as the oracle
+probe's exit 0 (config.oracle.001); it does not say that a HAPI server
+starts. For 66 cases the configuration layer accepts, HAPI's real
+`Application` then fails while wiring beans or connecting to a subsystem
+(the record's `application_failures`). Each of those failures is out of
+scope of this change and owed by the change that owns the subsystem; the
+classification, group by group with the owning change, is in design.md
+section 7, "Cases the probe passes and the real `Application` does not
+start". In particular, a configuration whose sources replace the packaged
+`application.yaml` and do not set `spring.main.allow-circular-references:
+true` does not start HAPI's server (group F-20); the class-default values
+such scenarios state (config.key.001-.003, config.object.005) are the
+binder's output for those sources, not the configuration of a running HAPI
+server.
+
 Unless a scenario says otherwise, the working directory contains only the
 files the scenario names, no `SPRING_*`, `HAPI_*` or `hapi.*` environment
 variable is set, no argument is given, and the packaged files of
@@ -56,7 +71,8 @@ with `spring.config.location` and whose sources set no
 for config.source.007, .009, .010, config.key.001 and config.env.014, each
 also (except env.014) with a version-set run. config.source.011 and .013 state
 the version-less outcome too, but the oracle records only their version-set
-run, which starts. In every other scenario that replaces the default
+run, which starts in the sense above (the real `Application` then fails on
+its bean cycle, group F-20). In every other scenario that replaces the default
 locations, the THEN clauses describe a run in which the version is set: the
 oracle's case adds `--hapi.fhir.fhir_version=R4` (config.gate.006, .007,
 .012, config.object.005, config.source.017's later runs, .018), or the named
@@ -1824,8 +1840,9 @@ prints.
 - **WHEN** startup fails for any reason config.error.002 does not list
   (YAML syntax and duplicate keys, invalid JSON, an invalid profile name, an
   invalid profile property, `--=x`, an unsupported or unloadable location, a
-  multiple-wildcard location, a strict placeholder in a gate, the missing
-  version of config.gate.005)
+  multiple-wildcard location, a strict placeholder in a gate or a named read
+  (config.placeholder.011, config.read.007), the missing version of
+  config.gate.005)
 - **THEN** standard output carries one log line with level `ERROR`, logger
   `o.s.boot.SpringApplication` and message `Application run failed`, a blank
   line, and the exception chain: `<exception class>: <message>` and then one
@@ -1880,7 +1897,85 @@ prints.
   | binding `ElasticsearchProperties` (config.gate.024) | the same, with `elastic/ElasticsearchBootSvcImpl.class` | yes | config.error.002 |
   | strict placeholder in `app_content_path`, `custom_content_path` or `spring.ai.mcp.server.enabled` (config.placeholder.011) | the same, with `web/WebAppFilesConfigurer.class`, `web/CustomContentFilesConfigurer.class` or `mcp/McpServerConfig.class` | yes | config.error.007 |
   | binding the `CqlProperties`, `CqlData` or `CqlTerminologyProperties` bean (config.unknown.005, .008) | `org.springframework.boot.context.properties.ConfigurationPropertiesBindException: Error creating bean with name '<bean>': Could not bind properties to '<Class>' : prefix=<prefix>, ignoreInvalidFields=false, ignoreUnknownFields=true` | yes | config.error.002 |
+  | binding the `CrProperties`, `CareGapsProperties`, `CqlCompilerProperties` or `CdsHooksProperties` bean | the same `ConfigurationPropertiesBindException` line, with `<bean>` / `<Class>` / `<prefix>` = `crProperties` / `CrProperties` / `hapi.fhir.cr`, `careGapsProperties` / `CareGapsProperties` / `hapi.fhir.cr.caregaps`, `cqlCompilerProperties` / `CqlCompilerProperties` / `hapi.fhir.cr.cql.compiler`, or `cdsHooksProperties` / `CdsHooksProperties` / `hapi.fhir.cdshooks` | yes | config.error.002 |
+  | strict placeholder in the read `hapi.fhir.fhir_version`, `hapi.fhir.cr.enabled` or `hapi.fhir.cdshooks.enabled` (config.read.007) | `org.springframework.beans.factory.BeanDefinitionStoreException: Failed to read candidate component class: URL [jar:file:/app/main.war!/WEB-INF/classes!/ca/uhn/fhir/jpa/starter/<file>]`, with `<file>` = `common/FhirServerConfigDstu2.class`, `cr/CrCommonConfig.class` or `cdshooks/StarterCdsHooksConfig.class` | yes for `cr.enabled` only | config.error.007 |
+  | strict placeholder in the read `hapi.fhir.custom-bean-packages` (config.read.007) | `org.springframework.beans.factory.BeanDefinitionStoreException: Failed to process import candidates for configuration class [ca.uhn.fhir.jpa.starter.common.FhirServerConfigR4]: Could not resolve placeholder 'nope' in value "${nope}"` | yes | config.error.007 |
+  | strict placeholder in the read `scheduling_disabled` (config.read.007) | `org.springframework.context.ApplicationContextException: Unable to start web server` | yes | config.error.007 |
 
+- **AND** for a binding failure of `CrProperties`, `CareGapsProperties`,
+  `CqlCompilerProperties` or `CdsHooksProperties`, the bean name in the
+  `WARN` line is HAPI's (`crProperties`, `careGapsProperties`,
+  `cqlCompilerProperties`, `cdsHooksProperties`), the `INFO` line is
+  present, a key under `hapi.fhir.cr.caregaps` fails in `careGapsProperties`
+  and one under `hapi.fhir.cr.cql.compiler` in `cqlCompilerProperties` (not
+  in `crProperties` or `cqlProperties`, whose prefixes also contain them),
+  and the failure analysis's
+  description line names the bare class, with no `$$SpringCGLIB$$0` suffix,
+  unlike config.unknown.008; as recorded:
+  - `hapi.fhir.cr.enabled: maybe`: `Failed to bind properties under
+    'hapi.fhir.cr.enabled' to java.lang.Boolean:`, `Value: "maybe"`,
+    `Origin: URL [file:application.yaml] - 1:23`, `Reason: failed to convert
+    java.lang.String to java.lang.Boolean (caused by
+    java.lang.IllegalArgumentException: Invalid boolean value 'maybe')`;
+  - `hapi.fhir.cr.terminology_server_client_settings.max_retry_count: abc`:
+    the `crProperties` bean, `Failed to bind properties under
+    'hapi.fhir.cr.terminology-server-client-settings.max-retry-count' to
+    int:`, origin `1:66`, `Reason: failed to convert java.lang.String to int
+    (caused by java.lang.NumberFormatException: For input string: "abc")`;
+  - `hapi.fhir.cr.caregaps.reporter: ${hapi.fhir.cr.caregaps.reporter}`: the
+    `careGapsProperties` bean (not `crProperties`), `Failed to bind
+    properties under 'hapi.fhir.cr.caregaps.reporter' to java.lang.String:`,
+    `Property: hapi.fhir.cr.caregaps.reporter`, origin `1:33`, and
+    config.placeholder.007's `Reason: org.springframework.util.PlaceholderResolutionException: Circular placeholder reference 'hapi.fhir.cr.caregaps.reporter' in value "${hapi.fhir.cr.caregaps.reporter}" <-- "${hapi.fhir.cr.caregaps.reporter}"`;
+  - `hapi.fhir.cr.cql.compiler.verify_only: maybe`: the
+    `cqlCompilerProperties` bean, `… 'hapi.fhir.cr.cql.compiler.verify-only'
+    to boolean:`, origin `1:40`, `Reason: failed to convert java.lang.String
+    to boolean (caused by java.lang.IllegalArgumentException: Invalid boolean
+    value 'maybe')`;
+  - `hapi.fhir.cr.cql.compiler.error_severity_level: Bogus`: the
+    `cqlCompilerProperties` bean (not `cqlProperties`), `…
+    'hapi.fhir.cr.cql.compiler.error-severity-level' to
+    org.cqframework.cql.cql2elm.CqlCompilerException$ErrorSeverity:`, origin
+    `1:49`, `Reason: failed to convert java.lang.String to
+    org.cqframework.cql.cql2elm.CqlCompilerException$ErrorSeverity (caused by
+    java.lang.IllegalArgumentException: No enum constant
+    org.cqframework.cql.cql2elm.CqlCompilerException.ErrorSeverity.Bogus)`,
+    and config.error.002's enum action with the lines `    Error`,
+    `    Info`, `    Warning`;
+  - `hapi.fhir.cdshooks.enabled: maybe`: the `cdsHooksProperties` bean, `…
+    'hapi.fhir.cdshooks.enabled' to boolean:`, origin `1:29`, the
+    `Invalid boolean value 'maybe'` reason;
+  - `hapi.fhir.cdshooks.client_id_header_name: ${hapi.fhir.cdshooks.client_id_header_name}`:
+    the `cdsHooksProperties` bean, `…
+    'hapi.fhir.cdshooks.client-id-header-name' to java.lang.String:`,
+    `Value: "${hapi.fhir.cdshooks.client_id_header_name}"`, origin `1:43`,
+    and the circular-reference reason naming
+    `'hapi.fhir.cdshooks.client_id_header_name'`
+- **AND** `./application.yaml` with `hapi.fhir.cr.caregaps: abc`, a scalar
+  at `CareGapsProperties`' own prefix, does not fail: Frevo starts, as the
+  probe does and as HAPI's real `Application` does (it starts the server)
+- **AND** when one configuration has more than one of these failures, the
+  one reported, with exactly its row's lines, is the first of: a missing
+  `hapi.fhir.fhir_version`; an `AppProperties` binding failure; a
+  `spring.elasticsearch.*` binding failure; a strict placeholder in
+  `app_content_path`; a properties-bean binding failure (the CQL bean of
+  config.unknown.005, `CdsHooksProperties`). This is recorded for these
+  pairs: no version with each of the four other kinds (the version in
+  `--spring.config.location=file:./x.yaml`'s `x.yaml` left out),
+  `AppProperties` with each of the three kinds after it (the properties bean
+  being the CQL bean and `CdsHooksProperties` in turn),
+  `spring.elasticsearch.*` with each of the two kinds after it (likewise),
+  and the strict placeholder with the CQL bean. The order of the lines in
+  the file does not change the outcome: `hapi.fhir.default_page_size: abc`
+  and `spring.elasticsearch.connection-timeout: abc` report the
+  `AppProperties` failure in either order, its origin following the line
+  (`1:30` or `2:30`). For a missing version the output is config.gate.005's
+  (no application name, because the sources replace the packaged file); for
+  every other recorded pair it is the reported kind's, with the application
+  name. Strict placeholders in `custom_content_path` and
+  `spring.ai.mcp.server.enabled` and the strict reads of config.read.007
+  are not recorded in combination; a combination not in the record falls
+  under config.error.006
 - **AND** the class-file URLs are written exactly as above, with HAPI's
   `jar:file:/app/main.war!/WEB-INF/classes!/` prefix, wherever Frevo itself
   is installed
@@ -1892,12 +1987,6 @@ prints.
   context refresh; in the image `spring.application.name` is
   `hapi-fhir-jpaserver-starter` (config.source.001), so it is absent for the
   gate.005 family, whose sources replace the packaged file
-- **AND** a binding failure of the other properties beans (`CrProperties`,
-  `CareGapsProperties`, `CqlCompilerProperties`, `CdsHooksProperties`), and
-  the order in which several of the kinds above surface when one
-  configuration has more than one, are not in the record; tasks.md task 2
-  owes those cases, and this scenario is extended from their record before
-  task 3 starts
 
 #### Scenario: [config.error.009] stack frames and non-config log lines are not reproduced
 
@@ -2001,18 +2090,61 @@ form, exact (plus the environment-variable variants) for a name that contains
 
 #### Scenario: [config.read.007] reads resolve placeholders strictly
 
-- **WHEN** the value of a read key holds an unresolvable placeholder
-- **THEN** Frevo fails to start (config.placeholder.011)
+- **WHEN** `./application.yaml` sets one of the thirteen reads of
+  config.read.001 to `${nope}`, with the packaged files present
+- **THEN** Frevo fails to start, for every one of the thirteen
 - **AND** for `hapi.fhir.app_content_path`, `hapi.fhir.custom_content_path`
   and `spring.ai.mcp.server.enabled` the failure is the strict resolution of
   config.placeholder.011's first form; for `hapi.fhir.mdm_enabled`,
   `binary_storage_mode`, `enable_repository_validating_interceptor`,
   `ig_runtime_upload_enabled` and `ips_enabled` it is the lenient binding's
   conversion failure that config.placeholder.011 quotes, which HAPI reaches
-  first; the other five reads (`fhir_version`, `cr.enabled`,
-  `cdshooks.enabled`, `custom-bean-packages`, `scheduling_disabled`) are not
-  recorded with a placeholder and are out of this scenario (proposal.md, "Out
-  of scope")
+  first
+- **AND** for the other five the read fails strictly, as the starter's
+  component scan or a bean evaluates it, and never the lenient binding,
+  even for `hapi.fhir.fhir_version` and `hapi.fhir.cr.enabled`, which
+  `AppProperties` and `CrProperties` also bind: the strict read fails first.
+  Each is the run-failed output of config.error.007 with the application
+  name, preceded by the `WARN` line of config.error.008's matching row and by
+  the `INFO` line where the record has one:
+
+  | Read | `WARN` exception, after `cancelling refresh attempt: ` | `INFO` |
+  |---|---|---|
+  | `hapi.fhir.fhir_version` | `org.springframework.beans.factory.BeanDefinitionStoreException: Failed to read candidate component class: URL [jar:file:/app/main.war!/WEB-INF/classes!/ca/uhn/fhir/jpa/starter/common/FhirServerConfigDstu2.class]` | no |
+  | `hapi.fhir.cr.enabled` | the same, with `cr/CrCommonConfig.class` | yes |
+  | `hapi.fhir.cdshooks.enabled` | the same, with `cdshooks/StarterCdsHooksConfig.class` | no |
+  | `hapi.fhir.custom-bean-packages` | `org.springframework.beans.factory.BeanDefinitionStoreException: Failed to process import candidates for configuration class [ca.uhn.fhir.jpa.starter.common.FhirServerConfigR4]: Could not resolve placeholder 'nope' in value "${nope}"` | yes |
+  | `scheduling_disabled` | `org.springframework.context.ApplicationContextException: Unable to start web server` | yes |
+
+- **AND** for the first four the exception lines are exactly two: the `WARN`
+  line's exception, then
+  `Caused by: org.springframework.util.PlaceholderResolutionException: Could not resolve placeholder 'nope' in value "${nope}"`
+- **AND** for `scheduling_disabled`, which HAPI reads only when its scheduler
+  service initialises, after its JPA layer has started, the exception lines
+  are exactly these ten, as HAPI's real `Application` prints them with the
+  packaged files (version `R4`); Frevo writes them as fixed text, and writes
+  none of the log lines HAPI's JPA layer logs before them (config.error.009):
+
+  ```text
+  org.springframework.context.ApplicationContextException: Unable to start web server
+  Caused by: org.springframework.boot.web.server.WebServerException: Unable to start embedded Tomcat
+  Caused by: org.springframework.beans.factory.UnsatisfiedDependencyException: Error creating bean with name 'hapiServletRegistration' defined in ca.uhn.fhir.jpa.starter.Application: Unsatisfied dependency expressed through method 'hapiServletRegistration' parameter 0: Error creating bean with name 'restfulServer' defined in class path resource [ca/uhn/fhir/jpa/starter/common/StarterJpaConfig.class]: Unsatisfied dependency expressed through method 'restfulServer' parameter 1: Error creating bean with name 'mySystemDaoR4': Unsatisfied dependency expressed through field 'myExpungeService': Error creating bean with name 'expungeService': Unsatisfied dependency expressed through field 'myExpungeEverythingService': Error creating bean with name 'expungeEverythingService': Unsatisfied dependency expressed through field 'myJobMaintenanceService': Error creating bean with name 'batch2JobMaintenanceService' defined in ca.uhn.fhir.jpa.batch2.JpaBatch2Config: Unsatisfied dependency expressed through method 'batch2JobMaintenanceService' parameter 0: Error creating bean with name 'schedulerService': Invocation of init method failed
+  Caused by: org.springframework.beans.factory.UnsatisfiedDependencyException: Error creating bean with name 'restfulServer' defined in class path resource [ca/uhn/fhir/jpa/starter/common/StarterJpaConfig.class]: Unsatisfied dependency expressed through method 'restfulServer' parameter 1: Error creating bean with name 'mySystemDaoR4': Unsatisfied dependency expressed through field 'myExpungeService': Error creating bean with name 'expungeService': Unsatisfied dependency expressed through field 'myExpungeEverythingService': Error creating bean with name 'expungeEverythingService': Unsatisfied dependency expressed through field 'myJobMaintenanceService': Error creating bean with name 'batch2JobMaintenanceService' defined in ca.uhn.fhir.jpa.batch2.JpaBatch2Config: Unsatisfied dependency expressed through method 'batch2JobMaintenanceService' parameter 0: Error creating bean with name 'schedulerService': Invocation of init method failed
+  Caused by: org.springframework.beans.factory.UnsatisfiedDependencyException: Error creating bean with name 'mySystemDaoR4': Unsatisfied dependency expressed through field 'myExpungeService': Error creating bean with name 'expungeService': Unsatisfied dependency expressed through field 'myExpungeEverythingService': Error creating bean with name 'expungeEverythingService': Unsatisfied dependency expressed through field 'myJobMaintenanceService': Error creating bean with name 'batch2JobMaintenanceService' defined in ca.uhn.fhir.jpa.batch2.JpaBatch2Config: Unsatisfied dependency expressed through method 'batch2JobMaintenanceService' parameter 0: Error creating bean with name 'schedulerService': Invocation of init method failed
+  Caused by: org.springframework.beans.factory.UnsatisfiedDependencyException: Error creating bean with name 'expungeService': Unsatisfied dependency expressed through field 'myExpungeEverythingService': Error creating bean with name 'expungeEverythingService': Unsatisfied dependency expressed through field 'myJobMaintenanceService': Error creating bean with name 'batch2JobMaintenanceService' defined in ca.uhn.fhir.jpa.batch2.JpaBatch2Config: Unsatisfied dependency expressed through method 'batch2JobMaintenanceService' parameter 0: Error creating bean with name 'schedulerService': Invocation of init method failed
+  Caused by: org.springframework.beans.factory.UnsatisfiedDependencyException: Error creating bean with name 'expungeEverythingService': Unsatisfied dependency expressed through field 'myJobMaintenanceService': Error creating bean with name 'batch2JobMaintenanceService' defined in ca.uhn.fhir.jpa.batch2.JpaBatch2Config: Unsatisfied dependency expressed through method 'batch2JobMaintenanceService' parameter 0: Error creating bean with name 'schedulerService': Invocation of init method failed
+  Caused by: org.springframework.beans.factory.UnsatisfiedDependencyException: Error creating bean with name 'batch2JobMaintenanceService' defined in ca.uhn.fhir.jpa.batch2.JpaBatch2Config: Unsatisfied dependency expressed through method 'batch2JobMaintenanceService' parameter 0: Error creating bean with name 'schedulerService': Invocation of init method failed
+  Caused by: org.springframework.beans.factory.BeanCreationException: Error creating bean with name 'schedulerService': Invocation of init method failed
+  Caused by: org.springframework.util.PlaceholderResolutionException: Could not resolve placeholder 'nope' in value "${nope}"
+  ```
+
+- **AND** these five are in scope although HAPI's oracle probe prints them
+  differently (its `WARN` exception is the bare
+  `PlaceholderResolutionException`, or absent for `custom-bean-packages`):
+  the probe also fails all five, so HAPI's configuration layer rejects them,
+  and the record is the real `Application`'s (config.oracle.001). The
+  version-dependent class names (`FhirServerConfigR4`, `mySystemDaoR4`) are
+  those of the packaged version `R4`; no other version is recorded
 
 #### Scenario: [config.read.008] scheduling_disabled is read by exact name
 
@@ -2443,12 +2575,30 @@ fixture is judged against HAPI rather than against this text.
   through `loader.main` from `/app/loader.properties`; a case the probe does
   not fail is recorded from it: its document, reads, gates and system
   properties
-- **AND** a case the probe fails is run again by the `application` runner: a
-  fresh container of the **unchanged** pinned image with the same files,
+- **AND** every case is also run by the `application` runner: a fresh
+  container of the **unchanged** pinned image with the same files,
   environment and arguments and no `loader.properties`, so the launcher
-  starts the war's own `Start-Class`, `ca.uhn.fhir.jpa.starter.Application`;
-  that run's exit status, standard output, standard error and config-related
-  lines are the case's record, and the probe's run is kept beside it
+  starts the war's own `Start-Class`, `ca.uhn.fhir.jpa.starter.Application`
+- **AND** for a case the probe fails, that run's exit status, standard
+  output, standard error and config-related lines are the case's record, and
+  the probe's run is kept beside it
+- **AND** for a case the probe does not fail, the record stays the probe's,
+  and the real `Application`'s outcome is kept beside it as the case's
+  `"application"` member: `main`, `started`, `start_signal`, `exit` (`null`
+  when started), `config_lines`, `stack_frame_lines`, `stderr`, and `stdout`
+  for a failure. It has started when it prints Spring Boot's
+  `Started Application in …` line and is still running 15 s later
+  (`start_signal` `"start line"`), or is still running after 600 s
+  (`"timeout"`); it is then stopped
+- **AND** a probe exit status `0` means that HAPI's configuration layer
+  accepts the case (its locations, parsing, binding, placeholders,
+  conversion, reads and gates), not that HAPI starts: the record's
+  `application_failures` member lists every case the probe passes and the
+  real `Application` does not start (66 cases in the record of 445, against
+  274 that start), and design.md section 7 classifies each of its groups as
+  a wiring or subsystem failure that this change does not own, with the
+  change that owes it. For those cases Frevo is graded on the probe's
+  document, and the `"application"` member is not compared with Frevo
 - **AND** each recorded case names its runner (`"runner": "probe"` or
   `"application"`, with `"application_main":
   "ca.uhn.fhir.jpa.starter.Application"` for the latter); every case whose
