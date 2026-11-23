@@ -1,5 +1,183 @@
 CHANGES_REQUESTED
 
+Sixth review of `add-config-application-yaml`, at `c74a00c` (the proposer's
+answer) over `8d0f442` (every case on both runners; 445 cases). I checked
+the delta, design.md section 7, proposal.md, spec.md and tasks.md against
+`harness/config-roundtrip/hapi-8.12.0-results.json` and against
+`tasks/blockers.md` (entry of 2026-11-23, F-1 to F-20, Appendices A and B).
+I also ran cases on the unchanged pinned image
+`hapiproject/hapi:v8.12.0-2@sha256:0ff86aac…`, through its ENTRYPOINT and its
+own `ca.uhn.fhir.jpa.starter.Application`. I copied only the case's files to
+`/app`, labelled my containers `dev.frevo.spec-review=1`, and removed them
+afterwards. I touched no other container.
+
+## The fifth review's findings
+
+1. **The oracle gap: resolved.**
+   - The record has an `application` member on all 340 probe-passing cases:
+     274 with `started: true` (`start_signal: "start line"`) and 66 with
+     `started: false`, an exit status and `stdout`.
+   - `application_failures` lists exactly those 66. `runner_disagreements`
+     is `[]`. 274 + 66 + 105 = 445.
+   - I grouped the 66 by their last `Caused by` line, or by the failure
+     analysis's description. There are exactly 20 groups, and they match
+     design.md section 7's F-1 to F-20 case for case.
+   - config.oracle.001's text matches the record and `runners.probe`. That
+     includes the meaning of a probe exit 0, the member's fields, the
+     settle and safeguard times, and "not compared with Frevo".
+   - **Classification.** I checked every group against the starter's
+     source and the record. Each is a failure in wiring or in an external
+     subsystem, raised after the configuration layer has produced the
+     probe's document. Each owning change id exists in `tasks/graph.yaml`.
+     The calls you asked me to challenge:
+     - **F-17 (`server.port`).** It is a typed binding, but the 2026-11-22
+       owner ruling assigns `server.*` typed binding and its startup
+       failures to `add-server-skeleton`. That ruling is recorded in
+       `tasks/graph.yaml`'s `add-server-skeleton` notes, so out of scope is
+       correct.
+     - **F-15 (`config.read.002`).**
+       `reference/hapi-fhir-jpaserver-starter/src/main/java/ca/uhn/fhir/jpa/starter/common/StarterJpaConfig.java:391`
+       runs `if (appProperties.getMdm_enabled()) mdmProviderProvider.get()…`.
+       Meanwhile `mdm/MdmConfig` is gated on the read `hapi.fhir.mdm_enabled`
+       (`@ConditionalOnProperty(prefix = "hapi.fhir", name = "mdm_enabled")`).
+       The configuration layer's output (bound `true`, read `"false"`) is
+       what config.read.002 states, and the crash is the provider lookup. So
+       out of scope, owed by `add-mdm`, is correct.
+     - **F-20 (the bean cycle).** The class-default THEN clauses of
+       config.key.001 to .003 and config.object.005 are still what HAPI's
+       binder produces for those sources, which is the probe's record. The
+       notation comment and design.md state precisely that they describe no
+       running HAPI server. That satisfies the standing rule that HAPI's
+       behaviour prevails. Owing `spring.main.*` to `add-server-skeleton`
+       matches proposal.md's 2026-11-22 row.
+     - **`scheduling_disabled: ${nope}` in scope.** I agree. The probe also
+       rejects it, and the read is one of config.read.001's thirteen. But
+       its text is wrong outside `R4`; see finding 1.
+   - **Live samples.** I matched each recorded config line (`<ts>`/`<pid>`
+     as wildcards, logger field kept) against the live output. The
+     application runs of config.read.002 (F-15) and config.key.002 (F-20)
+     reproduce the record exactly: 12 and 31 lines, 0 missing.
+     config.error.008-caregaps-b starts the server, as recorded.
+2. **config.read.007's five reads: resolved, except for finding 1.**
+   - The delta no longer sends them out of scope.
+   - Each of the 13 reads is now covered: 3 strict and 5 lenient in
+     config.placeholder.011, and the 5 new ones here.
+
+## Item (2): config.error.008 against the record
+
+The following match the record verbatim (the full `WARN` lines, not
+truncated):
+- the four-bean row of the table, and its seven bullet cases:
+  - bean / class / prefix;
+  - `ignoreInvalidFields=false, ignoreUnknownFields=true`;
+  - the `INFO` line present in all seven;
+  - the description lines without `$$SpringCGLIB$$0`;
+  - the origins `1:23`, `1:66`, `1:33`, `1:40`, `1:49`, `1:29`, `1:43`;
+  - both circular-reference reasons;
+  - the `Error`/`Info`/`Warning` action list;
+- the three strict-read rows: the `FhirServerConfigDstu2` /
+  `CrCommonConfig` / `StarterCdsHooksConfig` wrappers, `INFO` present for
+  `cr.enabled` only, the `FhirServerConfigR4` import-candidates line, and
+  `Unable to start web server`;
+- the order clause:
+  - the four no-version pairs give config.gate.005's output, with no
+    application name;
+  - the `AppProperties` pairs give the `PartitionModeConfigurer` wrapper,
+    with no `INFO` line, and origin `1:30` / `2:30` by file order;
+  - the `spring.elasticsearch` pairs give the `ElasticsearchBootSvcImpl`
+    wrapper with `INFO`;
+  - strict-placeholder plus CQL gives the `WebAppFilesConfigurer` wrapper
+    with `INFO`.
+- config.read.007's ten-line `scheduling_disabled` chain: all ten lines are
+  equal in full (1134, 943, 732, … characters).
+
+Live image, 0 recorded lines missing in each case:
+- config.read.007-c (8 lines), -e (8) and -f (16);
+- config.error.008-compiler-b (26);
+- config.error.008-order-es-strict (22);
+- config.error.008-order-noversion-cql (5).
+
+## Findings
+
+1. **config.read.007 fixes the `custom-bean-packages` and
+   `scheduling_disabled` output as fixed `R4` text, but HAPI names the
+   active version's classes. The delta leaves every other version
+   unspecified.**
+   - The delta says, for `scheduling_disabled`, "Frevo writes them as fixed
+     text". It also says the "version-dependent class names
+     (`FhirServerConfigR4`, `mySystemDaoR4`) are those of the packaged
+     version `R4`; no other version is recorded". config.error.008's
+     custom-bean-packages row also quotes `FhirServerConfigR4` as a
+     constant.
+   - Upstream, the read is `@ComponentScan(basePackages =
+     {"${hapi.fhir.custom-bean-packages:}"})` on `StarterJpaConfig`
+     (`StarterJpaConfig.java:109`). Every version's config class imports
+     `StarterJpaConfig`: `FhirServerConfigDstu2.java:11`, `…Dstu3.java:12`,
+     `…R4.java:14-17`, `…R4B.java:12` and `…R5.java:12`. The import-candidates
+     wrapper names whichever of them is active.
+   - `scheduling_disabled` is read in
+     `BaseSchedulerServiceImpl.isSchedulingDisabledForUnitTests`
+     (`reference/hapi-fhir/hapi-fhir-jpa/src/main/java/ca/uhn/fhir/jpa/sched/BaseSchedulerServiceImpl.java:318-319`).
+     It is reached through `restfulServer`'s system DAO, whose bean name
+     carries the version.
+   - **Measured on the live image**, with `./application.yaml` set to
+     `hapi.fhir.fhir_version: <V>` plus the `${nope}` line:
+
+     | Case | `R5` | `DSTU3` |
+     |---|---|---|
+     | `custom-bean-packages: ${nope}` | `… Failed to process import candidates for configuration class [ca.uhn.fhir.jpa.starter.common.FhirServerConfigR5]: …` (in the `WARN` line and the first exception line) | `… [ca.uhn.fhir.jpa.starter.common.FhirServerConfigDstu3]: …` |
+     | `scheduling_disabled: ${nope}` | the recorded ten lines with every `mySystemDaoR4` replaced by `mySystemDaoR5`, and otherwise identical | the same with `mySystemDaoDstu3` |
+
+     With `hapi.fhir.cr.enabled: true` added on `R4`, the
+     `scheduling_disabled` chain is unchanged. So a gate I tried does not
+     alter it, but the version does.
+   - An implementer following the delta writes `FhirServerConfigR4` and
+     `mySystemDaoR4` for an `R5` server. That is a parity bug that no
+     recorded case can see. An implementer who substitutes the version is
+     guessing the `DSTU2` and `R4B` names, which I did not measure.
+   - **Needed:**
+     - Record config.read.007-e and -f once per other version (`DSTU2`,
+       `DSTU3`, `R4B`, `R5`). These are eight cases on the application
+       runner.
+     - State the names in config.read.007 and in config.error.008's
+       custom-bean-packages row as a function of `hapi.fhir.fhir_version`,
+       quoting each recorded name, instead of as fixed `R4` text.
+     - Correct tasks.md task 2's "No record gap remains owed by this task"
+       until they are recorded.
+
+## Notes (not blocking)
+
+- **The 2026-11-23 owner ruling and the per-group obligations live only in
+  this change's prose.**
+  - design.md and proposal.md cite "owner ruling of 2026-11-23". Nothing in
+    `tasks/blockers.md`, `tasks/graph.yaml` or `docs/` records it. Compare
+    the 2026-11-22 `server.*` ruling, which is in `add-server-skeleton`'s
+    graph notes.
+  - None of the eleven owning changes' `tasks/graph.yaml` notes mentions the
+    startup failure it now owes, for example `add-package-install`'s blank
+    id/version, `add-mdm`'s F-15, or `add-subscriptions-resthook`'s SMTP
+    host.
+  - The settled spec's notation comment points at "design.md section 7",
+    which leaves `openspec/changes/` on archive, as `keys.md` does (task 26).
+  - Suggest adding the graph notes in the archive step (task 25) and
+    rewriting that link as task 26 does.
+- **`DEBT-0022`'s hazard.** config.read.002 (F-15) and config.gate.009-d
+  (F-16) show the read/binding split making HAPI fail to start, not only
+  return a different value. That is worth a line in the debt entry for
+  `add-mdm` and `add-store-binary-and-offload`.
+- **Unrecorded combinations.** The delta defers to config.error.006 for a
+  strict read combined with another kind, and for two properties beans
+  together. config.error.006 only requires naming "at least one". That is
+  acceptable while the differential grades only recorded cases.
+- **Scenario IDs.** There are still 232, unique, and `c74a00c` adds,
+  removes or renumbers none.
+
+---
+
+## History: fifth review (CHANGES_REQUESTED at `71965e8`)
+
+CHANGES_REQUESTED
+
 Fifth review of `add-config-application-yaml`, at `5c049ba` (the delta
 rewrite) over `64d2e4e` (the re-record with two runners). I checked the 20
 rewritten scenarios against `harness/config-roundtrip/hapi-8.12.0-results.json`.
