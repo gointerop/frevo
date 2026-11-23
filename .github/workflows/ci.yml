@@ -23,7 +23,7 @@ jobs:
     name: Format and lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
@@ -37,7 +37,7 @@ jobs:
     name: Tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@nextest
@@ -48,7 +48,7 @@ jobs:
         # hashes the scripts that hold the pins, so moving a pin invalidates
         # the cache and an unchanged pin never refetches.
         id: oracle-cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           path: |
             oracles/fhir-test-cases/fetched
@@ -78,7 +78,7 @@ jobs:
         if: steps.oracle-cache.outputs.cache-hit != 'true'
         # Saved here, not in the action's post step, which is skipped when the
         # tests below fail -- exactly when a warm cache matters most.
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v6
         with:
           path: |
             oracles/fhir-test-cases/fetched
@@ -96,7 +96,7 @@ jobs:
     name: Build (release profile)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo build --profile dist --locked -p frevo-server
@@ -112,7 +112,7 @@ jobs:
     name: Repository consistency
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: CLAUDE.md and AGENTS.md must be identical
         # The constitution is published under both names. If they drift, agents
@@ -195,7 +195,7 @@ jobs:
     name: Hook self-tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - name: Hooks must actually block
         # The enforcement hooks are only worth having if they refuse the things
         # they are supposed to refuse. Every rule has a positive and a negative
@@ -226,7 +226,7 @@ jobs:
     name: Licences and advisories
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - uses: EmbarkStudios/cargo-deny-action@v2
         with:
           command: check all
@@ -235,10 +235,10 @@ jobs:
     name: Container image builds
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-      - uses: docker/setup-buildx-action@v3
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v4
       - name: Build (amd64 only on pull requests; release builds multi-arch)
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           push: false
