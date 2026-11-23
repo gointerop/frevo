@@ -87,6 +87,10 @@ them is the whole reason that decision is safe to make.
   this; a published profile is found to depend on the comparison erroring; HL7
   fixes it upstream and we re-pin; a Frevo consumer asks for specification
   semantics.
+- **Note, owner ruling 2026-11-22 (`DEV-0005`):** through `FhirPathR4`, HAPI
+  raises for quantities with different units, so Frevo is to raise too (change
+  `fix-fhirpath-quantity-unit-comparison`). The cost above then applies only to
+  a UCUM-equipped raw engine such as the HL7 suite's worker.
 - **Size:** small. One comparison in the quantity comparison path, plus
   `path.quantity.015` asserted both ways across the flag.
 - **Status:** open

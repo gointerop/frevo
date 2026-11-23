@@ -88,6 +88,20 @@ nodes:
     depends_on: [add-fhirpath-and-codegen-r4, add-config-application-yaml]
     oracles: [differential]
 
+  - id: fix-fhirpath-quantity-unit-comparison
+    phase: 1
+    status: pending
+    summary: >
+      make comparison of quantities with different units raise the error
+      FhirPathR4 raises, as HAPI 8.12.0 does.
+    crates: [frevo-path]
+    depends_on: []
+    oracles: [differential]
+    notes: >
+      Owner ruling 2026-11-22 ("Do as hapi does") on DEV-0005. Cover <, <=, >,
+      >=, =, !=, ~ and !~ as HAPI does per the DEV-0005 confirmation, and
+      reconcile the path.quantity.* scenarios (path.quantity.015 and .019).
+
   # ------------------------------------------------------------------ phase 2
   - id: add-store-schema
     phase: 2
