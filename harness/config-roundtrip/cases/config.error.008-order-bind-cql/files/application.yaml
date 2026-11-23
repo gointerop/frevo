@@ -1,0 +1,2 @@
+hapi.fhir.default_page_size: abc
+hapi.fhir.cr.cql.runtime.enable_validation: true

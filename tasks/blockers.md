@@ -4353,3 +4353,1371 @@ prefix rule and `Bindable` mask.
   until then.
 - **Whoever may edit `crates/` after approval:** make the four test edits
   above.
+
+## 2026-11-23 — `add-config-application-yaml` — every case on HAPI's real `Application`: 66 probe-passing cases fail to start; task 2's owed cases recorded
+
+**Raised by** `oracle-builder`, after review.md (CHANGES_REQUESTED at `71965e8`)
+finding 1, finding 2's owed cases and the non-blocking note on the logger
+field. Work limited to `harness/config-roundtrip/` and this file. Tasks 2 and
+3 stay unticked.
+
+**What changed in the oracle** (`harness/config-roundtrip/`):
+
+- **Every case now runs on both runners.** A case the probe passes (exit 0)
+  is also run on the unchanged pinned image's own
+  `ca.uhn.fhir.jpa.starter.Application`, in the same way as the cases the
+  probe fails (`run_container`, fresh container, same files, environment and
+  arguments). Its record is still the probe's run: the document, reads,
+  gates and properties come from the probe, and the top-level `exit`,
+  `stdout`, `config_lines` are unchanged in meaning. The real `Application`'s
+  outcome is added beside it as `"application"`: `main`, `started`,
+  `start_signal`, `exit` (`null` when started), `config_lines`,
+  `stack_frame_lines`, `stderr`, and `stdout` for a failure.
+- **Started.** A real `Application` has started the server when it prints
+  Spring Boot's start line (`ca.uhn.fhir.jpa.starter.Application : Started
+  Application in …`) and is still running 15 s later
+  (`CONFIG_ROUNDTRIP_APP_SETTLE`; `start_signal: "start line"`), or when it
+  is still running after 600 s (`CONFIG_ROUNDTRIP_APP_TIMEOUT`, the
+  safeguard; `start_signal: "timeout"`). It is then killed. All 274 starts in
+  this record are `"start line"`; none reached the safeguard. A server start
+  takes about 30 s on this host.
+- **`application_failures`**, a new record member, lists the cases the probe
+  passes and the real `Application` fails: the reverse of
+  `runner_disagreements`. It has **66** cases. `runner_disagreements` is
+  still `[]`.
+- **`runners.probe`** now states that a probe exit 0 means the configuration
+  layer accepts the case, not that HAPI starts. config.oracle.001 should say
+  the same (review finding 1); that is the proposer's.
+- **The logger field is kept** (review note, config.oracle.003): `run.py`
+  `mask` no longer writes `<logger>`. Every `config_lines` line keeps it,
+  `WARN` and `INFO` included: `ConfigServletWebServerApplicationContext` and
+  `.s.b.a.l.ConditionEvaluationReportLogger` in the real `Application`'s
+  runs, `s.c.a.AnnotationConfigApplicationContext` in the probe's. Only the
+  timestamp and PID are masked.
+- `replay/src/main.rs` prints the recorded lines unmasked and never masked
+  the logger, so it is unchanged.
+- Every container `run.py` creates carries the label
+  `dev.frevo.config-roundtrip=1`. None was left after the record.
+- **26 new cases** (`make_cases.py`; 445 in all, from 419): see "Owed cases"
+  below.
+- **Re-recorded** (`run.py record`, not `--diagnostic`; `inspect` passes).
+  `self_test`: 2 runs, 445 cases, `differing: []`. The self-test now also
+  compares the real `Application`'s outcome of a probe-passing case
+  (`started`, `exit`, `config_lines`).
+- Record counts: 274 probe-passing cases start on the real `Application`, 66
+  fail, and 105 cases are `runner: application` (the old 80 and 25 of the 26
+  new ones).
+
+**Replay stand-in check** (`replay/` as `FREVO_CONFIG_TEST_BIN`, given as an
+absolute path to the `.exe` because the test runs the binary from a
+temporary directory; committed record). The same 16 tests fail as in the
+2026-11-22 entry, and no others: args.007 and .009 (`is_frame`), error.008,
+gate.005, placeholder.011, unknown.008, oracle.001, source.001,
+placeholder.012, profile.014, relaxed.007, source.020 and the three
+`config.perf.*` tests. The 26 new cases add no failure, and
+config.oracle.002's `cases` count (445) matches.
+
+**Still owed in `crates/frevo-config/tests/` (hook-locked while review.md
+reads `CHANGES_REQUESTED`)**, in addition to items 1 to 5 of the 2026-11-22
+entry:
+
+6. `tests/common/mod.rs` `config_lines` calls `masked(&l, false)` for the
+   `WARN` and `INFO` lines, so the Frevo side still compares them as
+   `<logger>` on both sides. config.oracle.003 now compares the logger, and
+   `run.py` keeps it: both calls should keep the logger, as the `ERROR` line
+   does. After that change the replay check still passes these lines,
+   because the replay prints HAPI's lines unmasked.
+7. Whatever the proposer decides for the 66 cases below. A test that asserts
+   a probe-passing case's document is unaffected, because the document is
+   still the probe's. A scenario rewritten to HAPI's failure would need its
+   test to read `application.config_lines`, or the case to move to
+   `runner: application`.
+
+### Decision needed (proposer): the 66 cases the probe starts and HAPI's real `Application` does not
+
+For each group: classify it as **out of scope**, naming the change that owes
+the failure, or as **in scope**, and rewrite the scenario to HAPI's failure.
+All six cases the fifth review measured fail here with the same cause:
+unknown.004 (F-17), coerce.026 (F-18), collection.006 (F-1), key.012 (F-9),
+gate.024-b (F-11) and all-keys.yaml (F-2). The other two it sampled,
+coerce.017-g and gate.006-d, start.
+
+The full recorded config lines of every case follow in the appendix
+("Appendix A"), one block per distinct output. These are the summaries:
+
+| Group | Cases | Real `Application`'s failure (description, or last `Caused by`) |
+|---|---|---|
+| F-20 | gate.006-e, gate.007-f, gate.012, gate.012-b, gate.016, gate.016-b, gate.022, key.001-v, key.002, object.005, source.007-v, source.009-v, source.010-p, source.010-v, source.011, source.013, source.017-b, source.018, source.026-c (19) | `The dependencies of some of the beans in the application context form a cycle:` (`hapiServletRegistration` → `restfulServer` → `mySystemDaoR4` → `searchParamRegistry` ↔ `resourceChangeListenerRegistry` …). Every one of these cases keeps the packaged `application.yaml` out (`--spring.config.location=…`, or `NO_FILES`), and that file sets `spring.main.allow-circular-references: true` (`packaged/application.yaml:96`). This is a configuration outcome of the "class defaults" reading the scenarios use. |
+| F-10 | collection.004, env.009, env.009-b, gate.013-b, key.009, key.009-b, yaml.012, yaml.013 (8) | `Caused by: java.lang.NullPointerException: thePackageVersion must not be blank` (an `implementationguides` entry with no version) |
+| F-18 | coerce.016-b, coerce.017-b, coerce.017-d, coerce.026, gate.004, gate.004-b (6) | `Parameter 0 of method restfulServer in ca.uhn.fhir.jpa.starter.common.StarterJpaConfig required a bean of type 'ca.uhn.fhir.context.FhirContext' that could not be found.` (no version gate is true) |
+| F-11 | gate.020-b, gate.020-c, gate.024, gate.024-b, gate.024-c, profile.002 (6) | `Caused by: java.net.ConnectException: Connection refused` (Elasticsearch at the default `localhost:9200`; `HAPI-1175: Failed to create document index` in the chain) |
+| F-4 | coerce.012, dump.005, dump.005-b, key.010, object.002 (5) | `Caused by: java.lang.IllegalArgumentException: SMTP server host missing` (a `subscription.email` member set without its host) |
+| F-9 | coerce.017-e, coerce.024, key.012, relaxed.003 (4) | `Caused by: java.lang.NullPointerException: thePackageId must not be blank` |
+| F-2 | all-keys.yaml, all-keys.env, all-keys-kebab.yaml (3) | `Caused by: java.lang.IllegalArgumentException: Invalid path for auto-version reference at path: auto-version-reference-at-paths-a` (`jpaStorageSettings`) |
+| F-19 | gate.006-h, gate.011-b, gate.017 (3) | `Parameter 1 of method mcpCdsBridge in ca.uhn.fhir.jpa.starter.mcp.McpServerConfig required a bean of type 'ca.uhn.hapi.fhir.cdshooks.api.ICdsServiceRegistry' that could not be found.` (`cdshooks.enabled` true, `cr.enabled` false, MCP on by default) |
+| F-7 | coerce.007-c | `Caused by: java.lang.IllegalArgumentException: size must be greater than 0` (`default_page_size: "-0x10"` binds -16) |
+| F-8 | collection.003 | `Caused by: java.lang.NullPointerException: theBaseUrl can not be blank` |
+| F-1 | collection.006 | `Caused by: java.lang.ClassNotFoundException: a.B` (`Interceptor class was not found on classpath: a.B`) |
+| F-13 | env.013 | `Caused by: java.net.UnknownHostException: hapi-db` (the PostgreSQL data source the case configures) |
+| F-5 | gate.009-c | `Caused by: java.lang.IllegalArgumentException: binary_storage_filesystem_base_directory must be provided when binary_storage_mode=FILESYSTEM` |
+| F-16 | gate.009-d | `Field myBinaryStorageSvc in ca.uhn.fhir.jpa.binary.interceptor.BinaryStorageInterceptor required a bean of type 'ca.uhn.fhir.jpa.binary.api.IBinaryStorageSvc' that could not be found.` (`binary_storage_mode: "file-system"`) |
+| F-14 | gate.020 | `Caused by: java.net.UnknownHostException: x: Name or service not known` (`spring.elasticsearch.uris=http://x`) |
+| F-6 | gate.020-d | `Caused by: java.lang.IllegalArgumentException: hosts must not be null nor empty` (`spring.elasticsearch.uris: []`) |
+| F-12 | gate.024-d | `Caused by: java.net.UnknownHostException: b: Name or service not known` (`spring.elasticsearch.uris: http://a, http://b`) |
+| F-15 | read.002 | `Caused by: java.util.NoSuchElementException: No value present` (`mdm-enabled: true` binds, and the MDM setup finds no rules file) |
+| F-17 | unknown.004 | `Invalid value 'not-a-number' for configuration property 'server.port' (originating from 'URL [file:application.yaml] - 2:14'). Validation failed for the following reason:` |
+| F-3 | yaml.008 | `Caused by: java.lang.IllegalArgumentException: Logger name can not be null/empty` (`hapi.fhir.logger.name: NULL`) |
+
+The parenthesised readings are mine, taken from the case files and the
+chain. They are not measured separately. The proposer should check them
+against the appendix.
+
+### Owed cases (tasks.md task 2), recorded on both runners
+
+Full output in "Appendix B". Every case below except
+config.error.008-caregaps-b fails on both runners, so each is
+`runner: application` and its record is the real `Application`'s output.
+
+**A binding failure in each of the four other properties beans
+(config.error.008).** The real `Application` has the same shape as the CQL
+bean row of config.error.008's table. The `WARN` line is
+`…cancelling refresh attempt: org.springframework.boot.context.properties.ConfigurationPropertiesBindException: Error creating bean with name '<bean>': Could not bind properties to '<Class>' : prefix=<prefix>, ignoreInvalidFields=false, ignoreUnknownFields=true`,
+then the `INFO` line, then config.error.002's failure analysis:
+
+| Case | Configuration | `<bean>` / `<Class>` / `<prefix>` | Description line |
+|---|---|---|---|
+| error.008-cr | `hapi.fhir.cr.enabled: maybe` | `crProperties` / `CrProperties` / `hapi.fhir.cr` | `Failed to bind properties under 'hapi.fhir.cr.enabled' to java.lang.Boolean:` |
+| error.008-cr-b | `hapi.fhir.cr.terminology_server_client_settings.max_retry_count: abc` | the same | `Failed to bind properties under 'hapi.fhir.cr.terminology-server-client-settings.max-retry-count' to int:` |
+| error.008-caregaps | `hapi.fhir.cr.caregaps.reporter: ${hapi.fhir.cr.caregaps.reporter}` | `careGapsProperties` / `CareGapsProperties` / `hapi.fhir.cr.caregaps` | `Failed to bind properties under 'hapi.fhir.cr.caregaps.reporter' to java.lang.String:` (circular reference, config.placeholder.007's reason) |
+| error.008-compiler | `hapi.fhir.cr.cql.compiler.verify_only: maybe` | `cqlCompilerProperties` / `CqlCompilerProperties` / `hapi.fhir.cr.cql.compiler` | `Failed to bind properties under 'hapi.fhir.cr.cql.compiler.verify-only' to boolean:` |
+| error.008-compiler-b | `hapi.fhir.cr.cql.compiler.error_severity_level: Bogus` | the same | `… 'hapi.fhir.cr.cql.compiler.error-severity-level' to org.cqframework.cql.cql2elm.CqlCompilerException$ErrorSeverity:`, with the enum `Action:` list `Error`, `Info`, `Warning` |
+| error.008-cdshooks | `hapi.fhir.cdshooks.enabled: maybe` | `cdsHooksProperties` / `CdsHooksProperties` / `hapi.fhir.cdshooks` | `Failed to bind properties under 'hapi.fhir.cdshooks.enabled' to boolean:` |
+| error.008-cdshooks-b | `hapi.fhir.cdshooks.client_id_header_name: ${hapi.fhir.cdshooks.client_id_header_name}` | the same | `… 'hapi.fhir.cdshooks.client-id-header-name' to java.lang.String:` (circular reference) |
+
+- The description lines have no `$$SpringCGLIB$$0` suffix, unlike
+  config.unknown.008.
+- **The probe disagrees on two of them.** For error.008-caregaps, the
+  probe's bean is `CrProperties`, and its description is under
+  `hapi.fhir.cr.care-gaps.reporter`. For error.008-compiler-b (the enum),
+  the probe's bean is `CqlProperties` (`prefix=hapi.fhir.cr.cql`); for
+  error.008-compiler it is `CqlCompilerProperties`, as in HAPI. HAPI reaches
+  the `@ConfigurationProperties` beans `careGapsProperties` and
+  `cqlCompilerProperties` first. (The probe's bean names are
+  `'<prefix>-<class>'`, as before.)
+- **error.008-caregaps-b** (`hapi.fhir.cr.caregaps: abc`, a scalar for the
+  bean's own prefix) does not fail. The probe exits 0 and the real
+  `Application` starts.
+
+**`${nope}` in the five other reads (config.read.007).** None of them is the
+lenient binding failure. Each is a strict resolution during the component
+scan or bean creation, in the run-failed form (`ERROR … o.s.boot.SpringApplication : Application run failed`):
+
+| Case | Read | `WARN` exception (first chain line) | `INFO` | Chain ends |
+|---|---|---|---|---|
+| read.007-b | `hapi.fhir.fhir_version` | `BeanDefinitionStoreException: Failed to read candidate component class: URL [jar:file:/app/main.war!/WEB-INF/classes!/ca/uhn/fhir/jpa/starter/common/FhirServerConfigDstu2.class]` | no | `Caused by: org.springframework.util.PlaceholderResolutionException: Could not resolve placeholder 'nope' in value "${nope}"` |
+| read.007-c | `hapi.fhir.cr.enabled` | the same with `cr/CrCommonConfig.class` | yes | the same |
+| read.007-d | `hapi.fhir.cdshooks.enabled` | the same with `cdshooks/StarterCdsHooksConfig.class` | no | the same |
+| read.007-e | `hapi.fhir.custom-bean-packages` | `BeanDefinitionStoreException: Failed to process import candidates for configuration class [ca.uhn.fhir.jpa.starter.common.FhirServerConfigR4]: Could not resolve placeholder 'nope' in value "${nope}"` | yes | the same |
+| read.007-f | `scheduling_disabled` | `org.springframework.context.ApplicationContextException: Unable to start web server` | yes | a nine-line chain through `hapiServletRegistration`, `restfulServer`, `mySystemDaoR4`, … `schedulerService` (`Invocation of init method failed`), then the same `PlaceholderResolutionException` |
+
+- `fhir_version` and `cr.enabled` are also bound, by `AppProperties` and
+  `CrProperties`. In both, the strict read fails before the binding.
+- read.007-f fails only after the JPA layer has started. Its chain names
+  HAPI JPA beans, which is the kind of output config.error.009 says Frevo
+  does not reproduce. The proposer decides whether that case is in scope.
+- The probe also fails all five, but differently. For -b, -c, -d and -f its
+  `WARN` exception is the bare `PlaceholderResolutionException`. For -e it
+  has no `WARN` line.
+
+**Which failure surfaces first (config.error.008).** Each case has two
+failures. The table names the one the real `Application` reports. Its
+`WARN`, `INFO` and `ERROR` lines are exactly those of that kind's row in
+config.error.008's table.
+
+| Case | Failures in the configuration | Surfaces |
+|---|---|---|
+| order-noversion-bind | no version + `AppProperties` binding | no version (config.gate.005's `FhirServerConfigDstu2` wrapper and NPE, no `INFO`, no application name) |
+| order-noversion-es | no version + `spring.elasticsearch` binding | no version |
+| order-noversion-strict | no version + strict placeholder (`app_content_path`) | no version |
+| order-noversion-cql | no version + the CQL bean (`cr.cql.runtime.enable_validation`) | no version |
+| order-bind-es, order-es-bind | `AppProperties` + `spring.elasticsearch`, in both file orders | `AppProperties` (`PartitionModeConfigurer` wrapper, no `INFO`); file order does not matter, and the origin line follows the file (1:30 or 2:30) |
+| order-bind-strict | `AppProperties` + strict placeholder | `AppProperties` |
+| order-bind-cql | `AppProperties` + the CQL bean | `AppProperties` |
+| order-bind-cds | `AppProperties` + `CdsHooksProperties` | `AppProperties` |
+| order-es-strict | `spring.elasticsearch` + strict placeholder | `spring.elasticsearch` (`ElasticsearchBootSvcImpl` wrapper, `INFO`) |
+| order-es-cql | `spring.elasticsearch` + the CQL bean | `spring.elasticsearch` |
+| order-es-cds | `spring.elasticsearch` + `CdsHooksProperties` | `spring.elasticsearch` |
+| order-strict-cql | strict placeholder + the CQL bean | strict placeholder (`WebAppFilesConfigurer` wrapper, `INFO`) |
+
+The measured order is: no version, then `AppProperties` binding, then
+`spring.elasticsearch` binding, then the strict placeholders, then the
+properties-bean binding failures. That is consistent with the scan order of
+the class files: `common/FhirServerConfigDstu2` before
+`common/PartitionModeConfigurer` before `elastic/` before `web/`, all of
+them before any bean is created. That explanation is my reading, not a
+measurement. The strict placeholders in `custom_content_path` and
+`spring.ai.mcp.server.enabled` were not combined with anything.
+
+**Decision needed.**
+
+- **Proposer:**
+  - classify the 66 cases (F-1 to F-20);
+  - state config.oracle.001's meaning of a probe exit 0;
+  - extend config.error.008 with the four beans and the order;
+  - make config.read.007 state the five reads from the table above.
+- **Whoever may edit `crates/` after approval:** item 6 above, with items 1
+  to 5 of the 2026-11-22 entry.
+
+#### Appendix A: the 66 cases, the real `Application`'s config lines (`cases.<id>.application.config_lines`)
+
+One block per distinct output, verbatim from the record (timestamp and PID
+masked, the logger field kept, stack frames removed).
+
+##### F-1: `config.collection.006`
+
+- `config.collection.006` (covers config.collection.006; real `Application` exit 1): `files/application.yaml`: `hapi.fhir.custom_interceptor_classes: a.B\nhapi.fhir.custom_provider_classes: c.D\nhapi.fhir.local_base_urls: http://l\nhapi.fhir.auto_version_reference_at_paths: "Device.patient, Observation.subject"`
+
+```
+<ts>  WARN <pid> --- [hapi-fhir-jpaserver-starter] [           main] ConfigServletWebServerApplicationContext : Exception encountered during context initialization - cancelling refresh attempt: org.springframework.context.ApplicationContextException: Unable to start web server
+<ts>  INFO <pid> --- [hapi-fhir-jpaserver-starter] [           main] .s.b.a.l.ConditionEvaluationReportLogger : 
+
+Error starting ApplicationContext. To display the condition evaluation report re-run your application with 'debug' enabled.
+<ts> ERROR <pid> --- [hapi-fhir-jpaserver-starter] [           main] o.s.boot.SpringApplication               : Application run failed
+
+org.springframework.context.ApplicationContextException: Unable to start web server
+Caused by: org.springframework.boot.web.server.WebServerException: Unable to start embedded Tomcat
+Caused by: org.springframework.beans.factory.UnsatisfiedDependencyException: Error creating bean with name 'hapiServletRegistration' defined in ca.uhn.fhir.jpa.starter.Application: Unsatisfied dependency expressed through method 'hapiServletRegistration' parameter 0: Error creating bean with name 'restfulServer' defined in class path resource [ca/uhn/fhir/jpa/starter/common/StarterJpaConfig.class]: Failed to instantiate [ca.uhn.fhir.rest.server.RestfulServer]: Factory method 'restfulServer' threw exception with message: Interceptor class was not found on classpath: a.B
+Caused by: org.springframework.beans.factory.BeanCreationException: Error creating bean with name 'restfulServer' defined in class path resource [ca/uhn/fhir/jpa/starter/common/StarterJpaConfig.class]: Failed to instantiate [ca.uhn.fhir.rest.server.RestfulServer]: Factory method 'restfulServer' threw exception with message: Interceptor class was not found on classpath: a.B
+Caused by: org.springframework.beans.BeanInstantiationException: Failed to instantiate [ca.uhn.fhir.rest.server.RestfulServer]: Factory method 'restfulServer' threw exception with message: Interceptor class was not found on classpath: a.B
+Caused by: ca.uhn.fhir.context.ConfigurationException: Interceptor class was not found on classpath: a.B
+Caused by: java.lang.ClassNotFoundException: a.B
+```
+
+##### F-2: `all-keys-kebab.yaml`, `all-keys.env`, `all-keys.yaml`
+
+- `all-keys-kebab.yaml` (covers config.key.007; real `Application` exit 1): `files/application.yaml`: 200 lines
+- `all-keys.env` (covers config.key.006; real `Application` exit 1): env: 200 entries
+- `all-keys.yaml` (covers config.key.005; real `Application` exit 1): `files/application.yaml`: 200 lines
+
+```
+<ts>  WARN <pid> --- [hapi-fhir-jpaserver-starter] [           main] ConfigServletWebServerApplicationContext : Exception encountered during context initialization - cancelling refresh attempt: org.springframework.context.ApplicationContextException: Unable to start web server
+<ts>  INFO <pid> --- [hapi-fhir-jpaserver-starter] [           main] .s.b.a.l.ConditionEvaluationReportLogger : 
+
+Error starting ApplicationContext. To display the condition evaluation report re-run your application with 'debug' enabled.
+<ts> ERROR <pid> --- [hapi-fhir-jpaserver-starter] [           main] o.s.boot.SpringApplication               : Application run failed
+
+org.springframework.context.ApplicationContextException: Unable to start web server
+Caused by: org.springframework.boot.web.server.WebServerException: Unable to start embedded Tomcat
+Caused by: org.springframework.beans.factory.BeanCreationException: Error creating bean with name 'cdsHooksRegistrationBean' defined in class path resource [ca/uhn/fhir/jpa/starter/cdshooks/StarterCdsHooksConfig.class]: Failed to instantiate [org.springframework.boot.web.servlet.ServletRegistrationBean]: Factory method 'cdsHooksRegistrationBean' threw exception with message: Error creating bean with name 'ca.uhn.fhir.jpa.starter.cdshooks.CdsHooksServlet': Unsatisfied dependency expressed through field 'cdsServiceRegistry': Error creating bean with name 'ca.uhn.hapi.fhir.cdshooks.config.CdsHooksConfig': Unsatisfied dependency expressed through field 'myMatchUrlService': Error creating bean with name 'matchUrlService': Unsatisfied dependency expressed through field 'mySearchParamRegistry': Error creating bean with name 'searchParamRegistry': Unsatisfied dependency expressed through field 'myStorageSettings': Error creating bean with name 'jpaStorageSettings' defined in class path resource [ca/uhn/fhir/jpa/starter/common/FhirServerConfigCommon.class]: Failed to instantiate [ca.uhn.fhir.jpa.api.config.JpaStorageSettings]: Factory method 'jpaStorageSettings' threw exception with message: Invalid path for auto-version reference at path: auto-version-reference-at-paths-a
+Caused by: org.springframework.beans.BeanInstantiationException: Failed to instantiate [org.springframework.boot.web.servlet.ServletRegistrationBean]: Factory method 'cdsHooksRegistrationBean' threw exception with message: Error creating bean with name 'ca.uhn.fhir.jpa.starter.cdshooks.CdsHooksServlet': Unsatisfied dependency expressed through field 'cdsServiceRegistry': Error creating bean with name 'ca.uhn.hapi.fhir.cdshooks.config.CdsHooksConfig': Unsatisfied dependency expressed through field 'myMatchUrlService': Error creating bean with name 'matchUrlService': Unsatisfied dependency expressed through field 'mySearchParamRegistry': Error creating bean with name 'searchParamRegistry': Unsatisfied dependency expressed through field 'myStorageSettings': Error creating bean with name 'jpaStorageSettings' defined in class path resource [ca/uhn/fhir/jpa/starter/common/FhirServerConfigCommon.class]: Failed to instantiate [ca.uhn.fhir.jpa.api.config.JpaStorageSettings]: Factory method 'jpaStorageSettings' threw exception with message: Invalid path for auto-version reference at path: auto-version-reference-at-paths-a
+Caused by: org.springframework.beans.factory.UnsatisfiedDependencyException: Error creating bean with name 'ca.uhn.fhir.jpa.starter.cdshooks.CdsHooksServlet': Unsatisfied dependency expressed through field 'cdsServiceRegistry': Error creating bean with name 'ca.uhn.hapi.fhir.cdshooks.config.CdsHooksConfig': Unsatisfied dependency expressed through field 'myMatchUrlService': Error creating bean with name 'matchUrlService': Unsatisfied dependency expressed through field 'mySearchParamRegistry': Error creating bean with name 'searchParamRegistry': Unsatisfied dependency expressed through field 'myStorageSettings': Error creating bean with name 'jpaStorageSettings' defined in class path resource [ca/uhn/fhir/jpa/starter/common/FhirServerConfigCommon.class]: Failed to instantiate [ca.uhn.fhir.jpa.api.config.JpaStorageSettings]: Factory method 'jpaStorageSettings' threw exception with message: Invalid path for auto-version reference at path: auto-version-reference-at-paths-a
+Caused by: org.springframework.beans.factory.UnsatisfiedDependencyException: Error creating bean with name 'ca.uhn.hapi.fhir.cdshooks.config.CdsHooksConfig': Unsatisfied dependency expressed through field 'myMatchUrlService': Error creating bean with name 'matchUrlService': Unsatisfied dependency expressed through field 'mySearchParamRegistry': Error creating bean with name 'searchParamRegistry': Unsatisfied dependency expressed through field 'myStorageSettings': Error creating bean with name 'jpaStorageSettings' defined in class path resource [ca/uhn/fhir/jpa/starter/common/FhirServerConfigCommon.class]: Failed to instantiate [ca.uhn.fhir.jpa.api.config.JpaStorageSettings]: Factory method 'jpaStorageSettings' threw exception with message: Invalid path for auto-version reference at path: auto-version-reference-at-paths-a
+Caused by: org.springframework.beans.factory.UnsatisfiedDependencyException: Error creating bean with name 'matchUrlService': Unsatisfied dependency expressed through field 'mySearchParamRegistry': Error creating bean with name 'searchParamRegistry': Unsatisfied dependency expressed through field 'myStorageSettings': Error creating bean with name 'jpaStorageSettings' defined in class path resource [ca/uhn/fhir/jpa/starter/common/FhirServerConfigCommon.class]: Failed to instantiate [ca.uhn.fhir.jpa.api.config.JpaStorageSettings]: Factory method 'jpaStorageSettings' threw exception with message: Invalid path for auto-version reference at path: auto-version-reference-at-paths-a
+Caused by: org.springframework.beans.factory.UnsatisfiedDependencyException: Error creating bean with name 'searchParamRegistry': Unsatisfied dependency expressed through field 'myStorageSettings': Error creating bean with name 'jpaStorageSettings' defined in class path resource [ca/uhn/fhir/jpa/starter/common/FhirServerConfigCommon.class]: Failed to instantiate [ca.uhn.fhir.jpa.api.config.JpaStorageSettings]: Factory method 'jpaStorageSettings' threw exception with message: Invalid path for auto-version reference at path: auto-version-reference-at-paths-a
+Caused by: org.springframework.beans.factory.BeanCreationException: Error creating bean with name 'jpaStorageSettings' defined in class path resource [ca/uhn/fhir/jpa/starter/common/FhirServerConfigCommon.class]: Failed to instantiate [ca.uhn.fhir.jpa.api.config.JpaStorageSettings]: Factory method 'jpaStorageSettings' threw exception with message: Invalid path for auto-version reference at path: auto-version-reference-at-paths-a
+Caused by: org.springframework.beans.BeanInstantiationException: Failed to instantiate [ca.uhn.fhir.jpa.api.config.JpaStorageSettings]: Factory method 'jpaStorageSettings' threw exception with message: Invalid path for auto-version reference at path: auto-version-reference-at-paths-a
+Caused by: java.lang.IllegalArgumentException: Invalid path for auto-version reference at path: auto-version-reference-at-paths-a
+```
+
+##### F-3: `config.yaml.008`
+
+- `config.yaml.008` (covers config.yaml.008; real `Application` exit 1): `files/application.yaml`: `hapi.fhir.server_address:\nhapi.fhir.custom_content_path: ~\nhapi.fhir.mdm_rules_json_location: null\nhapi.fhir.binary_storage_filesystem_base_directory: Null\nhapi.fhir.logger.name: NULL`
+
+```
+<ts>  WARN <pid> --- [hapi-fhir-jpaserver-starter] [           main] ConfigServletWebServerApplicationContext : Exception encountered during context initialization - cancelling refresh attempt: org.springframework.context.ApplicationContextException: Unable to start web server
+<ts>  INFO <pid> --- [hapi-fhir-jpaserver-starter] [           main] .s.b.a.l.ConditionEvaluationReportLogger : 
+
+Error starting ApplicationContext. To display the condition evaluation report re-run your application with 'debug' enabled.
+<ts> ERROR <pid> --- [hapi-fhir-jpaserver-starter] [           main] o.s.boot.SpringApplication               : Application run failed
+
+org.springframework.context.ApplicationContextException: Unable to start web server
+Caused by: org.springframework.boot.web.server.WebServerException: Unable to start embedded Tomcat
+Caused by: org.springframework.beans.factory.UnsatisfiedDependencyException: Error creating bean with name 'hapiServletRegistration' defined in ca.uhn.fhir.jpa.starter.Application: Unsatisfied dependency expressed through method 'hapiServletRegistration' parameter 0: Error creating bean with name 'restfulServer' defined in class path resource [ca/uhn/fhir/jpa/starter/common/StarterJpaConfig.class]: Unsatisfied dependency expressed through method 'restfulServer' parameter 12: Error creating bean with name 'loggingInterceptor' defined in class path resource [ca/uhn/fhir/jpa/starter/common/StarterJpaConfig.class]: Failed to instantiate [ca.uhn.fhir.rest.server.interceptor.LoggingInterceptor]: Factory method 'loggingInterceptor' threw exception with message: Logger name can not be null/empty
+Caused by: org.springframework.beans.factory.UnsatisfiedDependencyException: Error creating bean with name 'restfulServer' defined in class path resource [ca/uhn/fhir/jpa/starter/common/StarterJpaConfig.class]: Unsatisfied dependency expressed through method 'restfulServer' parameter 12: Error creating bean with name 'loggingInterceptor' defined in class path resource [ca/uhn/fhir/jpa/starter/common/StarterJpaConfig.class]: Failed to instantiate [ca.uhn.fhir.rest.server.interceptor.LoggingInterceptor]: Factory method 'loggingInterceptor' threw exception with message: Logger name can not be null/empty
+Caused by: org.springframework.beans.factory.BeanCreationException: Error creating bean with name 'loggingInterceptor' defined in class path resource [ca/uhn/fhir/jpa/starter/common/StarterJpaConfig.class]: Failed to instantiate [ca.uhn.fhir.rest.server.interceptor.LoggingInterceptor]: Factory method 'loggingInterceptor' threw exception with message: Logger name can not be null/empty
+Caused by: org.springframework.beans.BeanInstantiationException: Failed to instantiate [ca.uhn.fhir.rest.server.interceptor.LoggingInterceptor]: Factory method 'loggingInterceptor' threw exception with message: Logger name can not be null/empty
+Caused by: java.lang.IllegalArgumentException: Logger name can not be null/empty
+```
+
+##### F-4: `config.coerce.012`, `config.dump.005`, `config.dump.005-b`, `config.key.010`, `config.object.002`
+
+- `config.coerce.012` (covers config.coerce.012; real `Application` exit 1): `files/application.yaml`: `hapi.fhir.subscription.email.port:\nhapi.fhir.subscription.email.username:`
+- `config.dump.005` (covers config.dump.005; real `Application` exit 1): `files/application.yaml`: `hapi.fhir.subscription.email.password: s3cret`
+- `config.dump.005-b` (covers config.dump.005; real `Application` exit 1): `files/application.yaml`: `hapi.fhir.subscription.email.password: ''`
+- `config.key.010` (covers config.key.010; real `Application` exit 1): `files/application.yaml`: 7 lines
+- `config.object.002` (covers config.object.002; real `Application` exit 1): `files/application.yaml`: `hapi.fhir.subscription.email.username:`
+
+```
+<ts>  WARN <pid> --- [hapi-fhir-jpaserver-starter] [           main] ConfigServletWebServerApplicationContext : Exception encountered during context initialization - cancelling refresh attempt: org.springframework.beans.factory.BeanCreationException: Error creating bean with name 'emailSender' defined in class path resource [ca/uhn/fhir/jpa/starter/common/FhirServerConfigCommon.class]: Failed to instantiate [ca.uhn.fhir.jpa.subscription.match.deliver.email.IEmailSender]: Factory method 'emailSender' threw exception with message: SMTP server host missing
+<ts>  INFO <pid> --- [hapi-fhir-jpaserver-starter] [           main] .s.b.a.l.ConditionEvaluationReportLogger : 
+
+Error starting ApplicationContext. To display the condition evaluation report re-run your application with 'debug' enabled.
+<ts> ERROR <pid> --- [hapi-fhir-jpaserver-starter] [           main] o.s.boot.SpringApplication               : Application run failed
+
+org.springframework.beans.factory.BeanCreationException: Error creating bean with name 'emailSender' defined in class path resource [ca/uhn/fhir/jpa/starter/common/FhirServerConfigCommon.class]: Failed to instantiate [ca.uhn.fhir.jpa.subscription.match.deliver.email.IEmailSender]: Factory method 'emailSender' threw exception with message: SMTP server host missing
+Caused by: org.springframework.beans.BeanInstantiationException: Failed to instantiate [ca.uhn.fhir.jpa.subscription.match.deliver.email.IEmailSender]: Factory method 'emailSender' threw exception with message: SMTP server host missing
+Caused by: java.lang.IllegalArgumentException: SMTP server host missing
+```
+
+##### F-5: `config.gate.009-c`
+
+- `config.gate.009-c` (covers config.gate.009; real `Application` exit 1): `files/application.yaml`: `hapi.fhir.binary_storage_mode: "filesystem"`
+
+```
+<ts>  WARN <pid> --- [hapi-fhir-jpaserver-starter] [           main] ConfigServletWebServerApplicationContext : Exception encountered during context initialization - cancelling refresh attempt: org.springframework.context.ApplicationContextException: Unable to start web server
+<ts>  INFO <pid> --- [hapi-fhir-jpaserver-starter] [           main] .s.b.a.l.ConditionEvaluationReportLogger : 
+
+Error starting ApplicationContext. To display the condition evaluation report re-run your application with 'debug' enabled.
+<ts> ERROR <pid> --- [hapi-fhir-jpaserver-starter] [           main] o.s.boot.SpringApplication               : Application run failed
+
+org.springframework.context.ApplicationContextException: Unable to start web server
+Caused by: org.springframework.boot.web.server.WebServerException: Unable to start embedded Tomcat
+Caused by: org.springframework.beans.factory.UnsatisfiedDependencyException: Error creating bean with name 'hapiServletRegistration' defined in ca.uhn.fhir.jpa.starter.Application: Unsatisfied dependency expressed through method 'hapiServletRegistration' parameter 0: Error creating bean with name 'restfulServer' defined in class path resource [ca/uhn/fhir/jpa/starter/common/StarterJpaConfig.class]: Unsatisfied dependency expressed through method 'restfulServer' parameter 10: Error creating bean with name 'myJpaValidationSupportChain': Unsatisfied dependency expressed through field 'myNpmJpaValidationSupport': Error creating bean with name 'npmJpaValidationSupport': Unsatisfied dependency expressed through field 'myHapiPackageCacheManager': Error creating bean with name 'loaderWithCache': Unsatisfied dependency expressed through field 'myBinaryStorageSvc': Error creating bean with name 'filesystemBinaryStorageSvc' defined in class path resource [ca/uhn/fhir/jpa/starter/common/FhirServerConfigCommon.class]: Failed to instantiate [ca.uhn.fhir.jpa.binstore.FilesystemBinaryStorageSvcImpl]: Factory method 'filesystemBinaryStorageSvc' threw exception with message: binary_storage_filesystem_base_directory must be provided when binary_storage_mode=FILESYSTEM
+Caused by: org.springframework.beans.factory.UnsatisfiedDependencyException: Error creating bean with name 'restfulServer' defined in class path resource [ca/uhn/fhir/jpa/starter/common/StarterJpaConfig.class]: Unsatisfied dependency expressed through method 'restfulServer' parameter 10: Error creating bean with name 'myJpaValidationSupportChain': Unsatisfied dependency expressed through field 'myNpmJpaValidationSupport': Error creating bean with name 'npmJpaValidationSupport': Unsatisfied dependency expressed through field 'myHapiPackageCacheManager': Error creating bean with name 'loaderWithCache': Unsatisfied dependency expressed through field 'myBinaryStorageSvc': Error creating bean with name 'filesystemBinaryStorageSvc' defined in class path resource [ca/uhn/fhir/jpa/starter/common/FhirServerConfigCommon.class]: Failed to instantiate [ca.uhn.fhir.jpa.binstore.FilesystemBinaryStorageSvcImpl]: Factory method 'filesystemBinaryStorageSvc' threw exception with message: binary_storage_filesystem_base_directory must be provided when binary_storage_mode=FILESYSTEM
+Caused by: org.springframework.beans.factory.UnsatisfiedDependencyException: Error creating bean with name 'myJpaValidationSupportChain': Unsatisfied dependency expressed through field 'myNpmJpaValidationSupport': Error creating bean with name 'npmJpaValidationSupport': Unsatisfied dependency expressed through field 'myHapiPackageCacheManager': Error creating bean with name 'loaderWithCache': Unsatisfied dependency expressed through field 'myBinaryStorageSvc': Error creating bean with name 'filesystemBinaryStorageSvc' defined in class path resource [ca/uhn/fhir/jpa/starter/common/FhirServerConfigCommon.class]: Failed to instantiate [ca.uhn.fhir.jpa.binstore.FilesystemBinaryStorageSvcImpl]: Factory method 'filesystemBinaryStorageSvc' threw exception with message: binary_storage_filesystem_base_directory must be provided when binary_storage_mode=FILESYSTEM
+Caused by: org.springframework.beans.factory.UnsatisfiedDependencyException: Error creating bean with name 'npmJpaValidationSupport': Unsatisfied dependency expressed through field 'myHapiPackageCacheManager': Error creating bean with name 'loaderWithCache': Unsatisfied dependency expressed through field 'myBinaryStorageSvc': Error creating bean with name 'filesystemBinaryStorageSvc' defined in class path resource [ca/uhn/fhir/jpa/starter/common/FhirServerConfigCommon.class]: Failed to instantiate [ca.uhn.fhir.jpa.binstore.FilesystemBinaryStorageSvcImpl]: Factory method 'filesystemBinaryStorageSvc' threw exception with message: binary_storage_filesystem_base_directory must be provided when binary_storage_mode=FILESYSTEM
+Caused by: org.springframework.beans.factory.UnsatisfiedDependencyException: Error creating bean with name 'loaderWithCache': Unsatisfied dependency expressed through field 'myBinaryStorageSvc': Error creating bean with name 'filesystemBinaryStorageSvc' defined in class path resource [ca/uhn/fhir/jpa/starter/common/FhirServerConfigCommon.class]: Failed to instantiate [ca.uhn.fhir.jpa.binstore.FilesystemBinaryStorageSvcImpl]: Factory method 'filesystemBinaryStorageSvc' threw exception with message: binary_storage_filesystem_base_directory must be provided when binary_storage_mode=FILESYSTEM
+Caused by: org.springframework.beans.factory.BeanCreationException: Error creating bean with name 'filesystemBinaryStorageSvc' defined in class path resource [ca/uhn/fhir/jpa/starter/common/FhirServerConfigCommon.class]: Failed to instantiate [ca.uhn.fhir.jpa.binstore.FilesystemBinaryStorageSvcImpl]: Factory method 'filesystemBinaryStorageSvc' threw exception with message: binary_storage_filesystem_base_directory must be provided when binary_storage_mode=FILESYSTEM
+Caused by: org.springframework.beans.BeanInstantiationException: Failed to instantiate [ca.uhn.fhir.jpa.binstore.FilesystemBinaryStorageSvcImpl]: Factory method 'filesystemBinaryStorageSvc' threw exception with message: binary_storage_filesystem_base_directory must be provided when binary_storage_mode=FILESYSTEM
+Caused by: java.lang.IllegalArgumentException: binary_storage_filesystem_base_directory must be provided when binary_storage_mode=FILESYSTEM
+```
+
+##### F-6: `config.gate.020-d`
+
+- `config.gate.020-d` (covers config.gate.020; real `Application` exit 1): `files/application.yaml`: `spring.elasticsearch.uris: []`
+
+```
+<ts>  WARN <pid> --- [hapi-fhir-jpaserver-starter] [           main] ConfigServletWebServerApplicationContext : Exception encountered during context initialization - cancelling refresh attempt: org.springframework.context.ApplicationContextException: Unable to start web server
+<ts>  INFO <pid> --- [hapi-fhir-jpaserver-starter] [           main] .s.b.a.l.ConditionEvaluationReportLogger : 
+
+Error starting ApplicationContext. To display the condition evaluation report re-run your application with 'debug' enabled.
+<ts> ERROR <pid> --- [hapi-fhir-jpaserver-starter] [           main] o.s.boot.SpringApplication               : Application run failed
+
+org.springframework.context.ApplicationContextException: Unable to start web server
+Caused by: org.springframework.boot.web.server.WebServerException: Unable to start embedded Tomcat
+Caused by: org.springframework.beans.factory.UnsatisfiedDependencyException: Error creating bean with name 'hapiServletRegistration' defined in ca.uhn.fhir.jpa.starter.Application: Unsatisfied dependency expressed through method 'hapiServletRegistration' parameter 0: Error creating bean with name 'restfulServer' defined in class path resource [ca/uhn/fhir/jpa/starter/common/StarterJpaConfig.class]: Unsatisfied dependency expressed through method 'restfulServer' parameter 1: Error creating bean with name 'mySystemDaoR4': Injection of persistence dependencies failed
+Caused by: org.springframework.beans.factory.UnsatisfiedDependencyException: Error creating bean with name 'restfulServer' defined in class path resource [ca/uhn/fhir/jpa/starter/common/StarterJpaConfig.class]: Unsatisfied dependency expressed through method 'restfulServer' parameter 1: Error creating bean with name 'mySystemDaoR4': Injection of persistence dependencies failed
+Caused by: org.springframework.beans.factory.BeanCreationException: Error creating bean with name 'mySystemDaoR4': Injection of persistence dependencies failed
+Caused by: org.springframework.beans.factory.UnsatisfiedDependencyException: Error creating bean with name 'entityManagerFactory' defined in class path resource [ca/uhn/fhir/jpa/starter/common/StarterJpaConfig.class]: Unsatisfied dependency expressed through method 'entityManagerFactory' parameter 0: Error creating bean with name 'elasticsearchBootSvcImpl' defined in URL [jar:file:/app/main.war!/WEB-INF/classes!/ca/uhn/fhir/jpa/starter/elastic/ElasticsearchBootSvcImpl.class]: Unsatisfied dependency expressed through constructor parameter 0: Error creating bean with name 'elasticsearchClient' defined in class path resource [ca/uhn/fhir/jpa/starter/elastic/ElasticsearchConfig.class]: Unsatisfied dependency expressed through method 'elasticsearchClient' parameter 0: Error creating bean with name 'elasticsearchRestClient' defined in class path resource [ca/uhn/fhir/jpa/starter/elastic/ElasticsearchConfig.class]: Failed to instantiate [org.elasticsearch.client.RestClient]: Factory method 'elasticsearchRestClient' threw exception with message: hosts must not be null nor empty
+Caused by: org.springframework.beans.factory.UnsatisfiedDependencyException: Error creating bean with name 'elasticsearchBootSvcImpl' defined in URL [jar:file:/app/main.war!/WEB-INF/classes!/ca/uhn/fhir/jpa/starter/elastic/ElasticsearchBootSvcImpl.class]: Unsatisfied dependency expressed through constructor parameter 0: Error creating bean with name 'elasticsearchClient' defined in class path resource [ca/uhn/fhir/jpa/starter/elastic/ElasticsearchConfig.class]: Unsatisfied dependency expressed through method 'elasticsearchClient' parameter 0: Error creating bean with name 'elasticsearchRestClient' defined in class path resource [ca/uhn/fhir/jpa/starter/elastic/ElasticsearchConfig.class]: Failed to instantiate [org.elasticsearch.client.RestClient]: Factory method 'elasticsearchRestClient' threw exception with message: hosts must not be null nor empty
+Caused by: org.springframework.beans.factory.UnsatisfiedDependencyException: Error creating bean with name 'elasticsearchClient' defined in class path resource [ca/uhn/fhir/jpa/starter/elastic/ElasticsearchConfig.class]: Unsatisfied dependency expressed through method 'elasticsearchClient' parameter 0: Error creating bean with name 'elasticsearchRestClient' defined in class path resource [ca/uhn/fhir/jpa/starter/elastic/ElasticsearchConfig.class]: Failed to instantiate [org.elasticsearch.client.RestClient]: Factory method 'elasticsearchRestClient' threw exception with message: hosts must not be null nor empty
+Caused by: org.springframework.beans.factory.BeanCreationException: Error creating bean with name 'elasticsearchRestClient' defined in class path resource [ca/uhn/fhir/jpa/starter/elastic/ElasticsearchConfig.class]: Failed to instantiate [org.elasticsearch.client.RestClient]: Factory method 'elasticsearchRestClient' threw exception with message: hosts must not be null nor empty
+Caused by: org.springframework.beans.BeanInstantiationException: Failed to instantiate [org.elasticsearch.client.RestClient]: Factory method 'elasticsearchRestClient' threw exception with message: hosts must not be null nor empty
+Caused by: java.lang.IllegalArgumentException: hosts must not be null nor empty
+```
+
+##### F-7: `config.coerce.007-c`
+
+- `config.coerce.007-c` (covers config.coerce.007; real `Application` exit 1): `files/application.yaml`: `hapi.fhir.default_page_size: "-0x10"`
+
+```
+<ts>  WARN <pid> --- [hapi-fhir-jpaserver-starter] [           main] ConfigServletWebServerApplicationContext : Exception encountered during context initialization - cancelling refresh attempt: org.springframework.context.ApplicationContextException: Unable to start web server
+<ts>  INFO <pid> --- [hapi-fhir-jpaserver-starter] [           main] .s.b.a.l.ConditionEvaluationReportLogger : 
+
+Error starting ApplicationContext. To display the condition evaluation report re-run your application with 'debug' enabled.
+<ts> ERROR <pid> --- [hapi-fhir-jpaserver-starter] [           main] o.s.boot.SpringApplication               : Application run failed
+
+org.springframework.context.ApplicationContextException: Unable to start web server
+Caused by: org.springframework.boot.web.server.WebServerException: Unable to start embedded Tomcat
+Caused by: org.springframework.beans.factory.UnsatisfiedDependencyException: Error creating bean with name 'hapiServletRegistration' defined in ca.uhn.fhir.jpa.starter.Application: Unsatisfied dependency expressed through method 'hapiServletRegistration' parameter 0: Error creating bean with name 'restfulServer' defined in class path resource [ca/uhn/fhir/jpa/starter/common/StarterJpaConfig.class]: Unsatisfied dependency expressed through method 'restfulServer' parameter 11: Error creating bean with name 'databaseBackedPagingProvider' defined in class path resource [ca/uhn/fhir/jpa/starter/common/StarterJpaConfig.class]: Failed to instantiate [ca.uhn.fhir.jpa.search.DatabaseBackedPagingProvider]: Factory method 'databaseBackedPagingProvider' threw exception with message: size must be greater than 0
+Caused by: org.springframework.beans.factory.UnsatisfiedDependencyException: Error creating bean with name 'restfulServer' defined in class path resource [ca/uhn/fhir/jpa/starter/common/StarterJpaConfig.class]: Unsatisfied dependency expressed through method 'restfulServer' parameter 11: Error creating bean with name 'databaseBackedPagingProvider' defined in class path resource [ca/uhn/fhir/jpa/starter/common/StarterJpaConfig.class]: Failed to instantiate [ca.uhn.fhir.jpa.search.DatabaseBackedPagingProvider]: Factory method 'databaseBackedPagingProvider' threw exception with message: size must be greater than 0
+Caused by: org.springframework.beans.factory.BeanCreationException: Error creating bean with name 'databaseBackedPagingProvider' defined in class path resource [ca/uhn/fhir/jpa/starter/common/StarterJpaConfig.class]: Failed to instantiate [ca.uhn.fhir.jpa.search.DatabaseBackedPagingProvider]: Factory method 'databaseBackedPagingProvider' threw exception with message: size must be greater than 0
+Caused by: org.springframework.beans.BeanInstantiationException: Failed to instantiate [ca.uhn.fhir.jpa.search.DatabaseBackedPagingProvider]: Factory method 'databaseBackedPagingProvider' threw exception with message: size must be greater than 0
+Caused by: java.lang.IllegalArgumentException: size must be greater than 0
+```
+
+##### F-8: `config.collection.003`
+
+- `config.collection.003` (covers config.collection.003; real `Application` exit 1): `files/application.yaml`: `hapi.fhir.tester.other.name: Other`
+
+```
+<ts>  WARN <pid> --- [hapi-fhir-jpaserver-starter] [           main] ConfigServletWebServerApplicationContext : Exception encountered during context initialization - cancelling refresh attempt: org.springframework.beans.factory.UnsatisfiedDependencyException: Error creating bean with name 'controller': Unsatisfied dependency expressed through field 'myConfig': Error creating bean with name 'testerConfig' defined in class path resource [ca/uhn/fhir/jpa/starter/common/FhirTesterConfig.class]: Failed to instantiate [ca.uhn.fhir.to.TesterConfig]: Factory method 'testerConfig' threw exception with message: theBaseUrl can not be blank
+<ts>  INFO <pid> --- [hapi-fhir-jpaserver-starter] [           main] .s.b.a.l.ConditionEvaluationReportLogger : 
+
+Error starting ApplicationContext. To display the condition evaluation report re-run your application with 'debug' enabled.
+<ts> ERROR <pid> --- [hapi-fhir-jpaserver-starter] [           main] o.s.boot.SpringApplication               : Application run failed
+
+org.springframework.beans.factory.UnsatisfiedDependencyException: Error creating bean with name 'controller': Unsatisfied dependency expressed through field 'myConfig': Error creating bean with name 'testerConfig' defined in class path resource [ca/uhn/fhir/jpa/starter/common/FhirTesterConfig.class]: Failed to instantiate [ca.uhn.fhir.to.TesterConfig]: Factory method 'testerConfig' threw exception with message: theBaseUrl can not be blank
+Caused by: org.springframework.beans.factory.BeanCreationException: Error creating bean with name 'testerConfig' defined in class path resource [ca/uhn/fhir/jpa/starter/common/FhirTesterConfig.class]: Failed to instantiate [ca.uhn.fhir.to.TesterConfig]: Factory method 'testerConfig' threw exception with message: theBaseUrl can not be blank
+Caused by: org.springframework.beans.BeanInstantiationException: Failed to instantiate [ca.uhn.fhir.to.TesterConfig]: Factory method 'testerConfig' threw exception with message: theBaseUrl can not be blank
+Caused by: java.lang.NullPointerException: theBaseUrl can not be blank
+```
+
+##### F-9: `config.coerce.017-e`, `config.coerce.024`, `config.key.012`, `config.relaxed.003`
+
+- `config.coerce.017-e` (covers config.coerce.017; real `Application` exit 1): `files/application.yaml`: `hapi.fhir.implementationguides.x.installMode: store-and-install`
+- `config.coerce.024` (covers config.coerce.024; real `Application` exit 1): `files/application.yaml`: `hapi.fhir.implementationguides.x.additional_resource_folders: [ex1, ex1]`
+- `config.key.012` (covers config.key.012; real `Application` exit 1): `files/application.yaml`: `hapi.fhir.implementationguides.x.packageContents: "65,66"`
+- `config.relaxed.003` (covers config.relaxed.003; real `Application` exit 1): `files/application.yaml`: 9 lines
+
+```
+<ts>  WARN <pid> --- [hapi-fhir-jpaserver-starter] [           main] ConfigServletWebServerApplicationContext : Exception encountered during context initialization - cancelling refresh attempt: org.springframework.context.ApplicationContextException: Unable to start web server
+<ts>  INFO <pid> --- [hapi-fhir-jpaserver-starter] [           main] .s.b.a.l.ConditionEvaluationReportLogger : 
+
+Error starting ApplicationContext. To display the condition evaluation report re-run your application with 'debug' enabled.
+<ts> ERROR <pid> --- [hapi-fhir-jpaserver-starter] [           main] o.s.boot.SpringApplication               : Application run failed
+
+org.springframework.context.ApplicationContextException: Unable to start web server
+Caused by: org.springframework.boot.web.server.WebServerException: Unable to start embedded Tomcat
+Caused by: org.springframework.beans.factory.UnsatisfiedDependencyException: Error creating bean with name 'hapiServletRegistration' defined in ca.uhn.fhir.jpa.starter.Application: Unsatisfied dependency expressed through method 'hapiServletRegistration' parameter 0: Error creating bean with name 'restfulServer' defined in class path resource [ca/uhn/fhir/jpa/starter/common/StarterJpaConfig.class]: Unsatisfied dependency expressed through method 'restfulServer' parameter 25: Error creating bean with name 'packageInstaller' defined in class path resource [ca/uhn/fhir/jpa/starter/common/StarterJpaConfig.class]: Failed to instantiate [ca.uhn.fhir.jpa.packages.IPackageInstallerSvc]: Factory method 'packageInstaller' threw exception with message: thePackageId must not be blank
+Related cause: org.springframework.beans.factory.UnsatisfiedDependencyException: Error creating bean with name 'installPackageJobDefinition' defined in ca.uhn.fhir.batch2.jobs.installpackage.InstallPackageAppCtx: Unsatisfied dependency expressed through method 'installPackageJobDefinition' parameter 4: Error creating bean with name 'packageInstaller': Requested bean is currently in creation: Is there an unresolvable circular reference or an asynchronous initialization dependency?
+Caused by: org.springframework.beans.factory.UnsatisfiedDependencyException: Error creating bean with name 'restfulServer' defined in class path resource [ca/uhn/fhir/jpa/starter/common/StarterJpaConfig.class]: Unsatisfied dependency expressed through method 'restfulServer' parameter 25: Error creating bean with name 'packageInstaller' defined in class path resource [ca/uhn/fhir/jpa/starter/common/StarterJpaConfig.class]: Failed to instantiate [ca.uhn.fhir.jpa.packages.IPackageInstallerSvc]: Factory method 'packageInstaller' threw exception with message: thePackageId must not be blank
+Caused by: org.springframework.beans.factory.BeanCreationException: Error creating bean with name 'packageInstaller' defined in class path resource [ca/uhn/fhir/jpa/starter/common/StarterJpaConfig.class]: Failed to instantiate [ca.uhn.fhir.jpa.packages.IPackageInstallerSvc]: Factory method 'packageInstaller' threw exception with message: thePackageId must not be blank
+Caused by: org.springframework.beans.BeanInstantiationException: Failed to instantiate [ca.uhn.fhir.jpa.packages.IPackageInstallerSvc]: Factory method 'packageInstaller' threw exception with message: thePackageId must not be blank
+Caused by: java.lang.NullPointerException: thePackageId must not be blank
+```
+
+##### F-10: `config.collection.004`, `config.env.009`, `config.env.009-b`, `config.gate.013-b`, `config.key.009`, `config.key.009-b`, `config.yaml.012`, `config.yaml.013`
+
+- `config.collection.004` (covers config.collection.004; real `Application` exit 1): `files/application.yaml`: `hapi.fhir.implementationguides:\n  ips_1_0_0:\n    name: ips\n  Swiss:\n    name: swiss\nhapi.fhir.cr.cql.namespaces:\n  Mixed_Key: http://m`
+- `config.env.009` (covers config.env.009; real `Application` exit 1): env: `HAPI_FHIR_IMPLEMENTATIONGUIDES_SWISS_NAME=swiss.x | HAPI_FHIR_CR_CQL_NAMESPACES_FOO=http://foo`
+- `config.env.009-b` (covers config.env.009; real `Application` exit 1): env: `hapi.fhir.implementationguides.someIg.name=com.org.something`
+- `config.gate.013-b` (covers config.gate.013; real `Application` exit 1): `files/application.yaml`: `hapi.fhir.implementationguides.x.name: x`
+- `config.key.009` (covers config.key.009, config.gate.013; real `Application` exit 1): `files/application.yaml`: `hapi.fhir.implementationguides.x.name: x`
+- `config.key.009-b` (covers config.key.009; real `Application` exit 1): `files/application.yaml`: `hapi.fhir.implementationguides.x:\n  name: x\n  installResourceTypes: CodeSystem, ValueSet\n  fetch_dependencies: yes\n  reloadExisting: false`
+- `config.yaml.012` (covers config.yaml.012; real `Application` exit 1): `files/application.yaml`: `hapi.fhir.implementationguides:\n  no:\n    name: x`
+- `config.yaml.013` (covers config.yaml.013; real `Application` exit 1): `files/application.yaml`: `hapi.fhir.implementationguides:\n  "[a.b]":\n    name: e`
+
+```
+<ts>  WARN <pid> --- [hapi-fhir-jpaserver-starter] [           main] ConfigServletWebServerApplicationContext : Exception encountered during context initialization - cancelling refresh attempt: org.springframework.context.ApplicationContextException: Unable to start web server
+<ts>  INFO <pid> --- [hapi-fhir-jpaserver-starter] [           main] .s.b.a.l.ConditionEvaluationReportLogger : 
+
+Error starting ApplicationContext. To display the condition evaluation report re-run your application with 'debug' enabled.
+<ts> ERROR <pid> --- [hapi-fhir-jpaserver-starter] [           main] o.s.boot.SpringApplication               : Application run failed
+
+org.springframework.context.ApplicationContextException: Unable to start web server
+Caused by: org.springframework.boot.web.server.WebServerException: Unable to start embedded Tomcat
+Caused by: org.springframework.beans.factory.UnsatisfiedDependencyException: Error creating bean with name 'hapiServletRegistration' defined in ca.uhn.fhir.jpa.starter.Application: Unsatisfied dependency expressed through method 'hapiServletRegistration' parameter 0: Error creating bean with name 'restfulServer' defined in class path resource [ca/uhn/fhir/jpa/starter/common/StarterJpaConfig.class]: Unsatisfied dependency expressed through method 'restfulServer' parameter 25: Error creating bean with name 'packageInstaller' defined in class path resource [ca/uhn/fhir/jpa/starter/common/StarterJpaConfig.class]: Failed to instantiate [ca.uhn.fhir.jpa.packages.IPackageInstallerSvc]: Factory method 'packageInstaller' threw exception with message: thePackageVersion must not be blank
+Related cause: org.springframework.beans.factory.UnsatisfiedDependencyException: Error creating bean with name 'installPackageJobDefinition' defined in ca.uhn.fhir.batch2.jobs.installpackage.InstallPackageAppCtx: Unsatisfied dependency expressed through method 'installPackageJobDefinition' parameter 4: Error creating bean with name 'packageInstaller': Requested bean is currently in creation: Is there an unresolvable circular reference or an asynchronous initialization dependency?
+Caused by: org.springframework.beans.factory.UnsatisfiedDependencyException: Error creating bean with name 'restfulServer' defined in class path resource [ca/uhn/fhir/jpa/starter/common/StarterJpaConfig.class]: Unsatisfied dependency expressed through method 'restfulServer' parameter 25: Error creating bean with name 'packageInstaller' defined in class path resource [ca/uhn/fhir/jpa/starter/common/StarterJpaConfig.class]: Failed to instantiate [ca.uhn.fhir.jpa.packages.IPackageInstallerSvc]: Factory method 'packageInstaller' threw exception with message: thePackageVersion must not be blank
+Caused by: org.springframework.beans.factory.BeanCreationException: Error creating bean with name 'packageInstaller' defined in class path resource [ca/uhn/fhir/jpa/starter/common/StarterJpaConfig.class]: Failed to instantiate [ca.uhn.fhir.jpa.packages.IPackageInstallerSvc]: Factory method 'packageInstaller' threw exception with message: thePackageVersion must not be blank
+Caused by: org.springframework.beans.BeanInstantiationException: Failed to instantiate [ca.uhn.fhir.jpa.packages.IPackageInstallerSvc]: Factory method 'packageInstaller' threw exception with message: thePackageVersion must not be blank
+Caused by: java.lang.NullPointerException: thePackageVersion must not be blank
+```
+
+##### F-11: `config.gate.020-b`, `config.gate.020-c`, `config.gate.024`, `config.gate.024-b`, `config.gate.024-c`, `config.profile.002`
+
+- `config.gate.020-b` (covers config.gate.020; real `Application` exit 1): env: `spring.elasticsearch.connection-timeout=5s`
+- `config.gate.020-c` (covers config.gate.020; real `Application` exit 1): `files/application.yaml`: `spring.elasticsearch.restclient.sniffer.interval: 10s`
+- `config.gate.024` (covers config.gate.024; real `Application` exit 1): `files/application.yaml`: `spring.elasticsearch.connection-timeout: PT5S\nspring.elasticsearch.socket-timeout: pt5s\nspring.elasticsearch.restclient.sniffer.interval: 10\nspring.elasticsearch.restclient.sniffer.delay-after-failure: -5s`
+- `config.gate.024-b` (covers config.gate.024; real `Application` exit 1): `files/application.yaml`: `spring.elasticsearch.connection-timeout: 5S\nspring.elasticsearch.socket-timeout: 3d\nspring.elasticsearch.restclient.sniffer.interval: 500ms\nspring.elasticsearch.restclient.sniffer.delay-after-failure: 7us`
+- `config.gate.024-c` (covers config.gate.024; real `Application` exit 1): `files/application.yaml`: `spring.elasticsearch.connection-timeout: 9ns\nspring.elasticsearch.socket-timeout: 1m\nspring.elasticsearch.restclient.sniffer.interval: 2h\nspring.elasticsearch.restclient.sniffer.delay-after-failure: 5m`
+- `config.profile.002` (covers config.profile.002, config.gate.020; real `Application` exit 1): env: `SPRING_PROFILES_ACTIVE=elastic`
+
+```
+<ts>  WARN <pid> --- [hapi-fhir-jpaserver-starter] [           main] ConfigServletWebServerApplicationContext : Exception encountered during context initialization - cancelling refresh attempt: org.springframework.context.ApplicationContextException: Unable to start web server
+<ts>  INFO <pid> --- [hapi-fhir-jpaserver-starter] [           main] .s.b.a.l.ConditionEvaluationReportLogger : 
+
+Error starting ApplicationContext. To display the condition evaluation report re-run your application with 'debug' enabled.
+<ts> ERROR <pid> --- [hapi-fhir-jpaserver-starter] [           main] o.s.boot.SpringApplication               : Application run failed
+
+org.springframework.context.ApplicationContextException: Unable to start web server
+Caused by: org.springframework.boot.web.server.WebServerException: Unable to start embedded Tomcat
+Caused by: org.springframework.beans.factory.UnsatisfiedDependencyException: Error creating bean with name 'hapiServletRegistration' defined in ca.uhn.fhir.jpa.starter.Application: Unsatisfied dependency expressed through method 'hapiServletRegistration' parameter 0: Error creating bean with name 'restfulServer' defined in class path resource [ca/uhn/fhir/jpa/starter/common/StarterJpaConfig.class]: Unsatisfied dependency expressed through method 'restfulServer' parameter 1: Error creating bean with name 'mySystemDaoR4': Injection of persistence dependencies failed
+Caused by: org.springframework.beans.factory.UnsatisfiedDependencyException: Error creating bean with name 'restfulServer' defined in class path resource [ca/uhn/fhir/jpa/starter/common/StarterJpaConfig.class]: Unsatisfied dependency expressed through method 'restfulServer' parameter 1: Error creating bean with name 'mySystemDaoR4': Injection of persistence dependencies failed
+Caused by: org.springframework.beans.factory.BeanCreationException: Error creating bean with name 'mySystemDaoR4': Injection of persistence dependencies failed
+Caused by: org.springframework.beans.factory.UnsatisfiedDependencyException: Error creating bean with name 'entityManagerFactory' defined in class path resource [ca/uhn/fhir/jpa/starter/common/StarterJpaConfig.class]: Unsatisfied dependency expressed through method 'entityManagerFactory' parameter 0: Error creating bean with name 'elasticsearchBootSvcImpl' defined in URL [jar:file:/app/main.war!/WEB-INF/classes!/ca/uhn/fhir/jpa/starter/elastic/ElasticsearchBootSvcImpl.class]: Failed to instantiate [ca.uhn.fhir.jpa.starter.elastic.ElasticsearchBootSvcImpl]: Constructor threw exception
+Caused by: org.springframework.beans.factory.BeanCreationException: Error creating bean with name 'elasticsearchBootSvcImpl' defined in URL [jar:file:/app/main.war!/WEB-INF/classes!/ca/uhn/fhir/jpa/starter/elastic/ElasticsearchBootSvcImpl.class]: Failed to instantiate [ca.uhn.fhir.jpa.starter.elastic.ElasticsearchBootSvcImpl]: Constructor threw exception
+Caused by: org.springframework.beans.BeanInstantiationException: Failed to instantiate [ca.uhn.fhir.jpa.starter.elastic.ElasticsearchBootSvcImpl]: Constructor threw exception
+Caused by: java.lang.RuntimeException: HAPI-1175: Failed to create document index
+Caused by: java.net.ConnectException: Connection refused
+Caused by: java.net.ConnectException: Connection refused
+```
+
+##### F-12: `config.gate.024-d`
+
+- `config.gate.024-d` (covers config.gate.024; real `Application` exit 1): `files/application.yaml`: 6 lines
+
+```
+<ts>  WARN <pid> --- [hapi-fhir-jpaserver-starter] [           main] ConfigServletWebServerApplicationContext : Exception encountered during context initialization - cancelling refresh attempt: org.springframework.context.ApplicationContextException: Unable to start web server
+<ts>  INFO <pid> --- [hapi-fhir-jpaserver-starter] [           main] .s.b.a.l.ConditionEvaluationReportLogger : 
+
+Error starting ApplicationContext. To display the condition evaluation report re-run your application with 'debug' enabled.
+<ts> ERROR <pid> --- [hapi-fhir-jpaserver-starter] [           main] o.s.boot.SpringApplication               : Application run failed
+
+org.springframework.context.ApplicationContextException: Unable to start web server
+Caused by: org.springframework.boot.web.server.WebServerException: Unable to start embedded Tomcat
+Caused by: org.springframework.beans.factory.UnsatisfiedDependencyException: Error creating bean with name 'hapiServletRegistration' defined in ca.uhn.fhir.jpa.starter.Application: Unsatisfied dependency expressed through method 'hapiServletRegistration' parameter 0: Error creating bean with name 'restfulServer' defined in class path resource [ca/uhn/fhir/jpa/starter/common/StarterJpaConfig.class]: Unsatisfied dependency expressed through method 'restfulServer' parameter 1: Error creating bean with name 'mySystemDaoR4': Injection of persistence dependencies failed
+Caused by: org.springframework.beans.factory.UnsatisfiedDependencyException: Error creating bean with name 'restfulServer' defined in class path resource [ca/uhn/fhir/jpa/starter/common/StarterJpaConfig.class]: Unsatisfied dependency expressed through method 'restfulServer' parameter 1: Error creating bean with name 'mySystemDaoR4': Injection of persistence dependencies failed
+Caused by: org.springframework.beans.factory.BeanCreationException: Error creating bean with name 'mySystemDaoR4': Injection of persistence dependencies failed
+Caused by: org.springframework.beans.factory.UnsatisfiedDependencyException: Error creating bean with name 'entityManagerFactory' defined in class path resource [ca/uhn/fhir/jpa/starter/common/StarterJpaConfig.class]: Unsatisfied dependency expressed through method 'entityManagerFactory' parameter 0: Error creating bean with name 'elasticsearchBootSvcImpl' defined in URL [jar:file:/app/main.war!/WEB-INF/classes!/ca/uhn/fhir/jpa/starter/elastic/ElasticsearchBootSvcImpl.class]: Failed to instantiate [ca.uhn.fhir.jpa.starter.elastic.ElasticsearchBootSvcImpl]: Constructor threw exception
+Caused by: org.springframework.beans.factory.BeanCreationException: Error creating bean with name 'elasticsearchBootSvcImpl' defined in URL [jar:file:/app/main.war!/WEB-INF/classes!/ca/uhn/fhir/jpa/starter/elastic/ElasticsearchBootSvcImpl.class]: Failed to instantiate [ca.uhn.fhir.jpa.starter.elastic.ElasticsearchBootSvcImpl]: Constructor threw exception
+Caused by: org.springframework.beans.BeanInstantiationException: Failed to instantiate [ca.uhn.fhir.jpa.starter.elastic.ElasticsearchBootSvcImpl]: Constructor threw exception
+Caused by: java.lang.RuntimeException: HAPI-1175: Failed to create document index
+Caused by: java.io.IOException: b: Name or service not known
+	Suppressed: java.io.IOException: a: Name or service not known
+	Caused by: java.net.UnknownHostException: a: Name or service not known
+Caused by: java.net.UnknownHostException: b: Name or service not known
+```
+
+##### F-13: `config.env.013`
+
+- `config.env.013` (covers config.env.013, config.unknown.001; real `Application` exit 1): env: 29 entries
+
+```
+<ts>  WARN <pid> --- [hapi-fhir-jpaserver-starter] [           main] ConfigServletWebServerApplicationContext : Exception encountered during context initialization - cancelling refresh attempt: org.springframework.context.ApplicationContextException: Unable to start web server
+<ts>  INFO <pid> --- [hapi-fhir-jpaserver-starter] [           main] .s.b.a.l.ConditionEvaluationReportLogger : 
+
+Error starting ApplicationContext. To display the condition evaluation report re-run your application with 'debug' enabled.
+<ts> ERROR <pid> --- [hapi-fhir-jpaserver-starter] [           main] o.s.boot.SpringApplication               : Application run failed
+
+org.springframework.context.ApplicationContextException: Unable to start web server
+Caused by: org.springframework.boot.web.server.WebServerException: Unable to start embedded Tomcat
+Caused by: org.springframework.beans.factory.UnsatisfiedDependencyException: Error creating bean with name 'hapiServletRegistration' defined in ca.uhn.fhir.jpa.starter.Application: Unsatisfied dependency expressed through method 'hapiServletRegistration' parameter 0: Error creating bean with name 'restfulServer' defined in class path resource [ca/uhn/fhir/jpa/starter/common/StarterJpaConfig.class]: Unsatisfied dependency expressed through method 'restfulServer' parameter 1: Error creating bean with name 'mySystemDaoR4': Injection of persistence dependencies failed
+Caused by: org.springframework.beans.factory.UnsatisfiedDependencyException: Error creating bean with name 'restfulServer' defined in class path resource [ca/uhn/fhir/jpa/starter/common/StarterJpaConfig.class]: Unsatisfied dependency expressed through method 'restfulServer' parameter 1: Error creating bean with name 'mySystemDaoR4': Injection of persistence dependencies failed
+Caused by: org.springframework.beans.factory.BeanCreationException: Error creating bean with name 'mySystemDaoR4': Injection of persistence dependencies failed
+Caused by: org.springframework.beans.factory.BeanCreationException: Error creating bean with name 'entityManagerFactory' defined in class path resource [ca/uhn/fhir/jpa/starter/common/StarterJpaConfig.class]: [PersistenceUnit: HAPI_PU] Unable to build Hibernate SessionFactory; nested exception is org.hibernate.exception.JDBCConnectionException: Unable to open JDBC Connection for DDL execution [The connection attempt failed.] [n/a]
+Caused by: jakarta.persistence.PersistenceException: [PersistenceUnit: HAPI_PU] Unable to build Hibernate SessionFactory; nested exception is org.hibernate.exception.JDBCConnectionException: Unable to open JDBC Connection for DDL execution [The connection attempt failed.] [n/a]
+Caused by: org.hibernate.exception.JDBCConnectionException: Unable to open JDBC Connection for DDL execution [The connection attempt failed.] [n/a]
+Caused by: org.postgresql.util.PSQLException: The connection attempt failed.
+Caused by: java.net.UnknownHostException: hapi-db
+```
+
+##### F-14: `config.gate.020`
+
+- `config.gate.020` (covers config.gate.020; real `Application` exit 1): env: `spring.elasticsearch.uris=http://x`
+
+```
+<ts>  WARN <pid> --- [hapi-fhir-jpaserver-starter] [           main] ConfigServletWebServerApplicationContext : Exception encountered during context initialization - cancelling refresh attempt: org.springframework.context.ApplicationContextException: Unable to start web server
+<ts>  INFO <pid> --- [hapi-fhir-jpaserver-starter] [           main] .s.b.a.l.ConditionEvaluationReportLogger : 
+
+Error starting ApplicationContext. To display the condition evaluation report re-run your application with 'debug' enabled.
+<ts> ERROR <pid> --- [hapi-fhir-jpaserver-starter] [           main] o.s.boot.SpringApplication               : Application run failed
+
+org.springframework.context.ApplicationContextException: Unable to start web server
+Caused by: org.springframework.boot.web.server.WebServerException: Unable to start embedded Tomcat
+Caused by: org.springframework.beans.factory.UnsatisfiedDependencyException: Error creating bean with name 'hapiServletRegistration' defined in ca.uhn.fhir.jpa.starter.Application: Unsatisfied dependency expressed through method 'hapiServletRegistration' parameter 0: Error creating bean with name 'restfulServer' defined in class path resource [ca/uhn/fhir/jpa/starter/common/StarterJpaConfig.class]: Unsatisfied dependency expressed through method 'restfulServer' parameter 1: Error creating bean with name 'mySystemDaoR4': Injection of persistence dependencies failed
+Caused by: org.springframework.beans.factory.UnsatisfiedDependencyException: Error creating bean with name 'restfulServer' defined in class path resource [ca/uhn/fhir/jpa/starter/common/StarterJpaConfig.class]: Unsatisfied dependency expressed through method 'restfulServer' parameter 1: Error creating bean with name 'mySystemDaoR4': Injection of persistence dependencies failed
+Caused by: org.springframework.beans.factory.BeanCreationException: Error creating bean with name 'mySystemDaoR4': Injection of persistence dependencies failed
+Caused by: org.springframework.beans.factory.UnsatisfiedDependencyException: Error creating bean with name 'entityManagerFactory' defined in class path resource [ca/uhn/fhir/jpa/starter/common/StarterJpaConfig.class]: Unsatisfied dependency expressed through method 'entityManagerFactory' parameter 0: Error creating bean with name 'elasticsearchBootSvcImpl' defined in URL [jar:file:/app/main.war!/WEB-INF/classes!/ca/uhn/fhir/jpa/starter/elastic/ElasticsearchBootSvcImpl.class]: Failed to instantiate [ca.uhn.fhir.jpa.starter.elastic.ElasticsearchBootSvcImpl]: Constructor threw exception
+Caused by: org.springframework.beans.factory.BeanCreationException: Error creating bean with name 'elasticsearchBootSvcImpl' defined in URL [jar:file:/app/main.war!/WEB-INF/classes!/ca/uhn/fhir/jpa/starter/elastic/ElasticsearchBootSvcImpl.class]: Failed to instantiate [ca.uhn.fhir.jpa.starter.elastic.ElasticsearchBootSvcImpl]: Constructor threw exception
+Caused by: org.springframework.beans.BeanInstantiationException: Failed to instantiate [ca.uhn.fhir.jpa.starter.elastic.ElasticsearchBootSvcImpl]: Constructor threw exception
+Caused by: java.lang.RuntimeException: HAPI-1175: Failed to create document index
+Caused by: java.io.IOException: x: Name or service not known
+Caused by: java.net.UnknownHostException: x: Name or service not known
+```
+
+##### F-15: `config.read.002`
+
+- `config.read.002` (covers config.read.002; real `Application` exit 1): `files/application.yaml`: `hapi:\n  fhir:\n    mdm-enabled: true\n    IPS_ENABLED: "true"`
+
+```
+<ts>  WARN <pid> --- [hapi-fhir-jpaserver-starter] [           main] ConfigServletWebServerApplicationContext : Exception encountered during context initialization - cancelling refresh attempt: org.springframework.context.ApplicationContextException: Unable to start web server
+<ts>  INFO <pid> --- [hapi-fhir-jpaserver-starter] [           main] .s.b.a.l.ConditionEvaluationReportLogger : 
+
+Error starting ApplicationContext. To display the condition evaluation report re-run your application with 'debug' enabled.
+<ts> ERROR <pid> --- [hapi-fhir-jpaserver-starter] [           main] o.s.boot.SpringApplication               : Application run failed
+
+org.springframework.context.ApplicationContextException: Unable to start web server
+Caused by: org.springframework.boot.web.server.WebServerException: Unable to start embedded Tomcat
+Caused by: org.springframework.beans.factory.UnsatisfiedDependencyException: Error creating bean with name 'hapiServletRegistration' defined in ca.uhn.fhir.jpa.starter.Application: Unsatisfied dependency expressed through method 'hapiServletRegistration' parameter 0: Error creating bean with name 'restfulServer' defined in class path resource [ca/uhn/fhir/jpa/starter/common/StarterJpaConfig.class]: Failed to instantiate [ca.uhn.fhir.rest.server.RestfulServer]: Factory method 'restfulServer' threw exception with message: No value present
+Caused by: org.springframework.beans.factory.BeanCreationException: Error creating bean with name 'restfulServer' defined in class path resource [ca/uhn/fhir/jpa/starter/common/StarterJpaConfig.class]: Failed to instantiate [ca.uhn.fhir.rest.server.RestfulServer]: Factory method 'restfulServer' threw exception with message: No value present
+Caused by: org.springframework.beans.BeanInstantiationException: Failed to instantiate [ca.uhn.fhir.rest.server.RestfulServer]: Factory method 'restfulServer' threw exception with message: No value present
+Caused by: java.util.NoSuchElementException: No value present
+```
+
+##### F-16: `config.gate.009-d`
+
+- `config.gate.009-d` (covers config.gate.009; real `Application` exit 1): `files/application.yaml`: `hapi.fhir.binary_storage_mode: "file-system"`
+
+```
+<ts>  WARN <pid> --- [hapi-fhir-jpaserver-starter] [           main] ConfigServletWebServerApplicationContext : Exception encountered during context initialization - cancelling refresh attempt: org.springframework.beans.factory.UnsatisfiedDependencyException: Error creating bean with name 'binaryStorageInterceptorRegistrar' defined in URL [jar:file:/app/main.war!/WEB-INF/classes!/ca/uhn/fhir/jpa/starter/common/BinaryStorageInterceptorRegistrar.class]: Unsatisfied dependency expressed through constructor parameter 1: Error creating bean with name 'myBinaryStorageInterceptor': Unsatisfied dependency expressed through field 'myBinaryStorageSvc': No qualifying bean of type 'ca.uhn.fhir.jpa.binary.api.IBinaryStorageSvc' available: expected at least 1 bean which qualifies as autowire candidate. Dependency annotations: {@org.springframework.beans.factory.annotation.Autowired(required=true)}
+<ts>  INFO <pid> --- [hapi-fhir-jpaserver-starter] [           main] .s.b.a.l.ConditionEvaluationReportLogger : 
+
+Error starting ApplicationContext. To display the condition evaluation report re-run your application with 'debug' enabled.
+<ts> ERROR <pid> --- [hapi-fhir-jpaserver-starter] [           main] o.s.b.d.LoggingFailureAnalysisReporter   : 
+
+***************************
+APPLICATION FAILED TO START
+***************************
+
+Description:
+
+Field myBinaryStorageSvc in ca.uhn.fhir.jpa.binary.interceptor.BinaryStorageInterceptor required a bean of type 'ca.uhn.fhir.jpa.binary.api.IBinaryStorageSvc' that could not be found.
+
+
+Action:
+
+Consider defining a bean of type 'ca.uhn.fhir.jpa.binary.api.IBinaryStorageSvc' in your configuration.
+```
+
+##### F-17: `config.unknown.004`
+
+- `config.unknown.004` (covers config.unknown.004; real `Application` exit 1): `files/application.yaml`: `spring.ai.mcp.server.enabled: false\nserver.port: not-a-number\nmanagement.endpoints.web.exposure.include: abc\nspring.main.banner-mode: off`
+
+```
+<ts>  WARN <pid> --- [hapi-fhir-jpaserver-starter] [           main] ConfigServletWebServerApplicationContext : Exception encountered during context initialization - cancelling refresh attempt: org.springframework.beans.factory.BeanDefinitionStoreException: Failed to process import candidates for configuration class [ca.uhn.fhir.jpa.starter.Application]: Error processing condition on org.springdoc.webmvc.core.configuration.MultipleOpenApiSupportConfiguration$SpringDocWebMvcActuatorDifferentConfiguration
+<ts>  INFO <pid> --- [hapi-fhir-jpaserver-starter] [           main] .s.b.a.l.ConditionEvaluationReportLogger : 
+
+Error starting ApplicationContext. To display the condition evaluation report re-run your application with 'debug' enabled.
+<ts> ERROR <pid> --- [hapi-fhir-jpaserver-starter] [           main] o.s.b.d.LoggingFailureAnalysisReporter   : 
+
+***************************
+APPLICATION FAILED TO START
+***************************
+
+Description:
+
+Invalid value 'not-a-number' for configuration property 'server.port' (originating from 'URL [file:application.yaml] - 2:14'). Validation failed for the following reason:
+
+Failed to convert to type java.lang.Integer
+
+Additionally, this property is also set in the following property source:
+
+	- In 'Config resource 'class path resource [application.yaml]' via location 'optional:classpath:/'' with the value '8080' (originating from 'class path resource [application.yaml] - 8:9').
+
+
+Action:
+
+Review the value of the property with the provided reason.
+```
+
+##### F-18: `config.coerce.016-b`, `config.coerce.017-b`, `config.coerce.017-d`, `config.coerce.026`, `config.gate.004`, `config.gate.004-b`
+
+- `config.coerce.016-b` (covers config.coerce.016; real `Application` exit 1): `files/application.yaml`: `hapi.fhir.fhir_version: DSTU2_HL7ORG`
+- `config.coerce.017-b` (covers config.coerce.017; real `Application` exit 1): `files/application.yaml`: `hapi.fhir.fhir_version: r-4`
+- `config.coerce.017-d` (covers config.coerce.017; real `Application` exit 1): `files/application.yaml`: `hapi.fhir.fhir_version: " R5 "`
+- `config.coerce.026` (covers config.coerce.026; real `Application` exit 1): `files/application.yaml`: `hapi.fhir.fhir_version: 6\nhapi.fhir.binary_storage_mode: 1`
+- `config.gate.004` (covers config.gate.004; real `Application` exit 1): `files/application.yaml`: `hapi.fhir.fhir_version: r-4`
+- `config.gate.004-b` (covers config.gate.004; real `Application` exit 1): `files/application.yaml`: `hapi.fhir.fhir_version: DSTU2_HL7ORG`
+
+```
+<ts>  WARN <pid> --- [hapi-fhir-jpaserver-starter] [           main] ConfigServletWebServerApplicationContext : Exception encountered during context initialization - cancelling refresh attempt: org.springframework.context.ApplicationContextException: Unable to start web server
+<ts>  INFO <pid> --- [hapi-fhir-jpaserver-starter] [           main] .s.b.a.l.ConditionEvaluationReportLogger : 
+
+Error starting ApplicationContext. To display the condition evaluation report re-run your application with 'debug' enabled.
+<ts> ERROR <pid> --- [hapi-fhir-jpaserver-starter] [           main] o.s.b.d.LoggingFailureAnalysisReporter   : 
+
+***************************
+APPLICATION FAILED TO START
+***************************
+
+Description:
+
+Parameter 0 of method restfulServer in ca.uhn.fhir.jpa.starter.common.StarterJpaConfig required a bean of type 'ca.uhn.fhir.context.FhirContext' that could not be found.
+
+
+Action:
+
+Consider defining a bean of type 'ca.uhn.fhir.context.FhirContext' in your configuration.
+```
+
+##### F-19: `config.gate.006-h`, `config.gate.011-b`, `config.gate.017`
+
+- `config.gate.006-h` (covers config.gate.006; real `Application` exit 1): `files/application.yaml`: `hapi.fhir.cdshooks.enabled: "TRUE"`
+- `config.gate.011-b` (covers config.gate.011; real `Application` exit 1): `files/application.yaml`: `hapi.fhir.cdshooks.enabled: "TRUE"`
+- `config.gate.017` (covers config.gate.017; real `Application` exit 1): `files/application.yaml`: `hapi.fhir.cdshooks.enabled: true`
+
+```
+<ts>  WARN <pid> --- [hapi-fhir-jpaserver-starter] [           main] ConfigServletWebServerApplicationContext : Exception encountered during context initialization - cancelling refresh attempt: org.springframework.beans.factory.UnsatisfiedDependencyException: Error creating bean with name 'syncServer' defined in class path resource [ca/uhn/fhir/jpa/starter/mcp/McpServerConfig.class]: Unsatisfied dependency expressed through method 'syncServer' parameter 0: Error creating bean with name 'mcpCdsBridge' defined in class path resource [ca/uhn/fhir/jpa/starter/mcp/McpServerConfig.class]: Unsatisfied dependency expressed through method 'mcpCdsBridge' parameter 1: No qualifying bean of type 'ca.uhn.hapi.fhir.cdshooks.api.ICdsServiceRegistry' available: expected at least 1 bean which qualifies as autowire candidate. Dependency annotations: {}
+<ts>  INFO <pid> --- [hapi-fhir-jpaserver-starter] [           main] .s.b.a.l.ConditionEvaluationReportLogger : 
+
+Error starting ApplicationContext. To display the condition evaluation report re-run your application with 'debug' enabled.
+<ts> ERROR <pid> --- [hapi-fhir-jpaserver-starter] [           main] o.s.b.d.LoggingFailureAnalysisReporter   : 
+
+***************************
+APPLICATION FAILED TO START
+***************************
+
+Description:
+
+Parameter 1 of method mcpCdsBridge in ca.uhn.fhir.jpa.starter.mcp.McpServerConfig required a bean of type 'ca.uhn.hapi.fhir.cdshooks.api.ICdsServiceRegistry' that could not be found.
+
+
+Action:
+
+Consider defining a bean of type 'ca.uhn.hapi.fhir.cdshooks.api.ICdsServiceRegistry' in your configuration.
+```
+
+##### F-20: `config.gate.006-e`, `config.gate.007-f`, `config.gate.012`, `config.gate.012-b`, `config.gate.016`, `config.gate.016-b`, `config.gate.022`, `config.key.001-v`, `config.key.002`, `config.object.005`, `config.source.007-v`, `config.source.009-v`, `config.source.010-p`, `config.source.010-v`, `config.source.011`, `config.source.013`, `config.source.017-b`, `config.source.018`, `config.source.026-c`
+
+- `config.gate.006-e` (covers config.gate.006; real `Application` exit 1): args: `--spring.config.location=optional:file:./none.yaml | --hapi.fhir.fhir_version=R4`
+- `config.gate.007-f` (covers config.gate.007; real `Application` exit 1): args: `--spring.config.location=optional:file:./none.yaml | --hapi.fhir.fhir_version=R4`
+- `config.gate.012` (covers config.gate.012; real `Application` exit 1): args: `--spring.config.location=optional:file:./none.yaml | --hapi.fhir.fhir_version=R4 | --hapi.fhir.CORS.allow_credentials=true`
+- `config.gate.012-b` (covers config.gate.012; real `Application` exit 1): `files/x.yaml`: `hapi.fhir.fhir_version: R4`; args: `--spring.config.location=file:./x.yaml`
+- `config.gate.016` (covers config.gate.016; real `Application` exit 1): `files/x.yaml`: `hapi.fhir.fhir_version: R4\nhapi.fhir.testerx: 1`; args: `--spring.config.location=file:./x.yaml`
+- `config.gate.016-b` (covers config.gate.016; real `Application` exit 1): `files/x.yaml`: `hapi.fhir.fhir_version: R4`; env: `HAPI_FHIR_TESTER_HOME_NAME=x`; args: `--spring.config.location=file:./x.yaml`
+- `config.gate.022` (covers config.gate.022; real `Application` exit 1): `files/x.yaml`: `hapi.fhir.fhir_version: R4`; env: `JAVA_TOOL_OPTIONS=-Dhapi.fhir.testerx=1`; args: `--spring.config.location=file:./x.yaml`
+- `config.key.001-v` (covers config.key.001, config.key.003; real `Application` exit 1): args: `--spring.config.location=optional:file:./none.yaml | --hapi.fhir.fhir_version=R4`
+- `config.key.002` (covers config.key.002; real `Application` exit 1): `files/x.yaml`: 7 lines; args: `--spring.config.location=file:./x.yaml`
+- `config.object.005` (covers config.object.005; real `Application` exit 1): args: `--spring.config.location=optional:file:./none.yaml | --hapi.fhir.fhir_version=R4`
+- `config.source.007-v` (covers config.source.007; real `Application` exit 1): `files/application.yaml`: `hapi.fhir.max_page_size: 1`; `files/other/x.yaml`: `hapi.fhir.default_page_size: 5`; args: `--spring.config.location=file:./other/x.yaml | --hapi.fhir.fhir_version=R4`
+- `config.source.009-v` (covers config.source.009; real `Application` exit 1): args: `--spring.config.location=optional:file:./nope.yaml | --hapi.fhir.fhir_version=R4`
+- `config.source.010-p` (covers config.source.010; real `Application` exit 1): `files/dir/application-p.yaml`: `hapi.fhir.max_page_size: 34`; `files/dir/application.yaml`: `hapi.fhir.default_page_size: 33`; env: `SPRING_PROFILES_ACTIVE=p`; args: `--spring.config.location=file:./dir/ | --hapi.fhir.fhir_version=R4`
+- `config.source.010-v` (covers config.source.010; real `Application` exit 1): `files/dir/application.yaml`: `hapi.fhir.default_page_size: 33`; args: `--spring.config.location=file:./dir/ | --hapi.fhir.fhir_version=R4`
+- `config.source.011` (covers config.source.011; real `Application` exit 1): `files/dir/application.yaml`: `hapi.fhir.default_page_size: 33`; `files/dir/frevo.yaml`: `hapi.fhir.max_page_size: 44`; args: `--spring.config.location=file:./dir/ | --spring.config.name=frevo | --hapi.fhir.fhir_version=R4`
+- `config.source.013` (covers config.source.013; real `Application` exit 1): `files/l/1.yaml`: `hapi.fhir.default_page_size: 31`; `files/l/2.yaml`: `hapi.fhir.default_page_size: 32`; args: `--spring.config.location=file:./l/1.yaml,file:./l/2.yaml | --hapi.fhir.fhir_version=R4`
+- `config.source.017-b` (covers config.source.017; real `Application` exit 1): `root/app/extra-classes/another.application.yaml`: `hapi.fhir.default_page_size: 9`; args: `--spring.config.location=classpath:/another.application.yaml | --hapi.fhir.fhir_version=R4`
+- `config.source.018` (covers config.source.018; real `Application` exit 1): `root/configs/another.application.yaml`: `hapi.fhir.default_page_size: 9`; args: `--spring.config.location=file:///configs/another.application.yaml | --hapi.fhir.fhir_version=R4`
+- `config.source.026-c` (covers config.source.026; real `Application` exit 1): `files/conf/extra-p.yaml`: `hapi.fhir.default_page_size: 6`; `files/conf/extra.yaml`: `hapi.fhir.fhir_version: R4\nhapi.fhir.default_page_size: 5`; env: `SPRING_PROFILES_ACTIVE=p`; args: `--spring.config.location=file:./conf/extra.yaml`
+
+```
+<ts>  WARN <pid> --- [           main] ConfigServletWebServerApplicationContext : Exception encountered during context initialization - cancelling refresh attempt: org.springframework.context.ApplicationContextException: Unable to start web server
+<ts>  INFO <pid> --- [           main] .s.b.a.l.ConditionEvaluationReportLogger : 
+
+Error starting ApplicationContext. To display the condition evaluation report re-run your application with 'debug' enabled.
+<ts> ERROR <pid> --- [           main] o.s.b.d.LoggingFailureAnalysisReporter   : 
+
+***************************
+APPLICATION FAILED TO START
+***************************
+
+Description:
+
+The dependencies of some of the beans in the application context form a cycle:
+
+   hapiServletRegistration defined in ca.uhn.fhir.jpa.starter.Application
+      ↓
+   restfulServer defined in class path resource [ca/uhn/fhir/jpa/starter/common/StarterJpaConfig.class]
+      ↓
+   mySystemDaoR4 (field protected ca.uhn.fhir.rest.server.util.ISearchParamRegistry ca.uhn.fhir.jpa.dao.BaseStorageDao.mySearchParamRegistry)
+┌─────┐
+|  searchParamRegistry (field private ca.uhn.fhir.jpa.cache.IResourceChangeListenerRegistry ca.uhn.fhir.jpa.searchparam.registry.SearchParamRegistryImpl.myResourceChangeListenerRegistry)
+↑     ↓
+|  resourceChangeListenerRegistry defined in class path resource [ca/uhn/fhir/jpa/searchparam/config/SearchParamConfig.class]
+↑     ↓
+|  inMemoryResourceMatcher (field ca.uhn.fhir.rest.server.util.ISearchParamRegistry ca.uhn.fhir.jpa.searchparam.matcher.InMemoryResourceMatcher.mySearchParamRegistry)
+└─────┘
+
+
+Action:
+
+Relying upon circular references is discouraged and they are prohibited by default. Update your application to remove the dependency cycle between beans. As a last resort, it may be possible to break the cycle automatically by setting spring.main.allow-circular-references to true.
+```
+
+#### Appendix B: the 26 owed cases
+
+For a case that fails on both runners, the probe's `WARN` exception and description (or last cause) are summarised, and the real `Application`'s config lines (the record) are verbatim.
+
+##### `config.error.008-caregaps`
+
+- `files/application.yaml`: `hapi.fhir.cr.caregaps.reporter: ${hapi.fhir.cr.caregaps.reporter}`
+- probe: exit 1; `WARN` exception `org.springframework.boot.context.properties.ConfigurationPropertiesBindException: Error creating bean with name 'hapi.fhir.cr-ca.uhn.fhir.jpa.starter.cr.CrProperties': Could not bind properties to 'CrProperties' : prefix=hapi.fhir.cr, ignoreInvalidFields=false, ignoreUnknownFields=true`; description `Failed to bind properties under 'hapi.fhir.cr.care-gaps.reporter' to java.lang.String:`
+- real `Application` (the record, `runner: application`): exit 1, config lines:
+
+```
+<ts>  WARN <pid> --- [hapi-fhir-jpaserver-starter] [           main] ConfigServletWebServerApplicationContext : Exception encountered during context initialization - cancelling refresh attempt: org.springframework.boot.context.properties.ConfigurationPropertiesBindException: Error creating bean with name 'careGapsProperties': Could not bind properties to 'CareGapsProperties' : prefix=hapi.fhir.cr.caregaps, ignoreInvalidFields=false, ignoreUnknownFields=true
+<ts>  INFO <pid> --- [hapi-fhir-jpaserver-starter] [           main] .s.b.a.l.ConditionEvaluationReportLogger : 
+
+Error starting ApplicationContext. To display the condition evaluation report re-run your application with 'debug' enabled.
+<ts> ERROR <pid> --- [hapi-fhir-jpaserver-starter] [           main] o.s.b.d.LoggingFailureAnalysisReporter   : 
+
+***************************
+APPLICATION FAILED TO START
+***************************
+
+Description:
+
+Failed to bind properties under 'hapi.fhir.cr.caregaps.reporter' to java.lang.String:
+
+    Property: hapi.fhir.cr.caregaps.reporter
+    Value: "${hapi.fhir.cr.caregaps.reporter}"
+    Origin: URL [file:application.yaml] - 1:33
+    Reason: org.springframework.util.PlaceholderResolutionException: Circular placeholder reference 'hapi.fhir.cr.caregaps.reporter' in value "${hapi.fhir.cr.caregaps.reporter}" <-- "${hapi.fhir.cr.caregaps.reporter}"
+
+Action:
+
+Update your application's configuration
+```
+
+##### `config.error.008-caregaps-b`
+
+- `files/application.yaml`: `hapi.fhir.cr.caregaps: abc`
+- probe: exit 0 (the record); real `Application`: started
+
+##### `config.error.008-cdshooks`
+
+- `files/application.yaml`: `hapi.fhir.cdshooks.enabled: maybe`
+- probe: exit 1; `WARN` exception `org.springframework.boot.context.properties.ConfigurationPropertiesBindException: Error creating bean with name 'hapi.fhir.cdshooks-ca.uhn.fhir.jpa.starter.cdshooks.CdsHooksProperties': Could not bind properties to 'CdsHooksProperties' : prefix=hapi.fhir.cdshooks, ignoreInvalidFields=false, ignoreUnknownFields=true`; description `Failed to bind properties under 'hapi.fhir.cdshooks.enabled' to boolean:`
+- real `Application` (the record, `runner: application`): exit 1, config lines:
+
+```
+<ts>  WARN <pid> --- [hapi-fhir-jpaserver-starter] [           main] ConfigServletWebServerApplicationContext : Exception encountered during context initialization - cancelling refresh attempt: org.springframework.boot.context.properties.ConfigurationPropertiesBindException: Error creating bean with name 'cdsHooksProperties': Could not bind properties to 'CdsHooksProperties' : prefix=hapi.fhir.cdshooks, ignoreInvalidFields=false, ignoreUnknownFields=true
+<ts>  INFO <pid> --- [hapi-fhir-jpaserver-starter] [           main] .s.b.a.l.ConditionEvaluationReportLogger : 
+
+Error starting ApplicationContext. To display the condition evaluation report re-run your application with 'debug' enabled.
+<ts> ERROR <pid> --- [hapi-fhir-jpaserver-starter] [           main] o.s.b.d.LoggingFailureAnalysisReporter   : 
+
+***************************
+APPLICATION FAILED TO START
+***************************
+
+Description:
+
+Failed to bind properties under 'hapi.fhir.cdshooks.enabled' to boolean:
+
+    Property: hapi.fhir.cdshooks.enabled
+    Value: "maybe"
+    Origin: URL [file:application.yaml] - 1:29
+    Reason: failed to convert java.lang.String to boolean (caused by java.lang.IllegalArgumentException: Invalid boolean value 'maybe')
+
+Action:
+
+Update your application's configuration
+```
+
+##### `config.error.008-cdshooks-b`
+
+- `files/application.yaml`: `hapi.fhir.cdshooks.client_id_header_name: ${hapi.fhir.cdshooks.client_id_header_name}`
+- probe: exit 1; `WARN` exception `org.springframework.boot.context.properties.ConfigurationPropertiesBindException: Error creating bean with name 'hapi.fhir.cdshooks-ca.uhn.fhir.jpa.starter.cdshooks.CdsHooksProperties': Could not bind properties to 'CdsHooksProperties' : prefix=hapi.fhir.cdshooks, ignoreInvalidFields=false, ignoreUnknownFields=true`; description `Failed to bind properties under 'hapi.fhir.cdshooks.client-id-header-name' to java.lang.String:`
+- real `Application` (the record, `runner: application`): exit 1, config lines:
+
+```
+<ts>  WARN <pid> --- [hapi-fhir-jpaserver-starter] [           main] ConfigServletWebServerApplicationContext : Exception encountered during context initialization - cancelling refresh attempt: org.springframework.boot.context.properties.ConfigurationPropertiesBindException: Error creating bean with name 'cdsHooksProperties': Could not bind properties to 'CdsHooksProperties' : prefix=hapi.fhir.cdshooks, ignoreInvalidFields=false, ignoreUnknownFields=true
+<ts>  INFO <pid> --- [hapi-fhir-jpaserver-starter] [           main] .s.b.a.l.ConditionEvaluationReportLogger : 
+
+Error starting ApplicationContext. To display the condition evaluation report re-run your application with 'debug' enabled.
+<ts> ERROR <pid> --- [hapi-fhir-jpaserver-starter] [           main] o.s.b.d.LoggingFailureAnalysisReporter   : 
+
+***************************
+APPLICATION FAILED TO START
+***************************
+
+Description:
+
+Failed to bind properties under 'hapi.fhir.cdshooks.client-id-header-name' to java.lang.String:
+
+    Property: hapi.fhir.cdshooks.client-id-header-name
+    Value: "${hapi.fhir.cdshooks.client_id_header_name}"
+    Origin: URL [file:application.yaml] - 1:43
+    Reason: org.springframework.util.PlaceholderResolutionException: Circular placeholder reference 'hapi.fhir.cdshooks.client_id_header_name' in value "${hapi.fhir.cdshooks.client_id_header_name}" <-- "${hapi.fhir.cdshooks.client_id_header_name}"
+
+Action:
+
+Update your application's configuration
+```
+
+##### `config.error.008-compiler`
+
+- `files/application.yaml`: `hapi.fhir.cr.cql.compiler.verify_only: maybe`
+- probe: exit 1; `WARN` exception `org.springframework.boot.context.properties.ConfigurationPropertiesBindException: Error creating bean with name 'hapi.fhir.cr.cql.compiler-ca.uhn.fhir.jpa.starter.cr.CqlCompilerProperties': Could not bind properties to 'CqlCompilerProperties' : prefix=hapi.fhir.cr.cql.compiler, ignoreInvalidFields=false, ignoreUnknownFields=true`; description `Failed to bind properties under 'hapi.fhir.cr.cql.compiler.verify-only' to boolean:`
+- real `Application` (the record, `runner: application`): exit 1, config lines:
+
+```
+<ts>  WARN <pid> --- [hapi-fhir-jpaserver-starter] [           main] ConfigServletWebServerApplicationContext : Exception encountered during context initialization - cancelling refresh attempt: org.springframework.boot.context.properties.ConfigurationPropertiesBindException: Error creating bean with name 'cqlCompilerProperties': Could not bind properties to 'CqlCompilerProperties' : prefix=hapi.fhir.cr.cql.compiler, ignoreInvalidFields=false, ignoreUnknownFields=true
+<ts>  INFO <pid> --- [hapi-fhir-jpaserver-starter] [           main] .s.b.a.l.ConditionEvaluationReportLogger : 
+
+Error starting ApplicationContext. To display the condition evaluation report re-run your application with 'debug' enabled.
+<ts> ERROR <pid> --- [hapi-fhir-jpaserver-starter] [           main] o.s.b.d.LoggingFailureAnalysisReporter   : 
+
+***************************
+APPLICATION FAILED TO START
+***************************
+
+Description:
+
+Failed to bind properties under 'hapi.fhir.cr.cql.compiler.verify-only' to boolean:
+
+    Property: hapi.fhir.cr.cql.compiler.verify-only
+    Value: "maybe"
+    Origin: URL [file:application.yaml] - 1:40
+    Reason: failed to convert java.lang.String to boolean (caused by java.lang.IllegalArgumentException: Invalid boolean value 'maybe')
+
+Action:
+
+Update your application's configuration
+```
+
+##### `config.error.008-compiler-b`
+
+- `files/application.yaml`: `hapi.fhir.cr.cql.compiler.error_severity_level: Bogus`
+- probe: exit 1; `WARN` exception `org.springframework.boot.context.properties.ConfigurationPropertiesBindException: Error creating bean with name 'hapi.fhir.cr.cql-ca.uhn.fhir.jpa.starter.cr.CqlProperties': Could not bind properties to 'CqlProperties' : prefix=hapi.fhir.cr.cql, ignoreInvalidFields=false, ignoreUnknownFields=true`; description `Failed to bind properties under 'hapi.fhir.cr.cql.compiler.error-severity-level' to org.cqframework.cql.cql2elm.CqlCompilerException$ErrorSeverity:`
+- real `Application` (the record, `runner: application`): exit 1, config lines:
+
+```
+<ts>  WARN <pid> --- [hapi-fhir-jpaserver-starter] [           main] ConfigServletWebServerApplicationContext : Exception encountered during context initialization - cancelling refresh attempt: org.springframework.boot.context.properties.ConfigurationPropertiesBindException: Error creating bean with name 'cqlCompilerProperties': Could not bind properties to 'CqlCompilerProperties' : prefix=hapi.fhir.cr.cql.compiler, ignoreInvalidFields=false, ignoreUnknownFields=true
+<ts>  INFO <pid> --- [hapi-fhir-jpaserver-starter] [           main] .s.b.a.l.ConditionEvaluationReportLogger : 
+
+Error starting ApplicationContext. To display the condition evaluation report re-run your application with 'debug' enabled.
+<ts> ERROR <pid> --- [hapi-fhir-jpaserver-starter] [           main] o.s.b.d.LoggingFailureAnalysisReporter   : 
+
+***************************
+APPLICATION FAILED TO START
+***************************
+
+Description:
+
+Failed to bind properties under 'hapi.fhir.cr.cql.compiler.error-severity-level' to org.cqframework.cql.cql2elm.CqlCompilerException$ErrorSeverity:
+
+    Property: hapi.fhir.cr.cql.compiler.error-severity-level
+    Value: "Bogus"
+    Origin: URL [file:application.yaml] - 1:49
+    Reason: failed to convert java.lang.String to org.cqframework.cql.cql2elm.CqlCompilerException$ErrorSeverity (caused by java.lang.IllegalArgumentException: No enum constant org.cqframework.cql.cql2elm.CqlCompilerException.ErrorSeverity.Bogus)
+
+Action:
+
+Update your application's configuration. The following values are valid:
+
+    Error
+    Info
+    Warning
+```
+
+##### `config.error.008-cr`
+
+- `files/application.yaml`: `hapi.fhir.cr.enabled: maybe`
+- probe: exit 1; `WARN` exception `org.springframework.boot.context.properties.ConfigurationPropertiesBindException: Error creating bean with name 'hapi.fhir.cr-ca.uhn.fhir.jpa.starter.cr.CrProperties': Could not bind properties to 'CrProperties' : prefix=hapi.fhir.cr, ignoreInvalidFields=false, ignoreUnknownFields=true`; description `Failed to bind properties under 'hapi.fhir.cr.enabled' to java.lang.Boolean:`
+- real `Application` (the record, `runner: application`): exit 1, config lines:
+
+```
+<ts>  WARN <pid> --- [hapi-fhir-jpaserver-starter] [           main] ConfigServletWebServerApplicationContext : Exception encountered during context initialization - cancelling refresh attempt: org.springframework.boot.context.properties.ConfigurationPropertiesBindException: Error creating bean with name 'crProperties': Could not bind properties to 'CrProperties' : prefix=hapi.fhir.cr, ignoreInvalidFields=false, ignoreUnknownFields=true
+<ts>  INFO <pid> --- [hapi-fhir-jpaserver-starter] [           main] .s.b.a.l.ConditionEvaluationReportLogger : 
+
+Error starting ApplicationContext. To display the condition evaluation report re-run your application with 'debug' enabled.
+<ts> ERROR <pid> --- [hapi-fhir-jpaserver-starter] [           main] o.s.b.d.LoggingFailureAnalysisReporter   : 
+
+***************************
+APPLICATION FAILED TO START
+***************************
+
+Description:
+
+Failed to bind properties under 'hapi.fhir.cr.enabled' to java.lang.Boolean:
+
+    Property: hapi.fhir.cr.enabled
+    Value: "maybe"
+    Origin: URL [file:application.yaml] - 1:23
+    Reason: failed to convert java.lang.String to java.lang.Boolean (caused by java.lang.IllegalArgumentException: Invalid boolean value 'maybe')
+
+Action:
+
+Update your application's configuration
+```
+
+##### `config.error.008-cr-b`
+
+- `files/application.yaml`: `hapi.fhir.cr.terminology_server_client_settings.max_retry_count: abc`
+- probe: exit 1; `WARN` exception `org.springframework.boot.context.properties.ConfigurationPropertiesBindException: Error creating bean with name 'hapi.fhir.cr-ca.uhn.fhir.jpa.starter.cr.CrProperties': Could not bind properties to 'CrProperties' : prefix=hapi.fhir.cr, ignoreInvalidFields=false, ignoreUnknownFields=true`; description `Failed to bind properties under 'hapi.fhir.cr.terminology-server-client-settings.max-retry-count' to int:`
+- real `Application` (the record, `runner: application`): exit 1, config lines:
+
+```
+<ts>  WARN <pid> --- [hapi-fhir-jpaserver-starter] [           main] ConfigServletWebServerApplicationContext : Exception encountered during context initialization - cancelling refresh attempt: org.springframework.boot.context.properties.ConfigurationPropertiesBindException: Error creating bean with name 'crProperties': Could not bind properties to 'CrProperties' : prefix=hapi.fhir.cr, ignoreInvalidFields=false, ignoreUnknownFields=true
+<ts>  INFO <pid> --- [hapi-fhir-jpaserver-starter] [           main] .s.b.a.l.ConditionEvaluationReportLogger : 
+
+Error starting ApplicationContext. To display the condition evaluation report re-run your application with 'debug' enabled.
+<ts> ERROR <pid> --- [hapi-fhir-jpaserver-starter] [           main] o.s.b.d.LoggingFailureAnalysisReporter   : 
+
+***************************
+APPLICATION FAILED TO START
+***************************
+
+Description:
+
+Failed to bind properties under 'hapi.fhir.cr.terminology-server-client-settings.max-retry-count' to int:
+
+    Property: hapi.fhir.cr.terminology-server-client-settings.max-retry-count
+    Value: "abc"
+    Origin: URL [file:application.yaml] - 1:66
+    Reason: failed to convert java.lang.String to int (caused by java.lang.NumberFormatException: For input string: "abc")
+
+Action:
+
+Update your application's configuration
+```
+
+##### `config.error.008-order-bind-cds`
+
+- `files/application.yaml`: `hapi.fhir.default_page_size: abc
+hapi.fhir.cdshooks.enabled: maybe`
+- probe: exit 1; `WARN` exception `org.springframework.boot.context.properties.bind.BindException: Failed to bind properties under 'hapi.fhir.default-page-size' to java.lang.Integer`; description `Failed to bind properties under 'hapi.fhir.default-page-size' to java.lang.Integer:`
+- real `Application` (the record, `runner: application`): exit 1, config lines:
+
+```
+<ts>  WARN <pid> --- [hapi-fhir-jpaserver-starter] [           main] ConfigServletWebServerApplicationContext : Exception encountered during context initialization - cancelling refresh attempt: org.springframework.beans.factory.BeanDefinitionStoreException: Failed to read candidate component class: URL [jar:file:/app/main.war!/WEB-INF/classes!/ca/uhn/fhir/jpa/starter/common/PartitionModeConfigurer.class]
+<ts> ERROR <pid> --- [hapi-fhir-jpaserver-starter] [           main] o.s.b.d.LoggingFailureAnalysisReporter   : 
+
+***************************
+APPLICATION FAILED TO START
+***************************
+
+Description:
+
+Failed to bind properties under 'hapi.fhir.default-page-size' to java.lang.Integer:
+
+    Property: hapi.fhir.default-page-size
+    Value: "abc"
+    Origin: URL [file:application.yaml] - 1:30
+    Reason: failed to convert java.lang.String to java.lang.Integer (caused by java.lang.NumberFormatException: For input string: "abc")
+
+Action:
+
+Update your application's configuration
+```
+
+##### `config.error.008-order-bind-cql`
+
+- `files/application.yaml`: `hapi.fhir.default_page_size: abc
+hapi.fhir.cr.cql.runtime.enable_validation: true`
+- probe: exit 1; `WARN` exception `org.springframework.boot.context.properties.bind.BindException: Failed to bind properties under 'hapi.fhir.default-page-size' to java.lang.Integer`; description `Failed to bind properties under 'hapi.fhir.default-page-size' to java.lang.Integer:`
+- real `Application` (the record, `runner: application`): exit 1, config lines:
+
+```
+<ts>  WARN <pid> --- [hapi-fhir-jpaserver-starter] [           main] ConfigServletWebServerApplicationContext : Exception encountered during context initialization - cancelling refresh attempt: org.springframework.beans.factory.BeanDefinitionStoreException: Failed to read candidate component class: URL [jar:file:/app/main.war!/WEB-INF/classes!/ca/uhn/fhir/jpa/starter/common/PartitionModeConfigurer.class]
+<ts> ERROR <pid> --- [hapi-fhir-jpaserver-starter] [           main] o.s.b.d.LoggingFailureAnalysisReporter   : 
+
+***************************
+APPLICATION FAILED TO START
+***************************
+
+Description:
+
+Failed to bind properties under 'hapi.fhir.default-page-size' to java.lang.Integer:
+
+    Property: hapi.fhir.default-page-size
+    Value: "abc"
+    Origin: URL [file:application.yaml] - 1:30
+    Reason: failed to convert java.lang.String to java.lang.Integer (caused by java.lang.NumberFormatException: For input string: "abc")
+
+Action:
+
+Update your application's configuration
+```
+
+##### `config.error.008-order-bind-es`
+
+- `files/application.yaml`: `hapi.fhir.default_page_size: abc
+spring.elasticsearch.connection-timeout: abc`
+- probe: exit 1; `WARN` exception `org.springframework.boot.context.properties.bind.BindException: Failed to bind properties under 'hapi.fhir.default-page-size' to java.lang.Integer`; description `Failed to bind properties under 'hapi.fhir.default-page-size' to java.lang.Integer:`
+- real `Application` (the record, `runner: application`): exit 1, config lines:
+
+```
+<ts>  WARN <pid> --- [hapi-fhir-jpaserver-starter] [           main] ConfigServletWebServerApplicationContext : Exception encountered during context initialization - cancelling refresh attempt: org.springframework.beans.factory.BeanDefinitionStoreException: Failed to read candidate component class: URL [jar:file:/app/main.war!/WEB-INF/classes!/ca/uhn/fhir/jpa/starter/common/PartitionModeConfigurer.class]
+<ts> ERROR <pid> --- [hapi-fhir-jpaserver-starter] [           main] o.s.b.d.LoggingFailureAnalysisReporter   : 
+
+***************************
+APPLICATION FAILED TO START
+***************************
+
+Description:
+
+Failed to bind properties under 'hapi.fhir.default-page-size' to java.lang.Integer:
+
+    Property: hapi.fhir.default-page-size
+    Value: "abc"
+    Origin: URL [file:application.yaml] - 1:30
+    Reason: failed to convert java.lang.String to java.lang.Integer (caused by java.lang.NumberFormatException: For input string: "abc")
+
+Action:
+
+Update your application's configuration
+```
+
+##### `config.error.008-order-bind-strict`
+
+- `files/application.yaml`: `hapi.fhir.default_page_size: abc
+hapi.fhir.app_content_path: ${nope}`
+- probe: exit 1; `WARN` exception `java.lang.IllegalStateException: Error processing condition on ca.uhn.fhir.jpa.starter.web.WebAppFilesConfigurer`; last cause `Caused by: org.springframework.util.PlaceholderResolutionException: Could not resolve placeholder 'nope' in value "${nope}"`
+- real `Application` (the record, `runner: application`): exit 1, config lines:
+
+```
+<ts>  WARN <pid> --- [hapi-fhir-jpaserver-starter] [           main] ConfigServletWebServerApplicationContext : Exception encountered during context initialization - cancelling refresh attempt: org.springframework.beans.factory.BeanDefinitionStoreException: Failed to read candidate component class: URL [jar:file:/app/main.war!/WEB-INF/classes!/ca/uhn/fhir/jpa/starter/common/PartitionModeConfigurer.class]
+<ts> ERROR <pid> --- [hapi-fhir-jpaserver-starter] [           main] o.s.b.d.LoggingFailureAnalysisReporter   : 
+
+***************************
+APPLICATION FAILED TO START
+***************************
+
+Description:
+
+Failed to bind properties under 'hapi.fhir.default-page-size' to java.lang.Integer:
+
+    Property: hapi.fhir.default-page-size
+    Value: "abc"
+    Origin: URL [file:application.yaml] - 1:30
+    Reason: failed to convert java.lang.String to java.lang.Integer (caused by java.lang.NumberFormatException: For input string: "abc")
+
+Action:
+
+Update your application's configuration
+```
+
+##### `config.error.008-order-es-bind`
+
+- `files/application.yaml`: `spring.elasticsearch.connection-timeout: abc
+hapi.fhir.default_page_size: abc`
+- probe: exit 1; `WARN` exception `org.springframework.boot.context.properties.bind.BindException: Failed to bind properties under 'hapi.fhir.default-page-size' to java.lang.Integer`; description `Failed to bind properties under 'hapi.fhir.default-page-size' to java.lang.Integer:`
+- real `Application` (the record, `runner: application`): exit 1, config lines:
+
+```
+<ts>  WARN <pid> --- [hapi-fhir-jpaserver-starter] [           main] ConfigServletWebServerApplicationContext : Exception encountered during context initialization - cancelling refresh attempt: org.springframework.beans.factory.BeanDefinitionStoreException: Failed to read candidate component class: URL [jar:file:/app/main.war!/WEB-INF/classes!/ca/uhn/fhir/jpa/starter/common/PartitionModeConfigurer.class]
+<ts> ERROR <pid> --- [hapi-fhir-jpaserver-starter] [           main] o.s.b.d.LoggingFailureAnalysisReporter   : 
+
+***************************
+APPLICATION FAILED TO START
+***************************
+
+Description:
+
+Failed to bind properties under 'hapi.fhir.default-page-size' to java.lang.Integer:
+
+    Property: hapi.fhir.default-page-size
+    Value: "abc"
+    Origin: URL [file:application.yaml] - 2:30
+    Reason: failed to convert java.lang.String to java.lang.Integer (caused by java.lang.NumberFormatException: For input string: "abc")
+
+Action:
+
+Update your application's configuration
+```
+
+##### `config.error.008-order-es-cds`
+
+- `files/application.yaml`: `spring.elasticsearch.connection-timeout: abc
+hapi.fhir.cdshooks.enabled: maybe`
+- probe: exit 1; `WARN` exception `org.springframework.boot.context.properties.bind.BindException: Failed to bind properties under 'spring.elasticsearch.connection-timeout' to java.time.Duration`; description `Failed to bind properties under 'spring.elasticsearch.connection-timeout' to java.time.Duration:`
+- real `Application` (the record, `runner: application`): exit 1, config lines:
+
+```
+<ts>  WARN <pid> --- [hapi-fhir-jpaserver-starter] [           main] ConfigServletWebServerApplicationContext : Exception encountered during context initialization - cancelling refresh attempt: org.springframework.beans.factory.BeanDefinitionStoreException: Failed to read candidate component class: URL [jar:file:/app/main.war!/WEB-INF/classes!/ca/uhn/fhir/jpa/starter/elastic/ElasticsearchBootSvcImpl.class]
+<ts>  INFO <pid> --- [hapi-fhir-jpaserver-starter] [           main] .s.b.a.l.ConditionEvaluationReportLogger : 
+
+Error starting ApplicationContext. To display the condition evaluation report re-run your application with 'debug' enabled.
+<ts> ERROR <pid> --- [hapi-fhir-jpaserver-starter] [           main] o.s.b.d.LoggingFailureAnalysisReporter   : 
+
+***************************
+APPLICATION FAILED TO START
+***************************
+
+Description:
+
+Failed to bind properties under 'spring.elasticsearch.connection-timeout' to java.time.Duration:
+
+    Property: spring.elasticsearch.connection-timeout
+    Value: "abc"
+    Origin: URL [file:application.yaml] - 1:42
+    Reason: failed to convert java.lang.String to java.time.Duration (caused by java.lang.IllegalArgumentException: 'abc' is not a valid duration)
+
+Action:
+
+Update your application's configuration
+```
+
+##### `config.error.008-order-es-cql`
+
+- `files/application.yaml`: `spring.elasticsearch.connection-timeout: abc
+hapi.fhir.cr.cql.runtime.enable_validation: true`
+- probe: exit 1; `WARN` exception `org.springframework.boot.context.properties.bind.BindException: Failed to bind properties under 'spring.elasticsearch.connection-timeout' to java.time.Duration`; description `Failed to bind properties under 'spring.elasticsearch.connection-timeout' to java.time.Duration:`
+- real `Application` (the record, `runner: application`): exit 1, config lines:
+
+```
+<ts>  WARN <pid> --- [hapi-fhir-jpaserver-starter] [           main] ConfigServletWebServerApplicationContext : Exception encountered during context initialization - cancelling refresh attempt: org.springframework.beans.factory.BeanDefinitionStoreException: Failed to read candidate component class: URL [jar:file:/app/main.war!/WEB-INF/classes!/ca/uhn/fhir/jpa/starter/elastic/ElasticsearchBootSvcImpl.class]
+<ts>  INFO <pid> --- [hapi-fhir-jpaserver-starter] [           main] .s.b.a.l.ConditionEvaluationReportLogger : 
+
+Error starting ApplicationContext. To display the condition evaluation report re-run your application with 'debug' enabled.
+<ts> ERROR <pid> --- [hapi-fhir-jpaserver-starter] [           main] o.s.b.d.LoggingFailureAnalysisReporter   : 
+
+***************************
+APPLICATION FAILED TO START
+***************************
+
+Description:
+
+Failed to bind properties under 'spring.elasticsearch.connection-timeout' to java.time.Duration:
+
+    Property: spring.elasticsearch.connection-timeout
+    Value: "abc"
+    Origin: URL [file:application.yaml] - 1:42
+    Reason: failed to convert java.lang.String to java.time.Duration (caused by java.lang.IllegalArgumentException: 'abc' is not a valid duration)
+
+Action:
+
+Update your application's configuration
+```
+
+##### `config.error.008-order-es-strict`
+
+- `files/application.yaml`: `spring.elasticsearch.connection-timeout: abc
+hapi.fhir.app_content_path: ${nope}`
+- probe: exit 1; `WARN` exception `java.lang.IllegalStateException: Error processing condition on ca.uhn.fhir.jpa.starter.web.WebAppFilesConfigurer`; last cause `Caused by: org.springframework.util.PlaceholderResolutionException: Could not resolve placeholder 'nope' in value "${nope}"`
+- real `Application` (the record, `runner: application`): exit 1, config lines:
+
+```
+<ts>  WARN <pid> --- [hapi-fhir-jpaserver-starter] [           main] ConfigServletWebServerApplicationContext : Exception encountered during context initialization - cancelling refresh attempt: org.springframework.beans.factory.BeanDefinitionStoreException: Failed to read candidate component class: URL [jar:file:/app/main.war!/WEB-INF/classes!/ca/uhn/fhir/jpa/starter/elastic/ElasticsearchBootSvcImpl.class]
+<ts>  INFO <pid> --- [hapi-fhir-jpaserver-starter] [           main] .s.b.a.l.ConditionEvaluationReportLogger : 
+
+Error starting ApplicationContext. To display the condition evaluation report re-run your application with 'debug' enabled.
+<ts> ERROR <pid> --- [hapi-fhir-jpaserver-starter] [           main] o.s.b.d.LoggingFailureAnalysisReporter   : 
+
+***************************
+APPLICATION FAILED TO START
+***************************
+
+Description:
+
+Failed to bind properties under 'spring.elasticsearch.connection-timeout' to java.time.Duration:
+
+    Property: spring.elasticsearch.connection-timeout
+    Value: "abc"
+    Origin: URL [file:application.yaml] - 1:42
+    Reason: failed to convert java.lang.String to java.time.Duration (caused by java.lang.IllegalArgumentException: 'abc' is not a valid duration)
+
+Action:
+
+Update your application's configuration
+```
+
+##### `config.error.008-order-noversion-bind`
+
+- `files/x.yaml`: `hapi.fhir.default_page_size: abc`
+- args: `--spring.config.location=file:./x.yaml`
+- probe: exit 1; `WARN` exception `java.lang.NullPointerException: Cannot invoke "String.toUpperCase()" because the return value of "org.springframework.core.env.Environment.getProperty(String)" is null`; last cause `None`
+- real `Application` (the record, `runner: application`): exit 1, config lines:
+
+```
+<ts>  WARN <pid> --- [           main] ConfigServletWebServerApplicationContext : Exception encountered during context initialization - cancelling refresh attempt: org.springframework.beans.factory.BeanDefinitionStoreException: Failed to read candidate component class: URL [jar:file:/app/main.war!/WEB-INF/classes!/ca/uhn/fhir/jpa/starter/common/FhirServerConfigDstu2.class]
+<ts> ERROR <pid> --- [           main] o.s.boot.SpringApplication               : Application run failed
+
+org.springframework.beans.factory.BeanDefinitionStoreException: Failed to read candidate component class: URL [jar:file:/app/main.war!/WEB-INF/classes!/ca/uhn/fhir/jpa/starter/common/FhirServerConfigDstu2.class]
+Caused by: java.lang.NullPointerException: Cannot invoke "String.toUpperCase()" because the return value of "org.springframework.core.env.Environment.getProperty(String)" is null
+```
+
+##### `config.error.008-order-noversion-cql`
+
+- `files/x.yaml`: `hapi.fhir.cr.cql.runtime.enable_validation: true`
+- args: `--spring.config.location=file:./x.yaml`
+- probe: exit 1; `WARN` exception `java.lang.NullPointerException: Cannot invoke "String.toUpperCase()" because the return value of "org.springframework.core.env.Environment.getProperty(String)" is null`; last cause `None`
+- real `Application` (the record, `runner: application`): exit 1, config lines:
+
+```
+<ts>  WARN <pid> --- [           main] ConfigServletWebServerApplicationContext : Exception encountered during context initialization - cancelling refresh attempt: org.springframework.beans.factory.BeanDefinitionStoreException: Failed to read candidate component class: URL [jar:file:/app/main.war!/WEB-INF/classes!/ca/uhn/fhir/jpa/starter/common/FhirServerConfigDstu2.class]
+<ts> ERROR <pid> --- [           main] o.s.boot.SpringApplication               : Application run failed
+
+org.springframework.beans.factory.BeanDefinitionStoreException: Failed to read candidate component class: URL [jar:file:/app/main.war!/WEB-INF/classes!/ca/uhn/fhir/jpa/starter/common/FhirServerConfigDstu2.class]
+Caused by: java.lang.NullPointerException: Cannot invoke "String.toUpperCase()" because the return value of "org.springframework.core.env.Environment.getProperty(String)" is null
+```
+
+##### `config.error.008-order-noversion-es`
+
+- `files/x.yaml`: `spring.elasticsearch.connection-timeout: abc`
+- args: `--spring.config.location=file:./x.yaml`
+- probe: exit 1; `WARN` exception `java.lang.NullPointerException: Cannot invoke "String.toUpperCase()" because the return value of "org.springframework.core.env.Environment.getProperty(String)" is null`; last cause `None`
+- real `Application` (the record, `runner: application`): exit 1, config lines:
+
+```
+<ts>  WARN <pid> --- [           main] ConfigServletWebServerApplicationContext : Exception encountered during context initialization - cancelling refresh attempt: org.springframework.beans.factory.BeanDefinitionStoreException: Failed to read candidate component class: URL [jar:file:/app/main.war!/WEB-INF/classes!/ca/uhn/fhir/jpa/starter/common/FhirServerConfigDstu2.class]
+<ts> ERROR <pid> --- [           main] o.s.boot.SpringApplication               : Application run failed
+
+org.springframework.beans.factory.BeanDefinitionStoreException: Failed to read candidate component class: URL [jar:file:/app/main.war!/WEB-INF/classes!/ca/uhn/fhir/jpa/starter/common/FhirServerConfigDstu2.class]
+Caused by: java.lang.NullPointerException: Cannot invoke "String.toUpperCase()" because the return value of "org.springframework.core.env.Environment.getProperty(String)" is null
+```
+
+##### `config.error.008-order-noversion-strict`
+
+- `files/x.yaml`: `hapi.fhir.app_content_path: ${nope}`
+- args: `--spring.config.location=file:./x.yaml`
+- probe: exit 1; `WARN` exception `java.lang.NullPointerException: Cannot invoke "String.toUpperCase()" because the return value of "org.springframework.core.env.Environment.getProperty(String)" is null`; last cause `None`
+- real `Application` (the record, `runner: application`): exit 1, config lines:
+
+```
+<ts>  WARN <pid> --- [           main] ConfigServletWebServerApplicationContext : Exception encountered during context initialization - cancelling refresh attempt: org.springframework.beans.factory.BeanDefinitionStoreException: Failed to read candidate component class: URL [jar:file:/app/main.war!/WEB-INF/classes!/ca/uhn/fhir/jpa/starter/common/FhirServerConfigDstu2.class]
+<ts> ERROR <pid> --- [           main] o.s.boot.SpringApplication               : Application run failed
+
+org.springframework.beans.factory.BeanDefinitionStoreException: Failed to read candidate component class: URL [jar:file:/app/main.war!/WEB-INF/classes!/ca/uhn/fhir/jpa/starter/common/FhirServerConfigDstu2.class]
+Caused by: java.lang.NullPointerException: Cannot invoke "String.toUpperCase()" because the return value of "org.springframework.core.env.Environment.getProperty(String)" is null
+```
+
+##### `config.error.008-order-strict-cql`
+
+- `files/application.yaml`: `hapi.fhir.app_content_path: ${nope}
+hapi.fhir.cr.cql.runtime.enable_validation: true`
+- probe: exit 1; `WARN` exception `java.lang.IllegalStateException: Error processing condition on ca.uhn.fhir.jpa.starter.web.WebAppFilesConfigurer`; last cause `Caused by: org.springframework.util.PlaceholderResolutionException: Could not resolve placeholder 'nope' in value "${nope}"`
+- real `Application` (the record, `runner: application`): exit 1, config lines:
+
+```
+<ts>  WARN <pid> --- [hapi-fhir-jpaserver-starter] [           main] ConfigServletWebServerApplicationContext : Exception encountered during context initialization - cancelling refresh attempt: org.springframework.beans.factory.BeanDefinitionStoreException: Failed to read candidate component class: URL [jar:file:/app/main.war!/WEB-INF/classes!/ca/uhn/fhir/jpa/starter/web/WebAppFilesConfigurer.class]
+<ts>  INFO <pid> --- [hapi-fhir-jpaserver-starter] [           main] .s.b.a.l.ConditionEvaluationReportLogger : 
+
+Error starting ApplicationContext. To display the condition evaluation report re-run your application with 'debug' enabled.
+<ts> ERROR <pid> --- [hapi-fhir-jpaserver-starter] [           main] o.s.boot.SpringApplication               : Application run failed
+
+org.springframework.beans.factory.BeanDefinitionStoreException: Failed to read candidate component class: URL [jar:file:/app/main.war!/WEB-INF/classes!/ca/uhn/fhir/jpa/starter/web/WebAppFilesConfigurer.class]
+Caused by: java.lang.IllegalStateException: Error processing condition on ca.uhn.fhir.jpa.starter.web.WebAppFilesConfigurer
+Caused by: org.springframework.util.PlaceholderResolutionException: Could not resolve placeholder 'nope' in value "${nope}"
+```
+
+##### `config.read.007-b`
+
+- `files/application.yaml`: `hapi.fhir.fhir_version: ${nope}`
+- probe: exit 1; `WARN` exception `org.springframework.util.PlaceholderResolutionException: Could not resolve placeholder 'nope' in value "${nope}"`; last cause `None`
+- real `Application` (the record, `runner: application`): exit 1, config lines:
+
+```
+<ts>  WARN <pid> --- [hapi-fhir-jpaserver-starter] [           main] ConfigServletWebServerApplicationContext : Exception encountered during context initialization - cancelling refresh attempt: org.springframework.beans.factory.BeanDefinitionStoreException: Failed to read candidate component class: URL [jar:file:/app/main.war!/WEB-INF/classes!/ca/uhn/fhir/jpa/starter/common/FhirServerConfigDstu2.class]
+<ts> ERROR <pid> --- [hapi-fhir-jpaserver-starter] [           main] o.s.boot.SpringApplication               : Application run failed
+
+org.springframework.beans.factory.BeanDefinitionStoreException: Failed to read candidate component class: URL [jar:file:/app/main.war!/WEB-INF/classes!/ca/uhn/fhir/jpa/starter/common/FhirServerConfigDstu2.class]
+Caused by: org.springframework.util.PlaceholderResolutionException: Could not resolve placeholder 'nope' in value "${nope}"
+```
+
+##### `config.read.007-c`
+
+- `files/application.yaml`: `hapi.fhir.cr.enabled: ${nope}`
+- probe: exit 1; `WARN` exception `org.springframework.util.PlaceholderResolutionException: Could not resolve placeholder 'nope' in value "${nope}"`; last cause `None`
+- real `Application` (the record, `runner: application`): exit 1, config lines:
+
+```
+<ts>  WARN <pid> --- [hapi-fhir-jpaserver-starter] [           main] ConfigServletWebServerApplicationContext : Exception encountered during context initialization - cancelling refresh attempt: org.springframework.beans.factory.BeanDefinitionStoreException: Failed to read candidate component class: URL [jar:file:/app/main.war!/WEB-INF/classes!/ca/uhn/fhir/jpa/starter/cr/CrCommonConfig.class]
+<ts>  INFO <pid> --- [hapi-fhir-jpaserver-starter] [           main] .s.b.a.l.ConditionEvaluationReportLogger : 
+
+Error starting ApplicationContext. To display the condition evaluation report re-run your application with 'debug' enabled.
+<ts> ERROR <pid> --- [hapi-fhir-jpaserver-starter] [           main] o.s.boot.SpringApplication               : Application run failed
+
+org.springframework.beans.factory.BeanDefinitionStoreException: Failed to read candidate component class: URL [jar:file:/app/main.war!/WEB-INF/classes!/ca/uhn/fhir/jpa/starter/cr/CrCommonConfig.class]
+Caused by: org.springframework.util.PlaceholderResolutionException: Could not resolve placeholder 'nope' in value "${nope}"
+```
+
+##### `config.read.007-d`
+
+- `files/application.yaml`: `hapi.fhir.cdshooks.enabled: ${nope}`
+- probe: exit 1; `WARN` exception `org.springframework.util.PlaceholderResolutionException: Could not resolve placeholder 'nope' in value "${nope}"`; last cause `None`
+- real `Application` (the record, `runner: application`): exit 1, config lines:
+
+```
+<ts>  WARN <pid> --- [hapi-fhir-jpaserver-starter] [           main] ConfigServletWebServerApplicationContext : Exception encountered during context initialization - cancelling refresh attempt: org.springframework.beans.factory.BeanDefinitionStoreException: Failed to read candidate component class: URL [jar:file:/app/main.war!/WEB-INF/classes!/ca/uhn/fhir/jpa/starter/cdshooks/StarterCdsHooksConfig.class]
+<ts> ERROR <pid> --- [hapi-fhir-jpaserver-starter] [           main] o.s.boot.SpringApplication               : Application run failed
+
+org.springframework.beans.factory.BeanDefinitionStoreException: Failed to read candidate component class: URL [jar:file:/app/main.war!/WEB-INF/classes!/ca/uhn/fhir/jpa/starter/cdshooks/StarterCdsHooksConfig.class]
+Caused by: org.springframework.util.PlaceholderResolutionException: Could not resolve placeholder 'nope' in value "${nope}"
+```
+
+##### `config.read.007-e`
+
+- `files/application.yaml`: `hapi.fhir.custom-bean-packages: ${nope}`
+- probe: exit 1; `WARN` exception `None`; last cause `None`
+- real `Application` (the record, `runner: application`): exit 1, config lines:
+
+```
+<ts>  WARN <pid> --- [hapi-fhir-jpaserver-starter] [           main] ConfigServletWebServerApplicationContext : Exception encountered during context initialization - cancelling refresh attempt: org.springframework.beans.factory.BeanDefinitionStoreException: Failed to process import candidates for configuration class [ca.uhn.fhir.jpa.starter.common.FhirServerConfigR4]: Could not resolve placeholder 'nope' in value "${nope}"
+<ts>  INFO <pid> --- [hapi-fhir-jpaserver-starter] [           main] .s.b.a.l.ConditionEvaluationReportLogger : 
+
+Error starting ApplicationContext. To display the condition evaluation report re-run your application with 'debug' enabled.
+<ts> ERROR <pid> --- [hapi-fhir-jpaserver-starter] [           main] o.s.boot.SpringApplication               : Application run failed
+
+org.springframework.beans.factory.BeanDefinitionStoreException: Failed to process import candidates for configuration class [ca.uhn.fhir.jpa.starter.common.FhirServerConfigR4]: Could not resolve placeholder 'nope' in value "${nope}"
+Caused by: org.springframework.util.PlaceholderResolutionException: Could not resolve placeholder 'nope' in value "${nope}"
+```
+
+##### `config.read.007-f`
+
+- `files/application.yaml`: `scheduling_disabled: ${nope}`
+- probe: exit 1; `WARN` exception `org.springframework.util.PlaceholderResolutionException: Could not resolve placeholder 'nope' in value "${nope}"`; last cause `None`
+- real `Application` (the record, `runner: application`): exit 1, config lines:
+
+```
+<ts>  WARN <pid> --- [hapi-fhir-jpaserver-starter] [           main] ConfigServletWebServerApplicationContext : Exception encountered during context initialization - cancelling refresh attempt: org.springframework.context.ApplicationContextException: Unable to start web server
+<ts>  INFO <pid> --- [hapi-fhir-jpaserver-starter] [           main] .s.b.a.l.ConditionEvaluationReportLogger : 
+
+Error starting ApplicationContext. To display the condition evaluation report re-run your application with 'debug' enabled.
+<ts> ERROR <pid> --- [hapi-fhir-jpaserver-starter] [           main] o.s.boot.SpringApplication               : Application run failed
+
+org.springframework.context.ApplicationContextException: Unable to start web server
+Caused by: org.springframework.boot.web.server.WebServerException: Unable to start embedded Tomcat
+Caused by: org.springframework.beans.factory.UnsatisfiedDependencyException: Error creating bean with name 'hapiServletRegistration' defined in ca.uhn.fhir.jpa.starter.Application: Unsatisfied dependency expressed through method 'hapiServletRegistration' parameter 0: Error creating bean with name 'restfulServer' defined in class path resource [ca/uhn/fhir/jpa/starter/common/StarterJpaConfig.class]: Unsatisfied dependency expressed through method 'restfulServer' parameter 1: Error creating bean with name 'mySystemDaoR4': Unsatisfied dependency expressed through field 'myExpungeService': Error creating bean with name 'expungeService': Unsatisfied dependency expressed through field 'myExpungeEverythingService': Error creating bean with name 'expungeEverythingService': Unsatisfied dependency expressed through field 'myJobMaintenanceService': Error creating bean with name 'batch2JobMaintenanceService' defined in ca.uhn.fhir.jpa.batch2.JpaBatch2Config: Unsatisfied dependency expressed through method 'batch2JobMaintenanceService' parameter 0: Error creating bean with name 'schedulerService': Invocation of init method failed
+Caused by: org.springframework.beans.factory.UnsatisfiedDependencyException: Error creating bean with name 'restfulServer' defined in class path resource [ca/uhn/fhir/jpa/starter/common/StarterJpaConfig.class]: Unsatisfied dependency expressed through method 'restfulServer' parameter 1: Error creating bean with name 'mySystemDaoR4': Unsatisfied dependency expressed through field 'myExpungeService': Error creating bean with name 'expungeService': Unsatisfied dependency expressed through field 'myExpungeEverythingService': Error creating bean with name 'expungeEverythingService': Unsatisfied dependency expressed through field 'myJobMaintenanceService': Error creating bean with name 'batch2JobMaintenanceService' defined in ca.uhn.fhir.jpa.batch2.JpaBatch2Config: Unsatisfied dependency expressed through method 'batch2JobMaintenanceService' parameter 0: Error creating bean with name 'schedulerService': Invocation of init method failed
+Caused by: org.springframework.beans.factory.UnsatisfiedDependencyException: Error creating bean with name 'mySystemDaoR4': Unsatisfied dependency expressed through field 'myExpungeService': Error creating bean with name 'expungeService': Unsatisfied dependency expressed through field 'myExpungeEverythingService': Error creating bean with name 'expungeEverythingService': Unsatisfied dependency expressed through field 'myJobMaintenanceService': Error creating bean with name 'batch2JobMaintenanceService' defined in ca.uhn.fhir.jpa.batch2.JpaBatch2Config: Unsatisfied dependency expressed through method 'batch2JobMaintenanceService' parameter 0: Error creating bean with name 'schedulerService': Invocation of init method failed
+Caused by: org.springframework.beans.factory.UnsatisfiedDependencyException: Error creating bean with name 'expungeService': Unsatisfied dependency expressed through field 'myExpungeEverythingService': Error creating bean with name 'expungeEverythingService': Unsatisfied dependency expressed through field 'myJobMaintenanceService': Error creating bean with name 'batch2JobMaintenanceService' defined in ca.uhn.fhir.jpa.batch2.JpaBatch2Config: Unsatisfied dependency expressed through method 'batch2JobMaintenanceService' parameter 0: Error creating bean with name 'schedulerService': Invocation of init method failed
+Caused by: org.springframework.beans.factory.UnsatisfiedDependencyException: Error creating bean with name 'expungeEverythingService': Unsatisfied dependency expressed through field 'myJobMaintenanceService': Error creating bean with name 'batch2JobMaintenanceService' defined in ca.uhn.fhir.jpa.batch2.JpaBatch2Config: Unsatisfied dependency expressed through method 'batch2JobMaintenanceService' parameter 0: Error creating bean with name 'schedulerService': Invocation of init method failed
+Caused by: org.springframework.beans.factory.UnsatisfiedDependencyException: Error creating bean with name 'batch2JobMaintenanceService' defined in ca.uhn.fhir.jpa.batch2.JpaBatch2Config: Unsatisfied dependency expressed through method 'batch2JobMaintenanceService' parameter 0: Error creating bean with name 'schedulerService': Invocation of init method failed
+Caused by: org.springframework.beans.factory.BeanCreationException: Error creating bean with name 'schedulerService': Invocation of init method failed
+Caused by: org.springframework.util.PlaceholderResolutionException: Could not resolve placeholder 'nope' in value "${nope}"
+```

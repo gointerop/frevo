@@ -1,0 +1,2 @@
+hapi.fhir.app_content_path: ${nope}
+hapi.fhir.cr.cql.runtime.enable_validation: true

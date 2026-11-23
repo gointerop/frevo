@@ -1,0 +1,2 @@
+spring.elasticsearch.connection-timeout: abc
+hapi.fhir.cr.cql.runtime.enable_validation: true

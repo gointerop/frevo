@@ -467,6 +467,13 @@ for suffix, key in [("", "hapi.fhir.app_content_path"), ("-b", "hapi.fhir.custom
                     ("-h", "spring.ai.mcp.server.enabled")]:
     covers = ["config.placeholder.011", "config.read.007"] if suffix == "" else "config.placeholder.011"
     case(f"config.placeholder.011{suffix}", covers, files=app(f"{key}: ${{nope}}\n"))
+# config.read.007, owed by tasks.md task 2 (review.md, fifth review, finding 2): ${nope} in the
+# five other reads. fhir_version and cr.enabled are also bound (AppProperties, CrProperties);
+# custom-bean-packages and scheduling_disabled have no bound counterpart.
+for suffix, key in [("-b", "hapi.fhir.fhir_version"), ("-c", "hapi.fhir.cr.enabled"),
+                    ("-d", "hapi.fhir.cdshooks.enabled"), ("-e", "hapi.fhir.custom-bean-packages"),
+                    ("-f", "scheduling_disabled")]:
+    case(f"config.read.007{suffix}", "config.read.007", files=app(f"{key}: ${{nope}}\n"))
 case("config.placeholder.012", "config.placeholder.012", files=app(
     'hapi.fhir.server_address: "${java.io.tmpdir}|${user.dir}|${PID:nopid}|${os.name}|${file.separator}|${loader.path:none}|${user.name}"\n'),
      process=["hapi.fhir:server-address"])
@@ -624,6 +631,46 @@ case("config.error.009", ["config.error.009", "config.error.008"], env=env(SPRIN
      files=app("hapi.fhir.default_page_size: abc\n"))
 case("config.error.010", ["config.error.010", "config.key.012"],
      files=app("hapi.fhir.implementationguides.x.package_contents: abc\n"))
+
+# config.error.008, owed by tasks.md task 2 (review.md, fifth review): a binding failure in
+# each of the other properties beans, which the record did not have.
+# CrProperties (prefix hapi.fhir.cr): a gate key, and a key no gate reads.
+case("config.error.008-cr", "config.error.008", files=app("hapi.fhir.cr.enabled: maybe\n"))
+case("config.error.008-cr-b", "config.error.008",
+     files=app("hapi.fhir.cr.terminology_server_client_settings.max_retry_count: abc\n"))
+# CareGapsProperties (prefix hapi.fhir.cr.caregaps) has String members only: a circular
+# placeholder (config.placeholder.007's failure) and a scalar for the bean itself.
+case("config.error.008-caregaps", "config.error.008",
+     files=app("hapi.fhir.cr.caregaps.reporter: ${hapi.fhir.cr.caregaps.reporter}\n"))
+case("config.error.008-caregaps-b", "config.error.008", files=app("hapi.fhir.cr.caregaps: abc\n"))
+# CqlCompilerProperties (prefix hapi.fhir.cr.cql.compiler): a boolean and an enum.
+case("config.error.008-compiler", "config.error.008", files=app("hapi.fhir.cr.cql.compiler.verify_only: maybe\n"))
+case("config.error.008-compiler-b", "config.error.008",
+     files=app("hapi.fhir.cr.cql.compiler.error_severity_level: Bogus\n"))
+# CdsHooksProperties (prefix hapi.fhir.cdshooks): the gate key, and the String member.
+case("config.error.008-cdshooks", "config.error.008", files=app("hapi.fhir.cdshooks.enabled: maybe\n"))
+case("config.error.008-cdshooks-b", "config.error.008",
+     files=app("hapi.fhir.cdshooks.client_id_header_name: ${hapi.fhir.cdshooks.client_id_header_name}\n"))
+# Which failure surfaces first when one configuration has several (config.error.008's table).
+BIND = "hapi.fhir.default_page_size: abc\n"          # AppProperties binding
+ES = "spring.elasticsearch.connection-timeout: abc\n"  # ElasticsearchProperties binding
+STRICT = "hapi.fhir.app_content_path: ${nope}\n"     # strict placeholder in a gate read
+CQL = "hapi.fhir.cr.cql.runtime.enable_validation: true\n"  # the CqlProperties bean (config.unknown.005)
+CDS = "hapi.fhir.cdshooks.enabled: maybe\n"          # CdsHooksProperties binding
+NOVERSION = ["--spring.config.location=file:./x.yaml"]  # no hapi.fhir.fhir_version (config.gate.005)
+case("config.error.008-order-noversion-bind", "config.error.008", args=NOVERSION, files={"x.yaml": BIND})
+case("config.error.008-order-noversion-es", "config.error.008", args=NOVERSION, files={"x.yaml": ES})
+case("config.error.008-order-noversion-strict", "config.error.008", args=NOVERSION, files={"x.yaml": STRICT})
+case("config.error.008-order-noversion-cql", "config.error.008", args=NOVERSION, files={"x.yaml": CQL})
+case("config.error.008-order-bind-es", "config.error.008", files=app(BIND + ES))
+case("config.error.008-order-es-bind", "config.error.008", files=app(ES + BIND))
+case("config.error.008-order-bind-strict", "config.error.008", files=app(BIND + STRICT))
+case("config.error.008-order-es-strict", "config.error.008", files=app(ES + STRICT))
+case("config.error.008-order-bind-cql", "config.error.008", files=app(BIND + CQL))
+case("config.error.008-order-es-cql", "config.error.008", files=app(ES + CQL))
+case("config.error.008-order-strict-cql", "config.error.008", files=app(STRICT + CQL))
+case("config.error.008-order-bind-cds", "config.error.008", files=app(BIND + CDS))
+case("config.error.008-order-es-cds", "config.error.008", files=app(ES + CDS))
 
 # ==========================================================================================
 # config.read

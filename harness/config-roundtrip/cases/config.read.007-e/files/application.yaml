@@ -1,0 +1,1 @@
+hapi.fhir.custom-bean-packages: ${nope}

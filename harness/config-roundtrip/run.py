@@ -29,6 +29,15 @@ with the same files, environment and arguments. Its failure output is what HAPI 
 so it is the case's recorded result ("runner": "application"); the probe's own failure is
 kept beside it under "probe". A case the application runner does not fail (it starts the
 server) is listed under "runner_disagreements" and keeps the probe's result, flagged.
+
+Every case the probe passes is run by the application runner too (review.md, fifth review,
+finding 1): the probe's run stays its record, and the real Application's outcome is kept
+under "application" (started, or exit status and config lines). The cases where that run
+fails are listed under "application_failures", the reverse of "runner_disagreements". A
+real Application has started the server when it prints Spring Boot's start line and is
+still running APPLICATION_SETTLE seconds later, or is still running after
+APPLICATION_TIMEOUT seconds (the 600 s safeguard); it is then killed. Every container
+carries the label dev.frevo.config-roundtrip=1.
 """
 
 from __future__ import annotations
@@ -43,6 +52,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 import zipfile
 from pathlib import Path
 
@@ -185,20 +195,49 @@ def read_case(d: Path) -> dict:
 
 
 APPLICATION_MAIN = "ca.uhn.fhir.jpa.starter.Application"
-# A real Application that has not exited after this many seconds has started the server.
+# The safeguard: a real Application that has not exited after this many seconds has started
+# the server, whether or not its start line was seen.
 APPLICATION_TIMEOUT = int(os.environ.get("CONFIG_ROUNDTRIP_APP_TIMEOUT", "600"))
+# A real Application that printed Spring Boot's start line (StartupInfoLogger, before the
+# runners are called) and is still running this many seconds later has started the server.
+APPLICATION_SETTLE = int(os.environ.get("CONFIG_ROUNDTRIP_APP_SETTLE", "15"))
+STARTED_LINE = b"ca.uhn.fhir.jpa.starter.Application      : Started Application in "
 # The real Application boots H2, JPA and Quartz: fewer of them at once than probe runs.
 APPLICATION_SLOTS = threading.Semaphore(int(os.environ.get("CONFIG_ROUNDTRIP_APP_JOBS", "3")))
+# Every container this script creates carries this label, so its own can be found and removed.
+LABEL = "dev.frevo.config-roundtrip=1"
+
+
+def wait_application(cid: str, timeout: int) -> tuple[int | None, str | None]:
+    """Waits for a real Application: (exit status, None) if it exits, (None, how) if it starts."""
+    deadline = time.monotonic() + timeout
+    seen_at = None
+    while True:
+        running = docker("inspect", "-f", "{{.State.Running}}", cid, text=True).stdout.strip()
+        if running != "true":
+            return int(docker("wait", cid, text=True).stdout.strip()), None
+        now = time.monotonic()
+        if seen_at is None and STARTED_LINE in docker("logs", cid).stdout:
+            seen_at = now
+        if seen_at is not None and now - seen_at >= APPLICATION_SETTLE:
+            return None, "start line"
+        if now >= deadline:
+            return None, "timeout"
+        time.sleep(3)
 
 
 def run_container(case: dict, image: str, timeout: int | None = None) -> dict:
-    """One run of a case in a fresh container of `image`: exit, both streams, probe files."""
-    create = ["create"]
+    """One run of a case in a fresh container of `image`: exit, both streams, probe files.
+
+    With `timeout` (the application runner), a run that starts the server is killed and
+    reported as started, with `exit` None.
+    """
+    create = ["create", "--label", LABEL]
     for name, value in case["env"]:
         create += ["-e", f"{name}={value}"]
     create += [image, *case["args"]]
     cid = docker(*create, text=True).stdout.strip()
-    started = False
+    started = None
     try:
         d: Path = case["dir"]
         if (d / "files").is_dir():
@@ -206,12 +245,13 @@ def run_container(case: dict, image: str, timeout: int | None = None) -> dict:
         if (d / "root").is_dir():
             docker("cp", f"{d / 'root'}{os.sep}.", f"{cid}:/")
         docker("start", cid)
-        try:
-            exit_code = int(docker("wait", cid, text=True, timeout=timeout).stdout.strip())
-        except subprocess.TimeoutExpired:
-            started = True
-            docker("kill", cid, check=False)
+        if timeout is None:
             exit_code = int(docker("wait", cid, text=True).stdout.strip())
+        else:
+            exit_code, started = wait_application(cid, timeout)
+            if started:
+                docker("kill", cid, check=False)
+                docker("wait", cid, text=True, check=False)
         logs = docker("logs", cid)
         stdout = logs.stdout.decode("utf-8", "replace")
         stderr = logs.stderr.decode("utf-8", "replace")
@@ -239,7 +279,8 @@ def run_container(case: dict, image: str, timeout: int | None = None) -> dict:
     out_lines = [l for l in out_lines if not FRAME.match(l)]
     return {
         "exit": exit_code,
-        "started": started,
+        "started": started is not None,
+        "start_signal": started,
         "document": document,
         "stdout": out_lines,
         "stderr": err_lines,
@@ -248,7 +289,7 @@ def run_container(case: dict, image: str, timeout: int | None = None) -> dict:
             "stdout": sum(1 for l in stdout.split("\n") if STATUS_LINE.match(l)),
             "stderr": sum(1 for l in stderr.split("\n") if STATUS_LINE.match(l)),
         },
-        "config_lines": config_lines(out_lines) if exit_code != 0 and not started else [],
+        "config_lines": config_lines(out_lines) if exit_code not in (0, None) else [],
         "_system_properties": system_properties,
     }
 
@@ -258,12 +299,23 @@ def run_case(case: dict) -> dict:
     covers = [c.strip() for c in case["meta"].get("covers", "").split(",") if c.strip()]
     probe = run_container(case, PROBE_TAG)
     probe.pop("started")
-    if probe["exit"] == 0:
-        return {"covers": covers, "runner": "probe", **probe}
+    probe.pop("start_signal")
     with APPLICATION_SLOTS:
         app = run_container(case, HAPI_IMAGE, timeout=APPLICATION_TIMEOUT)
     app.pop("_system_properties")
-    if app.pop("started"):
+    started = app.pop("started")
+    if probe["exit"] == 0:
+        # The probe's run stays the case's record (document, reads, gates, properties). The
+        # real Application's outcome is kept beside it: a probe exit 0 says the configuration
+        # layer accepts the case, not that HAPI starts (review.md, fifth review, finding 1).
+        outcome = {"main": APPLICATION_MAIN, "started": started, "start_signal": app["start_signal"],
+                   "exit": app["exit"], "config_lines": app["config_lines"],
+                   "stack_frame_lines": app["stack_frame_lines"], "stderr": app["stderr"]}
+        if not started:
+            outcome["stdout"] = app["stdout"]
+        return {"covers": covers, "runner": "probe", **probe, "application": outcome}
+    app.pop("start_signal")
+    if started:
         # The real Application did not fail: the probe's failure is not HAPI's. Kept, flagged.
         return {"covers": covers, "runner": "probe", "application_started": True, **probe}
     probe_part = {k: probe[k] for k in ("exit", "stdout", "stderr", "stack_frame_lines", "config_lines")}
@@ -287,9 +339,11 @@ FRAME = re.compile(r"^\t+at |^\t+\.\.\. \d+ (more|common frames omitted)$")
 def config_lines(lines: list[str]) -> list[str]:
     """The lines config.oracle.003 compares, with timestamp and PID masked.
 
-    WARN 'cancelling refresh attempt' and INFO ConditionEvaluationReportLogger lines (with
-    the INFO line's message continuation) have their logger field masked too; the ERROR
-    line and everything after it are kept, minus Java stack frames.
+    The WARN 'cancelling refresh attempt' line, the INFO ConditionEvaluationReportLogger line
+    (with its message continuation), the ERROR line and everything after it, minus Java stack
+    frames. Every line keeps its logger field: config.oracle.003 compares it (HAPI's real
+    Application prints ConfigServletWebServerApplicationContext and
+    .s.b.a.l.ConditionEvaluationReportLogger).
     """
     out: list[str] = []
     i = 0
@@ -301,9 +355,9 @@ def config_lines(lines: list[str]) -> list[str]:
             error_at = i
             break
         if m and m.group("level") == "WARN" and "cancelling refresh attempt" in m.group("msg"):
-            out.append(mask(m, keep_logger=False))
+            out.append(mask(m))
         elif m and m.group("level") == "INFO" and "ConditionEvaluationReportLogger" in m.group("logger"):
-            out.append(mask(m, keep_logger=False))
+            out.append(mask(m))
             j = i + 1
             while j < len(lines) and not LOG_LINE.match(lines[j]):
                 out.append(lines[j])
@@ -312,16 +366,16 @@ def config_lines(lines: list[str]) -> list[str]:
             continue
         i += 1
     if error_at is not None:
-        out.append(mask(LOG_LINE.match(lines[error_at]), keep_logger=True))
+        out.append(mask(LOG_LINE.match(lines[error_at])))
         out += [l for l in lines[error_at + 1:] if not FRAME.match(l)]
     return out
 
 
-def mask(m: re.Match, keep_logger: bool) -> str:
-    logger = m.group("logger") if keep_logger else "<logger>"
+def mask(m: re.Match) -> str:
+    """A log line with its timestamp and PID masked; the logger field is kept."""
     app = m.group("app") or ""
     pid = "<pid>" if m.group("pid") else ""
-    return f"<ts> {m.group('level'):>5} {pid} --- {app}[{m.group('thread')}] {logger} : {m.group('msg')}"
+    return f"<ts> {m.group('level'):>5} {pid} --- {app}[{m.group('thread')}] {m.group('logger')} : {m.group('msg')}"
 
 
 # ----------------------------------------------------------------------------------------
@@ -339,8 +393,11 @@ def run_all(cases: list[dict], jobs: int) -> dict[str, dict]:
         for n, f in enumerate(concurrent.futures.as_completed(futs), 1):
             cid = futs[f]
             results[cid] = f.result()
-            print(f"[{n}/{len(cases)}] {cid}: exit {results[cid]['exit']} ({results[cid]['runner']})",
-                  file=sys.stderr)
+            r = results[cid]
+            app = r.get("application")
+            extra = "" if app is None else (
+                f", application {'started' if app['started'] else 'exit ' + str(app['exit'])}")
+            print(f"[{n}/{len(cases)}] {cid}: exit {r['exit']} ({r['runner']}){extra}", file=sys.stderr)
     return dict(sorted(results.items()))
 
 
@@ -375,6 +432,12 @@ def dump_record(record: dict) -> str:
     return "\n".join(lines) + "\n"
 
 
+def application_outcome(r: dict):
+    """What the self-test compares of the real Application's run of a probe-passing case."""
+    app = r.get("application")
+    return None if app is None else (app["started"], app["exit"], app["config_lines"])
+
+
 def cmd_record(diagnostic: bool, jobs: int, only: list[str] | None = None) -> int:
     report = inspect()
     if report["problems"] and not diagnostic:
@@ -394,7 +457,8 @@ def cmd_record(diagnostic: bool, jobs: int, only: list[str] | None = None) -> in
         rnd = [p.strip() for p in c["meta"].get("random", "").split(",") if p.strip()]
         a, b = results[c["id"]], second[c["id"]]
         if not (a["exit"] == b["exit"] and strip_random(a["document"], rnd) == strip_random(b["document"], rnd)
-                and a["config_lines"] == b["config_lines"] and a["stderr"] == b["stderr"]):
+                and a["config_lines"] == b["config_lines"] and a["stderr"] == b["stderr"]
+                and application_outcome(a) == application_outcome(b)):
             differing.append(c["id"])
     sysprops = None
     for cid, r in results.items():
@@ -404,18 +468,28 @@ def cmd_record(diagnostic: bool, jobs: int, only: list[str] | None = None) -> in
     disagreements = [cid for cid, r in results.items() if r.get("application_started")]
     for cid in disagreements:
         print(f"record: {cid}: the probe fails but the real Application starts", file=sys.stderr)
+    # The reverse direction: the probe starts the case, the real Application does not.
+    application_failures = [cid for cid, r in results.items()
+                            if r.get("application") and not r["application"]["started"]]
+    for cid in application_failures:
+        print(f"record: {cid}: the probe starts but the real Application fails", file=sys.stderr)
     record = {
         "comment": "Recorded by harness/config-roundtrip/run.py from the pinned HAPI image. Do not edit.",
         "image": HAPI_IMAGE,
         "probe_image": probe,
         "runners": {
             "probe": "the probe image, loader.main=dev.frevo.harness.config.ConfigRoundtrip: documents, "
-                     "reads, gates and properties; every case runs it",
-            "application": f"the unchanged pinned image, its own Start-Class {APPLICATION_MAIN}: the "
-                           "recorded result of every case the probe fails (the probe's run is kept "
-                           "under 'probe')",
+                     "reads, gates and properties; every case runs it. A probe exit 0 means the "
+                     "configuration layer accepts the case, not that HAPI starts",
+            "application": f"the unchanged pinned image, its own Start-Class {APPLICATION_MAIN}: every "
+                           "case runs it too. For a case the probe fails it is the recorded result (the "
+                           "probe's run is kept under 'probe'); for a case the probe passes its outcome "
+                           "is kept under 'application' (started, or exit and config lines). Started "
+                           f"means Spring Boot's start line and still running {APPLICATION_SETTLE} s "
+                           f"later, or still running after {APPLICATION_TIMEOUT} s; the run is then killed",
         },
         "runner_disagreements": disagreements,
+        "application_failures": application_failures,
         "diagnostic": diagnostic,
         "inspection": report,
         "system_properties": sysprops,
@@ -446,7 +520,8 @@ def cmd_self_test(diagnostic: bool, jobs: int) -> int:
         ra, rb = a[cid], b[cid]
         same = (ra["exit"] == rb["exit"]
                 and strip_random(ra["document"], rnd) == strip_random(rb["document"], rnd)
-                and ra["config_lines"] == rb["config_lines"])
+                and ra["config_lines"] == rb["config_lines"]
+                and application_outcome(ra) == application_outcome(rb))
         if not same:
             bad += 1
             print(f"self-test: {cid} differs between two runs", file=sys.stderr)

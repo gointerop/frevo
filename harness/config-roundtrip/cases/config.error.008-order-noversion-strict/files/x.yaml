@@ -1,0 +1,1 @@
+hapi.fhir.app_content_path: ${nope}

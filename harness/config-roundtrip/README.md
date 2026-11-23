@@ -51,6 +51,28 @@ says which runner produced it (`"runner"`):
   server: the case keeps the probe's result, is marked
   `"application_started": true` and is listed in `runner_disagreements`.
   `CONFIG_ROUNDTRIP_APP_JOBS` (3) bounds how many run at once.
+- A case the probe passes is run by the application runner too (fifth
+  review, finding 1). Its record is still the probe's run, so documents,
+  reads, gates and properties come from the probe; the real `Application`'s
+  outcome is kept beside it under `"application"`: `started`, `start_signal`,
+  `exit`, `config_lines`, `stack_frame_lines`, `stderr`, and for a failure
+  `stdout`. The cases whose real `Application` fails are listed in
+  `application_failures`, the reverse of `runner_disagreements`. **A probe
+  `exit: 0` means the configuration layer accepts the case; it says nothing
+  about whether HAPI starts.**
+
+A real `Application` has started the server when it prints Spring Boot's
+start line (`ca.uhn.fhir.jpa.starter.Application : Started Application in
+…`) and is still running `CONFIG_ROUNDTRIP_APP_SETTLE` seconds (15) later
+(`"start_signal": "start line"`), or is still running after
+`CONFIG_ROUNDTRIP_APP_TIMEOUT` seconds (600, `"start_signal": "timeout"`). It
+is then killed, and `exit` is `null`. Every container `run.py` creates carries
+the label `dev.frevo.config-roundtrip=1`; `docker ps -a --filter
+label=dev.frevo.config-roundtrip=1` lists any a crashed run left behind.
+
+`config_lines` keeps the logger field of every line, `WARN` and `INFO`
+included (config.oracle.003 compares it); only the timestamp and PID are
+masked.
 
 A Java stack frame, removed and counted in `stack_frame_lines`, is tab-led
 only: `\tat …`, `\t... N more`, `\t... N common frames omitted` (review.md
