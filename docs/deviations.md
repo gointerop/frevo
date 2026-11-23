@@ -262,6 +262,19 @@ file, so its prose is not redistributable here (see `oracles/PINS.md`).
   when no UCUM data is configured, which Frevo cannot be today. No
   search-parameter expression known to this change compares quantities with
   differing unit codes (not checked against the generated table).
+- **Owner ruling, 2026-11-22:** "Do as hapi does." Through `FhirPathR4`, the
+  server-facing path, HAPI 8.12.0 raises `UnsupportedOperationException`
+  (`HAPI-0274: `) from `HapiWorkerContext.getUcumService()` when `<`, `<=`,
+  `>`, `>=`, `=`, `!=`, `~` or `!~` meet two quantities whose units differ (the
+  confirmation line above records the cases probed). Frevo is to raise the same
+  error for those comparisons. That part of the behaviour is therefore **not**
+  a deviation: it is a fix owed, tracked as change
+  `fix-fhirpath-quantity-unit-comparison` in `tasks/graph.yaml`, which also
+  reconciles the `path.quantity.*` scenarios. Until it lands, Frevo answers a
+  boolean where HAPI raises, an undocumented difference that is a bug. What
+  remains of this entry is the UCUM-equipped raw engine (the HL7 suite's and
+  the validator's worker), where HAPI answers booleans with no dimension check
+  and Frevo answers the same; that decision stands.
 
 ### DEV-0006 — a string function over a non-string focus returns empty instead of erroring
 
