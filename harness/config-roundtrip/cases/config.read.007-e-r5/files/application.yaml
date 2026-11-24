@@ -1,0 +1,2 @@
+hapi.fhir.fhir_version: R5
+hapi.fhir.custom-bean-packages: ${nope}

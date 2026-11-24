@@ -1,0 +1,2 @@
+hapi.fhir.fhir_version: DSTU3
+scheduling_disabled: ${nope}

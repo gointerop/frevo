@@ -1,0 +1,2 @@
+hapi.fhir.fhir_version: R5
+scheduling_disabled: ${nope}

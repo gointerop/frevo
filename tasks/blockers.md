@@ -5721,3 +5721,58 @@ Caused by: org.springframework.beans.factory.UnsatisfiedDependencyException: Err
 Caused by: org.springframework.beans.factory.BeanCreationException: Error creating bean with name 'schedulerService': Invocation of init method failed
 Caused by: org.springframework.util.PlaceholderResolutionException: Could not resolve placeholder 'nope' in value "${nope}"
 ```
+
+
+---
+
+## 2026-11-24 - `add-config-application-yaml` - RESUME POINT (written by the lead when the session was stopped)
+
+**Where we stopped.** Spec review round 5 (`review.md`, commit `959446c`) reads
+CHANGES_REQUESTED with one blocking finding: in `config.read.007`, the strict
+reads `scheduling_disabled: ${nope}` and `custom-bean-packages: ${nope}` print
+version-specific names (`FhirServerConfigR5`/`mySystemDaoR5`,
+`FhirServerConfigDstu3`/`mySystemDaoDstu3`, ...), but the spec fixes them as
+R4 text. The oracle-builder was stopped mid-run while recording the eight
+version cases; its partial work is committed as WIP (not verified, not in
+`hapi-8.12.0-results.json`).
+
+**Resume, in this order.**
+1. Oracle-builder (harness/ and tasks/blockers.md only; `crates/` is hook-locked
+   until `review.md` reads APPROVED): finish `config.read.007-e` and `-f` for
+   DSTU2, DSTU3, R4B and R5 (cases are in `harness/config-roundtrip/cases/`;
+   WIP in `make_cases.py`/`run.py`; check them, do not trust them). Run both
+   runners, record into `hapi-8.12.0-results.json`, rerun the two-run self-test
+   (0 differing) and the replay stand-in check (only the 16 known failures).
+   Also scan all recorded failure blocks for other text that depends on
+   `fhir_version` or another config value but is fixed in the spec. Containers:
+   label `dev.frevo.config-roundtrip=1`, remove your own, never touch
+   `goguideline-*`. Do not tick tasks 2 or 3.
+2. Proposer: state those names as depending on `hapi.fhir.fhir_version`; take back
+   task 2's "no record gap remains" until recorded; fold in the review's
+   non-blocking notes: record the 2026-11-23 owner ruling on F-17 outside this
+   change's prose; note the F-15/F-16 start-up failure in DEBT-0022; plan the
+   "design.md section 7" pointer that breaks on archive (like task 26).
+3. Spec-reviewer: round 6. If APPROVED, `crates/` unlocks.
+4. Oracle-builder: the owed test edits in `crates/frevo-config/tests/` (blockers
+   entries of 2026-11-22 items 1-6 and 2026-11-23), tick tasks 2 and 3, check
+   scenario-coverage is 232/232.
+5. Lead: open the change PR as a DRAFT (ask the owner before marking ready), then
+   launch the implementer for tasks 7-21. Small chore PR: add to the graph notes
+   of the owning changes (add-server-skeleton, add-store-transactions,
+   add-subscriptions-resthook, add-store-binary-and-offload, add-search-fulltext,
+   add-search-core, add-tester-ui, add-package-install, add-store-schema, add-mdm,
+   add-mcp, add-cds-hooks) the start-up failure each now owes (design.md section 7,
+   F-1..F-20).
+
+**Standing owner rules (also in memory).** Auto-merge a PR when green and CLEAN.
+When in doubt, HAPI 8.12.0 behaviour prevails (the image's real `Application`,
+not the probe). DEV-0005 ruled "Do as hapi does" (PR #41, merged); the code fix is
+the graph node `fix-fhirpath-quantity-unit-comparison`.
+
+**State of the checkout.** Worktrees: main and `C:/gointerop/git/frevo-change`
+only. Local branch `worktree-agent-a9e71bab4ceeac10d` was kept (37 old commits
+from the add-fhirpath work, not pushed); delete it once someone confirms #28's
+squash covers them. Cargo target dirs `C:/gointerop/git/frevo-gate-target` and
+`frevo-gate-target-ctl` are build caches and safe to delete. The empty folder
+`C:/gi` is left for the owner to delete. Windows Application Control (os error
+4551) can block fresh test executables locally; CI decides.

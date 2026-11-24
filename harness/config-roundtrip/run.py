@@ -252,6 +252,10 @@ def run_container(case: dict, image: str, timeout: int | None = None) -> dict:
             if started:
                 docker("kill", cid, check=False)
                 docker("wait", cid, text=True, check=False)
+        if not started and docker("inspect", "-f", "{{.State.OOMKilled}}", cid,
+                                  text=True).stdout.strip() == "true":
+            # A run the Docker host killed for memory is no outcome of the case's.
+            raise HostFailure(f"{case['id']}: container OOM-killed by the Docker host")
         logs = docker("logs", cid)
         stdout = logs.stdout.decode("utf-8", "replace")
         stderr = logs.stderr.decode("utf-8", "replace")
@@ -294,14 +298,39 @@ def run_container(case: dict, image: str, timeout: int | None = None) -> dict:
     }
 
 
+class HostFailure(Exception):
+    """The Docker host, not the case, ended a run (an OOM kill)."""
+
+
+HOST_RETRIES = 3
+
+
+def run_container_retrying(case: dict, image: str, timeout: int | None = None) -> dict:
+    """run_container, rerun in a fresh container when the Docker host fails the run.
+
+    An OOM kill, or a failed docker command (the engine answering 500 under memory pressure),
+    says nothing about the case: the run is discarded and repeated, at most HOST_RETRIES times.
+    A run that completes is never repeated, so a recorded result is always one whole run.
+    """
+    for attempt in range(1, HOST_RETRIES + 1):
+        try:
+            return run_container(case, image, timeout)
+        except (HostFailure, subprocess.CalledProcessError) as e:
+            if attempt == HOST_RETRIES:
+                raise
+            print(f"host failure, rerunning {case['id']} (attempt {attempt}): {e}", file=sys.stderr)
+            time.sleep(60)
+    raise AssertionError("unreachable")
+
+
 def run_case(case: dict) -> dict:
     """The probe runner, and for a case the probe fails, the application runner too."""
     covers = [c.strip() for c in case["meta"].get("covers", "").split(",") if c.strip()]
-    probe = run_container(case, PROBE_TAG)
+    probe = run_container_retrying(case, PROBE_TAG)
     probe.pop("started")
     probe.pop("start_signal")
     with APPLICATION_SLOTS:
-        app = run_container(case, HAPI_IMAGE, timeout=APPLICATION_TIMEOUT)
+        app = run_container_retrying(case, HAPI_IMAGE, timeout=APPLICATION_TIMEOUT)
     app.pop("_system_properties")
     started = app.pop("started")
     if probe["exit"] == 0:

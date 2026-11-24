@@ -1,0 +1,2 @@
+hapi.fhir.fhir_version: DSTU3
+hapi.fhir.custom-bean-packages: ${nope}

@@ -474,6 +474,13 @@ for suffix, key in [("-b", "hapi.fhir.fhir_version"), ("-c", "hapi.fhir.cr.enabl
                     ("-d", "hapi.fhir.cdshooks.enabled"), ("-e", "hapi.fhir.custom-bean-packages"),
                     ("-f", "scheduling_disabled")]:
     case(f"config.read.007{suffix}", "config.read.007", files=app(f"{key}: ${{nope}}\n"))
+# The -e and -f output names the active version's classes (the import-candidates wrapper names
+# FhirServerConfig<V>, the scheduler chain mySystemDao<V>; sixth review, finding 1), so they
+# are recorded once per other version as well; the packaged file's R4 is -e and -f above.
+for version in ["DSTU2", "DSTU3", "R4B", "R5"]:
+    for suffix, key in [("-e", "hapi.fhir.custom-bean-packages"), ("-f", "scheduling_disabled")]:
+        case(f"config.read.007{suffix}-{version.lower()}", "config.read.007",
+             files=app(f"hapi.fhir.fhir_version: {version}\n{key}: ${{nope}}\n"))
 case("config.placeholder.012", "config.placeholder.012", files=app(
     'hapi.fhir.server_address: "${java.io.tmpdir}|${user.dir}|${PID:nopid}|${os.name}|${file.separator}|${loader.path:none}|${user.name}"\n'),
      process=["hapi.fhir:server-address"])
